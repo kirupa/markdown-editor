@@ -14,21 +14,25 @@ struct MarkdownEditorView: View {
     }
 
     var body: some View {
-        SourceTextEditor(
-            text: $document.text,
-            session: session
-        )
-        .frame(minWidth: 620, minHeight: 420)
+        Group {
+            switch session.viewMode {
+            case .rich:
+                RichTextEditor(
+                    text: $document.text,
+                    documentURL: fileURL,
+                    session: session
+                )
+            case .source:
+                SourceTextEditor(
+                    text: $document.text,
+                    session: session
+                )
+            }
+        }
+        .frame(minWidth: 900, minHeight: 520)
         .focusedSceneValue(\.markdownEditorSession, session)
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    session.chooseAndInsertImage()
-                } label: {
-                    Label("Add Image", systemImage: "photo.badge.plus")
-                }
-                .help("Copy an image beside this document and insert a reference")
-            }
+            MarkdownFormattingToolbar(session: session)
         }
         .onChange(of: fileURL) { newFileURL in
             session.fileURL = newFileURL

@@ -2,12 +2,17 @@ import AppKit
 import MarkdownEditorCore
 import SwiftUI
 
-struct SourceTextEditor: NSViewRepresentable {
+struct RichTextEditor: NSViewRepresentable {
     @Binding var text: String
+    let documentURL: URL?
     let session: MarkdownEditorSession
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text, session: session)
+        Coordinator(
+            text: $text,
+            documentURL: documentURL,
+            session: session
+        )
     }
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -28,10 +33,9 @@ struct SourceTextEditor: NSViewRepresentable {
         textView.textContainer?.widthTracksTextView = true
         scrollView.documentView = textView
 
-        textView.string = text
         textView.delegate = context.coordinator
         textView.allowsUndo = true
-        textView.isRichText = false
+        textView.isRichText = true
         textView.importsGraphics = false
         textView.usesFindPanel = true
         textView.isIncrementalSearchingEnabled = true
@@ -40,9 +44,8 @@ struct SourceTextEditor: NSViewRepresentable {
         textView.isAutomaticTextReplacementEnabled = false
         textView.isAutomaticSpellingCorrectionEnabled = false
         textView.smartInsertDeleteEnabled = false
-        textView.font = .monospacedSystemFont(ofSize: 14, weight: .regular)
-        textView.textContainerInset = NSSize(width: 18, height: 16)
-        textView.setAccessibilityLabel("Markdown source")
+        textView.textContainerInset = NSSize(width: 24, height: 20)
+        textView.setAccessibilityLabel("Rendered Markdown editor")
 
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
@@ -52,21 +55,23 @@ struct SourceTextEditor: NSViewRepresentable {
             [weak coordinator = context.coordinator] range in
             coordinator?.beginComposition(replacing: range)
         }
-        textView.compositionDidCommit = {
-            [weak coordinator = context.coordinator] in
+        textView.compositionDidCommit = { [weak coordinator = context.coordinator] in
             coordinator?.commitComposition()
         }
         textView.markdownForRenderedRange = {
             [weak coordinator = context.coordinator] range in
-            coordinator?.markdown(in: range) ?? ""
+            coordinator?.markdown(forRenderedRange: range) ?? ""
         }
         textView.replaceSelectionWithMarkdown = {
             [weak coordinator = context.coordinator] markdown, actionName in
             coordinator?.replaceSelection(
-                with: markdown,
+                withMarkdown: markdown,
                 actionName: actionName
             )
         }
+        context.coordinator.render(
+            sourceSelection: NSRange(location: 0, length: 0)
+        )
         session.attach(context.coordinator)
         return scrollView
     }
@@ -75,28 +80,11 @@ struct SourceTextEditor: NSViewRepresentable {
         guard let textView = scrollView.documentView as? NSTextView else {
             return
         }
-
-        context.coordinator.text = $text
-        if textView.string != text {
-            let selection = textView.selectedRange()
-            textView.string = text
-            let textLength = textView.string.utf16.count
-            let selectionLocation = min(selection.location, textLength)
-            let selectionLength = min(
-                selection.length,
-                textLength - selectionLocation
-            )
-            textView.setSelectedRange(
-                NSRange(
-                    location: selectionLocation,
-                    length: selectionLength
-                )
-            )
-        }
-
-        if context.coordinator.textView !== textView {
-            context.coordinator.textView = textView
-        }
+        context.coordinator.textView = textView
+        context.coordinator.update(
+            text: $text,
+            documentURL: documentURL
+        )
         session.attach(context.coordinator)
     }
 
@@ -104,18 +92,17 @@ struct SourceTextEditor: NSViewRepresentable {
         _ scrollView: NSScrollView,
         coordinator: Coordinator
     ) {
-        guard let textView = scrollView.documentView
-            as? RichMarkdownTextView
-        else {
-            return
+        if let textView = scrollView.documentView as? RichMarkdownTextView {
+            textView.finishPendingComposition()
         }
-        textView.finishPendingComposition()
         coordinator.session?.detach(coordinator)
-        textView.delegate = nil
-        textView.compositionDidBegin = nil
-        textView.compositionDidCommit = nil
-        textView.markdownForRenderedRange = nil
-        textView.replaceSelectionWithMarkdown = nil
+        if let textView = scrollView.documentView as? RichMarkdownTextView {
+            textView.delegate = nil
+            textView.compositionDidBegin = nil
+            textView.compositionDidCommit = nil
+            textView.markdownForRenderedRange = nil
+            textView.replaceSelectionWithMarkdown = nil
+        }
         coordinator.textView = nil
     }
 
@@ -124,13 +111,23 @@ struct SourceTextEditor: NSViewRepresentable {
         MarkdownEditingSurface
     {
         var text: Binding<String>
+        var documentURL: URL?
         weak var session: MarkdownEditorSession?
         weak var textView: NSTextView?
-        private var isApplyingChange = false
-        private var compositionState: SourceCompositionState?
 
-        init(text: Binding<String>, session: MarkdownEditorSession) {
+        private var model = MarkdownRenderer.render("")
+        private var renderedSource = ""
+        private var renderedDocumentURL: URL?
+        private var isRendering = false
+        private var compositionState: CompositionState?
+
+        init(
+            text: Binding<String>,
+            documentURL: URL?,
+            session: MarkdownEditorSession
+        ) {
             self.text = text
+            self.documentURL = documentURL
             self.session = session
         }
 
@@ -142,11 +139,24 @@ struct SourceTextEditor: NSViewRepresentable {
             guard let textView else {
                 return NSRange(location: 0, length: 0)
             }
-            return textView.selectedRange()
+            return model.sourceRange(for: textView.selectedRange())
         }
 
         var hostingWindow: NSWindow? {
             textView?.window
+        }
+
+        func update(text: Binding<String>, documentURL: URL?) {
+            self.text = text
+            self.documentURL = documentURL
+            guard renderedSource != text.wrappedValue
+                || renderedDocumentURL != documentURL
+            else {
+                return
+            }
+
+            let selection = selectedSourceRange
+            render(sourceSelection: selection)
         }
 
         func apply(_ result: MarkdownEditResult, actionName: String) {
@@ -177,18 +187,12 @@ struct SourceTextEditor: NSViewRepresentable {
             guard let textView else {
                 return
             }
-            let length = (textView.string as NSString).length
-            let location = min(max(0, selection.location), length)
-            textView.setSelectedRange(
-                NSRange(
-                    location: location,
-                    length: min(
-                        max(0, selection.length),
-                        length - location
-                    )
-                )
+            let renderedSelection = clamped(
+                model.renderedRange(for: selection),
+                to: (textView.string as NSString).length
             )
-            textView.scrollRangeToVisible(textView.selectedRange())
+            textView.setSelectedRange(renderedSelection)
+            textView.scrollRangeToVisible(renderedSelection)
         }
 
         func focus() {
@@ -198,16 +202,34 @@ struct SourceTextEditor: NSViewRepresentable {
             textView.window?.makeFirstResponder(textView)
         }
 
+        func render(sourceSelection: NSRange) {
+            guard let textView else {
+                return
+            }
+
+            isRendering = true
+            model = MarkdownRenderer.render(text.wrappedValue)
+            let attributedText = RichMarkdownStyler.attributedString(
+                for: model,
+                documentURL: documentURL
+            )
+            textView.textStorage?.setAttributedString(attributedText)
+            renderedSource = text.wrappedValue
+            renderedDocumentURL = documentURL
+            setSourceSelection(sourceSelection)
+            isRendering = false
+        }
+
         func textView(
             _ textView: NSTextView,
             shouldChangeTextIn affectedCharRange: NSRange,
             replacementString: String?
         ) -> Bool {
-            guard !isApplyingChange else {
+            guard !isRendering else {
                 return true
             }
-            if let markdownTextView = textView as? RichMarkdownTextView,
-                markdownTextView.isUpdatingComposition
+            if let richTextView = textView as? RichMarkdownTextView,
+                richTextView.isUpdatingComposition
             {
                 return true
             }
@@ -215,40 +237,58 @@ struct SourceTextEditor: NSViewRepresentable {
                 return false
             }
 
-            replace(
-                range: affectedCharRange,
-                with: replacementString,
+            let sourceRange = model.sourceRange(
+                for: clamped(
+                    affectedCharRange,
+                    to: (textView.string as NSString).length
+                )
+            )
+            let replacement = replacementString
+            if replacement == "\n" {
+                if isInsideCodeBlock(sourceRange.location) {
+                    replaceSource(
+                        range: sourceRange,
+                        with: replacement,
+                        actionName: "Insert Newline"
+                    )
+                } else {
+                    apply(
+                        MarkdownFormatting.insertNewline(
+                            in: text.wrappedValue,
+                            selection: sourceRange
+                        ),
+                        actionName: "Insert Newline"
+                    )
+                }
+                return false
+            }
+
+            guard !replacement.contains("\u{FFFC}") else {
+                NSSound.beep()
+                return false
+            }
+            replaceSource(
+                range: sourceRange,
+                with: replacement,
                 actionName: "Edit"
             )
             return false
         }
 
-        func textDidChange(_ notification: Notification) {
-            guard !isApplyingChange,
-                !((notification.object as? RichMarkdownTextView)?
-                    .isUpdatingComposition ?? false)
-            else {
-                return
-            }
-            guard let textView = notification.object as? NSTextView else {
-                return
-            }
-            text.wrappedValue = textView.string
-        }
-
-        func beginComposition(replacing range: NSRange) {
+        func beginComposition(replacing renderedRange: NSRange) {
             guard let textView, compositionState == nil else {
                 return
             }
-            let safeRange = clamped(
-                range,
+            let safeRenderedRange = clamped(
+                renderedRange,
                 to: (textView.string as NSString).length
             )
-            compositionState = SourceCompositionState(
+            compositionState = CompositionState(
                 sourceText: text.wrappedValue,
-                sourceSelection: safeRange,
-                displayedText: textView.string,
-                displayedRange: safeRange
+                sourceSelection: model.sourceRange(for: safeRenderedRange),
+                renderedText: textView.string,
+                renderedRange: safeRenderedRange,
+                model: model
             )
         }
 
@@ -257,7 +297,8 @@ struct SourceTextEditor: NSViewRepresentable {
                 return
             }
             self.compositionState = nil
-            let oldText = compositionState.displayedText as NSString
+
+            let oldText = compositionState.renderedText as NSString
             let newText = textView.string as NSString
             if oldText.isEqual(to: newText as String) {
                 set(
@@ -271,7 +312,7 @@ struct SourceTextEditor: NSViewRepresentable {
             let difference = MarkdownTextDifference.replacement(
                 from: oldText as String,
                 to: newText as String,
-                replacing: compositionState.displayedRange
+                replacing: compositionState.renderedRange
             )
             guard !difference.replacement.contains("\u{FFFC}") else {
                 NSSound.beep()
@@ -283,22 +324,20 @@ struct SourceTextEditor: NSViewRepresentable {
                 )
                 return
             }
-
+            let sourceRange = compositionState.model.sourceRange(
+                for: difference.range
+            )
             let mutableSource = NSMutableString(
                 string: compositionState.sourceText
             )
-            let range = clamped(
-                difference.range,
-                to: mutableSource.length
-            )
             mutableSource.replaceCharacters(
-                in: range,
+                in: clamped(sourceRange, to: mutableSource.length),
                 with: difference.replacement
             )
             let result = MarkdownEditResult(
                 text: mutableSource as String,
                 selection: NSRange(
-                    location: range.location
+                    location: sourceRange.location
                         + (difference.replacement as NSString).length,
                     length: 0
                 )
@@ -316,25 +355,32 @@ struct SourceTextEditor: NSViewRepresentable {
             }
         }
 
-        func markdown(in range: NSRange) -> String {
+        func markdown(forRenderedRange range: NSRange) -> String {
             let source = text.wrappedValue as NSString
-            return source.substring(
-                with: clamped(range, to: source.length)
+            let sourceRange = clamped(
+                model.sourceRange(for: range, includingMarkup: true),
+                to: source.length
             )
+            return source.substring(with: sourceRange)
         }
 
         func replaceSelection(
-            with replacement: String,
+            withMarkdown markdown: String,
             actionName: String
         ) {
-            replace(
+            replaceSource(
                 range: selectedSourceRange,
-                with: replacement,
+                with: markdown,
                 actionName: actionName
             )
         }
 
-        private func replace(
+        private func set(_ state: MarkdownEditResult) {
+            text.wrappedValue = state.text
+            render(sourceSelection: state.selection)
+        }
+
+        private func replaceSource(
             range: NSRange,
             with replacement: String,
             actionName: String
@@ -343,12 +389,15 @@ struct SourceTextEditor: NSViewRepresentable {
                 NSSound.beep()
                 return
             }
-            let source = NSMutableString(string: text.wrappedValue)
-            let safeRange = clamped(range, to: source.length)
-            source.replaceCharacters(in: safeRange, with: replacement)
+            let mutableSource = NSMutableString(string: text.wrappedValue)
+            let safeRange = clamped(range, to: mutableSource.length)
+            mutableSource.replaceCharacters(
+                in: safeRange,
+                with: replacement
+            )
             apply(
                 MarkdownEditResult(
-                    text: source as String,
+                    text: mutableSource as String,
                     selection: NSRange(
                         location: safeRange.location
                             + (replacement as NSString).length,
@@ -359,12 +408,14 @@ struct SourceTextEditor: NSViewRepresentable {
             )
         }
 
-        private func set(_ result: MarkdownEditResult) {
-            isApplyingChange = true
-            text.wrappedValue = result.text
-            textView?.string = result.text
-            setSourceSelection(result.selection)
-            isApplyingChange = false
+        private func isInsideCodeBlock(_ sourceOffset: Int) -> Bool {
+            model.spans.contains { span in
+                guard case .codeBlock = span.style else {
+                    return false
+                }
+                return sourceOffset >= span.sourceRange.location
+                    && sourceOffset <= NSMaxRange(span.sourceRange)
+            }
         }
 
         private func clamped(_ range: NSRange, to length: Int) -> NSRange {
@@ -375,11 +426,12 @@ struct SourceTextEditor: NSViewRepresentable {
             )
         }
     }
-}
 
-private struct SourceCompositionState {
-    let sourceText: String
-    let sourceSelection: NSRange
-    let displayedText: String
-    let displayedRange: NSRange
+    private struct CompositionState {
+        let sourceText: String
+        let sourceSelection: NSRange
+        let renderedText: String
+        let renderedRange: NSRange
+        let model: MarkdownRenderModel
+    }
 }
