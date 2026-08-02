@@ -66,10 +66,17 @@ The raw Markdown pane keeps every source marker visible but displays headings,
 body paragraphs, and fenced code at the same representative point sizes used
 by the Preview, keeping the two documents' vertical proportions closer.
 
-Use the toolbar palette or **Markdown > Color Theme** to switch the entire
-workspace between persistent Light, Dark, and Beige themes. Beige uses a warm
-background with black document text; each theme also updates the explorer,
-source editor, Preview, inline code, and fenced code blocks.
+The toolbar palette button opens a **Customize Theme** popover modeled on the
+theme selector at [kirupa.com](https://www.kirupa.com/): eight color choices
+(Blue, Yellow, Pink, Green, Purple, Pico-8, Black, and Brown), a Light/Dark
+background toggle, a live preview, and explicit **Apply** and **Cancel**
+buttons. Nothing changes until you press Apply; Cancel (or `Escape`) discards
+the draft. The color values are transcribed from the site's `:root`,
+`html.theme_<color>`, `html.theme_dark`, and `html.theme_<color>_dark` custom
+properties, with sidebar tints softened and selection text picked for contrast.
+**Markdown > Theme Color** and **Markdown > Background** apply the same choices
+immediately from the menu bar. The selection persists app-wide and updates the
+explorer, source editor, Preview, inline code, and fenced code blocks.
 
 Toolbar icons and the **Markdown** menu provide paragraph and heading levels,
 bold, italic, underline (`<u>...</u>`), strikethrough, bulleted, numbered, and

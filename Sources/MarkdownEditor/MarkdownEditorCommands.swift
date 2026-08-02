@@ -51,15 +51,31 @@ struct MarkdownEditorCommands: Commands {
             }
             .disabled(session == nil)
 
-            Menu("Color Theme") {
-                ForEach(EditorColorTheme.allCases) { theme in
+            Menu("Theme Color") {
+                ForEach(EditorThemeColor.allCases) { themeColor in
                     Button {
-                        colorThemeSelection?.wrappedValue = theme
+                        colorThemeSelection?.wrappedValue.color = themeColor
                     } label: {
-                        if colorThemeSelection?.wrappedValue == theme {
-                            Label(theme.title, systemImage: "checkmark")
+                        if colorThemeSelection?.wrappedValue.color
+                            == themeColor {
+                            Label(themeColor.title, systemImage: "checkmark")
                         } else {
-                            Text(theme.title)
+                            Text(themeColor.title)
+                        }
+                    }
+                }
+                .disabled(colorThemeSelection == nil)
+            }
+
+            Menu("Background") {
+                ForEach(EditorAppearanceMode.allCases) { mode in
+                    Button {
+                        colorThemeSelection?.wrappedValue.mode = mode
+                    } label: {
+                        if colorThemeSelection?.wrappedValue.mode == mode {
+                            Label(mode.title, systemImage: "checkmark")
+                        } else {
+                            Text(mode.title)
                         }
                     }
                 }

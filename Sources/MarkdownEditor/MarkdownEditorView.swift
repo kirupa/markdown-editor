@@ -9,30 +9,40 @@ struct MarkdownEditorView: View {
     @State private var explorerWidth = Layout.defaultExplorerWidth
     @State private var dragStartExplorerWidth: CGFloat?
     @State private var previewWidth = Layout.defaultPreviewWidth
-    @Binding private var colorThemeRawValue: String
+    @Binding private var themeColorRawValue: String
+    @Binding private var appearanceModeRawValue: String
     private let fileURL: URL?
 
     init(
         document: Binding<MarkdownDocument>,
         fileURL: URL?,
-        colorThemeRawValue: Binding<String>
+        themeColorRawValue: Binding<String>,
+        appearanceModeRawValue: Binding<String>
     ) {
         _document = document
         _session = StateObject(
             wrappedValue: MarkdownEditorSession(fileURL: fileURL)
         )
-        _colorThemeRawValue = colorThemeRawValue
+        _themeColorRawValue = themeColorRawValue
+        _appearanceModeRawValue = appearanceModeRawValue
         self.fileURL = fileURL
     }
 
     private var colorTheme: EditorColorTheme {
-        EditorColorTheme(rawValue: colorThemeRawValue) ?? .systemDefault
+        EditorColorTheme(
+            color: EditorThemeColor(rawValue: themeColorRawValue) ?? .blue,
+            mode: EditorAppearanceMode(rawValue: appearanceModeRawValue)
+                ?? .systemDefault
+        )
     }
 
     private var colorThemeSelection: Binding<EditorColorTheme> {
         Binding(
             get: { colorTheme },
-            set: { colorThemeRawValue = $0.rawValue }
+            set: { newTheme in
+                themeColorRawValue = newTheme.color.rawValue
+                appearanceModeRawValue = newTheme.mode.rawValue
+            }
         )
     }
 

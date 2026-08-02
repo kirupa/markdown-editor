@@ -3,6 +3,7 @@ import SwiftUI
 struct MarkdownFormattingToolbar: ToolbarContent {
     @ObservedObject var session: MarkdownEditorSession
     @Binding var colorTheme: EditorColorTheme
+    @State private var isThemePickerPresented = false
 
     var body: some ToolbarContent {
         ToolbarItem(placement: .navigation) {
@@ -24,23 +25,21 @@ struct MarkdownFormattingToolbar: ToolbarContent {
         }
 
         ToolbarItem {
-            Menu {
-                ForEach(EditorColorTheme.allCases) { theme in
-                    Button {
-                        colorTheme = theme
-                    } label: {
-                        Image(
-                            nsImage: theme.menuPreviewImage(
-                                isSelected: colorTheme == theme
-                            )
-                        )
-                        .accessibilityLabel(theme.title)
-                    }
-                }
+            Button {
+                isThemePickerPresented = true
             } label: {
-                Label("Color Theme", systemImage: "paintpalette")
+                Label("Customize Theme", systemImage: "paintpalette")
             }
-            .help("Choose Light, Dark, or Beige colors")
+            .help("Choose a kirupa.com color and a light or dark background")
+            .popover(
+                isPresented: $isThemePickerPresented,
+                arrowEdge: .bottom
+            ) {
+                ThemePickerPopover(
+                    colorTheme: $colorTheme,
+                    isPresented: $isThemePickerPresented
+                )
+            }
         }
 
         ToolbarItem {
