@@ -19,6 +19,7 @@ final class MarkdownEditorSession: ObservableObject {
     private var attachedEditors: [WeakEditingSurface] = []
     private var rememberedSelection = NSRange(location: 0, length: 0)
     private var isSynchronizingScroll = false
+    private var isSynchronizingSelection = false
 
     init(
         fileURL: URL?,
@@ -71,6 +72,7 @@ final class MarkdownEditorSession: ObservableObject {
             editor.setNormalizedScrollPosition(
                 activeEditor.normalizedScrollPosition
             )
+            editor.setSynchronizedSourceSelection(rememberedSelection)
         }
     }
 
@@ -96,6 +98,29 @@ final class MarkdownEditorSession: ObservableObject {
         where !sameEditor(attachedEditor, editor) {
             attachedEditor.setNormalizedScrollPosition(position)
         }
+    }
+
+    func synchronizeSelection(
+        from editor: any MarkdownEditingSurface,
+        selection: NSRange
+    ) {
+        rememberedSelection = selection
+        guard viewMode == .split, !isSynchronizingSelection else {
+            return
+        }
+
+        isSynchronizingSelection = true
+        defer {
+            isSynchronizingSelection = false
+        }
+        for attachedEditor in liveEditors()
+        where !sameEditor(attachedEditor, editor) {
+            attachedEditor.setSynchronizedSourceSelection(selection)
+        }
+    }
+
+    func selectionForEditorUpdate(fallback: NSRange) -> NSRange {
+        viewMode == .split ? rememberedSelection : fallback
     }
 
     func detach(_ editor: any MarkdownEditingSurface) {

@@ -34,6 +34,7 @@ protocol MarkdownEditingSurface: AnyObject {
     func restore(_ result: MarkdownEditResult)
     func commitPendingComposition()
     func setSourceSelection(_ selection: NSRange)
+    func setSynchronizedSourceSelection(_ selection: NSRange)
     func setNormalizedScrollPosition(_ position: CGFloat)
     func focus()
 }
@@ -117,6 +118,15 @@ final class EditorScrollSynchronizer: NSObject {
             )
         )
         scrollView.reflectScrolledClipView(clipView)
+    }
+
+    func withoutPublishingScroll(_ action: () -> Void) {
+        let wasApplyingPosition = isApplyingPosition
+        isApplyingPosition = true
+        defer {
+            isApplyingPosition = wasApplyingPosition
+        }
+        action()
     }
 
     @objc

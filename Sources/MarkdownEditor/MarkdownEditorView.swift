@@ -73,21 +73,21 @@ struct MarkdownEditorView: View {
                         )
                     case .split:
                         HSplitView {
-                            SourceTextEditor(
-                                text: $document.text,
-                                session: session
-                            )
-                            .frame(
-                                minWidth: Layout.minimumSplitPaneWidth,
-                                maxWidth: .infinity
-                            )
-
                             ResizableRichTextPreview(
                                 text: $document.text,
                                 documentURL: fileURL,
                                 session: session,
                                 preferredWidth: $previewWidth,
                                 minimumWidth: Layout.minimumSplitPreviewWidth
+                            )
+                            .frame(
+                                minWidth: Layout.minimumSplitPaneWidth,
+                                maxWidth: .infinity
+                            )
+
+                            SourceTextEditor(
+                                text: $document.text,
+                                session: session
                             )
                             .frame(
                                 minWidth: Layout.minimumSplitPaneWidth,

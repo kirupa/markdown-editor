@@ -79,25 +79,37 @@ struct SourceTextEditor: NSViewRepresentable {
 
         context.coordinator.text = $text
         if textView.string != text {
-            let scrollPosition = context.coordinator
-                .normalizedScrollPosition
-            let selection = textView.selectedRange()
+            let isSplit = session.viewMode == .split
+            let fallbackSelection = textView.selectedRange()
+            let selection = session.selectionForEditorUpdate(
+                fallback: fallbackSelection
+            )
+            let scrollPosition = context.coordinator.normalizedScrollPosition
             textView.string = text
-            let textLength = textView.string.utf16.count
-            let selectionLocation = min(selection.location, textLength)
-            let selectionLength = min(
-                selection.length,
-                textLength - selectionLocation
-            )
-            textView.setSelectedRange(
-                NSRange(
-                    location: selectionLocation,
-                    length: selectionLength
+            if isSplit {
+                context.coordinator.setSynchronizedSourceSelection(
+                    selection
                 )
-            )
-            context.coordinator.setNormalizedScrollPosition(
-                scrollPosition
-            )
+            } else {
+                let textLength = textView.string.utf16.count
+                let selectionLocation = min(
+                    selection.location,
+                    textLength
+                )
+                let selectionLength = min(
+                    selection.length,
+                    textLength - selectionLocation
+                )
+                textView.setSelectedRange(
+                    NSRange(
+                        location: selectionLocation,
+                        length: selectionLength
+                    )
+                )
+                context.coordinator.setNormalizedScrollPosition(
+                    scrollPosition
+                )
+            }
         }
 
         if context.coordinator.textView !== textView {
@@ -208,7 +220,19 @@ struct SourceTextEditor: NSViewRepresentable {
         }
 
         func setSourceSelection(_ selection: NSRange) {
-            setSourceSelection(selection, scrollToSelection: true)
+            setSourceSelection(
+                selection,
+                scrollToSelection: true,
+                publishesScroll: true
+            )
+        }
+
+        func setSynchronizedSourceSelection(_ selection: NSRange) {
+            setSourceSelection(
+                selection,
+                scrollToSelection: true,
+                publishesScroll: false
+            )
         }
 
         func setNormalizedScrollPosition(_ position: CGFloat) {
@@ -217,7 +241,8 @@ struct SourceTextEditor: NSViewRepresentable {
 
         private func setSourceSelection(
             _ selection: NSRange,
-            scrollToSelection: Bool
+            scrollToSelection: Bool,
+            publishesScroll: Bool = true
         ) {
             guard let textView else {
                 return
@@ -234,7 +259,18 @@ struct SourceTextEditor: NSViewRepresentable {
                 )
             )
             if scrollToSelection {
-                textView.scrollRangeToVisible(textView.selectedRange())
+                let revealSelection = {
+                    textView.scrollRangeToVisible(
+                        textView.selectedRange()
+                    )
+                }
+                if publishesScroll {
+                    revealSelection()
+                } else {
+                    scrollSynchronizer.withoutPublishingScroll(
+                        revealSelection
+                    )
+                }
             }
         }
 
@@ -252,6 +288,10 @@ struct SourceTextEditor: NSViewRepresentable {
         func textViewDidChangeSelection(_ notification: Notification) {
             if hasFocus {
                 session?.activate(self)
+                session?.synchronizeSelection(
+                    from: self,
+                    selection: selectedSourceRange
+                )
             }
         }
 
@@ -421,11 +461,18 @@ struct SourceTextEditor: NSViewRepresentable {
             isApplyingChange = true
             text.wrappedValue = result.text
             textView?.string = result.text
-            setSourceSelection(
-                result.selection,
-                scrollToSelection: false
-            )
-            setNormalizedScrollPosition(scrollPosition)
+            if session?.viewMode == .split {
+                setSourceSelection(
+                    result.selection,
+                    scrollToSelection: true
+                )
+            } else {
+                setSourceSelection(
+                    result.selection,
+                    scrollToSelection: false
+                )
+                setNormalizedScrollPosition(scrollPosition)
+            }
             isApplyingChange = false
         }
 

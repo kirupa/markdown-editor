@@ -188,13 +188,24 @@ struct RichTextEditor: NSViewRepresentable {
                 return
             }
 
-            let selection = selectedSourceRange
-            let scrollPosition = normalizedScrollPosition
-            render(
-                sourceSelection: selection,
-                scrollToSelection: false
-            )
-            setNormalizedScrollPosition(scrollPosition)
+            let fallbackSelection = selectedSourceRange
+            let selection = session?.selectionForEditorUpdate(
+                fallback: fallbackSelection
+            ) ?? fallbackSelection
+            if session?.viewMode == .split {
+                render(
+                    sourceSelection: selection,
+                    scrollToSelection: true,
+                    publishesScroll: false
+                )
+            } else {
+                let scrollPosition = normalizedScrollPosition
+                render(
+                    sourceSelection: selection,
+                    scrollToSelection: false
+                )
+                setNormalizedScrollPosition(scrollPosition)
+            }
         }
 
         func apply(_ result: MarkdownEditResult, actionName: String) {
@@ -222,7 +233,19 @@ struct RichTextEditor: NSViewRepresentable {
         }
 
         func setSourceSelection(_ selection: NSRange) {
-            setSourceSelection(selection, scrollToSelection: true)
+            setSourceSelection(
+                selection,
+                scrollToSelection: true,
+                publishesScroll: true
+            )
+        }
+
+        func setSynchronizedSourceSelection(_ selection: NSRange) {
+            setSourceSelection(
+                selection,
+                scrollToSelection: true,
+                publishesScroll: false
+            )
         }
 
         func setNormalizedScrollPosition(_ position: CGFloat) {
@@ -231,7 +254,8 @@ struct RichTextEditor: NSViewRepresentable {
 
         private func setSourceSelection(
             _ selection: NSRange,
-            scrollToSelection: Bool
+            scrollToSelection: Bool,
+            publishesScroll: Bool = true
         ) {
             guard let textView else {
                 return
@@ -242,7 +266,16 @@ struct RichTextEditor: NSViewRepresentable {
             )
             textView.setSelectedRange(renderedSelection)
             if scrollToSelection {
-                textView.scrollRangeToVisible(renderedSelection)
+                let revealSelection = {
+                    textView.scrollRangeToVisible(renderedSelection)
+                }
+                if publishesScroll {
+                    revealSelection()
+                } else {
+                    scrollSynchronizer.withoutPublishingScroll(
+                        revealSelection
+                    )
+                }
             }
         }
 
@@ -255,7 +288,8 @@ struct RichTextEditor: NSViewRepresentable {
 
         func render(
             sourceSelection: NSRange,
-            scrollToSelection: Bool = true
+            scrollToSelection: Bool = true,
+            publishesScroll: Bool = true
         ) {
             guard let textView else {
                 return
@@ -272,7 +306,8 @@ struct RichTextEditor: NSViewRepresentable {
             renderedDocumentURL = documentURL
             setSourceSelection(
                 sourceSelection,
-                scrollToSelection: scrollToSelection
+                scrollToSelection: scrollToSelection,
+                publishesScroll: publishesScroll
             )
             isRendering = false
         }
@@ -284,6 +319,10 @@ struct RichTextEditor: NSViewRepresentable {
         func textViewDidChangeSelection(_ notification: Notification) {
             if hasFocus {
                 session?.activate(self)
+                session?.synchronizeSelection(
+                    from: self,
+                    selection: selectedSourceRange
+                )
             }
         }
 
@@ -443,13 +482,20 @@ struct RichTextEditor: NSViewRepresentable {
         }
 
         private func set(_ state: MarkdownEditResult) {
-            let scrollPosition = normalizedScrollPosition
             text.wrappedValue = state.text
-            render(
-                sourceSelection: state.selection,
-                scrollToSelection: false
-            )
-            setNormalizedScrollPosition(scrollPosition)
+            if session?.viewMode == .split {
+                render(
+                    sourceSelection: state.selection,
+                    scrollToSelection: true
+                )
+            } else {
+                let scrollPosition = normalizedScrollPosition
+                render(
+                    sourceSelection: state.selection,
+                    scrollToSelection: false
+                )
+                setNormalizedScrollPosition(scrollPosition)
+            }
         }
 
         private func replaceSource(
