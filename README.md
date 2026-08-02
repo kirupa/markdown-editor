@@ -37,13 +37,14 @@ PNG, JPEG, GIF, WebP, TIFF, BMP, HEIC, HEIF, and SVG.
 ## File explorer
 
 The left sidebar follows the saved document's folder by default. Its top
-dropdown shows the absolute folder path and lets you move to any ancestor
-through the filesystem root. Expand folders lazily, double-click a Markdown
-file to open it in the editor, or double-click another file type to open it
-with its system application. Use **Choose Folder** in the dropdown or
-**File > Open Folder** (`Option-Command-O`) to browse a different root; use the
-refresh button after external filesystem changes. Hidden files are omitted,
-and packages and symbolic links are never traversed.
+dropdown shows the current folder name. The menu lists one folder name per row
+from `/` through the current folder, and selecting any row moves the explorer
+to that ancestor. Expand folders lazily, double-click a Markdown file to open
+it in the editor, or double-click another file type to open it with its system
+application. Use **Choose Folder** in the dropdown or **File > Open Folder**
+(`Option-Command-O`) to browse a different root; use the refresh button after
+external filesystem changes. Hidden files are omitted, and packages and
+symbolic links are never traversed.
 
 ## Editing modes and formatting
 

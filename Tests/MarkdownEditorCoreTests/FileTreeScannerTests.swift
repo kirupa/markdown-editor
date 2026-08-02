@@ -111,8 +111,8 @@ struct FileTreeScannerTests {
         )
     }
 
-    @Test("Directory ancestors reach the filesystem root")
-    func directoryAncestorsReachRoot() {
+    @Test("Directory ancestors run from root to selected folder")
+    func directoryAncestorsRunFromRoot() {
         let ancestors = FileTreeScanner.ancestorDirectories(
             startingAt: URL(fileURLWithPath: "/Users/example/Documents")
         )
@@ -120,10 +120,10 @@ struct FileTreeScannerTests {
         #expect(
             ancestors.map(\.path)
                 == [
-                    "/Users/example/Documents",
-                    "/Users/example",
+                    "/",
                     "/Users",
-                    "/"
+                    "/Users/example",
+                    "/Users/example/Documents"
                 ]
         )
         #expect(

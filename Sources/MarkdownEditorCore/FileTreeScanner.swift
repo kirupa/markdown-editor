@@ -102,7 +102,7 @@ public struct FileTreeScanner {
             let parentURL = currentURL.deletingLastPathComponent()
                 .standardizedFileURL
             guard parentURL.path != currentURL.path else {
-                return ancestors
+                return Array(ancestors.reversed())
             }
             currentURL = parentURL
         }

@@ -58,7 +58,7 @@ struct FileExplorerSidebar: View {
                         model.setUserSelectedRoot(url)
                     } label: {
                         Label(
-                            url.path,
+                            model.folderName(for: url),
                             systemImage: url == model.rootURL
                                 ? "checkmark"
                                 : "folder"
@@ -77,7 +77,7 @@ struct FileExplorerSidebar: View {
                 HStack(spacing: 6) {
                     Image(systemName: "folder")
                         .foregroundStyle(.secondary)
-                    Text(model.displayedPath)
+                    Text(model.displayedFolderName)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Spacer(minLength: 0)

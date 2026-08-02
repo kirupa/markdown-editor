@@ -28,12 +28,16 @@ final class FileExplorerModel: ObservableObject {
         followsDocumentDirectory = documentURL != nil
     }
 
-    var displayedPath: String {
-        rootURL?.path ?? "No Folder"
+    var displayedFolderName: String {
+        rootURL.map { folderName(for: $0) } ?? "No Folder"
     }
 
     var ancestorURLs: [URL] {
         rootURL.map(FileTreeScanner.ancestorDirectories(startingAt:)) ?? []
+    }
+
+    func folderName(for url: URL) -> String {
+        url.lastPathComponent.isEmpty ? url.path : url.lastPathComponent
     }
 
     func followDocument(_ documentURL: URL?) {
