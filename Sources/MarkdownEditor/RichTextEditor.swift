@@ -53,6 +53,7 @@ struct RichTextEditor: NSViewRepresentable {
         scrollView.autohidesScrollers = true
 
         context.coordinator.textView = textView
+        context.coordinator.observeScrolling(in: scrollView)
         textView.compositionDidBegin = {
             [weak coordinator = context.coordinator] range in
             coordinator?.beginComposition(replacing: range)
@@ -107,6 +108,7 @@ struct RichTextEditor: NSViewRepresentable {
             textView.markdownForRenderedRange = nil
             textView.replaceSelectionWithMarkdown = nil
         }
+        coordinator.stopObservingScrolling()
         coordinator.textView = nil
     }
 
@@ -124,6 +126,7 @@ struct RichTextEditor: NSViewRepresentable {
         private var renderedDocumentURL: URL?
         private var isRendering = false
         private var compositionState: CompositionState?
+        private let scrollSynchronizer = EditorScrollSynchronizer()
 
         init(
             text: Binding<String>,
@@ -157,6 +160,25 @@ struct RichTextEditor: NSViewRepresentable {
             return textView.window?.firstResponder === textView
         }
 
+        var normalizedScrollPosition: CGFloat {
+            scrollSynchronizer.normalizedPosition
+        }
+
+        func observeScrolling(in scrollView: NSScrollView) {
+            scrollSynchronizer.attach(to: scrollView)
+            scrollSynchronizer.didScroll = { [weak self] position in
+                guard let self else {
+                    return
+                }
+                session?.synchronizeScroll(from: self, position: position)
+            }
+        }
+
+        func stopObservingScrolling() {
+            scrollSynchronizer.didScroll = nil
+            scrollSynchronizer.detach()
+        }
+
         func update(text: Binding<String>, documentURL: URL?) {
             self.text = text
             self.documentURL = documentURL
@@ -167,7 +189,12 @@ struct RichTextEditor: NSViewRepresentable {
             }
 
             let selection = selectedSourceRange
-            render(sourceSelection: selection)
+            let scrollPosition = normalizedScrollPosition
+            render(
+                sourceSelection: selection,
+                scrollToSelection: false
+            )
+            setNormalizedScrollPosition(scrollPosition)
         }
 
         func apply(_ result: MarkdownEditResult, actionName: String) {
@@ -195,6 +222,17 @@ struct RichTextEditor: NSViewRepresentable {
         }
 
         func setSourceSelection(_ selection: NSRange) {
+            setSourceSelection(selection, scrollToSelection: true)
+        }
+
+        func setNormalizedScrollPosition(_ position: CGFloat) {
+            scrollSynchronizer.setNormalizedPosition(position)
+        }
+
+        private func setSourceSelection(
+            _ selection: NSRange,
+            scrollToSelection: Bool
+        ) {
             guard let textView else {
                 return
             }
@@ -203,7 +241,9 @@ struct RichTextEditor: NSViewRepresentable {
                 to: (textView.string as NSString).length
             )
             textView.setSelectedRange(renderedSelection)
-            textView.scrollRangeToVisible(renderedSelection)
+            if scrollToSelection {
+                textView.scrollRangeToVisible(renderedSelection)
+            }
         }
 
         func focus() {
@@ -213,7 +253,10 @@ struct RichTextEditor: NSViewRepresentable {
             textView.window?.makeFirstResponder(textView)
         }
 
-        func render(sourceSelection: NSRange) {
+        func render(
+            sourceSelection: NSRange,
+            scrollToSelection: Bool = true
+        ) {
             guard let textView else {
                 return
             }
@@ -227,7 +270,10 @@ struct RichTextEditor: NSViewRepresentable {
             textView.textStorage?.setAttributedString(attributedText)
             renderedSource = text.wrappedValue
             renderedDocumentURL = documentURL
-            setSourceSelection(sourceSelection)
+            setSourceSelection(
+                sourceSelection,
+                scrollToSelection: scrollToSelection
+            )
             isRendering = false
         }
 
@@ -397,8 +443,13 @@ struct RichTextEditor: NSViewRepresentable {
         }
 
         private func set(_ state: MarkdownEditResult) {
+            let scrollPosition = normalizedScrollPosition
             text.wrappedValue = state.text
-            render(sourceSelection: state.selection)
+            render(
+                sourceSelection: state.selection,
+                scrollToSelection: false
+            )
+            setNormalizedScrollPosition(scrollPosition)
         }
 
         private func replaceSource(

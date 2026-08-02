@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 
 @MainActor
 final class MarkdownEditorSession: ObservableObject {
-    @Published private(set) var viewMode: EditorViewMode = .rich
+    @Published private(set) var viewMode: EditorViewMode = .split
 
     @Published var fileURL: URL? {
         didSet {
@@ -18,6 +18,7 @@ final class MarkdownEditorSession: ObservableObject {
     private weak var activeEditor: (any MarkdownEditingSurface)?
     private var attachedEditors: [WeakEditingSurface] = []
     private var rememberedSelection = NSRange(location: 0, length: 0)
+    private var isSynchronizingScroll = false
 
     init(
         fileURL: URL?,
@@ -62,12 +63,39 @@ final class MarkdownEditorSession: ObservableObject {
         } else if editor.hasFocus {
             activeEditor = editor
         }
+
+        if viewMode == .split,
+            let activeEditor,
+            !sameEditor(activeEditor, editor)
+        {
+            editor.setNormalizedScrollPosition(
+                activeEditor.normalizedScrollPosition
+            )
+        }
     }
 
     func activate(_ editor: any MarkdownEditingSurface) {
         attach(editor)
         activeEditor = editor
         rememberedSelection = editor.selectedSourceRange
+    }
+
+    func synchronizeScroll(
+        from editor: any MarkdownEditingSurface,
+        position: CGFloat
+    ) {
+        guard viewMode == .split, !isSynchronizingScroll else {
+            return
+        }
+
+        isSynchronizingScroll = true
+        defer {
+            isSynchronizingScroll = false
+        }
+        for attachedEditor in liveEditors()
+        where !sameEditor(attachedEditor, editor) {
+            attachedEditor.setNormalizedScrollPosition(position)
+        }
     }
 
     func detach(_ editor: any MarkdownEditingSurface) {

@@ -51,10 +51,12 @@ files are omitted, and packages and symbolic links are never traversed.
 
 The toolbar's **Rich Text / Markdown / Split** control switches between an
 editable rendered document, its exact Markdown source, and both panes side by
-side. Split mode keeps both editors synchronized, applies formatting to the
-focused pane, and has a draggable center divider. All modes preserve the
-current selection when switching. Markdown that the rendered editor does not
-recognize remains visible as literal text rather than being discarded.
+side. Split is the default mode. It keeps both editors synchronized, mirrors
+scrolling between them, applies formatting to the focused pane, and has a
+draggable center divider. Edits preserve the shared scroll position while the
+other pane reflows. All modes preserve the current selection when switching.
+Markdown that the rendered editor does not recognize remains visible as
+literal text rather than being discarded.
 
 Toolbar icons and the **Markdown** menu provide paragraph and heading levels,
 bold, italic, underline (`<u>...</u>`), strikethrough, bulleted, numbered, and

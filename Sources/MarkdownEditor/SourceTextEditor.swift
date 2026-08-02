@@ -48,6 +48,7 @@ struct SourceTextEditor: NSViewRepresentable {
         scrollView.autohidesScrollers = true
 
         context.coordinator.textView = textView
+        context.coordinator.observeScrolling(in: scrollView)
         textView.compositionDidBegin = {
             [weak coordinator = context.coordinator] range in
             coordinator?.beginComposition(replacing: range)
@@ -78,6 +79,8 @@ struct SourceTextEditor: NSViewRepresentable {
 
         context.coordinator.text = $text
         if textView.string != text {
+            let scrollPosition = context.coordinator
+                .normalizedScrollPosition
             let selection = textView.selectedRange()
             textView.string = text
             let textLength = textView.string.utf16.count
@@ -91,6 +94,9 @@ struct SourceTextEditor: NSViewRepresentable {
                     location: selectionLocation,
                     length: selectionLength
                 )
+            )
+            context.coordinator.setNormalizedScrollPosition(
+                scrollPosition
             )
         }
 
@@ -111,6 +117,7 @@ struct SourceTextEditor: NSViewRepresentable {
         }
         textView.finishPendingComposition()
         coordinator.session?.detach(coordinator)
+        coordinator.stopObservingScrolling()
         textView.delegate = nil
         textView.compositionDidBegin = nil
         textView.compositionDidCommit = nil
@@ -128,6 +135,7 @@ struct SourceTextEditor: NSViewRepresentable {
         weak var textView: NSTextView?
         private var isApplyingChange = false
         private var compositionState: SourceCompositionState?
+        private let scrollSynchronizer = EditorScrollSynchronizer()
 
         init(text: Binding<String>, session: MarkdownEditorSession) {
             self.text = text
@@ -156,6 +164,25 @@ struct SourceTextEditor: NSViewRepresentable {
             return textView.window?.firstResponder === textView
         }
 
+        var normalizedScrollPosition: CGFloat {
+            scrollSynchronizer.normalizedPosition
+        }
+
+        func observeScrolling(in scrollView: NSScrollView) {
+            scrollSynchronizer.attach(to: scrollView)
+            scrollSynchronizer.didScroll = { [weak self] position in
+                guard let self else {
+                    return
+                }
+                session?.synchronizeScroll(from: self, position: position)
+            }
+        }
+
+        func stopObservingScrolling() {
+            scrollSynchronizer.didScroll = nil
+            scrollSynchronizer.detach()
+        }
+
         func apply(_ result: MarkdownEditResult, actionName: String) {
             let previousState = MarkdownEditResult(
                 text: text.wrappedValue,
@@ -181,6 +208,17 @@ struct SourceTextEditor: NSViewRepresentable {
         }
 
         func setSourceSelection(_ selection: NSRange) {
+            setSourceSelection(selection, scrollToSelection: true)
+        }
+
+        func setNormalizedScrollPosition(_ position: CGFloat) {
+            scrollSynchronizer.setNormalizedPosition(position)
+        }
+
+        private func setSourceSelection(
+            _ selection: NSRange,
+            scrollToSelection: Bool
+        ) {
             guard let textView else {
                 return
             }
@@ -195,7 +233,9 @@ struct SourceTextEditor: NSViewRepresentable {
                     )
                 )
             )
-            textView.scrollRangeToVisible(textView.selectedRange())
+            if scrollToSelection {
+                textView.scrollRangeToVisible(textView.selectedRange())
+            }
         }
 
         func focus() {
@@ -377,10 +417,15 @@ struct SourceTextEditor: NSViewRepresentable {
         }
 
         private func set(_ result: MarkdownEditResult) {
+            let scrollPosition = normalizedScrollPosition
             isApplyingChange = true
             text.wrappedValue = result.text
             textView?.string = result.text
-            setSourceSelection(result.selection)
+            setSourceSelection(
+                result.selection,
+                scrollToSelection: false
+            )
+            setNormalizedScrollPosition(scrollPosition)
             isApplyingChange = false
         }
 
