@@ -54,6 +54,14 @@ final class WelcomeWindowController: NSObject {
         welcomeWindow.makeKeyAndOrderFront(nil)
     }
 
+    var isVisible: Bool {
+        window?.isVisible ?? false
+    }
+
+    func owns(_ candidate: NSWindow) -> Bool {
+        candidate === window
+    }
+
     func close() {
         window?.close()
     }

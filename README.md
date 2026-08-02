@@ -114,18 +114,30 @@ before anything is on screen.
 | ID | Requirement |
 | --- | --- |
 | W-1 | On a plain launch with nothing to restore, nothing opened from Finder, and no document handed over by another app, the welcome window is shown and centered. |
-| W-2 | The welcome window is **not** shown when the app is launched by opening a document, or when macOS restores previously open documents. Those launches go straight to the document. |
+| W-2 | The welcome window is **not** shown when the app is launched by opening a document, or when macOS restores previously open documents. Those launches go straight to the document, with no momentary appearance of the welcome window. |
 | W-3 | Clicking the Dock icon while the app is running with no visible windows shows the welcome window. |
 | W-4 | **Window ▸ Welcome to Markdown Editor** shows it at any time, including alongside open documents. |
 | W-5 | A **Show this window at launch** checkbox controls W-1. Unchecking it restores the standard macOS launch behavior for document apps. The setting persists in `showsWelcomeWindowAtLaunch` and defaults to on. |
 
-Two AppKit launch paths are covered, because the system picks between them:
-the classic untitled-document path via `applicationOpenUntitledFile(_:)`, and
-the newer app-centric Open panel that recent macOS releases raise on behalf of
-`DocumentGroup` without consulting the delegate. In the second case the panel is
-dismissed during `applicationDidFinishLaunching(_:)` before the landing window
-appears. `NSShowAppCentricOpenPanelInsteadOfUntitledFile` is set to `false` in
-the bundle so systems that honor it never construct that panel at all.
+Three AppKit launch paths are covered, because the system picks between them:
+
+1. **The classic untitled-document path,** via `applicationOpenUntitledFile(_:)`.
+2. **The app-centric Open panel** that recent macOS releases raise on behalf of
+   `DocumentGroup` without ever consulting the delegate. The panel is dismissed
+   during `applicationDidFinishLaunching(_:)` before the landing window appears.
+   `NSShowAppCentricOpenPanelInsteadOfUntitledFile` is also set to `false` in the
+   bundle so systems that honor it never construct the panel at all.
+3. **Window restoration,** where AppKit does neither of the above and instead
+   reopens the previous session's documents *after* launch finishes — measured at
+   roughly a third of a second later on macOS 26. Showing the landing window
+   immediately would make it appear and then be replaced, so this path waits for
+   `NSApplication.didFinishRestoringWindowsNotification` and then only shows the
+   landing window if nothing arrived. That notification is not posted when there
+   is nothing to restore, so a short timeout backs it up.
+
+The distinction between paths 2 and 3 is that AppKit only raises its Open panel
+when it has nothing to restore, which makes the panel's presence a reliable
+signal that the landing window can be shown without waiting.
 
 ### 4.2 When it goes away
 
@@ -639,6 +651,7 @@ not expose it directly.
 | Add editor themes and autosave | Initial theme support and debounced autosave-in-place |
 | Match theme selector to kirupa.com | Eight site colors on a Light/Dark axis, Customize Theme popover with Apply and Cancel |
 | Add welcome window | Landing window at launch with New Document, Open, and a pruned recent-documents list; replaces the launch Open panel |
+| Wait for window restoration | Restored documents no longer flash the welcome window on their way in |
 
 ---
 
