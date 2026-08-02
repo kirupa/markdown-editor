@@ -98,6 +98,16 @@ struct FileExplorerSidebar: View {
             .buttonStyle(.plain)
             .help("Refresh Explorer")
             .disabled(model.rootURL == nil)
+
+            Button {
+                model.showDocumentDirectory(for: session.fileURL)
+            } label: {
+                Image(systemName: "doc.text.magnifyingglass")
+            }
+            .buttonStyle(.plain)
+            .help("Show Current Document Folder")
+            .accessibilityLabel("Show Current Document Folder")
+            .disabled(session.fileURL == nil)
         }
         .padding(.horizontal, 10)
         .frame(height: 38)

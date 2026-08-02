@@ -6,6 +6,7 @@ struct MarkdownEditorView: View {
     @StateObject private var session: MarkdownEditorSession
     @State private var explorerWidth = Layout.defaultExplorerWidth
     @State private var dragStartExplorerWidth: CGFloat?
+    @State private var previewWidth = Layout.defaultPreviewWidth
     private let fileURL: URL?
 
     init(document: Binding<MarkdownDocument>, fileURL: URL?) {
@@ -27,8 +28,8 @@ struct MarkdownEditorView: View {
                 FileExplorerSidebar(session: session)
                     .frame(width: visibleExplorerWidth)
 
-                DocumentWidthGripper(
-                    documentWidth: geometry.size.width
+                WidthGripper(
+                    displayedWidth: geometry.size.width
                         - visibleExplorerWidth
                         - Layout.gripperWidth,
                     dragGesture: resizeGesture(
@@ -47,16 +48,22 @@ struct MarkdownEditorView: View {
                             totalWidth: geometry.size.width,
                             visibleExplorerWidth: visibleExplorerWidth
                         )
-                    }
+                    },
+                    helpText: """
+                        Drag to resize the editor pane; double-click to reset \
+                        the split
+                        """,
+                    accessibilityLabel: "Editor pane width"
                 )
 
                 Group {
                     switch session.viewMode {
                     case .rich:
-                        RichTextEditor(
+                        ResizableRichTextPreview(
                             text: $document.text,
                             documentURL: fileURL,
-                            session: session
+                            session: session,
+                            preferredWidth: $previewWidth
                         )
                     case .source:
                         SourceTextEditor(
@@ -145,11 +152,130 @@ struct MarkdownEditorView: View {
     }
 }
 
-private struct DocumentWidthGripper: View {
-    let documentWidth: CGFloat
+private struct ResizableRichTextPreview: View {
+    @Binding var text: String
+    let documentURL: URL?
+    let session: MarkdownEditorSession
+    @Binding var preferredWidth: CGFloat
+
+    @State private var dragStartWidth: CGFloat?
+
+    var body: some View {
+        GeometryReader { geometry in
+            let visibleWidth = clampedWidth(
+                preferredWidth,
+                totalWidth: geometry.size.width
+            )
+
+            HStack(spacing: 0) {
+                RichTextEditor(
+                    text: $text,
+                    documentURL: documentURL,
+                    session: session
+                )
+                .frame(width: visibleWidth)
+
+                WidthGripper(
+                    displayedWidth: visibleWidth,
+                    dragGesture: resizeGesture(
+                        totalWidth: geometry.size.width,
+                        visibleWidth: visibleWidth
+                    ),
+                    onReset: {
+                        preferredWidth = clampedWidth(
+                            Layout.defaultPreviewWidth,
+                            totalWidth: geometry.size.width
+                        )
+                    },
+                    onAdjust: { direction in
+                        adjustWidth(
+                            direction,
+                            totalWidth: geometry.size.width,
+                            visibleWidth: visibleWidth
+                        )
+                    },
+                    helpText: """
+                        Drag to resize the Rich Text document; double-click to \
+                        reset its width
+                        """,
+                    accessibilityLabel: "Rich Text document width"
+                )
+
+                Spacer(minLength: 0)
+            }
+        }
+        .background(Color(nsColor: .controlBackgroundColor))
+    }
+
+    private func resizeGesture(
+        totalWidth: CGFloat,
+        visibleWidth: CGFloat
+    ) -> AnyGesture<DragGesture.Value> {
+        AnyGesture(
+            DragGesture(minimumDistance: 1)
+                .onChanged { value in
+                    if dragStartWidth == nil {
+                        dragStartWidth = visibleWidth
+                    }
+                    preferredWidth = clampedWidth(
+                        (dragStartWidth ?? visibleWidth)
+                            + value.translation.width,
+                        totalWidth: totalWidth
+                    )
+                }
+                .onEnded { _ in
+                    dragStartWidth = nil
+                }
+        )
+    }
+
+    private func adjustWidth(
+        _ direction: AccessibilityAdjustmentDirection,
+        totalWidth: CGFloat,
+        visibleWidth: CGFloat
+    ) {
+        let adjustment: CGFloat
+        switch direction {
+        case .increment:
+            adjustment = Layout.keyboardResizeStep
+        case .decrement:
+            adjustment = -Layout.keyboardResizeStep
+        @unknown default:
+            return
+        }
+
+        preferredWidth = clampedWidth(
+            visibleWidth + adjustment,
+            totalWidth: totalWidth
+        )
+    }
+
+    private func clampedWidth(
+        _ proposedWidth: CGFloat,
+        totalWidth: CGFloat
+    ) -> CGFloat {
+        let availableWidth = max(
+            Layout.minimumPreviewWidth,
+            totalWidth - Layout.gripperWidth
+        )
+        let maximumWidth = min(
+            Layout.maximumPreviewWidth,
+            availableWidth
+        )
+        return min(
+            max(proposedWidth, Layout.minimumPreviewWidth),
+            maximumWidth
+        )
+    }
+}
+
+private struct WidthGripper: View {
+    let displayedWidth: CGFloat
     let dragGesture: AnyGesture<DragGesture.Value>
     let onReset: () -> Void
     let onAdjust: (AccessibilityAdjustmentDirection) -> Void
+    let helpText: String
+    let accessibilityLabel: String
 
     @State private var isHovering = false
 
@@ -181,10 +307,10 @@ private struct DocumentWidthGripper: View {
                 NSCursor.arrow.set()
             }
         }
-        .help("Drag to resize the document; double-click to reset the split")
+        .help(helpText)
         .accessibilityElement()
-        .accessibilityLabel("Document width")
-        .accessibilityValue("\(Int(documentWidth.rounded())) points")
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityValue("\(Int(displayedWidth.rounded())) points")
         .accessibilityAdjustableAction(onAdjust)
     }
 }
@@ -195,6 +321,9 @@ private enum Layout {
     static let maximumExplorerWidth: CGFloat = 420
     static let minimumDocumentWidth: CGFloat = 520
     static let defaultDocumentWidth: CGFloat = 620
+    static let minimumPreviewWidth: CGFloat = 360
+    static let defaultPreviewWidth: CGFloat = 700
+    static let maximumPreviewWidth: CGFloat = 1_100
     static let gripperWidth: CGFloat = 12
     static let keyboardResizeStep: CGFloat = 20
     static let minimumWindowWidth = defaultExplorerWidth

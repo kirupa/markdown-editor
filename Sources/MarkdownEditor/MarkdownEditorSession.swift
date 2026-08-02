@@ -7,7 +7,7 @@ import UniformTypeIdentifiers
 final class MarkdownEditorSession: ObservableObject {
     @Published private(set) var viewMode: EditorViewMode = .rich
 
-    var fileURL: URL? {
+    @Published var fileURL: URL? {
         didSet {
             fileExplorer.followDocument(fileURL)
         }

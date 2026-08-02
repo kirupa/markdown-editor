@@ -56,6 +56,22 @@ final class FileExplorerModel: ObservableObject {
         setRoot(url, followsDocumentDirectory: false)
     }
 
+    func showDocumentDirectory(for documentURL: URL?) {
+        guard let documentURL else {
+            report(FileExplorerError.documentHasNoLocation)
+            return
+        }
+
+        let directoryURL = documentURL.deletingLastPathComponent()
+            .standardizedFileURL
+        followsDocumentDirectory = true
+        if rootURL == directoryURL {
+            refresh()
+        } else {
+            setRoot(directoryURL, followsDocumentDirectory: true)
+        }
+    }
+
     func children(of directoryURL: URL) -> [FileTreeEntry] {
         let key = directoryURL.standardizedFileURL
         if let cached = cachedChildren[key] {
@@ -115,15 +131,23 @@ final class FileExplorerModel: ObservableObject {
 
 private enum FileExplorerError: Error, LocalizedError {
     case couldNotOpen(String)
+    case documentHasNoLocation
 
     var errorDescription: String? {
         switch self {
         case .couldNotOpen(let name):
             "The file could not be opened: \(name)"
+        case .documentHasNoLocation:
+            "The current document has not been saved yet."
         }
     }
 
     var recoverySuggestion: String? {
-        "Check that an application is available for this file type."
+        switch self {
+        case .couldNotOpen:
+            "Check that an application is available for this file type."
+        case .documentHasNoLocation:
+            "Save the document before showing its folder."
+        }
     }
 }

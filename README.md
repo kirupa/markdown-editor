@@ -43,8 +43,9 @@ to that ancestor. Expand folders lazily, double-click a Markdown file to open
 it in the editor, or double-click another file type to open it with its system
 application. Use **Choose Folder** in the dropdown or **File > Open Folder**
 (`Option-Command-O`) to browse a different root; use the refresh button after
-external filesystem changes. Hidden files are omitted, and packages and
-symbolic links are never traversed.
+external filesystem changes. The document-and-magnifying-glass button beside
+Refresh restores the current document's folder and reveals its file. Hidden
+files are omitted, and packages and symbolic links are never traversed.
 
 ## Editing modes and formatting
 
@@ -64,3 +65,6 @@ shortcuts include `Command-B`, `Command-I`, `Command-U`, and `Command-K`;
 
 Drag the dotted gripper between the explorer and document to resize both
 panes. Double-click the gripper to restore the default pane split.
+In Rich Text mode, a second gripper at the preview's right edge resizes the
+rendered document width without changing the explorer. Double-click it to
+restore the default preview width.
