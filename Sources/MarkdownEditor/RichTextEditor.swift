@@ -6,13 +6,15 @@ struct RichTextEditor: NSViewRepresentable {
     @Binding var text: String
     let documentURL: URL?
     let session: MarkdownEditorSession
+    let colorTheme: EditorColorTheme
     let layoutWidth: CGFloat
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
             text: $text,
             documentURL: documentURL,
-            session: session
+            session: session,
+            colorTheme: colorTheme
         )
     }
 
@@ -48,6 +50,7 @@ struct RichTextEditor: NSViewRepresentable {
         textView.textContainerInset = NSSize(width: 24, height: 20)
         textView.setAccessibilityLabel("Rendered Markdown editor")
         scrollView.requestedDocumentWidth = layoutWidth
+        colorTheme.apply(to: textView, in: scrollView)
 
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
@@ -84,9 +87,16 @@ struct RichTextEditor: NSViewRepresentable {
             return
         }
         context.coordinator.textView = textView
+        let themeChanged = context.coordinator.colorTheme != colorTheme
+        if themeChanged {
+            (textView as? RichMarkdownTextView)?
+                .finishPendingComposition()
+        }
+        colorTheme.apply(to: textView, in: scrollView)
         context.coordinator.update(
             text: $text,
-            documentURL: documentURL
+            documentURL: documentURL,
+            colorTheme: colorTheme
         )
         (scrollView as? ReflowingTextScrollView)?
             .requestedDocumentWidth = layoutWidth
@@ -120,10 +130,12 @@ struct RichTextEditor: NSViewRepresentable {
         var documentURL: URL?
         weak var session: MarkdownEditorSession?
         weak var textView: NSTextView?
+        var colorTheme: EditorColorTheme
 
         private var model = MarkdownRenderer.render("")
         private var renderedSource = ""
         private var renderedDocumentURL: URL?
+        private var renderedColorTheme: EditorColorTheme?
         private var isRendering = false
         private var compositionState: CompositionState?
         private let scrollSynchronizer = EditorScrollSynchronizer()
@@ -131,11 +143,13 @@ struct RichTextEditor: NSViewRepresentable {
         init(
             text: Binding<String>,
             documentURL: URL?,
-            session: MarkdownEditorSession
+            session: MarkdownEditorSession,
+            colorTheme: EditorColorTheme
         ) {
             self.text = text
             self.documentURL = documentURL
             self.session = session
+            self.colorTheme = colorTheme
         }
 
         var sourceText: String {
@@ -179,12 +193,18 @@ struct RichTextEditor: NSViewRepresentable {
             scrollSynchronizer.detach()
         }
 
-        func update(text: Binding<String>, documentURL: URL?) {
+        func update(
+            text: Binding<String>,
+            documentURL: URL?,
+            colorTheme: EditorColorTheme
+        ) {
             self.text = text
             self.documentURL = documentURL
-            guard renderedSource != text.wrappedValue
+            self.colorTheme = colorTheme
+            let contentChanged = renderedSource != text.wrappedValue
                 || renderedDocumentURL != documentURL
-            else {
+            let themeChanged = renderedColorTheme != colorTheme
+            guard contentChanged || themeChanged else {
                 return
             }
 
@@ -192,7 +212,7 @@ struct RichTextEditor: NSViewRepresentable {
             let selection = session?.selectionForEditorUpdate(
                 fallback: fallbackSelection
             ) ?? fallbackSelection
-            if session?.viewMode == .split {
+            if contentChanged && session?.viewMode == .split {
                 render(
                     sourceSelection: selection,
                     scrollToSelection: true,
@@ -299,11 +319,13 @@ struct RichTextEditor: NSViewRepresentable {
             model = MarkdownRenderer.render(text.wrappedValue)
             let attributedText = RichMarkdownStyler.attributedString(
                 for: model,
-                documentURL: documentURL
+                documentURL: documentURL,
+                colorTheme: colorTheme
             )
             textView.textStorage?.setAttributedString(attributedText)
             renderedSource = text.wrappedValue
             renderedDocumentURL = documentURL
+            renderedColorTheme = colorTheme
             setSourceSelection(
                 sourceSelection,
                 scrollToSelection: scrollToSelection,

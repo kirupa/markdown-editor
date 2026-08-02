@@ -4,7 +4,8 @@ import MarkdownEditorCore
 enum RichMarkdownStyler {
     static func attributedString(
         for model: MarkdownRenderModel,
-        documentURL: URL?
+        documentURL: URL?,
+        colorTheme: EditorColorTheme
     ) -> NSAttributedString {
         let baseParagraphStyle = NSMutableParagraphStyle()
         baseParagraphStyle.lineSpacing = 2
@@ -16,7 +17,7 @@ enum RichMarkdownStyler {
                 .font: NSFont.systemFont(
                     ofSize: MarkdownTypography.bodyFontSize
                 ),
-                .foregroundColor: NSColor.labelColor,
+                .foregroundColor: colorTheme.primaryTextColor,
                 .paragraphStyle: baseParagraphStyle
             ]
         )
@@ -25,7 +26,11 @@ enum RichMarkdownStyler {
         where span.style.isBlockStyle
             && (!span.isAtomic || span.style.usesAtomicBlockStyling)
         {
-            applyBlockStyle(span, to: attributedText)
+            applyBlockStyle(
+                span,
+                to: attributedText,
+                colorTheme: colorTheme
+            )
         }
         for span in model.spans
         where !span.style.isBlockStyle
@@ -34,7 +39,8 @@ enum RichMarkdownStyler {
             applyInlineStyle(
                 span,
                 to: attributedText,
-                documentURL: documentURL
+                documentURL: documentURL,
+                colorTheme: colorTheme
             )
         }
 
@@ -43,7 +49,8 @@ enum RichMarkdownStyler {
 
     private static func applyBlockStyle(
         _ span: MarkdownRenderSpan,
-        to text: NSMutableAttributedString
+        to text: NSMutableAttributedString,
+        colorTheme: EditorColorTheme
     ) {
         let range = clamped(span.renderedRange, to: text.length)
         guard range.length > 0 else {
@@ -78,7 +85,8 @@ enum RichMarkdownStyler {
                         ofSize: MarkdownTypography.codeFontSize,
                         weight: .regular
                     ),
-                    .markdownCodeBlockBackground: true
+                    .markdownCodeBlockBackground:
+                        colorTheme.codeBlockBackgroundColor
                 ],
                 range: range
             )
@@ -102,7 +110,7 @@ enum RichMarkdownStyler {
         case .quote:
             text.addAttribute(
                 .foregroundColor,
-                value: NSColor.secondaryLabelColor,
+                value: colorTheme.secondaryTextColor,
                 range: range
             )
             let paragraphStyle = paragraphStyle(in: text, at: range.location)
@@ -136,7 +144,7 @@ enum RichMarkdownStyler {
             paragraphStyle.paragraphSpacing = 8
             text.addAttributes(
                 [
-                    .foregroundColor: NSColor.separatorColor,
+                    .foregroundColor: colorTheme.separatorColor,
                     .font: NSFont.systemFont(ofSize: 24, weight: .light),
                     .kern: 6,
                     .paragraphStyle: paragraphStyle
@@ -151,7 +159,8 @@ enum RichMarkdownStyler {
     private static func applyInlineStyle(
         _ span: MarkdownRenderSpan,
         to text: NSMutableAttributedString,
-        documentURL: URL?
+        documentURL: URL?,
+        colorTheme: EditorColorTheme
     ) {
         let range = clamped(span.renderedRange, to: text.length)
         guard range.length > 0 else {
@@ -182,8 +191,8 @@ enum RichMarkdownStyler {
                         ofSize: MarkdownTypography.codeFontSize,
                         weight: .regular
                     ),
-                    .backgroundColor: NSColor.quaternaryLabelColor
-                        .withAlphaComponent(0.2)
+                    .backgroundColor:
+                        colorTheme.inlineCodeBackgroundColor
                 ],
                 range: range
             )

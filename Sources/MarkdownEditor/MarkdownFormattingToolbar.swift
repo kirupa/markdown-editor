@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MarkdownFormattingToolbar: ToolbarContent {
     @ObservedObject var session: MarkdownEditorSession
+    @Binding var colorTheme: EditorColorTheme
 
     var body: some ToolbarContent {
         ToolbarItem(placement: .navigation) {
@@ -20,6 +21,26 @@ struct MarkdownFormattingToolbar: ToolbarContent {
             .pickerStyle(.segmented)
             .frame(width: 260)
             .help("Switch among Rich Text, Markdown, and Split views")
+        }
+
+        ToolbarItem {
+            Menu {
+                ForEach(EditorColorTheme.allCases) { theme in
+                    Button {
+                        colorTheme = theme
+                    } label: {
+                        Image(
+                            nsImage: theme.menuPreviewImage(
+                                isSelected: colorTheme == theme
+                            )
+                        )
+                        .accessibilityLabel(theme.title)
+                    }
+                }
+            } label: {
+                Label("Color Theme", systemImage: "paintpalette")
+            }
+            .help("Choose Light, Dark, or Beige colors")
         }
 
         ToolbarItem {

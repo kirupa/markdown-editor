@@ -150,7 +150,7 @@ final class RichMarkdownTextView: NSTextView {
             .markdownCodeBlockBackground,
             in: NSRange(location: 0, length: textStorage.length)
         ) { value, characterRange, _ in
-            guard value != nil else {
+            guard let backgroundColor = value as? NSColor else {
                 return
             }
 
@@ -204,9 +204,7 @@ final class RichMarkdownTextView: NSTextView {
                 return
             }
 
-            NSColor.quaternaryLabelColor
-                .withAlphaComponent(0.16)
-                .setFill()
+            backgroundColor.setFill()
             NSBezierPath(
                 roundedRect: blockRect,
                 xRadius: 5,

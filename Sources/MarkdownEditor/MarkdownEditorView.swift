@@ -4,17 +4,36 @@ import SwiftUI
 struct MarkdownEditorView: View {
     @Binding private var document: MarkdownDocument
     @StateObject private var session: MarkdownEditorSession
+    @StateObject private var autosaveController =
+        DocumentAutosaveController()
     @State private var explorerWidth = Layout.defaultExplorerWidth
     @State private var dragStartExplorerWidth: CGFloat?
     @State private var previewWidth = Layout.defaultPreviewWidth
+    @Binding private var colorThemeRawValue: String
     private let fileURL: URL?
 
-    init(document: Binding<MarkdownDocument>, fileURL: URL?) {
+    init(
+        document: Binding<MarkdownDocument>,
+        fileURL: URL?,
+        colorThemeRawValue: Binding<String>
+    ) {
         _document = document
         _session = StateObject(
             wrappedValue: MarkdownEditorSession(fileURL: fileURL)
         )
+        _colorThemeRawValue = colorThemeRawValue
         self.fileURL = fileURL
+    }
+
+    private var colorTheme: EditorColorTheme {
+        EditorColorTheme(rawValue: colorThemeRawValue) ?? .systemDefault
+    }
+
+    private var colorThemeSelection: Binding<EditorColorTheme> {
+        Binding(
+            get: { colorTheme },
+            set: { colorThemeRawValue = $0.rawValue }
+        )
     }
 
     var body: some View {
@@ -25,10 +44,14 @@ struct MarkdownEditorView: View {
             )
 
             HStack(spacing: 0) {
-                FileExplorerSidebar(session: session)
+                FileExplorerSidebar(
+                    session: session,
+                    colorTheme: colorTheme
+                )
                     .frame(width: visibleExplorerWidth)
 
                 WidthGripper(
+                    colorTheme: colorTheme,
                     displayedWidth: geometry.size.width
                         - visibleExplorerWidth
                         - Layout.gripperWidth,
@@ -63,13 +86,15 @@ struct MarkdownEditorView: View {
                             text: $document.text,
                             documentURL: fileURL,
                             session: session,
+                            colorTheme: colorTheme,
                             preferredWidth: $previewWidth,
                             minimumWidth: Layout.minimumPreviewWidth
                         )
                     case .source:
                         SourceTextEditor(
                             text: $document.text,
-                            session: session
+                            session: session,
+                            colorTheme: colorTheme
                         )
                     case .split:
                         HSplitView {
@@ -77,6 +102,7 @@ struct MarkdownEditorView: View {
                                 text: $document.text,
                                 documentURL: fileURL,
                                 session: session,
+                                colorTheme: colorTheme,
                                 preferredWidth: $previewWidth,
                                 minimumWidth: Layout.minimumSplitPreviewWidth
                             )
@@ -87,7 +113,8 @@ struct MarkdownEditorView: View {
 
                             SourceTextEditor(
                                 text: $document.text,
-                                session: session
+                                session: session,
+                                colorTheme: colorTheme
                             )
                             .frame(
                                 minWidth: Layout.minimumSplitPaneWidth,
@@ -104,12 +131,35 @@ struct MarkdownEditorView: View {
             }
         }
         .frame(minWidth: Layout.minimumWindowWidth, minHeight: 520)
+        .background(colorTheme.canvasBackground)
+        .preferredColorScheme(colorTheme.colorScheme)
         .focusedSceneValue(\.markdownEditorSession, session)
+        .focusedSceneValue(
+            \.editorColorThemeSelection,
+            colorThemeSelection
+        )
         .toolbar {
-            MarkdownFormattingToolbar(session: session)
+            MarkdownFormattingToolbar(
+                session: session,
+                colorTheme: colorThemeSelection
+            )
         }
         .onChange(of: fileURL) { newFileURL in
+            autosaveController.cancelPendingSave()
             session.fileURL = newFileURL
+        }
+        .onChange(of: document.text) { _ in
+            autosaveController.scheduleSave(for: fileURL)
+        }
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: NSApplication.willResignActiveNotification
+            )
+        ) { _ in
+            autosaveController.saveNow(for: fileURL)
+        }
+        .onDisappear {
+            autosaveController.cancelPendingSave()
         }
     }
 
@@ -180,6 +230,7 @@ private struct ResizableRichTextPreview: View {
     @Binding var text: String
     let documentURL: URL?
     let session: MarkdownEditorSession
+    let colorTheme: EditorColorTheme
     @Binding var preferredWidth: CGFloat
     let minimumWidth: CGFloat
 
@@ -197,11 +248,13 @@ private struct ResizableRichTextPreview: View {
                     text: $text,
                     documentURL: documentURL,
                     session: session,
+                    colorTheme: colorTheme,
                     layoutWidth: visibleWidth
                 )
                 .frame(width: visibleWidth)
 
                 WidthGripper(
+                    colorTheme: colorTheme,
                     displayedWidth: visibleWidth,
                     dragGesture: resizeGesture(
                         totalWidth: geometry.size.width,
@@ -230,7 +283,7 @@ private struct ResizableRichTextPreview: View {
                 Spacer(minLength: 0)
             }
         }
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(colorTheme.canvasBackground)
     }
 
     private func resizeGesture(
@@ -296,6 +349,7 @@ private struct ResizableRichTextPreview: View {
 }
 
 private struct WidthGripper: View {
+    let colorTheme: EditorColorTheme
     let displayedWidth: CGFloat
     let dragGesture: AnyGesture<DragGesture.Value>
     let onReset: () -> Void
@@ -310,12 +364,12 @@ private struct WidthGripper: View {
             Color.accentColor
                 .opacity(isHovering ? 0.08 : 0)
             Rectangle()
-                .fill(Color(nsColor: .separatorColor))
+                .fill(Color(nsColor: colorTheme.separatorColor))
                 .frame(width: 1)
             VStack(spacing: 3) {
                 ForEach(0..<3) { _ in
                     Circle()
-                        .fill(.secondary)
+                        .fill(Color(nsColor: colorTheme.secondaryTextColor))
                         .frame(width: 3, height: 3)
                 }
             }

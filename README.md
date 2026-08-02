@@ -25,7 +25,9 @@ image-import tests.
 The File menu provides the standard macOS document commands and shortcuts:
 New (`Command-N`), Open (`Command-O`), Save (`Command-S`), Save As
 (`Shift-Command-S`), and Close (`Command-W`). Closing a changed document uses
-the system unsaved-changes prompt.
+the system unsaved-changes prompt. After a document has a file location, edits
+are also saved in place automatically after a short pause or when the app
+becomes inactive. Untitled documents still ask where to save.
 
 Save a new document before adding an image, then use the toolbar button or
 **Insert > Image** (`Option-Command-I`). If the document is `Article.md`, the
@@ -63,6 +65,11 @@ discarded.
 The raw Markdown pane keeps every source marker visible but displays headings,
 body paragraphs, and fenced code at the same representative point sizes used
 by the Preview, keeping the two documents' vertical proportions closer.
+
+Use the toolbar palette or **Markdown > Color Theme** to switch the entire
+workspace between persistent Light, Dark, and Beige themes. Beige uses a warm
+background with black document text; each theme also updates the explorer,
+source editor, Preview, inline code, and fenced code blocks.
 
 Toolbar icons and the **Markdown** menu provide paragraph and heading levels,
 bold, italic, underline (`<u>...</u>`), strikethrough, bulleted, numbered, and

@@ -5,9 +5,14 @@ import SwiftUI
 struct SourceTextEditor: NSViewRepresentable {
     @Binding var text: String
     let session: MarkdownEditorSession
+    let colorTheme: EditorColorTheme
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text, session: session)
+        Coordinator(
+            text: $text,
+            session: session,
+            colorTheme: colorTheme
+        )
     }
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -45,7 +50,12 @@ struct SourceTextEditor: NSViewRepresentable {
         )
         textView.textContainerInset = NSSize(width: 18, height: 16)
         textView.setAccessibilityLabel("Markdown source")
-        MarkdownSourceStyler.apply(text, to: textView)
+        colorTheme.apply(to: textView, in: scrollView)
+        MarkdownSourceStyler.apply(
+            text,
+            to: textView,
+            colorTheme: colorTheme
+        )
 
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
@@ -81,15 +91,27 @@ struct SourceTextEditor: NSViewRepresentable {
         }
 
         context.coordinator.text = $text
-        if textView.string != text {
+        let themeChanged = context.coordinator.colorTheme != colorTheme
+        if themeChanged {
+            (textView as? RichMarkdownTextView)?
+                .finishPendingComposition()
+        }
+        let textChanged = textView.string != text
+        context.coordinator.colorTheme = colorTheme
+        colorTheme.apply(to: textView, in: scrollView)
+        if textChanged || themeChanged {
             let isSplit = session.viewMode == .split
             let fallbackSelection = textView.selectedRange()
             let selection = session.selectionForEditorUpdate(
                 fallback: fallbackSelection
             )
             let scrollPosition = context.coordinator.normalizedScrollPosition
-            MarkdownSourceStyler.apply(text, to: textView)
-            if isSplit {
+            MarkdownSourceStyler.apply(
+                text,
+                to: textView,
+                colorTheme: colorTheme
+            )
+            if isSplit && textChanged {
                 context.coordinator.setSynchronizedSourceSelection(
                     selection
                 )
@@ -109,7 +131,10 @@ struct SourceTextEditor: NSViewRepresentable {
                         length: selectionLength
                     )
                 )
-                MarkdownSourceStyler.updateTypingAttributes(in: textView)
+                MarkdownSourceStyler.updateTypingAttributes(
+                    in: textView,
+                    colorTheme: colorTheme
+                )
                 context.coordinator.setNormalizedScrollPosition(
                     scrollPosition
                 )
@@ -149,13 +174,19 @@ struct SourceTextEditor: NSViewRepresentable {
         var text: Binding<String>
         weak var session: MarkdownEditorSession?
         weak var textView: NSTextView?
+        var colorTheme: EditorColorTheme
         private var isApplyingChange = false
         private var compositionState: SourceCompositionState?
         private let scrollSynchronizer = EditorScrollSynchronizer()
 
-        init(text: Binding<String>, session: MarkdownEditorSession) {
+        init(
+            text: Binding<String>,
+            session: MarkdownEditorSession,
+            colorTheme: EditorColorTheme
+        ) {
             self.text = text
             self.session = session
+            self.colorTheme = colorTheme
         }
 
         var sourceText: String {
@@ -262,7 +293,10 @@ struct SourceTextEditor: NSViewRepresentable {
                     )
                 )
             )
-            MarkdownSourceStyler.updateTypingAttributes(in: textView)
+            MarkdownSourceStyler.updateTypingAttributes(
+                in: textView,
+                colorTheme: colorTheme
+            )
             if scrollToSelection {
                 let revealSelection = {
                     textView.scrollRangeToVisible(
@@ -292,7 +326,10 @@ struct SourceTextEditor: NSViewRepresentable {
 
         func textViewDidChangeSelection(_ notification: Notification) {
             if let textView = notification.object as? NSTextView {
-                MarkdownSourceStyler.updateTypingAttributes(in: textView)
+                MarkdownSourceStyler.updateTypingAttributes(
+                    in: textView,
+                    colorTheme: colorTheme
+                )
             }
             if hasFocus {
                 session?.activate(self)
@@ -469,7 +506,11 @@ struct SourceTextEditor: NSViewRepresentable {
             isApplyingChange = true
             text.wrappedValue = result.text
             if let textView {
-                MarkdownSourceStyler.apply(result.text, to: textView)
+                MarkdownSourceStyler.apply(
+                    result.text,
+                    to: textView,
+                    colorTheme: colorTheme
+                )
             }
             if session?.viewMode == .split {
                 setSourceSelection(

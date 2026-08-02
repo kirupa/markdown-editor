@@ -5,9 +5,14 @@ struct FileExplorerSidebar: View {
     @Environment(\.openDocument) private var openDocument
     @ObservedObject var session: MarkdownEditorSession
     @ObservedObject private var model: FileExplorerModel
+    let colorTheme: EditorColorTheme
 
-    init(session: MarkdownEditorSession) {
+    init(
+        session: MarkdownEditorSession,
+        colorTheme: EditorColorTheme
+    ) {
         self.session = session
+        self.colorTheme = colorTheme
         model = session.fileExplorer
     }
 
@@ -20,13 +25,14 @@ struct FileExplorerSidebar: View {
                 FileExplorerOutlineView(
                     model: model,
                     currentFileURL: session.fileURL,
+                    colorTheme: colorTheme,
                     onOpen: open
                 )
             } else {
                 emptyState
             }
         }
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(colorTheme.sidebarBackground)
         .alert(item: $model.presentedAlert) { alert in
             Alert(
                 title: Text(alert.title),

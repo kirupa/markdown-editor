@@ -4,16 +4,27 @@ private struct MarkdownEditorSessionKey: FocusedValueKey {
     typealias Value = MarkdownEditorSession
 }
 
+private struct EditorColorThemeSelectionKey: FocusedValueKey {
+    typealias Value = Binding<EditorColorTheme>
+}
+
 extension FocusedValues {
     var markdownEditorSession: MarkdownEditorSession? {
         get { self[MarkdownEditorSessionKey.self] }
         set { self[MarkdownEditorSessionKey.self] = newValue }
+    }
+
+    var editorColorThemeSelection: Binding<EditorColorTheme>? {
+        get { self[EditorColorThemeSelectionKey.self] }
+        set { self[EditorColorThemeSelectionKey.self] = newValue }
     }
 }
 
 struct MarkdownEditorCommands: Commands {
     @FocusedValue(\.markdownEditorSession)
     private var session
+    @FocusedValue(\.editorColorThemeSelection)
+    private var colorThemeSelection
 
     var body: some Commands {
         CommandGroup(after: .newItem) {
@@ -39,6 +50,21 @@ struct MarkdownEditorCommands: Commands {
                 }
             }
             .disabled(session == nil)
+
+            Menu("Color Theme") {
+                ForEach(EditorColorTheme.allCases) { theme in
+                    Button {
+                        colorThemeSelection?.wrappedValue = theme
+                    } label: {
+                        if colorThemeSelection?.wrappedValue == theme {
+                            Label(theme.title, systemImage: "checkmark")
+                        } else {
+                            Text(theme.title)
+                        }
+                    }
+                }
+                .disabled(colorThemeSelection == nil)
+            }
 
             Button("Cycle Editor View") {
                 session?.cycleViewMode()

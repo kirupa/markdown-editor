@@ -3,23 +3,32 @@ import MarkdownEditorCore
 
 @MainActor
 enum MarkdownSourceStyler {
-    static func apply(_ markdown: String, to textView: NSTextView) {
+    static func apply(
+        _ markdown: String,
+        to textView: NSTextView,
+        colorTheme: EditorColorTheme
+    ) {
         let undoManager = textView.undoManager
         undoManager?.disableUndoRegistration()
         defer {
             undoManager?.enableUndoRegistration()
         }
         textView.textStorage?.setAttributedString(
-            attributedString(for: markdown)
+            attributedString(for: markdown, colorTheme: colorTheme)
         )
-        updateTypingAttributes(in: textView)
+        updateTypingAttributes(in: textView, colorTheme: colorTheme)
     }
 
-    static func updateTypingAttributes(in textView: NSTextView) {
+    static func updateTypingAttributes(
+        in textView: NSTextView,
+        colorTheme: EditorColorTheme
+    ) {
         guard let textStorage = textView.textStorage,
             textStorage.length > 0
         else {
-            textView.typingAttributes = baseAttributes()
+            textView.typingAttributes = baseAttributes(
+                colorTheme: colorTheme
+            )
             return
         }
 
@@ -27,7 +36,9 @@ enum MarkdownSourceStyler {
         if selectionLocation >= textStorage.length,
             textView.string.hasSuffix("\n")
         {
-            textView.typingAttributes = baseAttributes()
+            textView.typingAttributes = baseAttributes(
+                colorTheme: colorTheme
+            )
             return
         }
         let location = min(selectionLocation, textStorage.length - 1)
@@ -38,11 +49,12 @@ enum MarkdownSourceStyler {
     }
 
     private static func attributedString(
-        for markdown: String
+        for markdown: String,
+        colorTheme: EditorColorTheme
     ) -> NSAttributedString {
         let text = NSMutableAttributedString(
             string: markdown,
-            attributes: baseAttributes()
+            attributes: baseAttributes(colorTheme: colorTheme)
         )
         let source = markdown as NSString
         let fullRange = NSRange(location: 0, length: source.length)
@@ -96,13 +108,15 @@ enum MarkdownSourceStyler {
         return text
     }
 
-    private static func baseAttributes() -> [NSAttributedString.Key: Any] {
+    private static func baseAttributes(
+        colorTheme: EditorColorTheme
+    ) -> [NSAttributedString.Key: Any] {
         [
             .font: NSFont.monospacedSystemFont(
                 ofSize: MarkdownTypography.bodyFontSize,
                 weight: .regular
             ),
-            .foregroundColor: NSColor.labelColor,
+            .foregroundColor: colorTheme.primaryTextColor,
             .paragraphStyle: baseParagraphStyle()
         ]
     }
