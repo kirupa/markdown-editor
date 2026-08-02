@@ -63,13 +63,37 @@ struct MarkdownEditorView: View {
                             text: $document.text,
                             documentURL: fileURL,
                             session: session,
-                            preferredWidth: $previewWidth
+                            preferredWidth: $previewWidth,
+                            minimumWidth: Layout.minimumPreviewWidth
                         )
                     case .source:
                         SourceTextEditor(
                             text: $document.text,
                             session: session
                         )
+                    case .split:
+                        HSplitView {
+                            SourceTextEditor(
+                                text: $document.text,
+                                session: session
+                            )
+                            .frame(
+                                minWidth: Layout.minimumSplitPaneWidth,
+                                maxWidth: .infinity
+                            )
+
+                            ResizableRichTextPreview(
+                                text: $document.text,
+                                documentURL: fileURL,
+                                session: session,
+                                preferredWidth: $previewWidth,
+                                minimumWidth: Layout.minimumSplitPreviewWidth
+                            )
+                            .frame(
+                                minWidth: Layout.minimumSplitPaneWidth,
+                                maxWidth: .infinity
+                            )
+                        }
                     }
                 }
                 .frame(
@@ -157,6 +181,7 @@ private struct ResizableRichTextPreview: View {
     let documentURL: URL?
     let session: MarkdownEditorSession
     @Binding var preferredWidth: CGFloat
+    let minimumWidth: CGFloat
 
     @State private var dragStartWidth: CGFloat?
 
@@ -256,7 +281,7 @@ private struct ResizableRichTextPreview: View {
         totalWidth: CGFloat
     ) -> CGFloat {
         let availableWidth = max(
-            Layout.minimumPreviewWidth,
+            minimumWidth,
             totalWidth - Layout.gripperWidth
         )
         let maximumWidth = min(
@@ -264,7 +289,7 @@ private struct ResizableRichTextPreview: View {
             availableWidth
         )
         return min(
-            max(proposedWidth, Layout.minimumPreviewWidth),
+            max(proposedWidth, minimumWidth),
             maximumWidth
         )
     }
@@ -323,6 +348,8 @@ private enum Layout {
     static let minimumDocumentWidth: CGFloat = 520
     static let defaultDocumentWidth: CGFloat = 620
     static let minimumPreviewWidth: CGFloat = 360
+    static let minimumSplitPreviewWidth: CGFloat = 220
+    static let minimumSplitPaneWidth: CGFloat = 240
     static let defaultPreviewWidth: CGFloat = 700
     static let maximumPreviewWidth: CGFloat = 1_100
     static let gripperWidth: CGFloat = 12

@@ -34,7 +34,7 @@ reference is inserted at the current selection. Existing names are preserved;
 collisions use `image-2.png`, `image-3.png`, and so on. Supported formats are
 PNG, JPEG, GIF, WebP, TIFF, BMP, HEIC, HEIF, and SVG.
 
-## File explorer
+## File explorers
 
 The left sidebar follows the saved document's folder by default. Its top
 dropdown shows the current folder name. The menu lists one folder name per row
@@ -49,11 +49,12 @@ files are omitted, and packages and symbolic links are never traversed.
 
 ## Editing modes and formatting
 
-The toolbar's **Rich Text / Markdown** control switches between an editable
-rendered document and its exact Markdown source. Both modes edit the same source
-and preserve the current selection when switching. Markdown that the rendered
-editor does not recognize remains visible as literal text rather than being
-discarded.
+The toolbar's **Rich Text / Markdown / Split** control switches between an
+editable rendered document, its exact Markdown source, and both panes side by
+side. Split mode keeps both editors synchronized, applies formatting to the
+focused pane, and has a draggable center divider. All modes preserve the
+current selection when switching. Markdown that the rendered editor does not
+recognize remains visible as literal text rather than being discarded.
 
 Toolbar icons and the **Markdown** menu provide paragraph and heading levels,
 bold, italic, underline (`<u>...</u>`), strikethrough, bulleted, numbered, and
@@ -61,7 +62,8 @@ task lists, quotes, links, horizontal rules, and images. The Code menu has
 **Inline Code (Single Line)** for backtick spans and
 **Fenced Code Block (Multi-Line)** for full-line fenced blocks. Standard
 shortcuts include `Command-B`, `Command-I`, `Command-U`, and `Command-K`;
-`Option-Command-M` switches editing modes.
+`Option-Command-M` cycles editing modes. Rendered fenced blocks align every
+code line to the same leading edge and use one subtly rounded background.
 
 Drag the dotted gripper between the explorer and document to resize both
 panes. Double-click the gripper to restore the default pane split.

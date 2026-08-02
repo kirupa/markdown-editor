@@ -16,6 +16,7 @@ final class MarkdownEditorSession: ObservableObject {
 
     private let imageImporter: MarkdownImageImporter
     private weak var activeEditor: (any MarkdownEditingSurface)?
+    private var attachedEditors: [WeakEditingSurface] = []
     private var rememberedSelection = NSRange(location: 0, length: 0)
 
     init(
@@ -31,31 +32,64 @@ final class MarkdownEditorSession: ObservableObject {
         guard mode != viewMode else {
             return
         }
-        if let activeEditor {
-            activeEditor.commitPendingComposition()
-            rememberedSelection = activeEditor.selectedSourceRange
+        if let editor = currentEditor() {
+            editor.commitPendingComposition()
+            rememberedSelection = editor.selectedSourceRange
         }
         viewMode = mode
     }
 
-    func attach(_ editor: any MarkdownEditingSurface) {
-        if let activeEditor,
-            (activeEditor as AnyObject) === (editor as AnyObject)
-        {
-            return
+    func cycleViewMode() {
+        switch viewMode {
+        case .rich:
+            setViewMode(.source)
+        case .source:
+            setViewMode(.split)
+        case .split:
+            setViewMode(.rich)
         }
+    }
+
+    func attach(_ editor: any MarkdownEditingSurface) {
+        let editors = liveEditors()
+        if !editors.contains(where: { sameEditor($0, editor) }) {
+            attachedEditors.append(WeakEditingSurface(editor))
+        }
+
+        if activeEditor == nil {
+            activeEditor = editor
+            editor.setSourceSelection(rememberedSelection)
+        } else if editor.hasFocus {
+            activeEditor = editor
+        }
+    }
+
+    func activate(_ editor: any MarkdownEditingSurface) {
+        attach(editor)
         activeEditor = editor
-        editor.setSourceSelection(rememberedSelection)
+        rememberedSelection = editor.selectedSourceRange
     }
 
     func detach(_ editor: any MarkdownEditingSurface) {
-        guard let activeEditor,
-            (activeEditor as AnyObject) === (editor as AnyObject)
-        else {
+        let wasActive = activeEditor.map { sameEditor($0, editor) } ?? false
+        if wasActive {
+            rememberedSelection = editor.selectedSourceRange
+        }
+        attachedEditors.removeAll {
+            guard let attachedEditor = $0.value else {
+                return true
+            }
+            return sameEditor(attachedEditor, editor)
+        }
+
+        guard wasActive else {
             return
         }
-        rememberedSelection = editor.selectedSourceRange
-        self.activeEditor = nil
+        activeEditor = nil
+        if let replacement = liveEditors().first {
+            activeEditor = replacement
+            replacement.setSourceSelection(rememberedSelection)
+        }
     }
 
     func registerUndo(
@@ -64,7 +98,7 @@ final class MarkdownEditorSession: ObservableObject {
         undoManager: UndoManager
     ) {
         undoManager.registerUndo(withTarget: self) { session in
-            guard let editor = session.activeEditor else {
+            guard let editor = session.currentEditor() else {
                 return
             }
             let inverseState = MarkdownEditResult(
@@ -144,7 +178,8 @@ final class MarkdownEditorSession: ObservableObject {
     }
 
     func chooseExplorerFolder() {
-        activeEditor?.commitPendingComposition()
+        let editor = currentEditor()
+        editor?.commitPendingComposition()
 
         let panel = NSOpenPanel()
         panel.title = "Open Folder"
@@ -164,7 +199,7 @@ final class MarkdownEditorSession: ObservableObject {
             self?.fileExplorer.setUserSelectedRoot(folderURL)
         }
 
-        if let window = activeEditor?.hostingWindow {
+        if let window = editor?.hostingWindow {
             panel.beginSheetModal(for: window, completionHandler: completion)
         } else {
             panel.begin(completionHandler: completion)
@@ -181,11 +216,11 @@ final class MarkdownEditorSession: ObservableObject {
     }
 
     func chooseLink() {
-        guard activeEditor != nil else {
+        guard let editor = currentEditor() else {
             present(error: MarkdownEditorPresentationError.editorUnavailable)
             return
         }
-        activeEditor?.commitPendingComposition()
+        editor.commitPendingComposition()
 
         let destinationField = NSTextField(
             frame: NSRect(x: 0, y: 0, width: 320, height: 24)
@@ -219,7 +254,7 @@ final class MarkdownEditorSession: ObservableObject {
             }
         }
 
-        if let window = activeEditor?.hostingWindow {
+        if let window = editor.hostingWindow {
             alert.beginSheetModal(for: window, completionHandler: completion)
         } else {
             completion(alert.runModal())
@@ -227,7 +262,8 @@ final class MarkdownEditorSession: ObservableObject {
     }
 
     func chooseAndInsertImage() {
-        activeEditor?.commitPendingComposition()
+        let editor = currentEditor()
+        editor?.commitPendingComposition()
         guard fileURL != nil else {
             present(error: MarkdownImageImportError.documentHasNoFileLocation)
             return
@@ -256,7 +292,7 @@ final class MarkdownEditorSession: ObservableObject {
             self?.importAndInsertImage(at: sourceURL)
         }
 
-        if let window = activeEditor?.hostingWindow {
+        if let window = editor?.hostingWindow {
             panel.beginSheetModal(for: window, completionHandler: completion)
         } else {
             panel.begin(completionHandler: completion)
@@ -264,23 +300,23 @@ final class MarkdownEditorSession: ObservableObject {
     }
 
     func insertAtSelection(_ text: String) {
-        guard let activeEditor else {
+        guard let editor = currentEditor() else {
             present(
                 error: MarkdownEditorPresentationError.editorUnavailable
             )
             return
         }
-        activeEditor.commitPendingComposition()
+        editor.commitPendingComposition()
 
-        let source = activeEditor.sourceText as NSString
+        let source = editor.sourceText as NSString
         let selection = clamped(
-            activeEditor.selectedSourceRange,
+            editor.selectedSourceRange,
             to: source.length
         )
         let mutableSource = NSMutableString(string: source)
         mutableSource.replaceCharacters(in: selection, with: text)
         let insertionLength = (text as NSString).length
-        activeEditor.apply(
+        editor.apply(
             MarkdownEditResult(
                 text: mutableSource as String,
                 selection: NSRange(
@@ -308,26 +344,55 @@ final class MarkdownEditorSession: ObservableObject {
         _ actionName: String,
         transform: (String, NSRange) -> MarkdownEditResult
     ) {
-        guard let activeEditor else {
+        guard let editor = currentEditor() else {
             present(error: MarkdownEditorPresentationError.editorUnavailable)
             return
         }
-        activeEditor.commitPendingComposition()
+        editor.commitPendingComposition()
         let result = transform(
-            activeEditor.sourceText,
-            activeEditor.selectedSourceRange
+            editor.sourceText,
+            editor.selectedSourceRange
         )
-        activeEditor.apply(result, actionName: actionName)
-        activeEditor.focus()
+        editor.apply(result, actionName: actionName)
+        editor.focus()
     }
 
     private func present(error: Error) {
         let alert = NSAlert(error: error)
-        if let window = activeEditor?.hostingWindow {
+        if let window = currentEditor()?.hostingWindow {
             alert.beginSheetModal(for: window)
         } else {
             alert.runModal()
         }
+    }
+
+    private func currentEditor() -> (any MarkdownEditingSurface)? {
+        let editors = liveEditors()
+        if let focusedEditor = editors.first(where: \.hasFocus) {
+            activeEditor = focusedEditor
+            rememberedSelection = focusedEditor.selectedSourceRange
+            return focusedEditor
+        }
+        if let activeEditor,
+            editors.contains(where: { sameEditor($0, activeEditor) })
+        {
+            return activeEditor
+        }
+
+        activeEditor = editors.first
+        return activeEditor
+    }
+
+    private func liveEditors() -> [any MarkdownEditingSurface] {
+        attachedEditors.removeAll { $0.value == nil }
+        return attachedEditors.compactMap { $0.value }
+    }
+
+    private func sameEditor(
+        _ left: any MarkdownEditingSurface,
+        _ right: any MarkdownEditingSurface
+    ) -> Bool {
+        (left as AnyObject) === (right as AnyObject)
     }
 
     private func clamped(_ range: NSRange, to length: Int) -> NSRange {
@@ -336,6 +401,14 @@ final class MarkdownEditorSession: ObservableObject {
             location: location,
             length: min(max(0, range.length), length - location)
         )
+    }
+}
+
+private final class WeakEditingSurface {
+    weak var value: (any MarkdownEditingSurface)?
+
+    init(_ value: any MarkdownEditingSurface) {
+        self.value = value
     }
 }
 

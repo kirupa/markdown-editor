@@ -150,6 +150,13 @@ struct RichTextEditor: NSViewRepresentable {
             textView?.window
         }
 
+        var hasFocus: Bool {
+            guard let textView else {
+                return false
+            }
+            return textView.window?.firstResponder === textView
+        }
+
         func update(text: Binding<String>, documentURL: URL?) {
             self.text = text
             self.documentURL = documentURL
@@ -222,6 +229,16 @@ struct RichTextEditor: NSViewRepresentable {
             renderedDocumentURL = documentURL
             setSourceSelection(sourceSelection)
             isRendering = false
+        }
+
+        func textDidBeginEditing(_ notification: Notification) {
+            session?.activate(self)
+        }
+
+        func textViewDidChangeSelection(_ notification: Notification) {
+            if hasFocus {
+                session?.activate(self)
+            }
         }
 
         func textView(

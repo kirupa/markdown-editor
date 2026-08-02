@@ -15,6 +15,11 @@ final class RichMarkdownTextView: NSTextView {
     private var compositionIsActive = false
     private weak var compositionUndoManager: UndoManager?
 
+    override func drawBackground(in rect: NSRect) {
+        super.drawBackground(in: rect)
+        drawCodeBlockBackgrounds(in: rect)
+    }
+
     override func setMarkedText(
         _ string: Any,
         selectedRange: NSRange,
@@ -130,4 +135,89 @@ final class RichMarkdownTextView: NSTextView {
         compositionUndoManager = nil
         compositionDidCommit?()
     }
+
+    private func drawCodeBlockBackgrounds(in dirtyRect: NSRect) {
+        guard let textStorage,
+            let layoutManager,
+            let textContainer,
+            textStorage.length > 0
+        else {
+            return
+        }
+
+        let textContainerOrigin = self.textContainerOrigin
+        textStorage.enumerateAttribute(
+            .markdownCodeBlockBackground,
+            in: NSRange(location: 0, length: textStorage.length)
+        ) { value, characterRange, _ in
+            guard value != nil else {
+                return
+            }
+
+            let glyphRange = layoutManager.glyphRange(
+                forCharacterRange: characterRange,
+                actualCharacterRange: nil
+            )
+            guard glyphRange.length > 0 else {
+                return
+            }
+
+            var verticalBounds = NSRect.null
+            layoutManager.enumerateLineFragments(
+                forGlyphRange: glyphRange
+            ) { lineRect, _, _, lineGlyphRange, _ in
+                guard NSIntersectionRange(
+                    glyphRange,
+                    lineGlyphRange
+                ).length > 0 else {
+                    return
+                }
+                let positionedLineRect = lineRect.offsetBy(
+                    dx: textContainerOrigin.x,
+                    dy: textContainerOrigin.y
+                )
+                verticalBounds = verticalBounds.isNull
+                    ? positionedLineRect
+                    : verticalBounds.union(positionedLineRect)
+            }
+
+            guard !verticalBounds.isNull,
+                textContainer.size.width.isFinite
+            else {
+                return
+            }
+
+            let horizontalInset: CGFloat = 4
+            let verticalPadding: CGFloat = 3
+            let blockRect = NSRect(
+                x: textContainerOrigin.x + horizontalInset,
+                y: verticalBounds.minY - verticalPadding,
+                width: max(
+                    0,
+                    textContainer.size.width - (horizontalInset * 2)
+                ),
+                height: verticalBounds.height + (verticalPadding * 2)
+            )
+            guard blockRect.width > 0,
+                blockRect.intersects(dirtyRect)
+            else {
+                return
+            }
+
+            NSColor.quaternaryLabelColor
+                .withAlphaComponent(0.16)
+                .setFill()
+            NSBezierPath(
+                roundedRect: blockRect,
+                xRadius: 5,
+                yRadius: 5
+            ).fill()
+        }
+    }
+}
+
+extension NSAttributedString.Key {
+    static let markdownCodeBlockBackground = Self(
+        "com.kirupa.markdown-editor.code-block-background"
+    )
 }

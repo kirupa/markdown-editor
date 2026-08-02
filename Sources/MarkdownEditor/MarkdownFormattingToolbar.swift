@@ -18,8 +18,8 @@ struct MarkdownFormattingToolbar: ToolbarContent {
                 }
             }
             .pickerStyle(.segmented)
-            .frame(width: 190)
-            .help("Switch between rendered editing and Markdown source")
+            .frame(width: 260)
+            .help("Switch among Rich Text, Markdown, and Split views")
         }
 
         ToolbarItem {

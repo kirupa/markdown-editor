@@ -25,17 +25,23 @@ struct MarkdownEditorCommands: Commands {
         }
 
         CommandMenu("Markdown") {
-            Button(
-                session?.viewMode == .rich
-                    ? "Show Markdown Source"
-                    : "Show Rich Text"
-            ) {
-                guard let session else {
-                    return
+            Menu("Editor View") {
+                ForEach(EditorViewMode.allCases) { mode in
+                    Button {
+                        session?.setViewMode(mode)
+                    } label: {
+                        if session?.viewMode == mode {
+                            Label(mode.rawValue, systemImage: "checkmark")
+                        } else {
+                            Text(mode.rawValue)
+                        }
+                    }
                 }
-                session.setViewMode(
-                    session.viewMode == .rich ? .source : .rich
-                )
+            }
+            .disabled(session == nil)
+
+            Button("Cycle Editor View") {
+                session?.cycleViewMode()
             }
             .keyboardShortcut("m", modifiers: [.command, .option])
             .disabled(session == nil)

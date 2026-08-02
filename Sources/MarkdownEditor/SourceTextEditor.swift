@@ -149,6 +149,13 @@ struct SourceTextEditor: NSViewRepresentable {
             textView?.window
         }
 
+        var hasFocus: Bool {
+            guard let textView else {
+                return false
+            }
+            return textView.window?.firstResponder === textView
+        }
+
         func apply(_ result: MarkdownEditResult, actionName: String) {
             let previousState = MarkdownEditResult(
                 text: text.wrappedValue,
@@ -196,6 +203,16 @@ struct SourceTextEditor: NSViewRepresentable {
                 return
             }
             textView.window?.makeFirstResponder(textView)
+        }
+
+        func textDidBeginEditing(_ notification: Notification) {
+            session?.activate(self)
+        }
+
+        func textViewDidChangeSelection(_ notification: Notification) {
+            if hasFocus {
+                session?.activate(self)
+            }
         }
 
         func textView(

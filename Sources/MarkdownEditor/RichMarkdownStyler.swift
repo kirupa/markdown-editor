@@ -66,14 +66,16 @@ enum RichMarkdownStyler {
                 range: range
             )
         case .codeBlock:
+            guard span.includesMarkup else {
+                return
+            }
             text.addAttributes(
                 [
                     .font: NSFont.monospacedSystemFont(
                         ofSize: 13,
                         weight: .regular
                     ),
-                    .backgroundColor: NSColor.quaternaryLabelColor
-                        .withAlphaComponent(0.16)
+                    .markdownCodeBlockBackground: true
                 ],
                 range: range
             )
@@ -81,12 +83,18 @@ enum RichMarkdownStyler {
             paragraphStyle.firstLineHeadIndent = 14
             paragraphStyle.headIndent = 14
             paragraphStyle.tailIndent = -14
-            paragraphStyle.paragraphSpacingBefore = 7
-            paragraphStyle.paragraphSpacing = 7
+            paragraphStyle.lineSpacing = 1
+            paragraphStyle.paragraphSpacingBefore = 0
+            paragraphStyle.paragraphSpacing = 0
             text.addAttribute(
                 .paragraphStyle,
                 value: paragraphStyle,
                 range: range
+            )
+            applyCodeBlockSpacing(
+                paragraphStyle,
+                range: range,
+                to: text
             )
         case .quote:
             text.addAttribute(
@@ -229,6 +237,63 @@ enum RichMarkdownStyler {
                 range: subrange
             )
         }
+    }
+
+    private static func applyCodeBlockSpacing(
+        _ paragraphStyle: NSParagraphStyle,
+        range: NSRange,
+        to text: NSMutableAttributedString
+    ) {
+        let string = text.string as NSString
+        let firstParagraphRange = NSIntersectionRange(
+            string.paragraphRange(
+                for: NSRange(location: range.location, length: 0)
+            ),
+            range
+        )
+        let lastParagraphRange = NSIntersectionRange(
+            string.paragraphRange(
+                for: NSRange(
+                    location: max(range.location, NSMaxRange(range) - 1),
+                    length: 0
+                )
+            ),
+            range
+        )
+
+        if NSEqualRanges(firstParagraphRange, lastParagraphRange) {
+            let singleParagraphStyle = paragraphStyle.mutableCopy()
+                as? NSMutableParagraphStyle
+                ?? NSMutableParagraphStyle()
+            singleParagraphStyle.paragraphSpacingBefore = 7
+            singleParagraphStyle.paragraphSpacing = 7
+            text.addAttribute(
+                .paragraphStyle,
+                value: singleParagraphStyle,
+                range: firstParagraphRange
+            )
+            return
+        }
+
+        let firstParagraphStyle = paragraphStyle.mutableCopy()
+            as? NSMutableParagraphStyle
+            ?? NSMutableParagraphStyle()
+        firstParagraphStyle.paragraphSpacingBefore = 7
+        text.addAttribute(
+            .paragraphStyle,
+            value: firstParagraphStyle,
+            range: firstParagraphRange
+        )
+
+        let lastParagraphStyle = paragraphStyle.mutableCopy()
+            as? NSMutableParagraphStyle
+            ?? NSMutableParagraphStyle()
+        lastParagraphStyle.paragraphSpacing = 7
+        text.addAttribute(
+            .paragraphStyle,
+            value: lastParagraphStyle,
+            range: lastParagraphRange
+        )
     }
 
     private static func imageAttachment(
