@@ -11,7 +11,7 @@ app supports as of the current `main`.
 > **Maintenance rule:** this PRD is the canonical description of the product.
 > Every change that adds, removes, or alters a user-visible capability must
 > update the matching requirement here in the same commit, and add a line to
-> [Release history](#16-release-history).
+> [Release history](#17-release-history).
 
 ---
 
@@ -20,20 +20,21 @@ app supports as of the current `main`.
 1. [Product summary](#1-product-summary)
 2. [Goals and non-goals](#2-goals-and-non-goals)
 3. [Platform and technical requirements](#3-platform-and-technical-requirements)
-4. [Document lifecycle](#4-document-lifecycle)
-5. [Editing modes](#5-editing-modes)
-6. [Markdown language support](#6-markdown-language-support)
-7. [Formatting commands](#7-formatting-commands)
-8. [Images and assets](#8-images-and-assets)
-9. [Links](#9-links)
-10. [File explorer](#10-file-explorer)
-11. [Themes and appearance](#11-themes-and-appearance)
-12. [Typography and layout](#12-typography-and-layout)
-13. [Keyboard shortcut reference](#13-keyboard-shortcut-reference)
-14. [Architecture](#14-architecture)
-15. [Build, run, and test](#15-build-run-and-test)
-16. [Release history](#16-release-history)
-17. [Out of scope / not yet supported](#17-out-of-scope--not-yet-supported)
+4. [Welcome window](#4-welcome-window)
+5. [Document lifecycle](#5-document-lifecycle)
+6. [Editing modes](#6-editing-modes)
+7. [Markdown language support](#7-markdown-language-support)
+8. [Formatting commands](#8-formatting-commands)
+9. [Images and assets](#9-images-and-assets)
+10. [Links](#10-links)
+11. [File explorer](#11-file-explorer)
+12. [Themes and appearance](#12-themes-and-appearance)
+13. [Typography and layout](#13-typography-and-layout)
+14. [Keyboard shortcut reference](#14-keyboard-shortcut-reference)
+15. [Architecture](#15-architecture)
+16. [Build, run, and test](#16-build-run-and-test)
+17. [Release history](#17-release-history)
+18. [Out of scope / not yet supported](#18-out-of-scope--not-yet-supported)
 
 ---
 
@@ -48,7 +49,8 @@ Markdown text on disk.
 
 Three surfaces are provided over the same document: a rendered editor, a raw
 source editor, and a synchronized side-by-side split of both. A file explorer
-sidebar allows browsing and opening files without leaving the app.
+sidebar allows browsing and opening files without leaving the app, and a
+welcome window offers recent documents at launch.
 
 ---
 
@@ -86,6 +88,7 @@ sidebar allows browsing and opening files without leaving the app.
 | P-3 | Uses only SwiftUI, AppKit, Foundation, and UniformTypeIdentifiers. No third-party packages are permitted. |
 | P-4 | Ships as an ad-hoc-signed `.app` bundle produced from the package; no Xcode project is required. |
 | P-5 | Declares `LSApplicationCategoryType` of `public.app-category.developer-tools` and is high-resolution capable. |
+| P-6 | Declares `NSShowAppCentricOpenPanelInsteadOfUntitledFile` as `false` so systems that honor it do not raise an Open panel at launch. |
 
 ### 3.1 Package layout
 
@@ -100,9 +103,76 @@ The split exists so that all logic that can be tested without a running app
 
 ---
 
-## 4. Document lifecycle
+## 4. Welcome window
 
-### 4.1 File type
+The app launches to a landing window instead of an empty untitled document, so
+the first decision — new file, existing file, or something recent — is made
+before anything is on screen.
+
+### 4.1 When it appears
+
+| ID | Requirement |
+| --- | --- |
+| W-1 | On a plain launch with nothing to restore, nothing opened from Finder, and no document handed over by another app, the welcome window is shown and centered. |
+| W-2 | The welcome window is **not** shown when the app is launched by opening a document, or when macOS restores previously open documents. Those launches go straight to the document. |
+| W-3 | Clicking the Dock icon while the app is running with no visible windows shows the welcome window. |
+| W-4 | **Window ▸ Welcome to Markdown Editor** shows it at any time, including alongside open documents. |
+| W-5 | A **Show this window at launch** checkbox controls W-1. Unchecking it restores the standard macOS launch behavior for document apps. The setting persists in `showsWelcomeWindowAtLaunch` and defaults to on. |
+
+Two AppKit launch paths are covered, because the system picks between them:
+the classic untitled-document path via `applicationOpenUntitledFile(_:)`, and
+the newer app-centric Open panel that recent macOS releases raise on behalf of
+`DocumentGroup` without consulting the delegate. In the second case the panel is
+dismissed during `applicationDidFinishLaunching(_:)` before the landing window
+appears. `NSShowAppCentricOpenPanelInsteadOfUntitledFile` is set to `false` in
+the bundle so systems that honor it never construct that panel at all.
+
+### 4.2 When it goes away
+
+| ID | Requirement |
+| --- | --- |
+| W-6 | The welcome window closes automatically as soon as a **newly opened** document window becomes main — whether it came from this window, the File menu, Finder, or Open Recent. |
+| W-7 | Activating a document window that was already open does **not** close the welcome window, so opening it deliberately while working is not self-defeating. |
+| W-8 | The Open panel raised from this window does not dismiss it. Cancelling that panel leaves the welcome window in place. |
+| W-9 | The window can be closed manually. It has no minimize or zoom button and is not resizable. |
+
+### 4.3 Actions
+
+| ID | Requirement |
+| --- | --- |
+| W-10 | **New Document** creates an untitled document. It is the window's default button, so Return triggers it. |
+| W-11 | **Open…** presents the standard document Open panel, filtered to the app's Markdown types. |
+| W-12 | Both actions route through the same responder-chain commands as the File menu, so behavior is identical to `⌘N` and `⌘O`. |
+
+### 4.4 Recent documents
+
+| ID | Requirement |
+| --- | --- |
+| W-13 | The window lists recently opened or saved Markdown documents, most recent first, showing the filename, its containing folder, and the file's modification date. |
+| W-14 | Folder paths inside the user's home directory are abbreviated to `~`, matching Finder. Paths elsewhere are shown in full. Long paths truncate in the middle. |
+| W-15 | Clicking an entry opens that document. |
+| W-16 | Up to **12** entries are shown; up to **40** paths are retained. |
+| W-17 | Entries whose file has been deleted, renamed, or moved to an unmounted volume are pruned every time the window is shown, and removed from storage. The list never offers a dead row. |
+| W-18 | Only `.md` and `.markdown` paths are ever recorded. |
+| W-19 | Right-clicking an entry offers **Show in Finder** and **Remove from Recents**. |
+| W-20 | **Clear** empties both this list and the system File ▸ Open Recent menu. |
+| W-21 | The list is stored in `recentDocumentPaths` and is authoritative. It seeds itself once from `NSDocumentController.recentDocumentURLs` on first run, so recents from before this feature existed still appear, and a removed entry stays removed afterwards. |
+| W-22 | Every document opened by the app is recorded, including files opened from the file explorer sidebar, and each newly saved location. |
+| W-23 | With no recents, the panel shows an explanatory empty state rather than a blank area. |
+
+### 4.5 Appearance
+
+| ID | Requirement |
+| --- | --- |
+| W-24 | The window uses the current theme: tinted sidebar on the left, document-colored panel on the right, themed accent for icons, links, and the checkbox. |
+| W-25 | Hovering a recent entry fills it with the theme accent and switches its text to whichever of black or white has the higher measured contrast against that accent. |
+| W-26 | The window is 760 × 470 points with a hidden title and full-size content view. |
+
+---
+
+## 5. Document lifecycle
+
+### 5.1 File type
 
 | ID | Requirement |
 | --- | --- |
@@ -110,7 +180,7 @@ The split exists so that all logic that can be tested without a running app
 | D-2 | Recognized filename extensions are `.md` and `.markdown`. |
 | D-3 | The app registers as `Editor` with handler rank `Owner` for those types, so it can be set as the default Markdown application. |
 
-### 4.2 Standard document behavior
+### 5.2 Standard document behavior
 
 | ID | Requirement |
 | --- | --- |
@@ -118,8 +188,9 @@ The split exists so that all logic that can be tested without a running app
 | D-5 | A new document starts as an empty string. |
 | D-6 | Closing a document with unsaved changes presents the standard macOS save prompt. Nothing custom overrides this. |
 | D-7 | Each document opens in its own window. |
+| D-18 | Launch is intercepted so an empty launch presents the welcome window instead of an untitled document or an Open panel. See [Welcome window](#4-welcome-window). |
 
-### 4.3 Text encoding
+### 5.3 Text encoding
 
 | ID | Requirement |
 | --- | --- |
@@ -128,7 +199,7 @@ The split exists so that all logic that can be tested without a running app
 | D-10 | Line endings are never normalized. The bytes between the first and last character are preserved exactly as typed. |
 | D-11 | Opening a file that is not valid UTF-8 fails with the message "The file is not valid UTF-8 Markdown." and the recovery suggestion "Convert the file to UTF-8 and try opening it again." |
 
-### 4.4 Autosave
+### 5.4 Autosave
 
 | ID | Requirement |
 | --- | --- |
@@ -141,9 +212,9 @@ The split exists so that all logic that can be tested without a running app
 
 ---
 
-## 5. Editing modes
+## 6. Editing modes
 
-### 5.1 The three modes
+### 6.1 The three modes
 
 | ID | Requirement |
 | --- | --- |
@@ -153,7 +224,7 @@ The split exists so that all logic that can be tested without a running app
 | E-4 | Modes are switchable from a segmented control in the toolbar and from **Markdown ▸ Editor View**. `⌘⌥M` cycles Rich Text → Markdown → Split → Rich Text. |
 | E-5 | Switching modes preserves the current selection. |
 
-### 5.2 Rich Text mode
+### 6.2 Rich Text mode
 
 | ID | Requirement |
 | --- | --- |
@@ -165,7 +236,7 @@ The split exists so that all logic that can be tested without a running app
 | E-11 | Cut copies the Markdown, then removes the selection as a single undoable operation. |
 | E-12 | Undo and redo are registered per logical operation with descriptive action names, and multi-keystroke input method composition is committed as one undo step. |
 
-### 5.3 Split mode synchronization
+### 6.3 Split mode synchronization
 
 | ID | Requirement |
 | --- | --- |
@@ -175,14 +246,14 @@ The split exists so that all logic that can be tested without a running app
 | E-16 | Synchronization is guarded against feedback loops in both directions, and scroll adjustments smaller than 0.5 points are ignored to prevent jitter. |
 | E-17 | Synchronization is active only in Split mode. |
 
-### 5.4 Representative source typography
+### 6.4 Representative source typography
 
 | ID | Requirement |
 | --- | --- |
 | E-18 | The raw Markdown pane shows every source marker verbatim (`#`, `**`, backticks, and so on) — nothing is hidden. |
 | E-19 | Despite showing markers, the source pane renders headings, body text, and code at **the same point sizes the preview uses**, so the two panes in Split keep similar vertical proportions and scroll together meaningfully. |
 
-### 5.5 Standard text behaviors
+### 6.5 Standard text behaviors
 
 | ID | Requirement |
 | --- | --- |
@@ -191,9 +262,9 @@ The split exists so that all logic that can be tested without a running app
 
 ---
 
-## 6. Markdown language support
+## 7. Markdown language support
 
-### 6.1 Block constructs parsed and rendered
+### 7.1 Block constructs parsed and rendered
 
 | Construct | Syntax accepted | Rendered as |
 | --- | --- | --- |
@@ -206,7 +277,7 @@ The split exists so that all logic that can be tested without a running app
 | Fenced code blocks | 3 or more backticks **or** tildes, optional language identifier, matching closing fence | Monospaced block on a rounded tinted background |
 | Horizontal rules | 3 or more `-`, `*`, or `_`, optionally spaced | Centered `—` |
 
-### 6.2 Inline constructs parsed and rendered
+### 7.2 Inline constructs parsed and rendered
 
 | Construct | Syntax accepted |
 | --- | --- |
@@ -227,7 +298,7 @@ The split exists so that all logic that can be tested without a running app
 | M-3 | Markdown inside inline code spans is **not** parsed. |
 | M-4 | Any syntax the parser does not recognize is preserved verbatim as literal text. |
 
-### 6.3 Source ↔ rendered range mapping
+### 7.3 Source ↔ rendered range mapping
 
 | ID | Requirement |
 | --- | --- |
@@ -237,13 +308,13 @@ The split exists so that all logic that can be tested without a running app
 
 ---
 
-## 7. Formatting commands
+## 8. Formatting commands
 
 All commands operate on the Markdown source and return both the new text and
 a recalculated selection, so the caret lands somewhere sensible after every
 operation.
 
-### 7.1 Inline styles
+### 8.1 Inline styles
 
 | Style | Markers written | Notes |
 | --- | --- | --- |
@@ -261,7 +332,7 @@ operation.
 | F-4 | Toggling one half of a combined `***bold italic***` run unwraps it correctly to the remaining single style. |
 | F-5 | Inline code pads with a space when the content itself begins or ends with a backtick or whitespace, per Markdown rules. |
 
-### 7.2 Block styles
+### 8.2 Block styles
 
 | ID | Requirement |
 | --- | --- |
@@ -272,7 +343,7 @@ operation.
 | F-10 | Horizontal rules are written as `***` on their own line, with surrounding blank lines added only when needed. |
 | F-11 | Fenced code blocks use backtick fences of at least 3, extended to one more than the longest backtick run in the selection. |
 
-### 7.3 Smart list and quote continuation
+### 8.3 Smart list and quote continuation
 
 | ID | Requirement |
 | --- | --- |
@@ -283,9 +354,9 @@ operation.
 
 ---
 
-## 8. Images and assets
+## 9. Images and assets
 
-### 8.1 Assets convention
+### 9.1 Assets convention
 
 | ID | Requirement |
 | --- | --- |
@@ -293,7 +364,7 @@ operation.
 | I-2 | The assets folder is created on demand. |
 | I-3 | The document must be saved before an image can be added, because the assets folder location is derived from the document's location. |
 
-### 8.2 Import behavior
+### 9.2 Import behavior
 
 | ID | Requirement |
 | --- | --- |
@@ -305,7 +376,7 @@ operation.
 | I-9 | The path is percent-encoded per RFC 3986, preserving only alphanumerics and `- . _ ~`. A file named `my image.jpg` is referenced as `my%20image.jpg`. |
 | I-10 | Alt text is escaped so that `\`, `[`, and `]` in a filename cannot break the reference. |
 
-### 8.3 Safety and error reporting
+### 9.3 Safety and error reporting
 
 | ID | Condition | Message |
 | --- | --- | --- |
@@ -323,7 +394,7 @@ operation.
 
 ---
 
-## 9. Links
+## 10. Links
 
 | ID | Requirement |
 | --- | --- |
@@ -334,7 +405,7 @@ operation.
 
 ---
 
-## 10. File explorer
+## 11. File explorer
 
 | ID | Requirement |
 | --- | --- |
@@ -354,7 +425,7 @@ operation.
 | X-14 | The document area is never squeezed below 520 points; the sidebar yields first. |
 | X-15 | Selected rows are drawn with a rounded fill in the active theme's accent color, with the label color chosen automatically for contrast. Non-Markdown files are shown in secondary text color. |
 
-### 10.1 Preview width
+### 11.1 Preview width
 
 | ID | Requirement |
 | --- | --- |
@@ -363,9 +434,9 @@ operation.
 
 ---
 
-## 11. Themes and appearance
+## 12. Themes and appearance
 
-### 11.1 Model
+### 12.1 Model
 
 | ID | Requirement |
 | --- | --- |
@@ -375,7 +446,7 @@ operation.
 | T-4 | The choice persists app-wide in `UserDefaults` under the keys `editorThemeColor` and `editorAppearanceMode`. |
 | T-5 | On first launch the background mode follows the macOS system appearance; the color defaults to Blue. |
 
-### 11.2 Customize Theme popover
+### 12.2 Customize Theme popover
 
 | ID | Requirement |
 | --- | --- |
@@ -385,7 +456,7 @@ operation.
 | T-9 | Swatches use the exact fill and border colors from the site's `#themeChooser` rules, drawn as rounded squares with a 3-point border. The active swatch is scaled slightly and glows. |
 | T-10 | **Markdown ▸ Theme Color** and **Markdown ▸ Background** apply the same choices immediately from the menu bar, without the Apply step. |
 
-### 11.3 Coverage and contrast
+### 12.3 Coverage and contrast
 
 | ID | Requirement |
 | --- | --- |
@@ -397,9 +468,9 @@ operation.
 
 ---
 
-## 12. Typography and layout
+## 13. Typography and layout
 
-### 12.1 Font sizes
+### 13.1 Font sizes
 
 | Element | Rendered preview | Raw Markdown pane |
 | --- | --- | --- |
@@ -412,7 +483,7 @@ operation.
 | Body | 15 pt | 15 pt monospaced |
 | Code | 13 pt monospaced | 13 pt monospaced |
 
-### 12.2 Block layout
+### 13.2 Block layout
 
 | ID | Requirement |
 | --- | --- |
@@ -426,9 +497,9 @@ operation.
 
 ---
 
-## 13. Keyboard shortcut reference
+## 14. Keyboard shortcut reference
 
-### 13.1 Provided by the app
+### 14.1 Provided by the app
 
 | Shortcut | Command |
 | --- | --- |
@@ -440,23 +511,29 @@ operation.
 | `⌘⌥M` | Cycle Editor View |
 | `⌘⌥O` | Open Folder… |
 
-### 13.2 Provided by macOS
+### 14.2 Provided by macOS
 
 `⌘N` New, `⌘O` Open, `⌘S` Save, `⇧⌘S` Save As / Duplicate, `⌘W` Close,
 `⌘Z` / `⇧⌘Z` Undo and Redo, `⌘X` / `⌘C` / `⌘V` Cut, Copy, Paste,
 `⌘A` Select All, `⌘F` / `⌘G` / `⇧⌘G` Find, Find Next, Find Previous,
 plus all standard text navigation and selection.
 
-### 13.3 Menu commands without shortcuts
+### 14.3 Menu commands without shortcuts
 
 **Markdown menu:** Editor View, Theme Color, Background, Strikethrough,
 Code ▸ Inline Code (Single Line), Code ▸ Fenced Code Block (Multi-Line),
 Heading ▸ Paragraph and Heading 1–6, Bulleted List, Numbered List, Task List,
 Quote, Horizontal Rule.
 
+**Window menu:** Welcome to Markdown Editor.
+
+### 14.4 Welcome window
+
+`Return` triggers **New Document**, the window's default button.
+
 ---
 
-## 14. Architecture
+## 15. Architecture
 
 ```
 Sources/
@@ -466,14 +543,19 @@ Sources/
 │   ├── MarkdownImageImporter    Asset folder resolution, copying, referencing
 │   ├── MarkdownTextCodec        UTF-8 and BOM handling
 │   ├── MarkdownTextDifference   Minimal-replacement diffing
+│   ├── RecentDocumentsCatalog   Recent-document ordering, filtering, pruning
 │   └── FileTreeScanner          Directory listing and ordering
 └── MarkdownEditor/              SwiftUI + AppKit application
     ├── MarkdownEditorApp        DocumentGroup scene, persisted preferences
+    ├── MarkdownEditorAppDelegate Launch interception for the welcome window
     ├── MarkdownDocument         FileDocument conformance
     ├── MarkdownEditorView       Layout, panes, dividers, autosave wiring
     ├── MarkdownEditorSession    Shared editing state and command dispatch
     ├── MarkdownEditorCommands   Menu bar commands
     ├── MarkdownFormattingToolbar Toolbar items
+    ├── WelcomeWindowController  Landing window hosting and lifecycle
+    ├── WelcomeView              Landing window UI
+    ├── RecentDocumentsModel     Persisted recent-document store
     ├── RichTextEditor           Rendered editing surface
     ├── RichMarkdownTextView     NSTextView subclass: pasteboard, code backgrounds
     ├── RichMarkdownStyler       Applies attributes from the render model
@@ -498,7 +580,7 @@ Sources/
 
 ---
 
-## 15. Build, run, and test
+## 16. Build, run, and test
 
 Requires macOS 13 or newer and a current Apple Swift toolchain. A full Xcode
 installation is not required, but the Command Line Tools must be installed.
@@ -524,14 +606,15 @@ signature with `codesign --verify --deep --strict`.
 search path and rpath from the active Xcode toolchain when the toolchain does
 not expose it directly.
 
-### 15.1 Test coverage
+### 16.1 Test coverage
 
-72 tests across 6 suites, all in `MarkdownEditorCore`:
+82 tests across 7 suites, all in `MarkdownEditorCore`:
 
 | Suite | Tests | Covers |
 | --- | --- | --- |
 | Markdown formatting | 30 | Every inline and block transform, toggle-off detection, renumbering, list continuation |
 | Markdown render model | 24 | Block and inline parsing, boundary rules, escapes, range mapping |
+| Recent documents catalog | 10 | Merge order, de-duplication, Markdown filtering, caps, promotion, removal, pruning of missing files, home-relative paths |
 | Markdown image importer | 6 | Assets folder naming, collisions, symlink rejection, unsaved documents, unsupported types |
 | File tree scanner | 6 | Ordering, hidden files, packages, symlinks |
 | Markdown text codec | 3 | UTF-8 round trip, BOM preservation, invalid input |
@@ -539,7 +622,7 @@ not expose it directly.
 
 ---
 
-## 16. Release history
+## 17. Release history
 
 | Change | Summary |
 | --- | --- |
@@ -555,10 +638,11 @@ not expose it directly.
 | Match source typography to preview | Representative heading and body sizes in the raw Markdown pane |
 | Add editor themes and autosave | Initial theme support and debounced autosave-in-place |
 | Match theme selector to kirupa.com | Eight site colors on a Light/Dark axis, Customize Theme popover with Apply and Cancel |
+| Add welcome window | Landing window at launch with New Document, Open, and a pruned recent-documents list; replaces the launch Open panel |
 
 ---
 
-## 17. Out of scope / not yet supported
+## 18. Out of scope / not yet supported
 
 Known gaps, recorded deliberately so they are not mistaken for bugs:
 

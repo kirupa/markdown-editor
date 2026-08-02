@@ -35,6 +35,13 @@ struct MarkdownEditorCommands: Commands {
             .disabled(session == nil)
         }
 
+        CommandGroup(before: .windowList) {
+            Button("Welcome to Markdown Editor") {
+                WelcomeWindowController.shared.show()
+            }
+            Divider()
+        }
+
         CommandMenu("Markdown") {
             Menu("Editor View") {
                 ForEach(EditorViewMode.allCases) { mode in

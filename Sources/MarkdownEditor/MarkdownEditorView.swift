@@ -154,9 +154,17 @@ struct MarkdownEditorView: View {
                 colorTheme: colorThemeSelection
             )
         }
+        .onAppear {
+            if let fileURL {
+                RecentDocumentsModel.shared.record(fileURL)
+            }
+        }
         .onChange(of: fileURL) { newFileURL in
             autosaveController.cancelPendingSave()
             session.fileURL = newFileURL
+            if let newFileURL {
+                RecentDocumentsModel.shared.record(newFileURL)
+            }
         }
         .onChange(of: document.text) { _ in
             autosaveController.scheduleSave(for: fileURL)

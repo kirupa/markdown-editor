@@ -2,6 +2,8 @@ import SwiftUI
 
 @main
 struct MarkdownEditorApp: App {
+    @NSApplicationDelegateAdaptor(MarkdownEditorAppDelegate.self)
+    private var appDelegate
     @AppStorage(EditorThemeColor.storageKey)
     private var themeColorRawValue = EditorThemeColor.blue.rawValue
     @AppStorage(EditorAppearanceMode.storageKey)
