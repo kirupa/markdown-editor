@@ -10,6 +10,8 @@ Markdown.
 Requires macOS 13 or newer and a current Apple Swift toolchain.
 
 ```bash
+git clone https://github.com/kirupa/markdown-editor.git
+cd markdown-editor
 make app
 open "build/Markdown Editor.app"
 ```
