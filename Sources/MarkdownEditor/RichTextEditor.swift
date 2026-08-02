@@ -6,6 +6,7 @@ struct RichTextEditor: NSViewRepresentable {
     @Binding var text: String
     let documentURL: URL?
     let session: MarkdownEditorSession
+    let layoutWidth: CGFloat
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
@@ -16,7 +17,7 @@ struct RichTextEditor: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSScrollView()
+        let scrollView = ReflowingTextScrollView()
         let textView = RichMarkdownTextView(frame: scrollView.bounds)
         textView.minSize = NSSize(width: 0, height: 0)
         textView.maxSize = NSSize(
@@ -46,6 +47,7 @@ struct RichTextEditor: NSViewRepresentable {
         textView.smartInsertDeleteEnabled = false
         textView.textContainerInset = NSSize(width: 24, height: 20)
         textView.setAccessibilityLabel("Rendered Markdown editor")
+        scrollView.requestedDocumentWidth = layoutWidth
 
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
@@ -85,6 +87,8 @@ struct RichTextEditor: NSViewRepresentable {
             text: $text,
             documentURL: documentURL
         )
+        (scrollView as? ReflowingTextScrollView)?
+            .requestedDocumentWidth = layoutWidth
         session.attach(context.coordinator)
     }
 
@@ -433,5 +437,64 @@ struct RichTextEditor: NSViewRepresentable {
         let renderedText: String
         let renderedRange: NSRange
         let model: MarkdownRenderModel
+    }
+}
+
+@MainActor
+private final class ReflowingTextScrollView: NSScrollView {
+    var requestedDocumentWidth: CGFloat = 0 {
+        didSet {
+            guard abs(requestedDocumentWidth - oldValue) > 0.5 else {
+                return
+            }
+            reflowDocument()
+            needsLayout = true
+        }
+    }
+
+    override func layout() {
+        super.layout()
+        reflowDocument()
+    }
+
+    private func reflowDocument() {
+        guard requestedDocumentWidth > 0,
+            let textView = documentView as? NSTextView,
+            let textContainer = textView.textContainer
+        else {
+            return
+        }
+
+        let currentContentWidth = contentSize.width
+        let targetWidth = currentContentWidth > 1
+            ? min(requestedDocumentWidth, currentContentWidth)
+            : requestedDocumentWidth
+        let targetContainerWidth = max(
+            1,
+            targetWidth - (textView.textContainerInset.width * 2)
+        )
+        let textViewNeedsResize = abs(
+            textView.frame.width - targetWidth
+        ) > 0.5
+        let containerNeedsResize = abs(
+            textContainer.containerSize.width - targetContainerWidth
+        ) > 0.5
+        guard textViewNeedsResize || containerNeedsResize else {
+            return
+        }
+
+        if textViewNeedsResize {
+            textView.setFrameSize(
+                NSSize(width: targetWidth, height: textView.frame.height)
+            )
+        }
+        if containerNeedsResize {
+            textContainer.containerSize = NSSize(
+                width: targetContainerWidth,
+                height: CGFloat.greatestFiniteMagnitude
+            )
+        }
+        textContainer.widthTracksTextView = true
+        textView.layoutManager?.ensureLayout(for: textContainer)
     }
 }

@@ -66,5 +66,5 @@ shortcuts include `Command-B`, `Command-I`, `Command-U`, and `Command-K`;
 Drag the dotted gripper between the explorer and document to resize both
 panes. Double-click the gripper to restore the default pane split.
 In Rich Text mode, a second gripper at the preview's right edge resizes the
-rendered document width without changing the explorer. Double-click it to
-restore the default preview width.
+rendered document width without changing the explorer, reflowing content as
+you drag. Double-click it to restore the default preview width.

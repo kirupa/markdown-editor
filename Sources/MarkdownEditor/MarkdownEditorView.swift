@@ -171,7 +171,8 @@ private struct ResizableRichTextPreview: View {
                 RichTextEditor(
                     text: $text,
                     documentURL: documentURL,
-                    session: session
+                    session: session,
+                    layoutWidth: visibleWidth
                 )
                 .frame(width: visibleWidth)
 
