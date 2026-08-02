@@ -13,7 +13,9 @@ enum RichMarkdownStyler {
         let attributedText = NSMutableAttributedString(
             string: model.text,
             attributes: [
-                .font: NSFont.systemFont(ofSize: 15),
+                .font: NSFont.systemFont(
+                    ofSize: MarkdownTypography.bodyFontSize
+                ),
                 .foregroundColor: NSColor.labelColor,
                 .paragraphStyle: baseParagraphStyle
             ]
@@ -50,11 +52,12 @@ enum RichMarkdownStyler {
 
         switch span.style {
         case .heading(let level):
-            let sizes: [CGFloat] = [30, 25, 21, 18, 16, 15]
-            let size = sizes[min(max(level, 1), 6) - 1]
             text.addAttribute(
                 .font,
-                value: NSFont.systemFont(ofSize: size, weight: .bold),
+                value: NSFont.systemFont(
+                    ofSize: MarkdownTypography.headingFontSize(level: level),
+                    weight: .bold
+                ),
                 range: range
             )
             let paragraphStyle = paragraphStyle(in: text, at: range.location)
@@ -72,7 +75,7 @@ enum RichMarkdownStyler {
             text.addAttributes(
                 [
                     .font: NSFont.monospacedSystemFont(
-                        ofSize: 13,
+                        ofSize: MarkdownTypography.codeFontSize,
                         weight: .regular
                     ),
                     .markdownCodeBlockBackground: true
@@ -176,7 +179,7 @@ enum RichMarkdownStyler {
             text.addAttributes(
                 [
                     .font: NSFont.monospacedSystemFont(
-                        ofSize: 13,
+                        ofSize: MarkdownTypography.codeFontSize,
                         weight: .regular
                     ),
                     .backgroundColor: NSColor.quaternaryLabelColor
@@ -227,7 +230,9 @@ enum RichMarkdownStyler {
         range: NSRange
     ) {
         text.enumerateAttribute(.font, in: range) { value, subrange, _ in
-            let font = value as? NSFont ?? NSFont.systemFont(ofSize: 15)
+            let font = value as? NSFont ?? NSFont.systemFont(
+                ofSize: MarkdownTypography.bodyFontSize
+            )
             text.addAttribute(
                 .font,
                 value: NSFontManager.shared.convert(

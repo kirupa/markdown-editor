@@ -60,6 +60,10 @@ preserve the current selection when switching. Markdown that the rendered
 editor does not recognize remains visible as literal text rather than being
 discarded.
 
+The raw Markdown pane keeps every source marker visible but displays headings,
+body paragraphs, and fenced code at the same representative point sizes used
+by the Preview, keeping the two documents' vertical proportions closer.
+
 Toolbar icons and the **Markdown** menu provide paragraph and heading levels,
 bold, italic, underline (`<u>...</u>`), strikethrough, bulleted, numbered, and
 task lists, quotes, links, horizontal rules, and images. The Code menu has

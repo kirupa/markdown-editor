@@ -28,7 +28,6 @@ struct SourceTextEditor: NSViewRepresentable {
         textView.textContainer?.widthTracksTextView = true
         scrollView.documentView = textView
 
-        textView.string = text
         textView.delegate = context.coordinator
         textView.allowsUndo = true
         textView.isRichText = false
@@ -40,9 +39,13 @@ struct SourceTextEditor: NSViewRepresentable {
         textView.isAutomaticTextReplacementEnabled = false
         textView.isAutomaticSpellingCorrectionEnabled = false
         textView.smartInsertDeleteEnabled = false
-        textView.font = .monospacedSystemFont(ofSize: 14, weight: .regular)
+        textView.font = .monospacedSystemFont(
+            ofSize: MarkdownTypography.bodyFontSize,
+            weight: .regular
+        )
         textView.textContainerInset = NSSize(width: 18, height: 16)
         textView.setAccessibilityLabel("Markdown source")
+        MarkdownSourceStyler.apply(text, to: textView)
 
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
@@ -85,7 +88,7 @@ struct SourceTextEditor: NSViewRepresentable {
                 fallback: fallbackSelection
             )
             let scrollPosition = context.coordinator.normalizedScrollPosition
-            textView.string = text
+            MarkdownSourceStyler.apply(text, to: textView)
             if isSplit {
                 context.coordinator.setSynchronizedSourceSelection(
                     selection
@@ -106,6 +109,7 @@ struct SourceTextEditor: NSViewRepresentable {
                         length: selectionLength
                     )
                 )
+                MarkdownSourceStyler.updateTypingAttributes(in: textView)
                 context.coordinator.setNormalizedScrollPosition(
                     scrollPosition
                 )
@@ -258,6 +262,7 @@ struct SourceTextEditor: NSViewRepresentable {
                     )
                 )
             )
+            MarkdownSourceStyler.updateTypingAttributes(in: textView)
             if scrollToSelection {
                 let revealSelection = {
                     textView.scrollRangeToVisible(
@@ -286,6 +291,9 @@ struct SourceTextEditor: NSViewRepresentable {
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
+            if let textView = notification.object as? NSTextView {
+                MarkdownSourceStyler.updateTypingAttributes(in: textView)
+            }
             if hasFocus {
                 session?.activate(self)
                 session?.synchronizeSelection(
@@ -460,7 +468,9 @@ struct SourceTextEditor: NSViewRepresentable {
             let scrollPosition = normalizedScrollPosition
             isApplyingChange = true
             text.wrappedValue = result.text
-            textView?.string = result.text
+            if let textView {
+                MarkdownSourceStyler.apply(result.text, to: textView)
+            }
             if session?.viewMode == .split {
                 setSourceSelection(
                     result.selection,
