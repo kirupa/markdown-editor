@@ -10,7 +10,6 @@ Markdown.
 Requires macOS 13 or newer and a current Apple Swift toolchain.
 
 ```bash
-cd macOS/MarkdownEditor
 make app
 open "build/Markdown Editor.app"
 ```
