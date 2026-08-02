@@ -89,6 +89,7 @@ welcome window offers recent documents at launch.
 | P-4 | Ships as an ad-hoc-signed `.app` bundle produced from the package; no Xcode project is required. |
 | P-5 | Declares `LSApplicationCategoryType` of `public.app-category.developer-tools` and is high-resolution capable. |
 | P-6 | Declares `NSShowAppCentricOpenPanelInsteadOfUntitledFile` as `false` so systems that honor it do not raise an Open panel at launch. |
+| P-7 | Ships an `AppIcon.icns` and a `MarkdownDocument.icns`, both drawn from source by a script using only Core Graphics and `iconutil`. |
 
 ### 3.1 Package layout
 
@@ -179,6 +180,7 @@ signal that the landing window can be shown without waiting.
 | W-24 | The window uses the current theme: tinted sidebar on the left, document-colored panel on the right, themed accent for icons, links, and the checkbox. |
 | W-25 | Hovering a recent entry fills it with the theme accent and switches its text to whichever of black or white has the higher measured contrast against that accent. |
 | W-26 | The window is 760 × 470 points with a hidden title and full-size content view. |
+| W-27 | A **Make Default Markdown App** link appears below the actions only while the app is not already the default handler for Markdown files. It is re-evaluated whenever the app becomes active. |
 
 ---
 
@@ -192,7 +194,24 @@ signal that the landing window can be shown without waiting.
 | D-2 | Recognized filename extensions are `.md` and `.markdown`. |
 | D-3 | The app registers as `Editor` with handler rank `Owner` for those types, so it can be set as the default Markdown application. |
 
-### 5.2 Standard document behavior
+### 5.2 Finder integration
+
+| ID | Requirement |
+| --- | --- |
+| D-19 | The app appears in Finder's **Open With** menu for `.md` and `.markdown` files. |
+| D-20 | When it is the default handler, double-clicking a Markdown file launches it and opens that file — cold launch included, with no welcome window in the way. |
+| D-21 | **Markdown Editor ▸ Make Default Markdown Application** sets the app as the default handler. The item becomes a disabled *Default Markdown Application* once it already is, and is re-checked every time the app becomes active, because Finder's Get Info panel can change it at any time. |
+| D-22 | The welcome window offers the same action as a **Make Default Markdown App** link, shown only when the app is not already the default. |
+| D-23 | On macOS 14 and newer the change routes through `NSWorkspace.setDefaultApplication(at:toOpen:)`, which asks the user to confirm. macOS 13 falls back to `LSSetDefaultRoleHandlerForContentType`. |
+| D-24 | Failure to change the handler is reported with the manual alternative — Get Info ▸ Open with — as the recovery suggestion. |
+| D-25 | The app ships an application icon and a distinct Markdown document icon, so `.md` files are identifiable in Finder and the app is identifiable in Open With and the Dock. |
+
+`make install` copies the built bundle to `/Applications` and registers it, which
+is what makes these behaviors durable. The `build/` copy is deliberately
+unregistered at the same time: leaving both registered lists the app twice in
+Open With and lets the association point at a bundle that `make clean` deletes.
+
+### 5.3 Standard document behavior
 
 | ID | Requirement |
 | --- | --- |
@@ -202,7 +221,7 @@ signal that the landing window can be shown without waiting.
 | D-7 | Each document opens in its own window. |
 | D-18 | Launch is intercepted so an empty launch presents the welcome window instead of an untitled document or an Open panel. See [Welcome window](#4-welcome-window). |
 
-### 5.3 Text encoding
+### 5.4 Text encoding
 
 | ID | Requirement |
 | --- | --- |
@@ -211,7 +230,7 @@ signal that the landing window can be shown without waiting.
 | D-10 | Line endings are never normalized. The bytes between the first and last character are preserved exactly as typed. |
 | D-11 | Opening a file that is not valid UTF-8 fails with the message "The file is not valid UTF-8 Markdown." and the recovery suggestion "Convert the file to UTF-8 and try opening it again." |
 
-### 5.4 Autosave
+### 5.5 Autosave
 
 | ID | Requirement |
 | --- | --- |
@@ -539,6 +558,8 @@ Quote, Horizontal Rule.
 
 **Window menu:** Welcome to Markdown Editor.
 
+**Markdown Editor menu:** Make Default Markdown Application.
+
 ### 14.4 Welcome window
 
 `Return` triggers **New Document**, the window's default button.
@@ -568,6 +589,7 @@ Sources/
     ├── WelcomeWindowController  Landing window hosting and lifecycle
     ├── WelcomeView              Landing window UI
     ├── RecentDocumentsModel     Persisted recent-document store
+    ├── DefaultMarkdownHandler   Reads and sets the default Markdown app
     ├── RichTextEditor           Rendered editing surface
     ├── RichMarkdownTextView     NSTextView subclass: pasteboard, code backgrounds
     ├── RichMarkdownStyler       Applies attributes from the render model
@@ -600,19 +622,31 @@ installation is not required, but the Command Line Tools must be installed.
 ```bash
 git clone https://github.com/kirupa/markdown-editor.git
 cd markdown-editor
-make run
+make install
 ```
 
 | Target | Effect |
 | --- | --- |
 | `make app` | Builds a release binary and assembles an ad-hoc-signed `build/Markdown Editor.app` |
-| `make run` | `make app`, then opens the app |
+| `make run` | `make app`, then opens the app from `build/` |
+| `make install` | `make app`, then installs to `/Applications` and registers it as a Markdown handler |
+| `make uninstall` | Removes the installed app and its Launch Services registration |
+| `make icons` | Regenerates `Packaging/AppIcon.icns` and `Packaging/MarkdownDocument.icns` |
 | `make test` | Runs the unit test suite |
 | `make clean` | Cleans the package build directory and removes `build/` |
 
 `Scripts/build-app.sh` builds the executable, assembles the bundle from
-`Packaging/Info.plist`, lints the plist, code-signs ad hoc, and verifies the
-signature with `codesign --verify --deep --strict`.
+`Packaging/Info.plist` and the two `.icns` files, lints the plist, code-signs ad
+hoc, and verifies the signature with `codesign --verify --deep --strict`.
+
+`Scripts/install-app.sh` replaces any existing `/Applications/Markdown
+Editor.app`, unregisters the `build/` copy, and registers the installed one with
+`lsregister`. Set `INSTALL_DIR` to install somewhere else. Use `make run` for
+development and `make install` for the copy Finder should open files with.
+
+`Scripts/make-icons.swift` draws both icons with Core Graphics and packs them
+with `iconutil`, so there is no asset catalog or design tool in the loop. The
+results are committed, so a normal build never runs it.
 
 `Scripts/run-tests.sh` runs `swift test`, adding the Swift Testing framework
 search path and rpath from the active Xcode toolchain when the toolchain does
@@ -652,6 +686,7 @@ not expose it directly.
 | Match theme selector to kirupa.com | Eight site colors on a Light/Dark axis, Customize Theme popover with Apply and Cancel |
 | Add welcome window | Landing window at launch with New Document, Open, and a pruned recent-documents list; replaces the launch Open panel |
 | Wait for window restoration | Restored documents no longer flash the welcome window on their way in |
+| Become a Finder Markdown handler | App and document icons, `make install`, and an in-app way to become the default handler |
 
 ---
 

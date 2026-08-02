@@ -27,6 +27,11 @@ struct MarkdownEditorCommands: Commands {
     private var colorThemeSelection
 
     var body: some Commands {
+        CommandGroup(after: .appInfo) {
+            Divider()
+            DefaultMarkdownHandlerButton()
+        }
+
         CommandGroup(after: .newItem) {
             Button("Open Folder…") {
                 session?.chooseExplorerFolder()

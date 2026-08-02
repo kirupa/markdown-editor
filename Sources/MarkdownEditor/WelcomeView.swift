@@ -18,6 +18,8 @@ struct WelcomeView: View {
     @AppStorage(WelcomeWindowPreferences.showsAtLaunchKey)
     private var showsAtLaunch = true
 
+    @State private var isDefaultMarkdownApp = true
+
     private var colorTheme: EditorColorTheme {
         EditorColorTheme(
             color: EditorThemeColor(rawValue: themeColorRawValue) ?? .blue,
@@ -89,16 +91,47 @@ struct WelcomeView: View {
 
             Spacer(minLength: 24)
 
-            Toggle("Show this window at launch", isOn: $showsAtLaunch)
-                .toggleStyle(.checkbox)
-                .font(.system(size: 11))
-                .foregroundStyle(secondaryText)
+            VStack(spacing: 10) {
+                if !isDefaultMarkdownApp {
+                    Button("Make Default Markdown App") {
+                        makeDefaultMarkdownApp()
+                    }
+                    .buttonStyle(.link)
+                    .font(.system(size: 11))
+                }
+
+                Toggle("Show this window at launch", isOn: $showsAtLaunch)
+                    .toggleStyle(.checkbox)
+                    .font(.system(size: 11))
+                    .foregroundStyle(secondaryText)
+            }
         }
         .padding(.horizontal, 24)
         .padding(.top, 30)
         .padding(.bottom, 20)
         .frame(width: 320)
         .background(colorTheme.sidebarBackground)
+        .onAppear {
+            isDefaultMarkdownApp = DefaultMarkdownHandler.isCurrentApp
+        }
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: NSApplication.didBecomeActiveNotification
+            )
+        ) { _ in
+            isDefaultMarkdownApp = DefaultMarkdownHandler.isCurrentApp
+        }
+    }
+
+    private func makeDefaultMarkdownApp() {
+        Task {
+            do {
+                try await DefaultMarkdownHandler.makeCurrentAppDefault()
+            } catch {
+                NSApp.presentError(error)
+            }
+            isDefaultMarkdownApp = DefaultMarkdownHandler.isCurrentApp
+        }
     }
 
     private var recentPanel: some View {
