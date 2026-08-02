@@ -7,7 +7,12 @@ import UniformTypeIdentifiers
 final class MarkdownEditorSession: ObservableObject {
     @Published private(set) var viewMode: EditorViewMode = .rich
 
-    var fileURL: URL?
+    var fileURL: URL? {
+        didSet {
+            fileExplorer.followDocument(fileURL)
+        }
+    }
+    let fileExplorer: FileExplorerModel
 
     private let imageImporter: MarkdownImageImporter
     private weak var activeEditor: (any MarkdownEditingSurface)?
@@ -18,6 +23,7 @@ final class MarkdownEditorSession: ObservableObject {
         imageImporter: MarkdownImageImporter = MarkdownImageImporter()
     ) {
         self.fileURL = fileURL
+        fileExplorer = FileExplorerModel(documentURL: fileURL)
         self.imageImporter = imageImporter
     }
 
@@ -128,12 +134,40 @@ final class MarkdownEditorSession: ObservableObject {
         }
     }
 
-    func insertCodeBlock() {
-        applyFormatting("Code Block") { text, selection in
+    func insertFencedCodeBlock() {
+        applyFormatting("Fenced Code Block") { text, selection in
             MarkdownFormatting.wrapCodeBlock(
                 in: text,
                 selection: selection
             )
+        }
+    }
+
+    func chooseExplorerFolder() {
+        activeEditor?.commitPendingComposition()
+
+        let panel = NSOpenPanel()
+        panel.title = "Open Folder"
+        panel.message = "Choose a folder to show in the file explorer."
+        panel.prompt = "Open"
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        panel.directoryURL = fileExplorer.rootURL
+
+        let completion: (NSApplication.ModalResponse) -> Void = {
+            [weak self] response in
+            guard response == .OK, let folderURL = panel.url else {
+                return
+            }
+            self?.fileExplorer.setUserSelectedRoot(folderURL)
+        }
+
+        if let window = activeEditor?.hostingWindow {
+            panel.beginSheetModal(for: window, completionHandler: completion)
+        } else {
+            panel.begin(completionHandler: completion)
         }
     }
 

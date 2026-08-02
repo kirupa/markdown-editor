@@ -16,6 +16,14 @@ struct MarkdownEditorCommands: Commands {
     private var session
 
     var body: some Commands {
+        CommandGroup(after: .newItem) {
+            Button("Open Folder…") {
+                session?.chooseExplorerFolder()
+            }
+            .keyboardShortcut("o", modifiers: [.command, .option])
+            .disabled(session == nil)
+        }
+
         CommandMenu("Markdown") {
             Button(
                 session?.viewMode == .rich
@@ -49,8 +57,14 @@ struct MarkdownEditorCommands: Commands {
             Button("Strikethrough") {
                 session?.toggleInline(.strikethrough)
             }
-            Button("Inline Code") {
-                session?.toggleInline(.inlineCode)
+
+            Menu("Code") {
+                Button("Inline Code (Single Line)") {
+                    session?.toggleInline(.inlineCode)
+                }
+                Button("Fenced Code Block (Multi-Line)") {
+                    session?.insertFencedCodeBlock()
+                }
             }
 
             Menu("Heading") {
@@ -78,9 +92,6 @@ struct MarkdownEditorCommands: Commands {
             }
             Button("Quote") {
                 session?.toggleQuote()
-            }
-            Button("Code Block") {
-                session?.insertCodeBlock()
             }
             Button("Horizontal Rule") {
                 session?.insertHorizontalRule()

@@ -65,14 +65,35 @@ struct MarkdownFormattingToolbar: ToolbarContent {
                 ) {
                     session.toggleInline(.strikethrough)
                 }
-                formattingButton(
-                    "Inline Code",
-                    systemImage: "curlybraces"
-                ) {
-                    session.toggleInline(.inlineCode)
-                }
             }
             .labelStyle(.iconOnly)
+        }
+
+        ToolbarItem {
+            Menu {
+                Button {
+                    session.toggleInline(.inlineCode)
+                } label: {
+                    Label(
+                        "Inline Code (Single Line)",
+                        systemImage: "curlybraces"
+                    )
+                }
+                Button {
+                    session.insertFencedCodeBlock()
+                } label: {
+                    Label(
+                        "Fenced Code Block (Multi-Line)",
+                        systemImage: "terminal"
+                    )
+                }
+            } label: {
+                Label(
+                    "Code",
+                    systemImage: "chevron.left.forwardslash.chevron.right"
+                )
+            }
+            .help("Insert single-line or multi-line code")
         }
 
         ToolbarItem {
@@ -100,12 +121,6 @@ struct MarkdownFormattingToolbar: ToolbarContent {
                     systemImage: "text.quote"
                 ) {
                     session.toggleQuote()
-                }
-                formattingButton(
-                    "Code Block",
-                    systemImage: "terminal"
-                ) {
-                    session.insertCodeBlock()
                 }
             }
             .labelStyle(.iconOnly)

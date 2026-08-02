@@ -17,7 +17,8 @@ open "build/Markdown Editor.app"
 
 `make app` creates an ad-hoc-signed application at
 `build/Markdown Editor.app`. Use `make run` to build and open it in one step,
-and `make test` to run the focused document and image-import tests.
+and `make test` to run the focused document, formatting, explorer, and
+image-import tests.
 
 ## File and image behavior
 
@@ -33,6 +34,17 @@ reference is inserted at the current selection. Existing names are preserved;
 collisions use `image-2.png`, `image-3.png`, and so on. Supported formats are
 PNG, JPEG, GIF, WebP, TIFF, BMP, HEIC, HEIF, and SVG.
 
+## File explorer
+
+The left sidebar follows the saved document's folder by default. Its top
+dropdown shows the absolute folder path and lets you move to any ancestor
+through the filesystem root. Expand folders lazily, double-click a Markdown
+file to open it in the editor, or double-click another file type to open it
+with its system application. Use **Choose Folder** in the dropdown or
+**File > Open Folder** (`Option-Command-O`) to browse a different root; use the
+refresh button after external filesystem changes. Hidden files are omitted,
+and packages and symbolic links are never traversed.
+
 ## Editing modes and formatting
 
 The toolbar's **Rich Text / Markdown** control switches between an editable
@@ -42,7 +54,12 @@ editor does not recognize remains visible as literal text rather than being
 discarded.
 
 Toolbar icons and the **Markdown** menu provide paragraph and heading levels,
-bold, italic, underline (`<u>...</u>`), strikethrough, inline code, bulleted,
-numbered, and task lists, quotes, fenced code blocks, links, horizontal rules,
-and images. Standard shortcuts include `Command-B`, `Command-I`, `Command-U`,
-and `Command-K`; `Option-Command-M` switches editing modes.
+bold, italic, underline (`<u>...</u>`), strikethrough, bulleted, numbered, and
+task lists, quotes, links, horizontal rules, and images. The Code menu has
+**Inline Code (Single Line)** for backtick spans and
+**Fenced Code Block (Multi-Line)** for full-line fenced blocks. Standard
+shortcuts include `Command-B`, `Command-I`, `Command-U`, and `Command-K`;
+`Option-Command-M` switches editing modes.
+
+Drag the dotted gripper between the explorer and document to resize both
+panes. Double-click the gripper to restore the default pane split.
