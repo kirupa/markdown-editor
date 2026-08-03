@@ -35,6 +35,25 @@ with every image still resolving.
 Each build's README is a full product requirements document:
 [macOS](macOS/README.md) · [Web](Web/README.md).
 
+## Using it across devices
+
+There is nothing to migrate. A document is a `.md` file, its images sit in a
+`<stem>.assets/` folder beside it, and image references are relative — so a
+folder is self-contained and can live anywhere.
+
+- **macOS** — save into iCloud Drive, Dropbox, OneDrive, or Google Drive and
+  keep working. The app isn't sandboxed, so any folder you can reach works, and
+  it's built on the standard document system, so writes coordinate with the sync
+  client rather than racing it.
+- **Web** — point `MARKDOWN_EDITOR_WORKSPACE` at the same synced folder, or
+  symlink `Web/workspace` to it.
+- **Or skip syncing entirely** — host the web build once and every device
+  reaches the same files through a browser.
+
+The one caveat: editing the same document on two devices at once produces a
+conflict copy, because neither build merges. Details in
+[Web/README.md § 5](Web/README.md#5-the-workspace).
+
 ## Repository layout
 
 ```

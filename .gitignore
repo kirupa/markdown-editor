@@ -2,3 +2,7 @@
 .swiftpm/
 build/
 .DS_Store
+
+# The sample workspace is a playground. The two sample documents are tracked
+# already, so they stay; anything you write there is yours and stays untracked.
+/Web/workspace/**

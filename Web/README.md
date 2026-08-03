@@ -135,6 +135,34 @@ boundary and it is enforced on the server, not in the client.
 | WW-5 | Only `.md` and `.markdown` files may be opened, read, or written as documents. |
 | WW-6 | If the workspace folder is missing or unreadable, the page itself says so, with the path and how to fix it, instead of failing inside a request the author cannot see. |
 | WW-7 | Rejections are explicit errors with recovery text — never a silent empty result. |
+| WW-8 | The workspace root may itself be a symlink, so it can point at a folder managed by a sync client. The root resolves to the real folder; escaping it still fails. |
+| WW-9 | A workspace at iCloud Drive's root is displayed as *iCloud Drive*, not as the internal `com~apple~CloudDocs` folder name. |
+
+### Putting the workspace in cloud storage
+
+Because documents are plain files, syncing them is a matter of where the
+workspace points — there is nothing to export or migrate.
+
+```bash
+MARKDOWN_EDITOR_WORKSPACE="$HOME/Library/Mobile Documents/com~apple~CloudDocs/Notes" Web/serve.sh
+MARKDOWN_EDITOR_WORKSPACE="$HOME/Dropbox/Notes" Web/serve.sh
+```
+
+A symlink works too, which is convenient on a server:
+
+```bash
+ln -s "$HOME/Dropbox/Notes" Web/workspace
+```
+
+Two things to know before relying on it:
+
+- **A hosted deployment needs no sync at all.** Put the app on one machine and
+  every device reaches the same files through a browser. Sync is only worth
+  setting up when you also want the macOS app, or offline access to the files.
+- **Two devices editing the same document at the same time will produce a
+  conflict copy.** Autosave writes 1.5 seconds after typing stops, so the window
+  is small but real. The editor does no merging; the sync client's conflict file
+  is what you get. See [WNG-2](#2-goals-and-non-goals).
 
 ---
 

@@ -41,9 +41,17 @@ final class Workspace
         return $this->root;
     }
 
+    /**
+     * The name to show for the workspace.
+     *
+     * iCloud Drive lives at a path whose last component is an internal
+     * identifier, so it gets the name Finder shows rather than
+     * `com~apple~CloudDocs`.
+     */
     public function name(): string
     {
-        return basename($this->root);
+        $name = basename($this->root);
+        return $name === 'com~apple~CloudDocs' ? 'iCloud Drive' : $name;
     }
 
     /**

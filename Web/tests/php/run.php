@@ -78,6 +78,30 @@ $runner->suite('Workspace', function (TestRunner $t): void {
         $t->expectEqual($workspace->resolve('Notes/Ideas.md'), $root . '/Notes/Ideas.md');
     });
 
+    $t->test('shows iCloud Drive under the name Finder uses', function (TestRunner $t): void {
+        $root = sys_get_temp_dir() . '/md-icloud-' . bin2hex(random_bytes(4)) . '/com~apple~CloudDocs';
+        mkdir($root, 0o777, true);
+        register_shutdown_function(static function () use ($root): void {
+            @rmdir($root);
+            @rmdir(dirname($root));
+        });
+        $t->expectEqual((new Workspace($root))->name(), 'iCloud Drive');
+    });
+
+    $t->test('follows a symlinked root, which is how a synced folder is used', function (TestRunner $t): void {
+        [, , , , $root] = makeWorkspace();
+        $link = sys_get_temp_dir() . '/md-link-' . bin2hex(random_bytes(4));
+        symlink($root, $link);
+        register_shutdown_function(static fn () => @unlink($link));
+
+        $linked = new Workspace($link);
+        // The root resolves to the real folder, so paths inside it work...
+        $t->expectEqual($linked->root(), $root);
+        $t->expectEqual($linked->resolve('Notes/Ideas.md'), $root . '/Notes/Ideas.md');
+        // ...while escaping it still fails.
+        $t->expectRejects(static fn () => $linked->resolve('../outside.md', false));
+    });
+
     $t->test('rejects parent traversal', function (TestRunner $t): void {
         [$workspace] = makeWorkspace();
         foreach (['../secret.md', '../../etc/passwd', 'Notes/../../escape.md'] as $path) {
