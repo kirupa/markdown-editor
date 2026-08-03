@@ -1,0 +1,77 @@
+// Thin wrapper over the PHP endpoint.
+//
+// Every failure arrives as `{ error, recovery }` and is rethrown as an
+// ApiError carrying both strings, so callers never have to decide whether a
+// request failed — and nothing can fail silently (PRD G-6).
+
+const ENDPOINT = 'api.php';
+
+export class ApiError extends Error {
+  constructor(message, recovery = '') {
+    super(message);
+    this.name = 'ApiError';
+    this.recovery = recovery;
+  }
+}
+
+async function request(url, options = {}) {
+  let response;
+  try {
+    response = await fetch(url, options);
+  } catch (cause) {
+    throw new ApiError(
+      'The editor could not reach the server.',
+      'Check that the site is still running, then try again.'
+    );
+  }
+
+  const text = await response.text();
+  let payload;
+  try {
+    payload = text === '' ? {} : JSON.parse(text);
+  } catch {
+    throw new ApiError(
+      'The server returned a response the editor could not read.',
+      response.ok ? 'Check the web server error log.' : `HTTP ${response.status}.`
+    );
+  }
+
+  if (!response.ok || payload.error) {
+    throw new ApiError(
+      payload.error ?? `The request failed with HTTP ${response.status}.`,
+      payload.recovery ?? ''
+    );
+  }
+
+  return payload;
+}
+
+function get(action, params = {}) {
+  const query = new URLSearchParams({ action, ...params });
+  return request(`${ENDPOINT}?${query}`);
+}
+
+function postJson(action, body) {
+  return request(`${ENDPOINT}?action=${encodeURIComponent(action)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+export const api = {
+  config: () => get('config'),
+  tree: (path = '') => get('tree', { path }),
+  read: (path) => get('read', { path }),
+  exists: (path) => get('exists', { path }),
+  write: (path, text, hasByteOrderMark = false) =>
+    postJson('write', { path, text, hasByteOrderMark }),
+  create: (path) => postJson('create', { path }),
+
+  uploadImage(documentPath, file) {
+    const form = new FormData();
+    form.append('path', documentPath);
+    form.append('image', file, file.name);
+    return request(`${ENDPOINT}?action=upload`, { method: 'POST', body: form });
+  },
+};
