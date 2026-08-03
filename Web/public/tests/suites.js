@@ -10,6 +10,7 @@ export const CORE_TEST_MODULES = [
   './formatting.test.js',
   './text-difference.test.js',
   './recent-documents.test.js',
+  './saved-documents.test.js',
 ];
 
 /** Needs a real DOM, so these run only in the browser page. */

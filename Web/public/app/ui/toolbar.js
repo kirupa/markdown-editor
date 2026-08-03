@@ -5,7 +5,7 @@
 // Buttons report their state through `aria-pressed`, which is also what the
 // stylesheet keys the active look off — one source of truth, no class juggling.
 
-const ICONS = {
+export const ICONS = {
   bold: '<path d="M4.4 2.6h4a2.7 2.7 0 0 1 0 5.4h-4zM4.4 8h4.7a2.75 2.75 0 0 1 0 5.5H4.4z"/>',
   italic: '<path d="M6.6 2.9h5M4.6 13.1h5M9.5 2.9 6.7 13.1"/>',
   underline: '<path d="M4.4 2.7v5a3.6 3.6 0 0 0 7.2 0v-5M3.7 13.5h8.6"/>',

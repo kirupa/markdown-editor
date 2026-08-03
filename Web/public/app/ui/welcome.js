@@ -6,9 +6,11 @@
 
 import { api } from '../api.js';
 import * as recents from '../core/recent-documents.js';
+import * as saved from '../core/saved-documents.js';
 import { showError } from './dialogs.js';
 
 const RECENTS_KEY = 'markdown-editor.recents';
+const SAVED_KEY = 'markdown-editor.savedForLater';
 const SHOW_AT_LAUNCH_KEY = 'markdown-editor.showWelcomeAtLaunch';
 
 const MARK =
@@ -41,6 +43,47 @@ export const recentDocuments = {
   },
   set showAtLaunch(value) {
     localStorage.setItem(SHOW_AT_LAUNCH_KEY, value ? 'true' : 'false');
+  },
+};
+
+/**
+ * Documents the user explicitly kept (WB-8). Deliberately separate from
+ * recents: recents reorder and age out, so simply using the editor would lose
+ * whatever you meant to come back to.
+ */
+export const savedDocuments = {
+  all() {
+    try {
+      const stored = JSON.parse(localStorage.getItem(SAVED_KEY) ?? '[]');
+      return saved.normalized(Array.isArray(stored) ? stored : []);
+    } catch {
+      return [];
+    }
+  },
+  write(paths) {
+    localStorage.setItem(SAVED_KEY, JSON.stringify(paths));
+    return paths;
+  },
+  includes(path) {
+    return saved.contains(path, this.all());
+  },
+  set(path, wanted) {
+    return this.write(
+      wanted ? saved.adding(path, this.all()) : saved.removing(path, this.all())
+    );
+  },
+  /** Keeps the list pointing at a document that was renamed or moved. */
+  relocate(fromPath, toPath) {
+    return this.write(saved.relocating(fromPath, toPath, this.all()));
+  },
+  forget(path) {
+    return this.write(saved.removing(path, this.all()));
+  },
+  forgetUnder(folderPath) {
+    return this.write(saved.removingUnder(folderPath, this.all()));
+  },
+  clear() {
+    return this.write([]);
   },
 };
 
@@ -149,43 +192,78 @@ export class WelcomeScreen {
     const main = document.createElement('div');
     main.className = 'me-welcome__main';
 
+    const savedPaths = savedDocuments.all();
+    if (savedPaths.length > 0) {
+      main.append(
+        this.buildSection({
+          title: 'Saved for Later',
+          paths: savedPaths,
+          onClear: () => {
+            savedDocuments.clear();
+            this.render();
+          },
+          onMissing: (path) => savedDocuments.forget(path),
+          limit: savedPaths.length,
+        })
+      );
+    }
+
+    main.append(
+      this.buildSection({
+        title: 'Recent Documents',
+        paths: recentDocuments.all(),
+        limit: undefined,
+        emptyText: 'No recent documents yet.',
+        onClear: () => {
+          recentDocuments.clear();
+          this.render();
+        },
+        onMissing: (path) => recentDocuments.forget(path),
+      })
+    );
+
+    return main;
+  }
+
+  buildSection({ title, paths, limit, emptyText, onClear, onMissing }) {
+    const section = document.createElement('section');
+    section.className = 'me-welcome__section';
+
     const heading = document.createElement('div');
     heading.className = 'me-welcome__heading';
     const label = document.createElement('span');
-    label.textContent = 'Recent Documents';
+    label.textContent = title;
     heading.append(label);
 
-    const stored = recentDocuments.all();
-    if (stored.length > 0) {
+    if (paths.length > 0) {
       const clear = document.createElement('button');
       clear.type = 'button';
       clear.className = 'me-welcome__clear';
       clear.textContent = 'Clear';
-      clear.addEventListener('click', () => {
-        recentDocuments.clear();
-        this.render();
-      });
+      clear.addEventListener('click', onClear);
       heading.append(clear);
     }
 
     const list = document.createElement('div');
     list.className = 'me-welcome__recents';
 
-    const items = recents.entries(stored, this.workspaceName);
+    // The saved list is curated by hand, so it is shown whole; recents fall
+    // back to the shared display limit.
+    const items = recents.entries(paths, this.workspaceName, limit ?? undefined);
     if (items.length === 0) {
       const empty = document.createElement('p');
       empty.className = 'me-welcome__empty';
-      empty.textContent = 'No recent documents yet.';
+      empty.textContent = emptyText ?? '';
       list.append(empty);
     } else {
-      list.append(...items.map((entry) => this.buildRecent(entry)));
+      list.append(...items.map((entry) => this.buildRecent(entry, onMissing)));
     }
 
-    main.append(heading, list);
-    return main;
+    section.append(heading, list);
+    return section;
   }
 
-  buildRecent(entry) {
+  buildRecent(entry, onMissing) {
     const row = document.createElement('button');
     row.type = 'button';
     row.className = 'me-recent';
@@ -211,7 +289,7 @@ export class WelcomeScreen {
         // rather than opening onto an error.
         const check = await api.exists(entry.path);
         if (!check.exists) {
-          recentDocuments.forget(entry.path);
+          onMissing(entry.path);
           this.render();
           return;
         }

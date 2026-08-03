@@ -26,7 +26,8 @@ import { positionForOffset } from './dom-text.js';
 import { Explorer } from './ui/explorer.js';
 import { buildToolbar } from './ui/toolbar.js';
 import { buildMenus } from './ui/menus.js';
-import { WelcomeScreen, recentDocuments } from './ui/welcome.js';
+import { WelcomeScreen, recentDocuments, savedDocuments } from './ui/welcome.js';
+import { buildMobileUI } from './ui/mobile.js';
 import { confirmAction, confirmDiscard, showError, showPrompt } from './ui/dialogs.js';
 import { theme, openThemePopover } from './ui/theme.js';
 
@@ -34,6 +35,10 @@ const MODE_KEY = 'markdown-editor.mode';
 const SIDEBAR_KEY = 'markdown-editor.sidebarVisible';
 const SIDEBAR_WIDTH_KEY = 'markdown-editor.sidebarWidth';
 const PREVIEW_WIDTH_KEY = 'markdown-editor.previewWidth';
+const LAYOUT_KEY = 'markdown-editor.layout';
+
+/** Below this the desktop toolbar cannot lay out without wrapping (WB-3). */
+const MOBILE_MAX_WIDTH = 820;
 
 const element = (id) => document.getElementById(id);
 
@@ -53,6 +58,22 @@ function modelFor(source) {
 }
 let mode = localStorage.getItem(MODE_KEY) ?? 'split';
 let sidebarVisible = localStorage.getItem(SIDEBAR_KEY) !== 'false';
+
+/**
+ * WB-2: the layout is a remembered choice. A first visit guesses from the
+ * screen — coarse pointer or a window too narrow for the toolbar — but once
+ * the user picks, the guess never overrides them again.
+ */
+const storedLayout = localStorage.getItem(LAYOUT_KEY);
+let mobileLayout =
+  storedLayout === null
+    ? window.matchMedia(`(max-width: ${MOBILE_MAX_WIDTH}px), (pointer: coarse)`).matches
+    : storedLayout === 'mobile';
+
+/** Set when entering mobile forced a mode change, so leaving can undo it. */
+let modeBeforeMobile = null;
+/** The drawer is transient, unlike the desktop sidebar preference. */
+let drawerOpen = false;
 let config = { workspaceName: 'Workspace', imageExtensions: [] };
 
 /**
@@ -182,7 +203,8 @@ const commands = {
   },
   newDocument: () => newDocument(),
   open: () => {
-    sidebarVisible = true;
+    if (mobileLayout) drawerOpen = true;
+    else sidebarVisible = true;
     applySidebarVisibility();
     element('explorerTree').focus();
   },
@@ -192,10 +214,27 @@ const commands = {
   newFolder: () => explorer.newFolder(),
   newDocumentFile: () => explorer.newDocument(),
   showWelcome: () => welcome.show({ dismissable: true }),
-  setMode: (next) => setMode(next),
+  setMode(next) {
+    // An explicit choice replaces the mode mobile borrowed, so leaving the
+    // layout must not resurrect Side by Side over it.
+    modeBeforeMobile = null;
+    setMode(next);
+  },
   toggleSidebar() {
-    sidebarVisible = !sidebarVisible;
+    if (mobileLayout) {
+      drawerOpen = !drawerOpen;
+    } else {
+      sidebarVisible = !sidebarVisible;
+    }
     applySidebarVisibility();
+  },
+  setMobileLayout: (enabled) => setMobileLayout(enabled),
+  toggleMobileLayout: () => setMobileLayout(!mobileLayout),
+  setSavedForLater(wanted) {
+    if (!model.path) return;
+    savedDocuments.set(model.path, wanted);
+    // The filled bookmark is the confirmation; mobile has no status bar.
+    mobileUI.refresh();
   },
   customizeTheme(anchor) {
     openThemePopover(anchor ?? element('toolbar').querySelector('.me-tool-group:last-child button'), () => {
@@ -211,6 +250,29 @@ buildMenus(element('menubar'), commands, {
   canRedo: () => model.canRedo,
   mode: () => mode,
   sidebarVisible: () => sidebarVisible,
+  mobileLayout: () => mobileLayout,
+});
+
+const mobileUI = buildMobileUI({
+  root: element('app'),
+  topBar: element('mobileBar'),
+  formatBar: element('formatBar'),
+  commands,
+  state: {
+    canUndo: () => model.canUndo,
+    mode: () => mode,
+    documentName: () => model.displayName,
+    documentPath: () => model.path,
+    isDirty: () => model.isDirty,
+    isSavedForLater: () => (model.path ? savedDocuments.includes(model.path) : false),
+  },
+});
+
+// Tapping outside the drawer closes it, which is the only dismissal gesture a
+// phone offers once the sidebar covers the document.
+element('drawerScrim').addEventListener('click', () => {
+  drawerOpen = false;
+  applySidebarVisibility();
 });
 
 /**
@@ -247,6 +309,7 @@ function refreshActiveStyles() {
     }
   }
   toolbar.setActiveStyles({ inline, list, quote, heading });
+  mobileUI.setActiveStyles({ inline, list, quote, heading });
 }
 
 function refreshSurfaces(options = {}) {
@@ -299,6 +362,7 @@ function updateStatus() {
     : '';
   const name = model.displayName + (model.isDirty ? ' — Edited' : '');
   element('statusDocument').textContent = folder ? `${name} · ${folder}` : name;
+  mobileUI.refresh();
 }
 
 let statusTimer = null;
@@ -313,6 +377,8 @@ function flashStatus(message) {
 }
 
 function setMode(next) {
+  // Side by Side needs two readable columns, which a phone does not have.
+  if (mobileLayout && next === 'split') next = 'rich';
   mode = next;
   localStorage.setItem(MODE_KEY, next);
   element('editor').dataset.mode = next;
@@ -324,9 +390,44 @@ function setMode(next) {
 }
 
 function applySidebarVisibility() {
-  localStorage.setItem(SIDEBAR_KEY, sidebarVisible ? 'true' : 'false');
-  element('sidebar').hidden = !sidebarVisible;
-  element('sidebarDivider').hidden = !sidebarVisible;
+  // In mobile the sidebar is a transient drawer, so its state must not be
+  // written over the desktop preference.
+  if (!mobileLayout) localStorage.setItem(SIDEBAR_KEY, sidebarVisible ? 'true' : 'false');
+  const visible = mobileLayout ? drawerOpen : sidebarVisible;
+  element('sidebar').hidden = !visible;
+  element('sidebarDivider').hidden = mobileLayout || !sidebarVisible;
+  element('drawerScrim').hidden = !(mobileLayout && drawerOpen);
+  element('app').dataset.drawer = mobileLayout && drawerOpen ? 'open' : 'closed';
+}
+
+function closeDrawer() {
+  if (!drawerOpen) return;
+  drawerOpen = false;
+  applySidebarVisibility();
+}
+
+/** WB-1: swaps the whole chrome, keeping the command table and document. */
+function setMobileLayout(enabled) {
+  mobileLayout = enabled;
+  localStorage.setItem(LAYOUT_KEY, enabled ? 'mobile' : 'desktop');
+  element('app').dataset.layout = enabled ? 'mobile' : 'desktop';
+  mobileUI.setEnabled(enabled);
+
+  if (enabled) {
+    drawerOpen = false;
+    if (mode === 'split') {
+      modeBeforeMobile = mode;
+      setMode('rich');
+    }
+  } else if (modeBeforeMobile) {
+    const restored = modeBeforeMobile;
+    modeBeforeMobile = null;
+    setMode(restored);
+  }
+
+  applySidebarVisibility();
+  mobileUI.refresh();
+  refreshSurfaces({ force: true });
 }
 
 /**
@@ -364,6 +465,7 @@ async function openDocument(path) {
     await model.open(path);
     recentDocuments.note(model.path);
     welcome.hide();
+    closeDrawer();
     explorer.select(model.path);
     updateStatus();
     activeSurface().focus();
@@ -632,6 +734,8 @@ explorer.onEntryCreated = (entry) => {
 explorer.onEntryMoved = (fromPath, entry) => {
   recentDocuments.forget(fromPath);
   if (entry.isMarkdown) recentDocuments.note(entry.path);
+  // WB-10: a rename must not silently empty the saved list.
+  savedDocuments.relocate(fromPath, entry.path);
   if (model.path !== fromPath) return;
 
   model.relocate(entry.path, entry.name);
@@ -641,6 +745,8 @@ explorer.onEntryMoved = (fromPath, entry) => {
 
 explorer.onEntryDeleted = (entry) => {
   recentDocuments.forget(entry.path);
+  // Covers the entry itself and, for a folder, everything that was under it.
+  savedDocuments.forgetUnder(entry.path);
   const wasInside =
     model.path !== null &&
     (model.path === entry.path || model.path.startsWith(`${entry.path}/`));
@@ -661,7 +767,7 @@ async function start() {
   }
 
   setMode(mode);
-  applySidebarVisibility();
+  setMobileLayout(mobileLayout);
   element('app').hidden = false;
 
   try {

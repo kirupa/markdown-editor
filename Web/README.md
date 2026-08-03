@@ -336,6 +336,34 @@ workspace is a folder nobody can reorganize without leaving the app.
 
 ---
 
+## 12a. Mobile layout
+
+A phone cannot use the desktop chrome. A menu bar is a row of hover targets, the
+toolbar is twenty ~30px buttons on one line, the sidebar is docked, and the
+status bar spends a row on text nobody taps. `View ▸ Mobile Layout` (`⌃⌘M`)
+swaps all of it for an arrangement built for a thumb — the *same* commands, not
+a reduced editor.
+
+| ID | Requirement |
+| --- | --- |
+| WB-1 | A single Mobile Layout toggle replaces the menu bar, the desktop toolbar, and the status bar with a slim top bar and a floating formatting bar. Nothing about the open document changes. |
+| WB-2 | The choice persists in `localStorage` and survives a reload at any window size. |
+| WB-3 | With no stored choice, the layout is guessed once from the device: a viewport ≤ 820px wide **or** a coarse pointer. After the user chooses, the guess never overrides them again. |
+| WB-4 | The top bar holds, left to right: a **Files** button, the document name (with a `•` while unsaved), **Undo**, the **theme** picker, a **save this file for later** checkbox, and an overflow button. |
+| WB-5 | The formatting bar floats above the bottom of the screen and scrolls horizontally: paragraph style, bold, italic, underline, strikethrough, inline code, bulleted / numbered / task list, quote, code block, link, image, horizontal rule. Buttons show the styles active at the caret, exactly as the desktop toolbar does. |
+| WB-6 | The floating bar rides above the on-screen keyboard, tracked through `visualViewport` rather than assumed, and clears the home indicator via `env(safe-area-inset-bottom)`. |
+| WB-7 | The overflow button opens a bottom sheet with Rich Text / Markdown, New Document, Save, and **Desktop Layout** — the way back out once there is no menu bar. |
+| WB-8 | The **save for later** checkbox adds the open document to a list that is separate from recents. Recents reorder and age out, so simply using the editor would lose whatever you meant to return to; this list only changes when asked, is not capped, and keeps its order. |
+| WB-9 | The checkbox is disabled for an untitled document, which has no path to remember. |
+| WB-10 | A saved document that is renamed or moved keeps its place in the list; one that is deleted, or whose folder is deleted, is dropped from it. |
+| WB-11 | Saved documents appear as their own section above Recent Documents on the welcome screen, and the welcome panel — a fixed 760 × 470 two-column card — stacks into one column on a narrow or short viewport instead of squeezing the document list off-screen. |
+| WB-12 | The file explorer becomes an overlay drawer opened from the Files button and dismissed by tapping outside it. Its state is transient and does not overwrite the desktop sidebar preference. |
+| WB-13 | Side by Side is unavailable, since a phone has no room for two columns; entering the mobile layout switches to Rich Text and leaving it restores Side by Side. |
+| WB-14 | Every control is at least 36 × 36px, and buttons do not take focus, so a formatting tap acts on the live selection and does not dismiss the keyboard. |
+| WB-15 | Every mobile control calls the same command table the menus and desktop toolbar use, and all keyboard shortcuts keep working. There is no second implementation of any command. |
+
+---
+
 ## 13. Keyboard shortcut reference
 
 `⌘` is Command on macOS and Control elsewhere.
@@ -363,6 +391,7 @@ workspace is a folder nobody can reorganize without leaving the app.
 | `⌃⌘Q` | Block Quote |
 | `⌃⌘1` / `⌃⌘2` / `⌃⌘3` | Rich Text / Side by Side / Markdown |
 | `⌃⌘S` | Show File Explorer |
+| `⌃⌘M` | Mobile Layout |
 
 ---
 
@@ -395,12 +424,14 @@ Web/
 │   │   │   ├── render-model.js        ← MarkdownRenderModel.swift
 │   │   │   ├── formatting.js          ← MarkdownFormatting.swift
 │   │   │   ├── text-difference.js     ← TextDifference.swift
-│   │   │   └── recent-documents.js    ← RecentDocumentsCatalog.swift
+│   │   │   ├── recent-documents.js    ← RecentDocumentsCatalog.swift
+│   │   │   └── saved-documents.js     Save-for-later list arithmetic
 │   │   ├── dom-text.js        Text ↔ DOM offset mapping
 │   │   ├── api.js             fetch wrapper; every failure becomes an ApiError
 │   │   ├── document.js        Document state, undo stack, autosave
 │   │   ├── ui/                Surfaces, renderers, explorer, toolbar, menus,
-│   │   │                      welcome, theme popover, dialogs, context menu
+│   │   │                      welcome, theme popover, dialogs, context menu,
+│   │   │                      mobile bars and overflow sheet
 │   │   └── main.js            Wiring: commands, modes, panes, startup
 │   └── tests/                 The browser test page and the JS suites
 └── tests/
@@ -506,6 +537,7 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 | WY-5 | The DOM tests assert the invariant everything else rests on: each surface's text equals the model's text exactly, and every character offset round-trips through the DOM. |
 | WY-6 | The environment lookup is tested against `$_SERVER` as well as `getenv`, because that difference is invisible locally and breaks a deployment. |
 | WY-7 | File management is covered by tests that assert what must *not* happen: renaming or deleting a symlink leaves its target alone, a folder cannot be moved into itself, nothing is overwritten, and the workspace root cannot be renamed or deleted. |
+| WY-8 | The saved-for-later list is pure list arithmetic in its own module, so ticking an already-ticked box, a rename, a delete, and a hand-edited `localStorage` value are all covered by unit tests rather than by clicking. |
 
 ---
 
@@ -513,6 +545,7 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 
 | Change | What shipped |
 | --- | --- |
+| Mobile layout | A thumb-first arrangement with no menu bar: a top bar carrying Undo, the theme picker, and a save-for-later checkbox, a floating formatting bar that rides above the keyboard, the explorer as a drawer, and a responsive welcome screen ([§12a](#12a-mobile-layout)). |
 | Published build | A split layout for hosts that cannot repoint the document root, and `Web/deploy.sh` to publish over FTPS ([§15](#15-run-deploy-and-test)). |
 | File management | A default `~/kirupaMarkdown` workspace, created and seeded on first run, plus create, rename, move, duplicate, and delete for files and folders from the sidebar ([§11a](#11a-managing-files-and-folders)). |
 | Repository restructure | macOS and Web builds separated into `macOS/` and `Web/`. |
@@ -542,3 +575,7 @@ Specific to the web build:
   Firebase integration, which is also what would make more than one person's
   workspace possible
 - Offline use; the editor needs the server to read and write files
+- A native app shell for phones; the mobile layout ([§12a](#12a-mobile-layout))
+  is the browser page rearranged, not a packaged app
+- Syncing the saved-for-later list between devices — it lives in `localStorage`,
+  so it is per-browser until there are accounts

@@ -24,13 +24,13 @@ try {
 }
 
 // Bumped when assets change so browsers pick up a deploy without a hard reload.
-$assetVersion = '1';
+$assetVersion = '2';
 
 ?><!DOCTYPE html>
 <html lang="en" data-theme-color="blue" data-appearance="light">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Markdown Editor</title>
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="css/themes.css?v=<?= $assetVersion ?>">
@@ -53,6 +53,9 @@ $assetVersion = '1';
   </div>
 
   <div class="me-toolbar" id="toolbar"></div>
+
+  <!-- Mobile layout (WB-*): replaces the menu bar and toolbar above. -->
+  <div class="me-mobile" id="mobileBar" hidden></div>
 
   <div class="me-body">
     <aside class="me-sidebar" id="sidebar" aria-label="File explorer">
@@ -106,6 +109,9 @@ $assetVersion = '1';
     <span class="me-statusbar__spacer"></span>
     <span id="statusSaved"></span>
   </div>
+
+  <div class="me-format" id="formatBar" role="toolbar" aria-label="Formatting" hidden></div>
+  <div class="me-drawer-scrim" id="drawerScrim" hidden></div>
 </div>
 
 <div class="me-welcome-backdrop" id="welcome" hidden></div>

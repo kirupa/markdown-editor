@@ -310,6 +310,13 @@ function menuDefinitions(commands, state) {
           action: commands.toggleSidebar,
         },
         separator,
+        {
+          title: 'Mobile Layout',
+          shortcut: { command: true, control: true, key: 'm' },
+          checked: state.mobileLayout(),
+          action: commands.toggleMobileLayout,
+        },
+        separator,
         { title: 'Customize Theme…', action: () => commands.customizeTheme() },
       ],
     },

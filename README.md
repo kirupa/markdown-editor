@@ -15,6 +15,7 @@ with every image still resolving.
 | Files live | anywhere on disk | in a workspace folder, `~/kirupaMarkdown` by default |
 | Get started | `cd macOS && make install` | `Web/serve.sh` |
 | Publish it | — | `Web/deploy.sh` to any PHP host |
+| On a phone | — | a thumb-first layout, `⌃⌘M` or automatic |
 | Requirements | macOS 13+, Swift toolchain | PHP 8.1+ |
 
 ## What it does
@@ -86,6 +87,6 @@ port is *verified* rather than trusted:
 
 ```bash
 macOS/Scripts/run-tests.sh      # 82 tests — the Swift core
-php Web/tests/php/run.php       # 70 tests — the PHP backend
-open http://127.0.0.1:8000/tests/   # 83 tests — the browser client
+php Web/tests/php/run.php       # 71 tests — the PHP backend
+open http://127.0.0.1:8000/tests/   # 97 tests — the browser client
 ```
