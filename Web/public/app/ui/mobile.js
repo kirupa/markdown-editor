@@ -148,6 +148,35 @@ function trackKeyboard(root) {
 }
 
 /**
+ * Publishes the floating bar's height so the editor can pad beneath it.
+ *
+ * The bar is absolutely positioned, so it covers the bottom of the document
+ * rather than displacing it: at full scroll the last lines sit behind it and
+ * no further scrolling can reveal them. Measuring is better than a constant
+ * because the height follows the heading `<select>` and the user's text size.
+ */
+function trackBarHeight(root, formatBar) {
+  const update = () => {
+    const height = formatBar.hidden ? 0 : formatBar.offsetHeight;
+    root.style.setProperty('--me-format-height', `${Math.round(height)}px`);
+  };
+
+  if (typeof ResizeObserver === 'undefined') {
+    update();
+    return () => root.style.removeProperty('--me-format-height');
+  }
+
+  const observer = new ResizeObserver(update);
+  observer.observe(formatBar);
+  update();
+
+  return () => {
+    observer.disconnect();
+    root.style.removeProperty('--me-format-height');
+  };
+}
+
+/**
  * @param {object} options
  * @param {HTMLElement} options.root         the `.me-app` element
  * @param {HTMLElement} options.topBar       container for the top bar
@@ -157,6 +186,7 @@ function trackKeyboard(root) {
  */
 export function buildMobileUI({ root, topBar, formatBar, commands, state }) {
   let releaseKeyboardTracking = null;
+  let releaseBarTracking = null;
 
   // ---- top bar ------------------------------------------------------------
 
@@ -294,14 +324,18 @@ export function buildMobileUI({ root, topBar, formatBar, commands, state }) {
 
   return {
     setEnabled(enabled) {
+      topBar.hidden = !enabled;
+      formatBar.hidden = !enabled;
       if (enabled) {
         releaseKeyboardTracking ??= trackKeyboard(root);
+        // After unhiding, so the bar has a height to measure.
+        releaseBarTracking ??= trackBarHeight(root, formatBar);
       } else {
         releaseKeyboardTracking?.();
         releaseKeyboardTracking = null;
+        releaseBarTracking?.();
+        releaseBarTracking = null;
       }
-      topBar.hidden = !enabled;
-      formatBar.hidden = !enabled;
     },
 
     /** Mirrors document identity, dirtiness, undo availability, and the flag. */

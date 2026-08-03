@@ -472,7 +472,13 @@ body {
 }
 
 .me-surface {
-  flex: 1;
+  /* Basis auto, not 0: with `flex: 1` the surface is pinned to the pane's
+     height, its bottom padding sits inside that frame, and overflowing text
+     scrolls straight past it — so the last lines end up under the floating
+     bar with no way to scroll further. Sizing to content instead puts the
+     padding at the end of the scroll range, and grow still fills a short
+     document so the whole pane stays clickable. */
+  flex: 1 0 auto;
   min-height: 100%;
   padding: 20px 24px;      /* Y-7 */
   outline: none;
@@ -968,8 +974,15 @@ body {
 
 .me-app[data-layout="mobile"] .me-body { position: relative; }
 
-/* Touch targets need room; 15px source text on a phone does not. */
-.me-app[data-layout="mobile"] .me-surface { padding: 16px 18px 96px; }
+/* Touch targets need room; 15px source text on a phone does not. The bottom
+   pad clears the floating bar (measured, plus its offset) so the end of a
+   document can still be scrolled into view and tapped. */
+.me-app[data-layout="mobile"] .me-surface {
+  padding: 16px 18px;
+  padding-bottom: calc(
+    var(--me-format-height, 52px) + 26px + env(safe-area-inset-bottom)
+  );
+}
 
 .me-app[data-layout="mobile"] .me-editor[data-mode] .me-pane { flex: 1; }
 .me-app[data-layout="mobile"] .me-editor .me-pane--rich .me-surface {

@@ -360,6 +360,7 @@ a reduced editor.
 | WB-12 | The file explorer becomes an overlay drawer opened from the Files button and dismissed by tapping outside it. Its state is transient and does not overwrite the desktop sidebar preference. |
 | WB-13 | Side by Side is unavailable, since a phone has no room for two columns; entering the mobile layout switches to Rich Text and leaving it restores Side by Side. |
 | WB-14 | Every control is at least 36 × 36px, and buttons do not take focus, so a formatting tap acts on the live selection and does not dismiss the keyboard. |
+| WB-16 | The end of a document scrolls clear of the floating bar. The editor surface sizes to its content rather than to the pane, so its bottom padding lands at the end of the scroll range instead of inside a fixed frame, and the mobile padding is measured from the bar's real height plus the safe-area inset. |
 | WB-15 | Every mobile control calls the same command table the menus and desktop toolbar use, and all keyboard shortcuts keep working. There is no second implementation of any command. |
 
 ---
@@ -540,6 +541,7 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 | WY-5 | The DOM tests assert the invariant everything else rests on: each surface's text equals the model's text exactly, and every character offset round-trips through the DOM. |
 | WY-6 | The environment lookup is tested against `$_SERVER` as well as `getenv`, because that difference is invisible locally and breaks a deployment. |
 | WY-7 | File management is covered by tests that assert what must *not* happen: renaming or deleting a symlink leaves its target alone, a folder cannot be moved into itself, nothing is overwritten, and the workspace root cannot be renamed or deleted. |
+| WY-9 | Layout regressions are checked by measuring geometry, not by reading the DOM: the last block of a scrolled-to-the-end document must sit above the floating bar on a phone and above the pane's edge on the desktop, in every editor mode. Assertions on structure alone passed while the bar covered the text. |
 | WY-8 | The saved-for-later list is pure list arithmetic in its own module, so ticking an already-ticked box, a rename, a delete, and a hand-edited `localStorage` value are all covered by unit tests rather than by clicking. |
 
 ---
@@ -548,6 +550,7 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 
 | Change | What shipped |
 | --- | --- |
+| Document end | The last lines of a document sat under the floating bar with no way to scroll to them ([WB-16](#12a-mobile-layout)). |
 | Asset versioning | Deployed assets moved under `v/<hash>/` after a CDN cached one module and not another, breaking the live page ([WS-9](#15-run-deploy-and-test)). |
 | Mobile layout | A thumb-first arrangement with no menu bar: a top bar carrying Undo, the theme picker, and a save-for-later checkbox, a floating formatting bar that rides above the keyboard, the explorer as a drawer, and a responsive welcome screen ([§12a](#12a-mobile-layout)). |
 | Published build | A split layout for hosts that cannot repoint the document root, and `Web/deploy.sh` to publish over FTPS ([§15](#15-run-deploy-and-test)). |
