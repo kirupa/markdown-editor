@@ -518,6 +518,9 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 | WS-5 | `deploy.sh` uses `lftp` when it is present, because `mirror --delete` stops a redeploy leaving the previous version's files behind, and falls back to `curl`, which is on every machine. |
 | WS-6 | **The editor has no accounts, no sessions, and no permissions of its own.** Anyone who can reach the URL can read, change, and delete every document in the workspace. |
 | WS-7 | Setting `MDE_HTPASSWD` puts the whole install behind HTTP Basic Auth, as a stopgap for a workspace that should not be open. Leaving it unset deploys the app to anyone who finds the URL, which is the right choice only for a workspace whose contents are meant to be public. |
+| WS-9 | A deploy places `app/` and `css/` under `v/<content-hash>/` and writes `asset-base.php` beside `index.php`, so every module URL changes together. A query string only versions the URLs the page writes; the imports *inside* a module are static paths no query string reaches, and a cache holding a new `main.js` against a stale `welcome.js` loads a module graph that fails outright. Relative imports inherit the versioned directory, so this needs no build step. |
+| WS-10 | The hash is of the contents, so an unchanged deploy re-uses the directory and nothing is re-downloaded, and `mirror --delete` removes the previous one. |
+| WS-11 | `.htaccess` marks `.php` no-cache — the page naming the assets must never outlive them — and denies `asset-base.php`, which is data for `index.php` rather than a page. |
 | WS-8 | Whether or not there is a password, the deployment still contains itself: the classes, the starter documents, and every document live above the document root, `.htaccess` refuses `.md` files and directory listings under the served folder, and the workspace boundary ([§5](#5-the-workspace)) is enforced on every request. An open install can be edited by anyone; it still cannot be read *around*. |
 
 ### Tests
@@ -545,6 +548,7 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 
 | Change | What shipped |
 | --- | --- |
+| Asset versioning | Deployed assets moved under `v/<hash>/` after a CDN cached one module and not another, breaking the live page ([WS-9](#15-run-deploy-and-test)). |
 | Mobile layout | A thumb-first arrangement with no menu bar: a top bar carrying Undo, the theme picker, and a save-for-later checkbox, a floating formatting bar that rides above the keyboard, the explorer as a drawer, and a responsive welcome screen ([§12a](#12a-mobile-layout)). |
 | Published build | A split layout for hosts that cannot repoint the document root, and `Web/deploy.sh` to publish over FTPS ([§15](#15-run-deploy-and-test)). |
 | File management | A default `~/kirupaMarkdown` workspace, created and seeded on first run, plus create, rename, move, duplicate, and delete for files and folders from the sidebar ([§11a](#11a-managing-files-and-folders)). |

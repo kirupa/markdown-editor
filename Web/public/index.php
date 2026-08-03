@@ -23,8 +23,22 @@ try {
     $startupError = $error;
 }
 
-// Bumped when assets change so browsers pick up a deploy without a hard reload.
-$assetVersion = '2';
+// Cache busting.
+//
+// A query string only versions the URLs written on this page. The imports
+// *inside* a module are plain static paths that no query string reaches, so a
+// cache holding a new main.js against a stale welcome.js loads a module graph
+// that fails outright — which is exactly what a 31-day CDN policy did to the
+// first deploy of this file. A deploy therefore puts the whole asset tree in a
+// directory named after its contents and writes asset-base.php beside this
+// file; every module URL then changes together, and relative imports inherit
+// the versioned directory for free. Locally there is no such file and assets
+// are served straight out of app/ and css/.
+$assetBase = '';
+if (is_file(__DIR__ . '/asset-base.php')) {
+    $assetBase = trim((string) require __DIR__ . '/asset-base.php', '/');
+}
+$asset = static fn (string $path): string => $assetBase === '' ? $path : "$assetBase/$path";
 
 ?><!DOCTYPE html>
 <html lang="en" data-theme-color="blue" data-appearance="light">
@@ -33,8 +47,8 @@ $assetVersion = '2';
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Markdown Editor</title>
 <link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="css/themes.css?v=<?= $assetVersion ?>">
-<link rel="stylesheet" href="css/app.css?v=<?= $assetVersion ?>">
+<link rel="stylesheet" href="<?= htmlspecialchars($asset('css/themes.css'), ENT_QUOTES) ?>">
+<link rel="stylesheet" href="<?= htmlspecialchars($asset('css/app.css'), ENT_QUOTES) ?>">
 </head>
 <body>
 <?php if ($startupError !== null): ?>
@@ -151,7 +165,7 @@ $assetVersion = '2';
   </symbol>
 </svg>
 
-<script type="module" src="app/main.js?v=<?= $assetVersion ?>"></script>
+<script type="module" src="<?= htmlspecialchars($asset('app/main.js'), ENT_QUOTES) ?>"></script>
 <?php endif; ?>
 </body>
 </html>

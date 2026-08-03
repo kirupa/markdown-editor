@@ -74,6 +74,23 @@ cp -R "$here/public/." "$stage/public/"
 rm -rf "$stage/public/tests"
 cp -R "$here/src" "$here/seed" "$here/bootstrap.php" "$stage/private/"
 
+# Put the assets in a directory named after their contents.
+#
+# A ?v= query string only versions the URLs index.php writes. The imports
+# inside a module are static paths no query string reaches, so a cache that
+# keeps a new main.js and a stale welcome.js serves a module graph that fails
+# to load at all. Moving the tree instead changes every module URL at once, and
+# relative imports inherit the new directory without a build step. The hash is
+# of the contents, so an unchanged deploy re-uses the same directory and
+# nothing has to be re-downloaded.
+asset_version="$(
+  find "$stage/public/app" "$stage/public/css" -type f -print0 |
+    sort -z | xargs -0 shasum | shasum | cut -c1-12
+)"
+mkdir -p "$stage/public/v/$asset_version"
+mv "$stage/public/app" "$stage/public/css" "$stage/public/v/$asset_version/"
+printf '<?php return %s;\n' "'v/$asset_version'" > "$stage/public/asset-base.php"
+
 # The one piece of configuration the server needs, written here so that a
 # deployment cannot drift from the paths it was actually installed at.
 {
@@ -87,6 +104,25 @@ cp -R "$here/src" "$here/seed" "$here/bootstrap.php" "$stage/private/"
   echo "<FilesMatch \"\\.(md|markdown)\$\">"
   echo "  Require all denied"
   echo "</FilesMatch>"
+  echo
+  echo "# Assets live under v/<hash>/, so caching them hard is correct: a new"
+  echo "# build has different URLs. The page that names them must not be cached"
+  echo "# though, or a browser will keep asking for a version that a later"
+  echo "# deploy has already deleted."
+  echo "<FilesMatch \"\\.php\$\">"
+  echo "  <IfModule mod_expires.c>"
+  echo "    ExpiresActive Off"
+  echo "  </IfModule>"
+  echo "  <IfModule mod_headers.c>"
+  echo "    Header unset Cache-Control"
+  echo "    Header always set Cache-Control \"no-cache, must-revalidate\""
+  echo "  </IfModule>"
+  echo "</FilesMatch>"
+  echo
+  echo "# asset-base.php is data for index.php, not a page."
+  echo "<Files \"asset-base.php\">"
+  echo "  Require all denied"
+  echo "</Files>"
   if [[ -n "$htpasswd" ]]; then
     echo
     echo "AuthType Basic"
