@@ -55,17 +55,34 @@ final class Workspace
      */
     public static function defaultRoot(): string
     {
-        $configured = getenv('MARKDOWN_EDITOR_WORKSPACE');
-        if (is_string($configured) && trim($configured) !== '') {
-            return rtrim(trim($configured), DIRECTORY_SEPARATOR) ?: $configured;
+        $configured = self::env('MARKDOWN_EDITOR_WORKSPACE');
+        if ($configured !== null) {
+            return rtrim($configured, DIRECTORY_SEPARATOR) ?: $configured;
         }
 
-        $home = getenv('HOME') ?: ($_SERVER['HOME'] ?? '');
-        if (is_string($home) && $home !== '' && $home !== '/' && is_dir($home) && is_writable($home)) {
+        $home = self::env('HOME') ?? '';
+        if ($home !== '' && $home !== '/' && is_dir($home) && is_writable($home)) {
             return rtrim($home, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . self::DEFAULT_FOLDER_NAME;
         }
 
         return dirname(__DIR__) . DIRECTORY_SEPARATOR . self::DEFAULT_FOLDER_NAME;
+    }
+
+    /**
+     * One setting, from wherever this SAPI happens to keep it.
+     *
+     * `putenv` reaches only `getenv`, and a value set by the web server with
+     * `SetEnv` reaches only `$_SERVER` under some CGI and LiteSpeed builds, so
+     * reading one of the two is enough to work locally and fail on a host.
+     */
+    private static function env(string $name): ?string
+    {
+        $value = getenv($name);
+        if (!is_string($value) || trim($value) === '') {
+            $value = $_SERVER[$name] ?? null;
+        }
+
+        return is_string($value) && trim($value) !== '' ? trim($value) : null;
     }
 
     /**

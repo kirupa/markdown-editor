@@ -793,6 +793,31 @@ $runner->suite('Default workspace', function (TestRunner $runner): void {
             ? 'MARKDOWN_EDITOR_WORKSPACE'
             : 'MARKDOWN_EDITOR_WORKSPACE=' . $previousWorkspace);
     });
+    $runner->test('reads settings the web server put in $_SERVER', function (TestRunner $t): void {
+        $previous = getenv('MARKDOWN_EDITOR_WORKSPACE');
+        putenv('MARKDOWN_EDITOR_WORKSPACE');
+        $previousServer = $_SERVER['MARKDOWN_EDITOR_WORKSPACE'] ?? null;
+
+        // Apache's SetEnv reaches $_SERVER but, on some CGI and LiteSpeed
+        // builds, never reaches getenv() — which is how a deployment ends up
+        // silently writing documents somewhere other than where it was told.
+        $_SERVER['MARKDOWN_EDITOR_WORKSPACE'] = '/tmp/from-the-web-server/';
+        $t->expectEqual(Workspace::defaultRoot(), '/tmp/from-the-web-server');
+
+        // A real environment variable still wins, so the command line and the
+        // test suite can override whatever the server said.
+        putenv('MARKDOWN_EDITOR_WORKSPACE=/tmp/from-the-environment');
+        $t->expectEqual(Workspace::defaultRoot(), '/tmp/from-the-environment');
+
+        if ($previousServer === null) {
+            unset($_SERVER['MARKDOWN_EDITOR_WORKSPACE']);
+        } else {
+            $_SERVER['MARKDOWN_EDITOR_WORKSPACE'] = $previousServer;
+        }
+        putenv($previous === false
+            ? 'MARKDOWN_EDITOR_WORKSPACE'
+            : 'MARKDOWN_EDITOR_WORKSPACE=' . $previous);
+    });
 });
 
 exit($runner->run());

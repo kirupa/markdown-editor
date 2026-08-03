@@ -9,7 +9,13 @@ declare(strict_types=1);
  * host without rewrite rules, virtual-host configuration, or a router.
  */
 
-require __DIR__ . '/../bootstrap.php';
+// A shared host rarely lets you repoint the document root, so the public files
+// end up in a URL subdirectory while the rest of the app stays above it, out
+// of reach of the web. MARKDOWN_EDITOR_HOME names that private folder; unset,
+// the layout is the one in this repository.
+$home = getenv('MARKDOWN_EDITOR_HOME') ?: ($_SERVER['MARKDOWN_EDITOR_HOME'] ?? '');
+require (is_string($home) && $home !== '' ? rtrim($home, '/\\') : __DIR__ . '/..')
+    . '/bootstrap.php';
 
 use MarkdownEditor\Api;
 use MarkdownEditor\WorkspaceError;

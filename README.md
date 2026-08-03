@@ -14,6 +14,7 @@ with every image still resolving.
 | Dependencies | none | none |
 | Files live | anywhere on disk | in a workspace folder, `~/kirupaMarkdown` by default |
 | Get started | `cd macOS && make install` | `Web/serve.sh` |
+| Publish it | — | `Web/deploy.sh` to any PHP host |
 | Requirements | macOS 13+, Swift toolchain | PHP 8.1+ |
 
 ## What it does
@@ -51,7 +52,10 @@ folder is self-contained and can live anywhere.
 - **Web** — point `MARKDOWN_EDITOR_WORKSPACE` at the same synced folder, or
   symlink `~/kirupaMarkdown` to it.
 - **Or skip syncing entirely** — host the web build once and every device
-  reaches the same files through a browser.
+  reaches the same files through a browser. `Web/deploy.sh` publishes to a
+  shared PHP host, including the layout that keeps your documents above the
+  document root. The editor has no accounts of its own, so put it behind the
+  web server's own authentication before pointing it at anything private.
 
 The one caveat: editing the same document on two devices at once produces a
 conflict copy, because neither build merges. Details in

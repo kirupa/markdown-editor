@@ -371,6 +371,7 @@ workspace is a folder nobody can reorganize without leaving the app.
 ```
 Web/
 ├── serve.sh                   Local preview: php -S, nothing else
+├── deploy.sh                  Publish to a shared PHP host over FTPS
 ├── bootstrap.php              A nine-line autoloader — no Composer
 ├── seed/                      Starter documents, copied into a new workspace
 ├── src/                       The server
@@ -441,16 +442,50 @@ MARKDOWN_EDITOR_WORKSPACE=~/Documents/Notes Web/serve.sh 9000
 
 ### Deploying
 
+If you control the document root, there is almost nothing to do:
+
 1. Copy `Web/` to the server.
 2. Point the document root at `Web/public`.
 3. Make sure the workspace folder is writable by the web server. It is created
-   on first request if it is missing. The default is `kirupaMarkdown` in the web
-   server account's home directory; set `MARKDOWN_EDITOR_WORKSPACE` to choose
-   another location — ideally one *outside* the document root.
+   on first request if it is missing.
 4. There is no step 4. No build, no install, no configuration file.
 
-Only `Web/public` needs to be reachable. `Web/src`, `Web/bootstrap.php`, and
-`Web/tests` are read by PHP but never served.
+Only `Web/public` needs to be reachable. `Web/src`, `Web/bootstrap.php`,
+`Web/seed`, and `Web/tests` are read by PHP but never served.
+
+#### On shared hosting, where you cannot move the document root
+
+Most shared hosts give you one document root and a URL subdirectory. The app
+splits in two: what has to be reachable goes under the document root, and
+everything else — including the documents — goes above it, where the web server
+will not serve it however it is asked.
+
+```
+~/markdown-editor/        bootstrap.php, src/, seed/     ← above the document root
+~/kirupaMarkdown/         the documents                  ← above the document root
+~/public_html/markdown/   index.php, api.php, app/, css/ ← served, at /markdown/
+```
+
+Two `SetEnv` lines in `.htaccess` are the whole configuration:
+
+```apache
+SetEnv MARKDOWN_EDITOR_HOME /home/you/markdown-editor
+SetEnv MARKDOWN_EDITOR_WORKSPACE /home/you/kirupaMarkdown
+```
+
+`Web/deploy.sh` does all of this over FTPS, including generating that
+`.htaccess`. It takes its settings from the environment and its password from
+`~/.netrc`, so no host name and no credential is ever written into the
+repository. Run it with `--dry-run` first to see exactly what would be sent.
+
+| ID | Requirement |
+| --- | --- |
+| WD-1 | `MARKDOWN_EDITOR_HOME` tells the two public entry points where the rest of the app lives. Unset, they use the layout in this repository, so a normal install needs no configuration. |
+| WD-2 | Settings are read from `getenv()` *and* `$_SERVER`. `SetEnv` reaches only the second on some CGI and LiteSpeed builds, and `putenv` reaches only the first — reading one would work locally and fail on a host. |
+| WD-3 | `deploy.sh` uploads from a staging copy containing only the files it lists, so a local edit, a test fixture, or a scratch document cannot reach the server by accident. `tests/` is never deployed. |
+| WD-4 | The deployment is self-configuring: the generated `.htaccess` names the paths the app was actually installed at, so it cannot drift from them. |
+| WD-5 | `deploy.sh` uses `lftp` when it is present, because `mirror --delete` stops a redeploy leaving the previous version's files behind, and falls back to `curl`, which is on every machine. |
+| WD-6 | Setting `MDE_HTPASSWD` puts the whole app behind HTTP Basic Auth. **The editor has no accounts, no sessions, and no permissions of its own** — anyone who can reach the URL can read, change, and delete every document. On a public host, protect it at the web server or do not deploy it. |
 
 ### Tests
 
@@ -458,7 +493,7 @@ Only `Web/public` needs to be reachable. `Web/src`, `Web/bootstrap.php`, and
 | --- | --- |
 | Open `/tests/` in a browser | The full client suite, including the DOM tests. Needs only PHP. |
 | `node Web/tests/run.mjs` | The same client suites minus the DOM ones. Node is optional and used only for a fast terminal loop. |
-| `php Web/tests/php/run.php` | Workspace path safety, document read/write, file tree, file management, image import and its content validation. |
+| `php Web/tests/php/run.php` | Workspace path safety, document read/write, file tree, file management, image import and its content validation, and how settings are read from the environment. |
 
 | ID | Requirement |
 | --- | --- |
@@ -467,7 +502,8 @@ Only `Web/public` needs to be reachable. `Web/src`, `Web/bootstrap.php`, and
 | WY-3 | The PHP suite runs without PHPUnit or any other dependency. |
 | WY-4 | Path-traversal, symlink-escape, invalid-UTF-8, mislabeled-image, and scriptable-SVG rejection are covered by tests, not just by inspection. |
 | WY-5 | The DOM tests assert the invariant everything else rests on: each surface's text equals the model's text exactly, and every character offset round-trips through the DOM. |
-| WY-6 | File management is covered by tests that assert what must *not* happen: renaming or deleting a symlink leaves its target alone, a folder cannot be moved into itself, nothing is overwritten, and the workspace root cannot be renamed or deleted. |
+| WY-6 | The environment lookup is tested against `$_SERVER` as well as `getenv`, because that difference is invisible locally and breaks a deployment. |
+| WY-7 | File management is covered by tests that assert what must *not* happen: renaming or deleting a symlink leaves its target alone, a folder cannot be moved into itself, nothing is overwritten, and the workspace root cannot be renamed or deleted. |
 
 ---
 
@@ -475,6 +511,7 @@ Only `Web/public` needs to be reachable. `Web/src`, `Web/bootstrap.php`, and
 
 | Change | What shipped |
 | --- | --- |
+| Shared hosting | A split layout for hosts that cannot repoint the document root, and `Web/deploy.sh` to publish over FTPS ([§15](#15-run-deploy-and-test)). |
 | File management | A default `~/kirupaMarkdown` workspace, created and seeded on first run, plus create, rename, move, duplicate, and delete for files and folders from the sidebar ([§11a](#11a-managing-files-and-folders)). |
 | Repository restructure | macOS and Web builds separated into `macOS/` and `Web/`. |
 | Web build, initial release | The full editor: welcome screen, document lifecycle with autosave, three editing modes with a WYSIWYG rendered surface, every formatting command, image import from four sources, the file explorer, all sixteen themes, the menu bar and its shortcuts — on a PHP-only backend with no dependencies. |
