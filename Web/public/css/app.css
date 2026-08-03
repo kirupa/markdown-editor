@@ -130,6 +130,14 @@ body {
 
 .me-menu__list[hidden] { display: none; }
 
+/* Anchored to a point rather than to a button, so the menu-bar offsets have to
+   go; the exact position is set inline once the size is known. */
+.me-menu__list--context {
+  top: 0;
+  left: 0;
+  min-width: 188px;
+}
+
 .me-menu__item {
   display: flex;
   align-items: center;
@@ -351,6 +359,18 @@ body {
 }
 
 .me-tree__row:hover { background: color-mix(in srgb, var(--me-accent) 15%, transparent); }
+
+/* WF-10: the drag itself fades, and the folder that would receive it is
+   outlined, so a drop always says where it is going before it happens. */
+.me-tree__row--dragging { opacity: 0.4; }
+
+.me-tree__row--drop,
+.me-sidebar__tree--drop {
+  background: color-mix(in srgb, var(--me-accent) 22%, transparent);
+  outline: 1.5px solid var(--me-accent);
+  outline-offset: -1.5px;
+  border-radius: 6px;
+}
 
 /* X-15: selected rows use the theme accent with an automatically contrasting
    label, which is what keeps text readable across all sixteen themes. */

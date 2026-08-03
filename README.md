@@ -12,7 +12,7 @@ with every image still resolving.
 | --- | --- | --- |
 | Built with | SwiftUI + AppKit | ES modules + PHP |
 | Dependencies | none | none |
-| Files live | anywhere on disk | in a server-side workspace folder |
+| Files live | anywhere on disk | in a workspace folder, `~/kirupaMarkdown` by default |
 | Get started | `cd macOS && make install` | `Web/serve.sh` |
 | Requirements | macOS 13+, Swift toolchain | PHP 8.1+ |
 
@@ -28,6 +28,9 @@ with every image still resolving.
   the file and referenced relatively, with collisions resolved rather than
   overwritten
 - **A file explorer** with lazy expansion, reveal, and an ancestor path dropdown
+- **File management**, in the web build: create, rename, duplicate, drag to move,
+  and delete files and folders from the sidebar — with a document's images
+  following it through a rename, and its references rewritten to match
 - **Sixteen themes** — eight kirupa.com colors on a light/dark axis
 - **Autosave**, undo that moves in meaningful units, and a welcome screen with
   recent documents
@@ -46,7 +49,7 @@ folder is self-contained and can live anywhere.
   it's built on the standard document system, so writes coordinate with the sync
   client rather than racing it.
 - **Web** — point `MARKDOWN_EDITOR_WORKSPACE` at the same synced folder, or
-  symlink `Web/workspace` to it.
+  symlink `~/kirupaMarkdown` to it.
 - **Or skip syncing entirely** — host the web build once and every device
   reaches the same files through a browser.
 
@@ -79,6 +82,6 @@ port is *verified* rather than trusted:
 
 ```bash
 macOS/Scripts/run-tests.sh      # 82 tests — the Swift core
-php Web/tests/php/run.php       # 32 tests — the PHP backend
+php Web/tests/php/run.php       # 70 tests — the PHP backend
 open http://127.0.0.1:8000/tests/   # 83 tests — the browser client
 ```

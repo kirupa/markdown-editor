@@ -84,6 +84,8 @@ const explorer = new Explorer({
   pathLabel: element('explorerPathLabel'),
   refreshButton: element('explorerRefresh'),
   revealButton: element('explorerReveal'),
+  newDocumentButton: element('explorerNewDocument'),
+  newFolderButton: element('explorerNewFolder'),
 });
 
 const welcome = new WelcomeScreen(element('welcome'), {
@@ -187,6 +189,8 @@ const commands = {
   save: () => saveDocument(),
   saveAs: () => saveDocument({ forcePrompt: true }),
   close: () => closeDocument(),
+  newFolder: () => explorer.newFolder(),
+  newDocumentFile: () => explorer.newDocument(),
   showWelcome: () => welcome.show({ dismissable: true }),
   setMode: (next) => setMode(next),
   toggleSidebar() {
@@ -372,7 +376,7 @@ async function openDocument(path) {
 async function saveDocument({ forcePrompt = false } = {}) {
   let target = model.path;
   if (forcePrompt || !target) {
-    const suggestion = target ?? `${model.displayName}.md`;
+    const suggestion = target ?? model.suggestedFileName;
     const entered = await showPrompt({
       title: forcePrompt ? 'Save As' : 'Save',
       message: 'Enter a workspace-relative path, ending in .md or .markdown.',
@@ -616,6 +620,34 @@ explorer.onOpenFile = (item) => {
 
 explorer.onRevealRequested = () => {
   if (model.path) explorer.reveal(model.path);
+};
+
+// WF-9: a document that is open when it is renamed, moved, or deleted keeps
+// working. The file on disk moved, so the editor follows it rather than
+// carrying on with a path that no longer resolves.
+explorer.onEntryCreated = (entry) => {
+  if (entry.isMarkdown) openDocument(entry.path);
+};
+
+explorer.onEntryMoved = (fromPath, entry) => {
+  recentDocuments.forget(fromPath);
+  if (entry.isMarkdown) recentDocuments.note(entry.path);
+  if (model.path !== fromPath) return;
+
+  model.relocate(entry.path, entry.name);
+  explorer.select(entry.path);
+  updateStatus();
+};
+
+explorer.onEntryDeleted = (entry) => {
+  recentDocuments.forget(entry.path);
+  const wasInside =
+    model.path !== null &&
+    (model.path === entry.path || model.path.startsWith(`${entry.path}/`));
+  if (!wasInside) return;
+
+  model.detach();
+  updateStatus();
 };
 
 async function start() {

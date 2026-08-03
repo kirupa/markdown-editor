@@ -22,6 +22,9 @@ final class Workspace
         'png', 'svg', 'tif', 'tiff', 'webp',
     ];
 
+    /** The folder the editor opens when nothing else is configured (WW-1). */
+    public const DEFAULT_FOLDER_NAME = 'kirupaMarkdown';
+
     private string $root;
 
     public function __construct(string $root)
@@ -39,6 +42,88 @@ final class Workspace
     public function root(): string
     {
         return $this->root;
+    }
+
+    /**
+     * Where the editor keeps documents when nothing is configured (WW-1).
+     *
+     * A personal notes folder in the home directory rather than one inside the
+     * checkout, so pulling a new version of the editor can never touch the
+     * user's documents, and so the folder can be moved into a sync service.
+     * `MARKDOWN_EDITOR_WORKSPACE` still wins when it is set. The last resort
+     * sits beside the code, for hosts where the account has no usable home.
+     */
+    public static function defaultRoot(): string
+    {
+        $configured = getenv('MARKDOWN_EDITOR_WORKSPACE');
+        if (is_string($configured) && trim($configured) !== '') {
+            return rtrim(trim($configured), DIRECTORY_SEPARATOR) ?: $configured;
+        }
+
+        $home = getenv('HOME') ?: ($_SERVER['HOME'] ?? '');
+        if (is_string($home) && $home !== '' && $home !== '/' && is_dir($home) && is_writable($home)) {
+            return rtrim($home, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . self::DEFAULT_FOLDER_NAME;
+        }
+
+        return dirname(__DIR__) . DIRECTORY_SEPARATOR . self::DEFAULT_FOLDER_NAME;
+    }
+
+    /**
+     * Opens `$root`, creating it the first time.
+     *
+     * The constructor deliberately refuses a folder that is not there, because
+     * every other caller is handling a path that is supposed to exist already.
+     * Startup is the one place where absence is expected rather than an error,
+     * so it is the one place allowed to create the folder — and, when it does,
+     * to copy in the starter documents so a new install is not an empty pane.
+     */
+    public static function prepare(?string $root = null): self
+    {
+        $root = $root ?? self::defaultRoot();
+        $created = false;
+
+        if (!is_dir($root)) {
+            if (!@mkdir($root, 0o755, true) && !is_dir($root)) {
+                throw new WorkspaceError(
+                    'The workspace folder could not be created: ' . $root,
+                    'Create it by hand, or point MARKDOWN_EDITOR_WORKSPACE at a folder that exists.'
+                );
+            }
+            $created = true;
+        }
+
+        $workspace = new self($root);
+        if ($created) {
+            $workspace->seed(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'seed');
+        }
+        return $workspace;
+    }
+
+    /**
+     * Copies the starter documents in. Best effort: a workspace that opens with
+     * nothing in it is a far better outcome than one that refuses to open.
+     */
+    private function seed(string $template): void
+    {
+        if (!is_dir($template)) {
+            return;
+        }
+
+        $entries = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($template, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::SELF_FIRST
+        );
+
+        foreach ($entries as $entry) {
+            /** @var \SplFileInfo $entry */
+            $relative = substr($entry->getPathname(), strlen($template) + 1);
+            $destination = $this->root . DIRECTORY_SEPARATOR . $relative;
+            if ($entry->isDir()) {
+                @mkdir($destination, 0o755, true);
+            } elseif (!file_exists($destination)) {
+                @copy($entry->getPathname(), $destination);
+            }
+        }
     }
 
     /**
@@ -97,8 +182,44 @@ final class Workspace
         return $parent . DIRECTORY_SEPARATOR . basename($absolute);
     }
 
-    /** Absolute path back to the workspace-relative form used by the client. */
-    public function relativePath(string $absolutePath): string
+    /**
+     * Resolves an item the caller means to act *on* rather than read through.
+     *
+     * {@see resolve()} follows symbolic links, which is right for opening a
+     * file — a link out of the workspace has to be refused. It is wrong for
+     * renaming or deleting: `Linked` pointing at `Notes` would resolve to
+     * `Notes`, and deleting it would destroy the real folder instead of the
+     * link. Every ancestor is still resolved and checked, so this cannot be
+     * used to reach outside; only the last component is left alone.
+     */
+    public function resolveEntry(string $relativePath): string
+    {
+        $relative = $this->normalizeRelativePath($relativePath);
+        if ($relative === '') {
+            return $this->root;
+        }
+
+        $absolute = $this->root . DIRECTORY_SEPARATOR . $relative;
+        $parent = realpath(dirname($absolute));
+        if ($parent === false) {
+            throw new WorkspaceError(
+                'The containing folder does not exist: ' . dirname($relative),
+                'It may have been moved, renamed, or deleted.'
+            );
+        }
+        $this->assertInsideRoot($parent, $relativePath);
+
+        $entry = $parent . DIRECTORY_SEPARATOR . basename($absolute);
+        if (!file_exists($entry) && !is_link($entry)) {
+            throw new WorkspaceError(
+                'The file does not exist: ' . $relative,
+                'It may have been moved, renamed, or deleted.'
+            );
+        }
+        return $entry;
+    }
+
+    /** Absolute path back to the workspace-relative form used by the client. */    public function relativePath(string $absolutePath): string
     {
         if ($absolutePath === $this->root) {
             return '';

@@ -6,7 +6,7 @@
 # built-in server pointed at the document root. Everything served here is a
 # plain file that a real Apache or nginx host serves the same way.
 #
-#     Web/serve.sh              # http://127.0.0.1:8000, Web/workspace
+#     Web/serve.sh              # http://127.0.0.1:8000, ~/kirupaMarkdown
 #     Web/serve.sh 9000         # a different port
 #     MARKDOWN_EDITOR_WORKSPACE=~/Notes Web/serve.sh
 #
@@ -14,14 +14,18 @@ set -euo pipefail
 
 port="${1:-8000}"
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-workspace="${MARKDOWN_EDITOR_WORKSPACE:-$root/workspace}"
 
 if ! command -v php >/dev/null 2>&1; then
   echo "error: php is not installed or not on PATH." >&2
   exit 1
 fi
 
-mkdir -p "$workspace"
+# PHP owns the decision so the browser and the command line can never disagree
+# about which folder is open, and so the first run creates it.
+workspace="$(
+  MARKDOWN_EDITOR_WORKSPACE="${MARKDOWN_EDITOR_WORKSPACE:-}" \
+    php -r 'require "'"$root"'/bootstrap.php"; echo MarkdownEditor\Workspace::prepare()->root();'
+)"
 
 echo "Markdown Editor"
 echo "  editor     http://127.0.0.1:$port/"

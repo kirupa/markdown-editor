@@ -161,6 +161,17 @@ function menuDefinitions(commands, state) {
         { title: 'Open…', shortcut: { command: true, key: 'o' }, action: commands.open },
         { title: 'Open Recent…', action: commands.showWelcome },
         separator,
+        {
+          title: 'New Document in Folder…',
+          shortcut: { command: true, control: true, key: 'n' },
+          action: commands.newDocumentFile,
+        },
+        {
+          title: 'New Folder…',
+          shortcut: { command: true, shift: true, key: 'n' },
+          action: commands.newFolder,
+        },
+        separator,
         { title: 'Save', shortcut: { command: true, key: 's' }, action: commands.save },
         {
           title: 'Save As…',

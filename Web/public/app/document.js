@@ -31,6 +31,8 @@ export class MarkdownDocumentModel extends EventTarget {
     this.lastUndoPushAt = 0;
     this.autosaveTimer = null;
     this.savedSource = '';
+    /** Where the document used to live, once its file has gone. */
+    this.detachedPath = null;
   }
 
   get isUntitled() {
@@ -39,6 +41,12 @@ export class MarkdownDocumentModel extends EventTarget {
 
   get displayName() {
     return this.name;
+  }
+
+  /** What Save should offer for a document with no file behind it (WF-9). */
+  get suggestedFileName() {
+    if (this.detachedPath !== null) return this.detachedPath;
+    return /\.(md|markdown)$/i.test(this.name) ? this.name : `${this.name}.md`;
   }
 
   get canUndo() {
@@ -62,6 +70,7 @@ export class MarkdownDocumentModel extends EventTarget {
     this.savedSource = payload.text;
     this.hasByteOrderMark = payload.hasByteOrderMark;
     this.isDirty = false;
+    this.detachedPath = null;
     this.selection = makeRange(0, 0);
     this.undoStack = [];
     this.redoStack = [];
@@ -78,11 +87,40 @@ export class MarkdownDocumentModel extends EventTarget {
     this.savedSource = '';
     this.hasByteOrderMark = false;
     this.isDirty = false;
+    this.detachedPath = null;
     this.selection = makeRange(0, 0);
     this.undoStack = [];
     this.redoStack = [];
     this.cancelAutosave();
     this.notify('open');
+    this.notify();
+  }
+
+  /**
+   * The file behind the document was renamed or moved. Only its location
+   * changed, so the text, history, and unsaved state all carry over (WF-9).
+   */
+  relocate(path, name) {
+    this.path = path;
+    this.name = name;
+    this.detachedPath = null;
+    this.notify();
+  }
+
+  /**
+   * The file behind the document is gone.
+   *
+   * The text stays on screen and becomes unsaved, so deleting a file in the
+   * sidebar can never take away work that is still in front of the user. It is
+   * held permanently dirty — `savedSource` is set to a value no string can
+   * equal — because there is nothing on disk left to match.
+   */
+  detach() {
+    this.detachedPath = this.path;
+    this.path = null;
+    this.savedSource = null;
+    this.isDirty = true;
+    this.cancelAutosave();
     this.notify();
   }
 
@@ -195,6 +233,7 @@ export class MarkdownDocumentModel extends EventTarget {
     this.name = saved.name;
     this.savedSource = this.source;
     this.isDirty = false;
+    this.detachedPath = null;
     this.cancelAutosave();
     this.notify(isAutosave ? 'autosaved' : 'saved');
     this.notify();

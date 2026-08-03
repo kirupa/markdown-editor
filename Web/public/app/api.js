@@ -68,6 +68,13 @@ export const api = {
     postJson('write', { path, text, hasByteOrderMark }),
   create: (path) => postJson('create', { path }),
 
+  newFolder: (parent, name) => postJson('newFolder', { parent, name }),
+  newDocument: (parent, name) => postJson('newDocument', { parent, name }),
+  rename: (path, name) => postJson('rename', { path, name }),
+  move: (path, parent) => postJson('move', { path, parent }),
+  duplicate: (path) => postJson('duplicate', { path }),
+  remove: (path) => postJson('delete', { path }),
+
   uploadImage(documentPath, file) {
     const form = new FormData();
     form.append('path', documentPath);

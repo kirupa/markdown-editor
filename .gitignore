@@ -3,6 +3,8 @@
 build/
 .DS_Store
 
-# The sample workspace is a playground. The two sample documents are tracked
-# already, so they stay; anything you write there is yours and stays untracked.
+# Documents belong to whoever is running the editor, never to the repository.
+# The default workspace is ~/kirupaMarkdown and so is already outside the
+# checkout; these cover the in-tree fallback and the older sample folder.
+/Web/kirupaMarkdown/**
 /Web/workspace/**

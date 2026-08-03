@@ -14,9 +14,26 @@ require __DIR__ . '/harness.php';
 require dirname(__DIR__, 2) . '/bootstrap.php';
 
 use MarkdownEditor\DocumentStore;
+use MarkdownEditor\FileManager;
 use MarkdownEditor\FileTree;
 use MarkdownEditor\ImageImporter;
 use MarkdownEditor\Workspace;
+
+/** Removes a temporary tree, links first so nothing outside it is followed. */function removeTree(string $root): void
+{
+    if (!is_dir($root)) {
+        @unlink($root);
+        return;
+    }
+    foreach (scandir($root) ?: [] as $name) {
+        if ($name === '.' || $name === '..') {
+            continue;
+        }
+        $path = $root . DIRECTORY_SEPARATOR . $name;
+        is_link($path) || !is_dir($path) ? @unlink($path) : removeTree($path);
+    }
+    @rmdir($root);
+}
 
 /** A disposable workspace, removed when the process ends. */
 function makeWorkspace(): array
@@ -30,16 +47,7 @@ function makeWorkspace(): array
     ));
     file_put_contents($root . '/.hidden.md', "# Hidden\n");
 
-    register_shutdown_function(static function () use ($root): void {
-        $items = new RecursiveIteratorIterator(
-            new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS),
-            RecursiveIteratorIterator::CHILD_FIRST
-        );
-        foreach ($items as $item) {
-            $item->isDir() ? @rmdir($item->getPathname()) : @unlink($item->getPathname());
-        }
-        @rmdir($root);
-    });
+    register_shutdown_function(static fn () => removeTree($root));
 
     $workspace = new Workspace($root);
     return [
@@ -49,6 +57,7 @@ function makeWorkspace(): array
         new ImageImporter($workspace),
         // The resolved root, since macOS reports /var as /private/var.
         $workspace->root(),
+        new FileManager($workspace),
     ];
 }
 
@@ -68,6 +77,26 @@ function makeImageBytes(string $extension): string
         'svg' => '<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>',
         default => 'not an image',
     };
+}
+
+/**
+ * Simulates the array PHP builds for an uploaded file. Without explicit bytes
+ * it produces content that really is the format the name claims, since the
+ * importer checks.
+ *
+ * @return array{name: string, tmp_name: string, error: int, size: int}
+ */
+function makeUpload(string $name, ?string $bytes = null): array
+{
+    $bytes ??= makeImageBytes(strtolower(pathinfo($name, PATHINFO_EXTENSION)));
+    $temporary = tempnam(sys_get_temp_dir(), 'upload');
+    file_put_contents($temporary, $bytes);
+    return [
+        'name' => $name,
+        'tmp_name' => $temporary,
+        'error' => UPLOAD_ERR_OK,
+        'size' => strlen($bytes),
+    ];
 }
 
 $runner = new TestRunner();
@@ -258,17 +287,7 @@ $runner->suite('ImageImporter', function (TestRunner $t): void {
      * bytes it produces content that really is the format the name claims,
      * since the importer now checks.
      */
-    $upload = static function (string $name, ?string $bytes = null): array {
-        $bytes ??= makeImageBytes(strtolower(pathinfo($name, PATHINFO_EXTENSION)));
-        $temporary = tempnam(sys_get_temp_dir(), 'upload');
-        file_put_contents($temporary, $bytes);
-        return [
-            'name' => $name,
-            'tmp_name' => $temporary,
-            'error' => UPLOAD_ERR_OK,
-            'size' => strlen($bytes),
-        ];
-    };
+    $upload = makeUpload(...);
 
     $t->test('copies into <stem>.assets beside the document', function (TestRunner $t) use ($upload): void {
         [, , , $images, $root] = makeWorkspace();
@@ -379,6 +398,400 @@ $runner->suite('ImageImporter', function (TestRunner $t): void {
         $t->expectRejects(
             static fn () => $images->importUpload('../Ideas.md', $upload('picture.png'))
         );
+    });
+});
+
+$runner->suite('FileManager', function (TestRunner $runner): void {
+    $upload = makeUpload(...);
+
+    $runner->test('creates a folder and lists it', function (TestRunner $t): void {
+        [, , $tree, , $root, $files] = makeWorkspace();
+
+        $entry = $files->createFolder('', 'Drafts');
+        $t->expectEqual($entry['path'], 'Drafts');
+        $t->expect($entry['isDirectory'], 'the new entry is a folder');
+        $t->expect(is_dir($root . '/Drafts'), 'the folder is on disk');
+
+        $names = array_column($tree->contents(''), 'name');
+        $t->expect(in_array('Drafts', $names, true), 'the folder appears in the sidebar');
+    });
+
+    $runner->test('creates a folder inside another folder', function (TestRunner $t): void {
+        [, , , , $root, $files] = makeWorkspace();
+        $entry = $files->createFolder('Notes', '2026');
+        $t->expectEqual($entry['path'], 'Notes/2026');
+        $t->expectEqual($entry['parent'], 'Notes');
+        $t->expect(is_dir($root . '/Notes/2026'), 'the nested folder is on disk');
+    });
+
+    $runner->test('refuses names that would not be a single visible item', function (TestRunner $t): void {
+        [, , , , , $files] = makeWorkspace();
+
+        $t->expectRejects(static fn () => $files->createFolder('', 'a/b'), 'slash');
+        $t->expectRejects(static fn () => $files->createFolder('', 'a\\b'), 'slash');
+        $t->expectRejects(static fn () => $files->createFolder('', '..'), 'reserved');
+        $t->expectRejects(static fn () => $files->createFolder('', '.'), 'reserved');
+        $t->expectRejects(static fn () => $files->createFolder('', '.secret'), 'period');
+        $t->expectRejects(static fn () => $files->createFolder('', "bad\nname"), 'not allowed');
+        $t->expectRejects(static fn () => $files->createFolder('', '   '), 'Enter a name');
+        $t->expectRejects(static fn () => $files->createFolder('', str_repeat('x', 256)), 'too long');
+    });
+
+    $runner->test('refuses to create over something that is already there', function (TestRunner $t): void {
+        [, , , , , $files] = makeWorkspace();
+        $t->expectRejects(static fn () => $files->createFolder('', 'Notes'), 'already there');
+    });
+
+    $runner->test('refuses to create outside the workspace', function (TestRunner $t): void {
+        [, , , , , $files] = makeWorkspace();
+        $t->expectRejects(static fn () => $files->createFolder('..', 'Escaped'));
+        $t->expectRejects(static fn () => $files->createFolder('/tmp', 'Escaped'));
+    });
+
+    $runner->test('creates a document and supplies a missing extension', function (TestRunner $t): void {
+        [, $documents, , , $root, $files] = makeWorkspace();
+
+        $entry = $files->createDocument('Notes', 'Shopping');
+        $t->expectEqual($entry['name'], 'Shopping.md');
+        $t->expect($entry['isMarkdown'], 'the new document reads as Markdown');
+        $t->expectEqual(file_get_contents($root . '/Notes/Shopping.md'), '');
+        $t->expectEqual($documents->read('Notes/Shopping.md')['text'], '');
+    });
+
+    $runner->test('keeps an extension that was typed', function (TestRunner $t): void {
+        [, , , , , $files] = makeWorkspace();
+        $t->expectEqual($files->createDocument('', 'Log.markdown')['name'], 'Log.markdown');
+    });
+
+    $runner->test('renames a document', function (TestRunner $t): void {
+        [, , , , $root, $files] = makeWorkspace();
+
+        $entry = $files->rename('Notes/Ideas.md', 'Better Ideas.md');
+        $t->expectEqual($entry['path'], 'Notes/Better Ideas.md');
+        $t->expect(!file_exists($root . '/Notes/Ideas.md'), 'the old name is gone');
+        $t->expectEqual(file_get_contents($root . '/Notes/Better Ideas.md'), "# Ideas\n\n- one\n");
+    });
+
+    $runner->test('carries the extension through a rename that omits one', function (TestRunner $t): void {
+        [, , , , , $files] = makeWorkspace();
+        $t->expectEqual($files->rename('Notes/Ideas.md', 'Plans')['name'], 'Plans.md');
+        $t->expectEqual($files->rename('Readme.markdown', 'Guide')['name'], 'Guide.markdown');
+    });
+
+    $runner->test('refuses a rename that would orphan a document', function (TestRunner $t): void {
+        [, , , , $root, $files] = makeWorkspace();
+        $t->expectRejects(
+            static fn () => $files->rename('Notes/Ideas.md', 'Ideas.txt'),
+            '.md or .markdown'
+        );
+        $t->expect(is_file($root . '/Notes/Ideas.md'), 'the document is untouched');
+    });
+
+    $runner->test('renames a folder without touching its contents', function (TestRunner $t): void {
+        [, , , , $root, $files] = makeWorkspace();
+        $entry = $files->rename('Notes', 'Archive');
+        $t->expectEqual($entry['path'], 'Archive');
+        $t->expectEqual(file_get_contents($root . '/Archive/Ideas.md'), "# Ideas\n\n- one\n");
+    });
+
+    $runner->test('refuses a rename onto an existing name', function (TestRunner $t): void {
+        [, , , , , $files] = makeWorkspace();
+        $files->createDocument('Notes', 'Taken.md');
+        $t->expectRejects(
+            static fn () => $files->rename('Notes/Ideas.md', 'Taken.md'),
+            'already there'
+        );
+    });
+
+    $runner->test('a rename to the same name is a no-op', function (TestRunner $t): void {
+        [, , , , $root, $files] = makeWorkspace();
+        $t->expectEqual($files->rename('Notes/Ideas.md', 'Ideas.md')['path'], 'Notes/Ideas.md');
+        $t->expect(is_file($root . '/Notes/Ideas.md'), 'the document survives');
+    });
+
+    $runner->test('renaming a document takes its images with it', function (TestRunner $t) use ($upload): void {
+        [, , , $images, $root, $files] = makeWorkspace();
+
+        $imported = $images->importUpload('Notes/Ideas.md', $upload('photo.png'));
+        file_put_contents(
+            $root . '/Notes/Ideas.md',
+            "# Ideas\n\n" . $imported['markdownReference'] . "\n"
+        );
+
+        $entry = $files->rename('Notes/Ideas.md', 'Trip Notes.md');
+
+        $t->expectEqual($entry['name'], 'Trip Notes.md');
+        $t->expect(!is_dir($root . '/Notes/Ideas.assets'), 'the old assets folder is gone');
+        $t->expect(is_file($root . '/Notes/Trip%20Notes.assets/photo.png') === false, 'the folder is not encoded on disk');
+        $t->expect(is_file($root . '/Notes/Trip Notes.assets/photo.png'), 'the image moved');
+
+        $text = file_get_contents($root . '/Notes/Trip Notes.md');
+        $t->expect(
+            str_contains($text, '(Trip%20Notes.assets/photo.png)'),
+            'the reference points at the new folder, still encoded: ' . $text
+        );
+    });
+
+    $runner->test('rewrites an unencoded reference too', function (TestRunner $t): void {
+        [, , , , $root, $files] = makeWorkspace();
+        mkdir($root . '/Notes/Ideas.assets');
+        file_put_contents($root . '/Notes/Ideas.assets/shot.png', 'x');
+        file_put_contents(
+            $root . '/Notes/Ideas.md',
+            "![a](Ideas.assets/shot.png)\n"
+        );
+
+        $files->rename('Notes/Ideas.md', 'Plans.md');
+
+        $t->expectEqual(
+            file_get_contents($root . '/Notes/Plans.md'),
+            "![a](Plans.assets/shot.png)\n"
+        );
+    });
+
+    $runner->test('refuses a rename when the images folder cannot follow', function (TestRunner $t): void {
+        [, , , , $root, $files] = makeWorkspace();
+        mkdir($root . '/Notes/Ideas.assets');
+        mkdir($root . '/Notes/Plans.assets');
+
+        $t->expectRejects(static fn () => $files->rename('Notes/Ideas.md', 'Plans.md'), 'already there');
+        $t->expect(is_file($root . '/Notes/Ideas.md'), 'the document did not move');
+        $t->expect(is_dir($root . '/Notes/Ideas.assets'), 'the images did not move');
+    });
+
+    $runner->test('refuses to rename the workspace itself', function (TestRunner $t): void {
+        [, , , , , $files] = makeWorkspace();
+        $t->expectRejects(static fn () => $files->rename('', 'Elsewhere'), 'workspace folder itself');
+    });
+
+    $runner->test('moves a document into another folder', function (TestRunner $t): void {
+        [, , , , $root, $files] = makeWorkspace();
+
+        $entry = $files->move('Readme.markdown', 'Notes');
+        $t->expectEqual($entry['path'], 'Notes/Readme.markdown');
+        $t->expect(!file_exists($root . '/Readme.markdown'), 'the original is gone');
+        $t->expectEqual(file_get_contents($root . '/Notes/Readme.markdown'), "# Readme\n");
+    });
+
+    $runner->test('moving a document takes its images with it', function (TestRunner $t): void {
+        [, , , , $root, $files] = makeWorkspace();
+        mkdir($root . '/Readme.assets');
+        file_put_contents($root . '/Readme.assets/shot.png', 'x');
+
+        $files->move('Readme.markdown', 'Notes');
+
+        $t->expect(is_file($root . '/Notes/Readme.assets/shot.png'), 'the images followed');
+        $t->expect(!is_dir($root . '/Readme.assets'), 'nothing was left behind');
+    });
+
+    $runner->test('moving into the same folder is a no-op', function (TestRunner $t): void {
+        [, , , , $root, $files] = makeWorkspace();
+        $t->expectEqual($files->move('Notes/Ideas.md', 'Notes')['path'], 'Notes/Ideas.md');
+        $t->expect(is_file($root . '/Notes/Ideas.md'), 'the document survives');
+    });
+
+    $runner->test('refuses to move a folder inside itself', function (TestRunner $t): void {
+        [, , , , , $files] = makeWorkspace();
+        $files->createFolder('Notes', 'Inner');
+        $t->expectRejects(static fn () => $files->move('Notes', 'Notes/Inner'), 'inside itself');
+        $t->expectRejects(static fn () => $files->move('Notes', 'Notes'), 'inside itself');
+    });
+
+    $runner->test('refuses to move onto an existing name', function (TestRunner $t): void {
+        [, , , , , $files] = makeWorkspace();
+        $files->createDocument('Notes', 'Readme.markdown');
+        $t->expectRejects(static fn () => $files->move('Readme.markdown', 'Notes'), 'already there');
+    });
+
+    $runner->test('duplicates a document beside itself', function (TestRunner $t): void {
+        [, , , , $root, $files] = makeWorkspace();
+
+        $first = $files->duplicate('Notes/Ideas.md');
+        $t->expectEqual($first['path'], 'Notes/Ideas-2.md');
+        $t->expectEqual(file_get_contents($root . '/Notes/Ideas-2.md'), "# Ideas\n\n- one\n");
+
+        $t->expectEqual($files->duplicate('Notes/Ideas.md')['name'], 'Ideas-3.md');
+    });
+
+    $runner->test('duplicates a folder and everything in it', function (TestRunner $t): void {
+        [, , , , $root, $files] = makeWorkspace();
+        $entry = $files->duplicate('Notes');
+        $t->expectEqual($entry['path'], 'Notes-2');
+        $t->expectEqual(file_get_contents($root . '/Notes-2/Ideas.md'), "# Ideas\n\n- one\n");
+    });
+
+    $runner->test('a duplicate gets its own copy of the images', function (TestRunner $t): void {
+        [, , , , $root, $files] = makeWorkspace();
+        mkdir($root . '/Notes/Ideas.assets');
+        file_put_contents($root . '/Notes/Ideas.assets/shot.png', 'x');
+        file_put_contents($root . '/Notes/Ideas.md', "![a](Ideas.assets/shot.png)\n");
+
+        $files->duplicate('Notes/Ideas.md');
+
+        $t->expect(is_file($root . '/Notes/Ideas.assets/shot.png'), 'the original keeps its images');
+        $t->expect(is_file($root . '/Notes/Ideas-2.assets/shot.png'), 'the copy has its own');
+        $t->expectEqual(
+            file_get_contents($root . '/Notes/Ideas-2.md'),
+            "![a](Ideas-2.assets/shot.png)\n"
+        );
+    });
+
+    $runner->test('deletes a document', function (TestRunner $t): void {
+        [, , , , $root, $files] = makeWorkspace();
+        $entry = $files->delete('Notes/Ideas.md');
+        $t->expect($entry['deleted'], 'the response says so');
+        $t->expectEqual($entry['name'], 'Ideas.md');
+        $t->expect(!file_exists($root . '/Notes/Ideas.md'), 'the document is gone');
+    });
+
+    $runner->test('deletes a folder and its contents', function (TestRunner $t): void {
+        [, , , , $root, $files] = makeWorkspace();
+        $files->createFolder('Notes', 'Inner');
+        $files->createDocument('Notes/Inner', 'Deep.md');
+
+        $files->delete('Notes');
+        $t->expect(!file_exists($root . '/Notes'), 'the folder is gone');
+    });
+
+    $runner->test('acts on a symbolic link, never on what it points at', function (TestRunner $t): void {
+        [, , , , $root, $files] = makeWorkspace();
+        symlink($root . '/Notes', $root . '/Shortcut');
+
+        // Renaming must move the link. Following it would rename the real
+        // folder and leave the link dangling.
+        $files->rename('Shortcut', 'Pointer');
+        $t->expect(is_link($root . '/Pointer'), 'the link was renamed');
+        $t->expect(is_dir($root . '/Notes'), 'the folder it points at is untouched');
+        $t->expect(is_file($root . '/Notes/Ideas.md'), 'and still holds its documents');
+
+        // Deleting must unlink it, not empty the folder behind it.
+        $files->delete('Pointer');
+        $t->expect(!is_link($root . '/Pointer'), 'the link is gone');
+        $t->expect(is_file($root . '/Notes/Ideas.md'), 'the real documents survive');
+    });
+
+    $runner->test('deletes a link that points outside without following it', function (TestRunner $t): void {
+        [, , , , $root, $files] = makeWorkspace();
+        $outside = sys_get_temp_dir() . '/markdown-editor-outside-' . bin2hex(random_bytes(4));
+        mkdir($outside);
+        file_put_contents($outside . '/keepme.md', "# Keep\n");
+        symlink($outside, $root . '/Linked');
+
+        $files->delete('Linked');
+
+        $t->expect(!is_link($root . '/Linked'), 'the link is gone');
+        $t->expect(is_file($outside . '/keepme.md'), 'what it pointed at is untouched');
+        removeTree($outside);
+    });
+
+    $runner->test('refuses to delete the workspace itself', function (TestRunner $t): void {
+        [, , , , $root, $files] = makeWorkspace();
+        $t->expectRejects(static fn () => $files->delete(''), 'workspace folder itself');
+        $t->expectRejects(static fn () => $files->delete('.'), 'workspace folder itself');
+        $t->expect(is_dir($root), 'the workspace survives');
+    });
+
+    $runner->test('refuses to touch anything outside the workspace', function (TestRunner $t): void {
+        [, , , , , $files] = makeWorkspace();
+        $t->expectRejects(static fn () => $files->delete('../secrets.md'));
+        $t->expectRejects(static fn () => $files->rename('../secrets.md', 'x.md'));
+        $t->expectRejects(static fn () => $files->move('Notes/Ideas.md', '..'));
+        $t->expectRejects(static fn () => $files->duplicate('/etc/hosts'));
+    });
+});
+
+$runner->suite('Default workspace', function (TestRunner $runner): void {
+    $runner->test('creates the folder and its starter documents on first run', function (TestRunner $t): void {
+        $root = sys_get_temp_dir() . '/markdown-editor-first-run-' . bin2hex(random_bytes(6));
+        $t->expect(!file_exists($root), 'the folder does not exist yet');
+
+        $workspace = Workspace::prepare($root);
+
+        $t->expectEqual($workspace->root(), realpath($root));
+        $t->expect(is_file($root . '/Welcome.md'), 'the welcome document is there');
+        $t->expect(is_file($root . '/Notes/Ideas.md'), 'the nested starter document is there');
+
+        // A second open must not put the starter documents back.
+        unlink($root . '/Welcome.md');
+        Workspace::prepare($root);
+        $t->expect(!file_exists($root . '/Welcome.md'), 'an existing folder is left alone');
+
+        removeTree($root);
+    });
+
+    $runner->test('names the folder kirupaMarkdown by default', function (TestRunner $t): void {
+        $previous = getenv('MARKDOWN_EDITOR_WORKSPACE');
+        putenv('MARKDOWN_EDITOR_WORKSPACE');
+
+        $t->expectEqual(basename(Workspace::defaultRoot()), 'kirupaMarkdown');
+        $t->expectEqual(
+            Workspace::defaultRoot(),
+            rtrim(getenv('HOME'), '/') . '/kirupaMarkdown'
+        );
+
+        if ($previous !== false) {
+            putenv('MARKDOWN_EDITOR_WORKSPACE=' . $previous);
+        }
+    });
+
+    $runner->test('an explicit workspace wins', function (TestRunner $t): void {
+        $previous = getenv('MARKDOWN_EDITOR_WORKSPACE');
+        $chosen = sys_get_temp_dir() . '/markdown-editor-chosen-' . bin2hex(random_bytes(4));
+        putenv('MARKDOWN_EDITOR_WORKSPACE=' . $chosen . '/');
+
+        $t->expectEqual(Workspace::defaultRoot(), $chosen);
+        $t->expectEqual(Workspace::prepare()->root(), realpath($chosen));
+
+        removeTree($chosen);
+        putenv($previous === false
+            ? 'MARKDOWN_EDITOR_WORKSPACE'
+            : 'MARKDOWN_EDITOR_WORKSPACE=' . $previous);
+    });
+
+    $runner->test('falls back inside the web root when there is no usable home', function (TestRunner $t): void {
+        $previousWorkspace = getenv('MARKDOWN_EDITOR_WORKSPACE');
+        $previousHome = getenv('HOME');
+        putenv('MARKDOWN_EDITOR_WORKSPACE');
+        putenv('HOME');
+        $previousServerHome = $_SERVER['HOME'] ?? null;
+        unset($_SERVER['HOME']);
+
+        // A web server account often has no home directory at all, so the
+        // fallback has to land somewhere the process can definitely write.
+        $t->expectEqual(
+            Workspace::defaultRoot(),
+            dirname(__DIR__, 2) . '/kirupaMarkdown'
+        );
+
+        if ($previousServerHome !== null) {
+            $_SERVER['HOME'] = $previousServerHome;
+        }
+        putenv($previousHome === false ? 'HOME' : 'HOME=' . $previousHome);
+        putenv($previousWorkspace === false
+            ? 'MARKDOWN_EDITOR_WORKSPACE'
+            : 'MARKDOWN_EDITOR_WORKSPACE=' . $previousWorkspace);
+    });
+
+    $runner->test('ignores a home directory it cannot write to', function (TestRunner $t): void {
+        $previousWorkspace = getenv('MARKDOWN_EDITOR_WORKSPACE');
+        $previousHome = getenv('HOME');
+        putenv('MARKDOWN_EDITOR_WORKSPACE');
+
+        $home = sys_get_temp_dir() . '/markdown-editor-readonly-home-' . bin2hex(random_bytes(4));
+        mkdir($home, 0o500, true);
+        putenv('HOME=' . $home);
+
+        $t->expectEqual(
+            Workspace::defaultRoot(),
+            dirname(__DIR__, 2) . '/kirupaMarkdown'
+        );
+
+        chmod($home, 0o755);
+        removeTree($home);
+        putenv($previousHome === false ? 'HOME' : 'HOME=' . $previousHome);
+        putenv($previousWorkspace === false
+            ? 'MARKDOWN_EDITOR_WORKSPACE'
+            : 'MARKDOWN_EDITOR_WORKSPACE=' . $previousWorkspace);
     });
 });
 

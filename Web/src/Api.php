@@ -18,22 +18,20 @@ final class Api
         private readonly Workspace $workspace,
         private readonly DocumentStore $documents,
         private readonly FileTree $tree,
-        private readonly ImageImporter $images
+        private readonly ImageImporter $images,
+        private readonly FileManager $files
     ) {
     }
 
     public static function bootstrap(?string $workspaceRoot = null): self
     {
-        $root = $workspaceRoot
-            ?? getenv('MARKDOWN_EDITOR_WORKSPACE')
-            ?: dirname(__DIR__) . DIRECTORY_SEPARATOR . 'workspace';
-
-        $workspace = new Workspace($root);
+        $workspace = Workspace::prepare($workspaceRoot);
         return new self(
             $workspace,
             new DocumentStore($workspace),
             new FileTree($workspace),
-            new ImageImporter($workspace)
+            new ImageImporter($workspace),
+            new FileManager($workspace)
         );
     }
 
@@ -88,6 +86,28 @@ final class Api
                 (bool) ($body['hasByteOrderMark'] ?? false)
             ),
             'create' => $this->requirePost($isPost) ?? $this->documents->create(
+                $this->requiredString($body, 'path')
+            ),
+            'newFolder' => $this->requirePost($isPost) ?? $this->files->createFolder(
+                (string) ($body['parent'] ?? ''),
+                $this->requiredString($body, 'name')
+            ),
+            'newDocument' => $this->requirePost($isPost) ?? $this->files->createDocument(
+                (string) ($body['parent'] ?? ''),
+                $this->requiredString($body, 'name')
+            ),
+            'rename' => $this->requirePost($isPost) ?? $this->files->rename(
+                $this->requiredString($body, 'path'),
+                $this->requiredString($body, 'name')
+            ),
+            'move' => $this->requirePost($isPost) ?? $this->files->move(
+                $this->requiredString($body, 'path'),
+                (string) ($body['parent'] ?? '')
+            ),
+            'duplicate' => $this->requirePost($isPost) ?? $this->files->duplicate(
+                $this->requiredString($body, 'path')
+            ),
+            'delete' => $this->requirePost($isPost) ?? $this->files->delete(
                 $this->requiredString($body, 'path')
             ),
             'upload' => $this->requirePost($isPost) ?? $this->images->importUpload(

@@ -12,9 +12,7 @@ use MarkdownEditor\WorkspaceError;
 $workspaceName = '';
 $startupError = null;
 try {
-    $root = getenv('MARKDOWN_EDITOR_WORKSPACE')
-        ?: dirname(__DIR__) . DIRECTORY_SEPARATOR . 'workspace';
-    $workspaceName = (new Workspace($root))->name();
+    $workspaceName = Workspace::prepare()->name();
 } catch (WorkspaceError $error) {
     $startupError = $error;
 }
@@ -59,6 +57,14 @@ $assetVersion = '1';
           <svg viewBox="0 0 10 6" aria-hidden="true" class="me-chevron">
             <path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5"/>
           </svg>
+        </button>
+        <button type="button" class="me-icon-button" id="explorerNewDocument"
+                title="New document" aria-label="New document">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><use href="#icon-new-document"/></svg>
+        </button>
+        <button type="button" class="me-icon-button" id="explorerNewFolder"
+                title="New folder" aria-label="New folder">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><use href="#icon-new-folder"/></svg>
         </button>
         <button type="button" class="me-icon-button" id="explorerReveal"
                 title="Show the current document's folder" aria-label="Show the current document's folder">
@@ -110,6 +116,26 @@ $assetVersion = '1';
           stroke-width="1.4" stroke-linecap="round"/>
     <path d="M13 2.2V5h-2.8" fill="none" stroke="currentColor"
           stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
+  <symbol id="icon-new-document" viewBox="0 0 16 16">
+    <path d="M3.6 1.9h5L12 5.2v4.1" fill="none" stroke="currentColor" stroke-width="1.3"
+          stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M3.6 1.9v12.2h4.2" fill="none" stroke="currentColor" stroke-width="1.3"
+          stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M8.4 2v3.4h3.4" fill="none" stroke="currentColor" stroke-width="1.3"
+          stroke-linejoin="round"/>
+    <path d="M11.6 10.4v4.2M9.5 12.5h4.2" fill="none" stroke="currentColor"
+          stroke-width="1.4" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="icon-new-folder" viewBox="0 0 16 16">
+    <path d="M1.8 12.4V4a1.2 1.2 0 0 1 1.2-1.2h2.6l1.3 1.5h4.3" fill="none"
+          stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M1.8 12.4a1 1 0 0 0 1 1h5.1" fill="none" stroke="currentColor"
+          stroke-width="1.3" stroke-linecap="round"/>
+    <path d="M14.2 5.5v2.3" fill="none" stroke="currentColor" stroke-width="1.3"
+          stroke-linecap="round"/>
+    <path d="M11.9 11.4v4.2M9.8 13.5H14" fill="none" stroke="currentColor"
+          stroke-width="1.4" stroke-linecap="round"/>
   </symbol>
 </svg>
 

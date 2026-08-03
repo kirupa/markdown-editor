@@ -11,7 +11,7 @@ nothing installed on the host but PHP itself.
 
 > **Maintenance rule:** every change that adds, removes, or alters a
 > user-visible capability must update the matching requirement here, add a line
-> to [Release history](#15-release-history), and — when the behavior is shared —
+> to [Release history](#16-release-history), and — when the behavior is shared —
 > stay consistent with the [macOS PRD](../macOS/README.md).
 
 ---
@@ -29,6 +29,7 @@ nothing installed on the host but PHP itself.
 9. [Markdown language support and formatting](#9-markdown-language-support-and-formatting)
 10. [Images and assets](#10-images-and-assets)
 11. [File explorer](#11-file-explorer)
+11a. [Managing files and folders](#11a-managing-files-and-folders)
 12. [Themes, typography, and layout](#12-themes-typography-and-layout)
 13. [Keyboard shortcut reference](#13-keyboard-shortcut-reference)
 14. [Architecture](#14-architecture)
@@ -128,7 +129,9 @@ boundary and it is enforced on the server, not in the client.
 
 | ID | Requirement |
 | --- | --- |
-| WW-1 | The workspace root is `Web/workspace`, or the path in the `MARKDOWN_EDITOR_WORKSPACE` environment variable. |
+| WW-1 | The workspace root is `~/kirupaMarkdown`, or the path in the `MARKDOWN_EDITOR_WORKSPACE` environment variable. |
+| WW-1a | The folder is created on first run if it is not there, and seeded with the starter documents in `Web/seed`. Seeding happens only at creation, so an existing folder is never written into. |
+| WW-1b | The default sits in the home directory rather than in the checkout, so updating the editor cannot touch documents and the folder can be moved into a sync service. Where there is no usable home directory, `Web/kirupaMarkdown` is used instead. |
 | WW-2 | Every path from the client is workspace-relative. Absolute paths are rejected. |
 | WW-3 | Paths are normalized before use: `.` segments are dropped, `..` segments are resolved, and repeated separators collapse. Any path that resolves outside the root is rejected. |
 | WW-4 | Resolution is performed against the *real* path of the parent directory, so a symlink pointing outside the workspace cannot be used to escape it — while still allowing paths for files that do not exist yet. |
@@ -151,7 +154,7 @@ MARKDOWN_EDITOR_WORKSPACE="$HOME/Dropbox/Notes" Web/serve.sh
 A symlink works too, which is convenient on a server:
 
 ```bash
-ln -s "$HOME/Dropbox/Notes" Web/workspace
+ln -s "$HOME/Dropbox/Notes" ~/kirupaMarkdown
 ```
 
 Two things to know before relying on it:
@@ -276,15 +279,41 @@ keyboard shortcut, and every one of them toggles:
 
 | ID | Requirement |
 | --- | --- |
-| WL-1 | A sidebar lists the workspace tree, folders first, then files, each alphabetical and case-insensitive. |
+| WL-1 | A sidebar lists the workspace tree, expandable folders first, then everything else, each alphabetical and case-insensitive. |
 | WL-2 | Folders expand lazily; a folder's children are fetched the first time it opens. |
-| WL-3 | Hidden entries (names beginning with `.`) and symlinks are not listed. |
+| WL-3 | Hidden entries — names beginning with `.` — are not listed. |
+| WL-3a | A symlink is listed, but it cannot be expanded, so the tree can never wander outside the workspace by following one. Packages such as `Foo.app` are listed and not expandable for the same reason: they are directories the user means as files. |
 | WL-4 | Markdown files open on click. Non-Markdown files report that they cannot be opened. |
 | WL-5 | The current document's row is selected, and the tree expands to reveal it. |
 | WL-6 | A Reveal button re-expands to the current document; a Refresh button re-reads the tree from disk. |
 | WL-7 | The header is a dropdown listing the current folder and each ancestor up to the workspace root; choosing one re-roots the tree. |
 | WL-8 | The sidebar can be hidden (`⌃⌘S`), and its width dragged; both persist. |
 | WL-9 | Selection colors are derived from the active theme so the selected row is legible in all sixteen theme combinations. |
+
+---
+
+## 11a. Managing files and folders
+
+The macOS build leaves this to Finder, which is one Cmd-Tab away. A browser has
+no such neighbour, so the sidebar has to be a file manager too — otherwise the
+workspace is a folder nobody can reorganize without leaving the app.
+
+| ID | Requirement |
+| --- | --- |
+| WF-1 | The sidebar header has **New Document** and **New Folder** buttons; both are also in the File menu (`⌃⌘N` and `⇧⌘N`). |
+| WF-2 | Right-clicking a row opens a context menu: Open, New Document…, New Folder…, Rename…, Duplicate, Delete…. Right-clicking empty space offers the two New items for the folder on screen. |
+| WF-3 | New items are created in the selected folder, in the folder holding the selected file, or at the sidebar root — and the prompt names which. |
+| WF-4 | A new document with no extension gets `.md`. It is created empty and opened immediately. |
+| WF-5 | Names are validated on the server and refused with a reason: no slashes, no leading period, no control characters, not `.` or `..`, not empty, 255 bytes at most, valid UTF-8. |
+| WF-6 | Creating, renaming, moving, or duplicating onto a name that already exists is refused. Nothing is ever overwritten. |
+| WF-7 | Renaming a Markdown document to a name with no extension keeps the original one. Renaming it to a *different* extension is refused, because the editor could no longer open it. |
+| WF-8 | A document's `<stem>.assets` folder follows it through a rename or a move, and the image references inside the document are rewritten to match — in both the percent-encoded and plain spellings. A duplicate gets its own copy of the folder. If the destination assets name is taken, the whole operation is refused and nothing moves. |
+| WF-9 | The open document survives all of this. Renamed or moved, it follows the file. Deleted, its text stays on screen and becomes unsaved, and Save offers the path it used to have — deleting a file in the sidebar can never take away work still in front of you. |
+| WF-10 | A row can be dragged onto a folder, or onto empty space to reach the root. The destination highlights, and a folder cannot be dropped into itself or its own descendants. |
+| WF-11 | Delete asks first, says whether a folder takes its contents with it, and says it cannot be undone — there is no Trash on a server. A document's `.assets` folder is deliberately *not* deleted with it; it holds original images, and it is visible in the sidebar to remove separately. |
+| WF-12 | Every operation acts on the item itself, never on what a symbolic link points at. Deleting a link removes the link; the folder behind it is untouched. |
+| WF-13 | Duplicates are named `name-2`, then `name-3`, matching how imported images avoid collisions ([I-8](#10-images-and-assets)). Folders are copied recursively. |
+| WF-14 | After any change the sidebar reopens the containing folder, selects the new item, and scrolls it into view. |
 
 ---
 
@@ -315,6 +344,8 @@ keyboard shortcut, and every one of them toggles:
 | --- | --- |
 | `⌘N` | New |
 | `⌘O` | Open… |
+| `⌃⌘N` | New Document in Folder… |
+| `⇧⌘N` | New Folder… |
 | `⌘S` | Save |
 | `⇧⌘S` | Save As… |
 | `⌘W` | Close document |
@@ -341,11 +372,13 @@ keyboard shortcut, and every one of them toggles:
 Web/
 ├── serve.sh                   Local preview: php -S, nothing else
 ├── bootstrap.php              A nine-line autoloader — no Composer
+├── seed/                      Starter documents, copied into a new workspace
 ├── src/                       The server
 │   ├── Workspace.php          Path resolution and the security boundary
 │   ├── WorkspaceError.php     Message + recovery suggestion, as JSON
 │   ├── DocumentStore.php      UTF-8 read/write, BOM handling, .md validation
 │   ├── FileTree.php           One directory level, sorted, filtered
+│   ├── FileManager.php        Create, rename, move, duplicate, delete
 │   ├── ImageImporter.php      Upload validation, assets folder, collisions
 │   └── Api.php                One dispatch table for every action
 ├── public/                    The document root
@@ -366,7 +399,7 @@ Web/
 │   │   ├── api.js             fetch wrapper; every failure becomes an ApiError
 │   │   ├── document.js        Document state, undo stack, autosave
 │   │   ├── ui/                Surfaces, renderers, explorer, toolbar, menus,
-│   │   │                      welcome, theme popover, dialogs
+│   │   │                      welcome, theme popover, dialogs, context menu
 │   │   └── main.js            Wiring: commands, modes, panes, startup
 │   └── tests/                 The browser test page and the JS suites
 └── tests/
@@ -378,11 +411,12 @@ Web/
 | --- | --- |
 | WA-1 | `app/core/` is pure: no DOM, no network, no globals. It is the ported Swift core and is tested in isolation. |
 | WA-2 | The server is stateless. Every request is resolved against the workspace from scratch. |
-| WA-3 | `api.php?action=…` is the entire protocol: `config`, `tree`, `read`, `exists`, `write`, `create`, `upload`, `asset`. |
+| WA-3 | `api.php?action=…` is the entire protocol: `config`, `tree`, `read`, `exists`, `write`, `create`, `newDocument`, `newFolder`, `rename`, `move`, `duplicate`, `delete`, `upload`, `asset`. |
 | WA-4 | Reads are GET; anything that writes requires POST. |
 | WA-5 | Errors are `{ "error": …, "recovery": … }` with a non-200 status, and the client turns every one into a modal alert. |
 | WA-6 | Both editor panes are the same `EditorSurface` controller, parameterized by a projection that says how to render, how to read text, and how to map ranges. The rendered and source panes differ only in that object. |
 | WA-7 | An edit is applied by diffing the surface's text against what the model expects, mapping that difference to a source range, and replacing it — so the browser's own editing behavior is used, but the source stays canonical. |
+| WA-8 | `Workspace::resolve()` follows symlinks and is used for reading *through* a path; `Workspace::resolveEntry()` resolves every ancestor but leaves the final component alone, and is used for acting *on* an item. Renaming or deleting through the first would operate on a link's target instead of the link. |
 
 ---
 
@@ -396,8 +430,10 @@ cd markdown-editor
 Web/serve.sh
 ```
 
-Then open <http://127.0.0.1:8000/>. Pass a port as the first argument, and point
-`MARKDOWN_EDITOR_WORKSPACE` at any folder to edit your own files:
+Then open <http://127.0.0.1:8000/>. The first run creates `~/kirupaMarkdown`
+with a couple of starter documents and opens it; after that the folder is yours,
+and the editor leaves it alone. Pass a port as the first argument, and point
+`MARKDOWN_EDITOR_WORKSPACE` somewhere else to edit a different folder:
 
 ```bash
 MARKDOWN_EDITOR_WORKSPACE=~/Documents/Notes Web/serve.sh 9000
@@ -407,8 +443,9 @@ MARKDOWN_EDITOR_WORKSPACE=~/Documents/Notes Web/serve.sh 9000
 
 1. Copy `Web/` to the server.
 2. Point the document root at `Web/public`.
-3. Make sure the workspace folder exists and is writable by the web server. By
-   default that is `Web/workspace`; set `MARKDOWN_EDITOR_WORKSPACE` to use
+3. Make sure the workspace folder is writable by the web server. It is created
+   on first request if it is missing. The default is `kirupaMarkdown` in the web
+   server account's home directory; set `MARKDOWN_EDITOR_WORKSPACE` to choose
    another location — ideally one *outside* the document root.
 4. There is no step 4. No build, no install, no configuration file.
 
@@ -421,7 +458,7 @@ Only `Web/public` needs to be reachable. `Web/src`, `Web/bootstrap.php`, and
 | --- | --- |
 | Open `/tests/` in a browser | The full client suite, including the DOM tests. Needs only PHP. |
 | `node Web/tests/run.mjs` | The same client suites minus the DOM ones. Node is optional and used only for a fast terminal loop. |
-| `php Web/tests/php/run.php` | Workspace path safety, document read/write, file tree, image import and its content validation. |
+| `php Web/tests/php/run.php` | Workspace path safety, document read/write, file tree, file management, image import and its content validation. |
 
 | ID | Requirement |
 | --- | --- |
@@ -430,6 +467,7 @@ Only `Web/public` needs to be reachable. `Web/src`, `Web/bootstrap.php`, and
 | WY-3 | The PHP suite runs without PHPUnit or any other dependency. |
 | WY-4 | Path-traversal, symlink-escape, invalid-UTF-8, mislabeled-image, and scriptable-SVG rejection are covered by tests, not just by inspection. |
 | WY-5 | The DOM tests assert the invariant everything else rests on: each surface's text equals the model's text exactly, and every character offset round-trips through the DOM. |
+| WY-6 | File management is covered by tests that assert what must *not* happen: renaming or deleting a symlink leaves its target alone, a folder cannot be moved into itself, nothing is overwritten, and the workspace root cannot be renamed or deleted. |
 
 ---
 
@@ -437,6 +475,7 @@ Only `Web/public` needs to be reachable. `Web/src`, `Web/bootstrap.php`, and
 
 | Change | What shipped |
 | --- | --- |
+| File management | A default `~/kirupaMarkdown` workspace, created and seeded on first run, plus create, rename, move, duplicate, and delete for files and folders from the sidebar ([§11a](#11a-managing-files-and-folders)). |
 | Repository restructure | macOS and Web builds separated into `macOS/` and `Web/`. |
 | Web build, initial release | The full editor: welcome screen, document lifecycle with autosave, three editing modes with a WYSIWYG rendered surface, every formatting command, image import from four sources, the file explorer, all sixteen themes, the menu bar and its shortcuts — on a PHP-only backend with no dependencies. |
 
@@ -457,6 +496,7 @@ Inherited from the macOS build:
 Specific to the web build:
 
 - Multiple documents open at once
-- Renaming, moving, or deleting files from the explorer
+- Undoing a file operation — delete is final ([WF-11](#11a-managing-files-and-folders))
+- Moving files by dragging them out of, or into, the operating system's file manager
 - Any form of authentication — protect the workspace with the web server
 - Offline use; the editor needs the server to read and write files
