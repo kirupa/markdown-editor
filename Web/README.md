@@ -72,7 +72,7 @@ touch survives byte for byte.
 
 | ID | Non-goal |
 | --- | --- |
-| WNG-1 | Multi-user editing, accounts, or authentication. The workspace is assumed to be private or protected by the web server. |
+| WNG-1 | Multi-user editing, accounts, or authentication. One workspace, and whoever can reach it. Accounts are planned by way of Firebase rather than built here. |
 | WNG-2 | Real-time collaboration or conflict resolution. |
 | WNG-3 | A database. State is the filesystem plus `localStorage`. |
 | WNG-4 | A JavaScript framework or a CSS framework. |
@@ -300,20 +300,20 @@ workspace is a folder nobody can reorganize without leaving the app.
 
 | ID | Requirement |
 | --- | --- |
-| WF-1 | The sidebar header has **New Document** and **New Folder** buttons; both are also in the File menu (`⌃⌘N` and `⇧⌘N`). |
-| WF-2 | Right-clicking a row opens a context menu: Open, New Document…, New Folder…, Rename…, Duplicate, Delete…. Right-clicking empty space offers the two New items for the folder on screen. |
-| WF-3 | New items are created in the selected folder, in the folder holding the selected file, or at the sidebar root — and the prompt names which. |
-| WF-4 | A new document with no extension gets `.md`. It is created empty and opened immediately. |
-| WF-5 | Names are validated on the server and refused with a reason: no slashes, no leading period, no control characters, not `.` or `..`, not empty, 255 bytes at most, valid UTF-8. |
-| WF-6 | Creating, renaming, moving, or duplicating onto a name that already exists is refused. Nothing is ever overwritten. |
-| WF-7 | Renaming a Markdown document to a name with no extension keeps the original one. Renaming it to a *different* extension is refused, because the editor could no longer open it. |
-| WF-8 | A document's `<stem>.assets` folder follows it through a rename or a move, and the image references inside the document are rewritten to match — in both the percent-encoded and plain spellings. A duplicate gets its own copy of the folder. If the destination assets name is taken, the whole operation is refused and nothing moves. |
-| WF-9 | The open document survives all of this. Renamed or moved, it follows the file. Deleted, its text stays on screen and becomes unsaved, and Save offers the path it used to have — deleting a file in the sidebar can never take away work still in front of you. |
-| WF-10 | A row can be dragged onto a folder, or onto empty space to reach the root. The destination highlights, and a folder cannot be dropped into itself or its own descendants. |
-| WF-11 | Delete asks first, says whether a folder takes its contents with it, and says it cannot be undone — there is no Trash on a server. A document's `.assets` folder is deliberately *not* deleted with it; it holds original images, and it is visible in the sidebar to remove separately. |
-| WF-12 | Every operation acts on the item itself, never on what a symbolic link points at. Deleting a link removes the link; the folder behind it is untouched. |
-| WF-13 | Duplicates are named `name-2`, then `name-3`, matching how imported images avoid collisions ([I-8](#10-images-and-assets)). Folders are copied recursively. |
-| WF-14 | After any change the sidebar reopens the containing folder, selects the new item, and scrolls it into view. |
+| WM-1 | The sidebar header has **New Document** and **New Folder** buttons; both are also in the File menu (`⌃⌘N` and `⇧⌘N`). |
+| WM-2 | Right-clicking a row opens a context menu: Open, New Document…, New Folder…, Rename…, Duplicate, Delete…. Right-clicking empty space offers the two New items for the folder on screen. |
+| WM-3 | New items are created in the selected folder, in the folder holding the selected file, or at the sidebar root — and the prompt names which. |
+| WM-4 | A new document with no extension gets `.md`. It is created empty and opened immediately. |
+| WM-5 | Names are validated on the server and refused with a reason: no slashes, no leading period, no control characters, not `.` or `..`, not empty, 255 bytes at most, valid UTF-8. |
+| WM-6 | Creating, renaming, moving, or duplicating onto a name that already exists is refused. Nothing is ever overwritten. |
+| WM-7 | Renaming a Markdown document to a name with no extension keeps the original one. Renaming it to a *different* extension is refused, because the editor could no longer open it. |
+| WM-8 | A document's `<stem>.assets` folder follows it through a rename or a move, and the image references inside the document are rewritten to match — in both the percent-encoded and plain spellings. A duplicate gets its own copy of the folder. If the destination assets name is taken, the whole operation is refused and nothing moves. |
+| WM-9 | The open document survives all of this. Renamed or moved, it follows the file. Deleted, its text stays on screen and becomes unsaved, and Save offers the path it used to have — deleting a file in the sidebar can never take away work still in front of you. |
+| WM-10 | A row can be dragged onto a folder, or onto empty space to reach the root. The destination highlights, and a folder cannot be dropped into itself or its own descendants. |
+| WM-11 | Delete asks first, says whether a folder takes its contents with it, and says it cannot be undone — there is no Trash on a server. A document's `.assets` folder is deliberately *not* deleted with it; it holds original images, and it is visible in the sidebar to remove separately. |
+| WM-12 | Every operation acts on the item itself, never on what a symbolic link points at. Deleting a link removes the link; the folder behind it is untouched. |
+| WM-13 | Duplicates are named `name-2`, then `name-3`, matching how imported images avoid collisions ([I-8](#10-images-and-assets)). Folders are copied recursively. |
+| WM-14 | After any change the sidebar reopens the containing folder, selects the new item, and scrolls it into view. |
 
 ---
 
@@ -480,12 +480,14 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 
 | ID | Requirement |
 | --- | --- |
-| WD-1 | `MARKDOWN_EDITOR_HOME` tells the two public entry points where the rest of the app lives. Unset, they use the layout in this repository, so a normal install needs no configuration. |
-| WD-2 | Settings are read from `getenv()` *and* `$_SERVER`. `SetEnv` reaches only the second on some CGI and LiteSpeed builds, and `putenv` reaches only the first — reading one would work locally and fail on a host. |
-| WD-3 | `deploy.sh` uploads from a staging copy containing only the files it lists, so a local edit, a test fixture, or a scratch document cannot reach the server by accident. `tests/` is never deployed. |
-| WD-4 | The deployment is self-configuring: the generated `.htaccess` names the paths the app was actually installed at, so it cannot drift from them. |
-| WD-5 | `deploy.sh` uses `lftp` when it is present, because `mirror --delete` stops a redeploy leaving the previous version's files behind, and falls back to `curl`, which is on every machine. |
-| WD-6 | Setting `MDE_HTPASSWD` puts the whole app behind HTTP Basic Auth. **The editor has no accounts, no sessions, and no permissions of its own** — anyone who can reach the URL can read, change, and delete every document. On a public host, protect it at the web server or do not deploy it. |
+| WS-1 | `MARKDOWN_EDITOR_HOME` tells the two public entry points where the rest of the app lives. Unset, they use the layout in this repository, so a normal install needs no configuration. |
+| WS-2 | Settings are read from `getenv()` *and* `$_SERVER`. `SetEnv` reaches only the second on some CGI and LiteSpeed builds, and `putenv` reaches only the first — reading one would work locally and fail on a host. |
+| WS-3 | `deploy.sh` uploads from a staging copy containing only the files it lists, so a local edit, a test fixture, or a scratch document cannot reach the server by accident. `tests/` is never deployed. |
+| WS-4 | The deployment is self-configuring: the generated `.htaccess` names the paths the app was actually installed at, so it cannot drift from them. |
+| WS-5 | `deploy.sh` uses `lftp` when it is present, because `mirror --delete` stops a redeploy leaving the previous version's files behind, and falls back to `curl`, which is on every machine. |
+| WS-6 | **The editor has no accounts, no sessions, and no permissions of its own.** Anyone who can reach the URL can read, change, and delete every document in the workspace. |
+| WS-7 | Setting `MDE_HTPASSWD` puts the whole install behind HTTP Basic Auth, as a stopgap for a workspace that should not be open. Leaving it unset deploys the app to anyone who finds the URL, which is the right choice only for a workspace whose contents are meant to be public. |
+| WS-8 | Whether or not there is a password, the deployment still contains itself: the classes, the starter documents, and every document live above the document root, `.htaccess` refuses `.md` files and directory listings under the served folder, and the workspace boundary ([§5](#5-the-workspace)) is enforced on every request. An open install can be edited by anyone; it still cannot be read *around*. |
 
 ### Tests
 
@@ -511,7 +513,7 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 
 | Change | What shipped |
 | --- | --- |
-| Shared hosting | A split layout for hosts that cannot repoint the document root, and `Web/deploy.sh` to publish over FTPS ([§15](#15-run-deploy-and-test)). |
+| Published build | A split layout for hosts that cannot repoint the document root, and `Web/deploy.sh` to publish over FTPS ([§15](#15-run-deploy-and-test)). |
 | File management | A default `~/kirupaMarkdown` workspace, created and seeded on first run, plus create, rename, move, duplicate, and delete for files and folders from the sidebar ([§11a](#11a-managing-files-and-folders)). |
 | Repository restructure | macOS and Web builds separated into `macOS/` and `Web/`. |
 | Web build, initial release | The full editor: welcome screen, document lifecycle with autosave, three editing modes with a WYSIWYG rendered surface, every formatting command, image import from four sources, the file explorer, all sixteen themes, the menu bar and its shortcuts — on a PHP-only backend with no dependencies. |
@@ -533,7 +535,10 @@ Inherited from the macOS build:
 Specific to the web build:
 
 - Multiple documents open at once
-- Undoing a file operation — delete is final ([WF-11](#11a-managing-files-and-folders))
+- Undoing a file operation — delete is final ([WM-11](#11a-managing-files-and-folders))
 - Moving files by dragging them out of, or into, the operating system's file manager
-- Any form of authentication — protect the workspace with the web server
+- Any form of authentication. Basic Auth at the web server is the stopgap
+  ([WS-7](#15-run-deploy-and-test)); real accounts are intended to arrive with a
+  Firebase integration, which is also what would make more than one person's
+  workspace possible
 - Offline use; the editor needs the server to read and write files
