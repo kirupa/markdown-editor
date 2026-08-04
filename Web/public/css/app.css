@@ -264,19 +264,35 @@ body {
 }
 
 .me-segmented__option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 24px;
   font: inherit;
   color: inherit;
   background: none;
   border: 0;
-  padding: 4px 11px;
+  padding: 0;
   border-radius: 5px;
   cursor: default;
 }
 
+.me-segmented__option svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.me-segmented__option svg .me-fill { fill: currentColor; stroke: none; }
+
 .me-segmented__option[aria-pressed="true"] {
   background: var(--me-page-background);
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.18);
-  font-weight: 600;
 }
 
 /* ------------------------------------------------------------------- sidebar */

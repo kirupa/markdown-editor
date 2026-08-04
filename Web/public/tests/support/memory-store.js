@@ -9,9 +9,58 @@
 export function createMemoryNodeStore(seed = []) {
   const rows = new Map(seed.map((node) => [node.path, node]));
 
+  /**
+   * Watchers, and the rule for who hears about a change.
+   *
+   * Modelled on the real listener rather than simplified: attaching delivers
+   * the current contents straight away, exactly as Firestore does, because
+   * that first delivery is the thing callers have to be careful about.
+   */
+  const childWatchers = new Set();
+  const nodeWatchers = new Set();
+
+  const childrenNow = (parent) =>
+    [...rows.values()].filter((row) => (row.parent ?? '') === parent).map((row) => ({ ...row }));
+
+  function announce(paths) {
+    const parents = new Set();
+    for (const path of paths) {
+      const cut = path.lastIndexOf('/');
+      parents.add(cut === -1 ? '' : path.slice(0, cut));
+    }
+    for (const watcher of childWatchers) {
+      if (parents.has(watcher.parent)) watcher.listener(childrenNow(watcher.parent));
+    }
+    for (const watcher of nodeWatchers) {
+      if (!paths.includes(watcher.path)) continue;
+      const row = rows.get(watcher.path);
+      watcher.listener(row ? { ...row } : null);
+    }
+  }
+
   return {
     snapshot: () => Object.fromEntries([...rows].map(([k, v]) => [k, { ...v }])),
     paths: () => [...rows.keys()].sort(),
+
+    /** How many listeners are attached, so leaks are visible to a test. */
+    watcherCount: () => childWatchers.size + nodeWatchers.size,
+
+    /**
+     * A change made somewhere else — another device, or another tab.
+     *
+     * Separate from `commit` only to read clearly at the call site; both
+     * notify, because the real store filters this browser's own echo one layer
+     * lower, in `firestore-store.js`, where the SDK metadata is available.
+     */
+    remoteWrite(node) {
+      rows.set(node.path, { ...node });
+      announce([node.path]);
+    },
+
+    remoteDelete(path) {
+      rows.delete(path);
+      announce([path]);
+    },
 
     async read(path) {
       const row = rows.get(path);
@@ -19,9 +68,7 @@ export function createMemoryNodeStore(seed = []) {
     },
 
     async childrenOf(parent) {
-      return [...rows.values()]
-        .filter((row) => (row.parent ?? '') === parent)
-        .map((row) => ({ ...row }));
+      return childrenNow(parent);
     },
 
     async subtreeOf(folder) {
@@ -44,6 +91,22 @@ export function createMemoryNodeStore(seed = []) {
         if (write.remove) rows.delete(write.path);
         else rows.set(write.path, { ...write.data });
       }
+      announce(writes.map((write) => write.path));
+    },
+
+    watchChildren(parent, listener) {
+      const watcher = { parent, listener };
+      childWatchers.add(watcher);
+      listener(childrenNow(parent));
+      return () => childWatchers.delete(watcher);
+    },
+
+    watchNode(path, listener) {
+      const watcher = { path, listener };
+      nodeWatchers.add(watcher);
+      const row = rows.get(path);
+      listener(row ? { ...row } : null);
+      return () => nodeWatchers.delete(watcher);
     },
   };
 }

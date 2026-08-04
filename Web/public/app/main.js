@@ -9,6 +9,7 @@ import {
   restoreStorage, storageMode, isCloud, currentAccount, useCloud, signOutAndUseLocal,
 } from './storage.js';
 import { MarkdownDocumentModel } from './document.js';
+import { startLiveUpdates } from './live.js';
 import { makeRange, maxRange } from './core/range.js';
 import { renderMarkdown } from './core/render-model.js';
 import {
@@ -138,7 +139,33 @@ async function adoptStorage() {
     showError(error);
   }
   updateStorageIndicator();
+  restartLiveUpdates();
   updateStatus();
+}
+
+/**
+ * WC-7: subscriptions belong to the backend that created them.
+ *
+ * Restarted rather than kept, on every storage change, because a listener
+ * opened against one account's documents means nothing after a switch to
+ * another account — or to the server's disk, which pushes nothing at all.
+ * Tearing down first also guarantees the old listeners are released even when
+ * the new backend opens none.
+ */
+let stopLiveUpdates = null;
+function restartLiveUpdates() {
+  stopLiveUpdates?.();
+  stopLiveUpdates = startLiveUpdates({
+    model,
+    explorer,
+    notify: flashStatus,
+    onDocumentChanged: () => {
+      richSurface.renderedSource = null;
+      sourceSurface.renderedSource = null;
+      refreshSurfaces({ force: true });
+      updateStatus();
+    },
+  });
 }
 
 /** Says which storage is in use, so it is never a guess (WR-5). */
@@ -868,6 +895,9 @@ async function start() {
   }
 
   model.reset();
+
+  // After the tree exists, so the first sync watches the folders on screen.
+  restartLiveUpdates();
 
   // W-1: honor an explicit ?path= first, then the launch preference.
   const requested = new URLSearchParams(window.location.search).get('path');

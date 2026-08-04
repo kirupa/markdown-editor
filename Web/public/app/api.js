@@ -42,4 +42,10 @@ export const api = {
 
   uploadImage: (...args) => active.uploadImage(...args),
   imageURL: (...args) => active.imageURL(...args),
+
+  // Live updates. Each returns an unsubscribe function, and each is allowed to
+  // subscribe to nothing — see the note in `backends/local.js`.
+  watchFolder: (...args) => active.watchFolder(...args),
+  watchDocument: (...args) => active.watchDocument(...args),
+  watchAssets: (...args) => active.watchAssets(...args),
 };

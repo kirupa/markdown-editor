@@ -30,6 +30,15 @@ export const ICONS = {
   rule: '<path d="M2.2 8h11.6"/><path d="M3.5 4.4h9M3.5 11.6h9" opacity="0.4"/>',
   theme:
     '<circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" class="me-fill"/>',
+
+  // The three editor views. Each says what you would be looking at: a laid-out
+  // document, the same document beside its source, and the Markdown mark.
+  richText:
+    '<rect x="2.2" y="2.2" width="11.6" height="11.6" rx="2.2"/><rect x="4.5" y="4.8" width="7" height="2" rx="0.8" class="me-fill"/><path d="M4.6 9.2h6.8M4.6 11.4h4.3"/>',
+  sideBySide:
+    '<rect x="1.6" y="2.9" width="12.8" height="10.2" rx="2"/><path d="M8 2.9v10.2"/><path d="M3.6 6.1h2.6M3.6 8.4h2.6M9.8 6.1h2.6M9.8 8.4h2.6M9.8 10.7h1.7"/>',
+  markdown:
+    '<rect x="1.1" y="3.5" width="13.8" height="9" rx="1.9"/><path d="M3.5 10.2V5.8l2.3 2.8 2.3-2.8v4.4"/><path d="M11.3 5.8v4.4M9.7 8.6l1.6 1.8 1.6-1.8"/>',
 };
 
 function iconButton(name, title, onClick) {
@@ -66,15 +75,22 @@ export function buildToolbar(root, commands) {
   segmented.setAttribute('role', 'group');
   segmented.setAttribute('aria-label', 'Editor mode');
   const modeButtons = new Map();
-  for (const [mode, label] of [
-    ['rich', 'Rich Text'],
-    ['split', 'Side by Side'],
-    ['source', 'Markdown'],
+  // E-1, E-4: icons rather than words. The three views are a permanent fixture
+  // of the toolbar, so a glyph each keeps the row short enough for the
+  // formatting controls to stay visible on a narrow window. The name is not
+  // lost — it is the accessible name and the tooltip, which is where a label
+  // this stable belongs.
+  for (const [mode, label, icon, shortcut] of [
+    ['rich', 'Rich Text', 'richText', '⌃⌘1'],
+    ['split', 'Side by Side', 'sideBySide', '⌃⌘2'],
+    ['source', 'Markdown', 'markdown', '⌃⌘3'],
   ]) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'me-segmented__option';
-    button.textContent = label;
+    button.innerHTML = `<svg viewBox="0 0 16 16" aria-hidden="true">${ICONS[icon]}</svg>`;
+    button.title = `${label} (${shortcut})`;
+    button.setAttribute('aria-label', label);
     button.setAttribute('aria-pressed', 'false');
     button.addEventListener('click', () => commands.setMode(mode));
     keepFocus(button);

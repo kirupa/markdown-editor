@@ -31,7 +31,6 @@ const MOBILE_ICONS = {
   newDocument:
     '<path d="M3.6 1.9h5.2L12.4 5.5v8.6H3.6z"/><path d="M8.7 2v3.6h3.6"/><path d="M8 8v3.6M6.2 9.8h3.6"/>',
   save: '<path d="M3.4 2.6h7l2.6 2.6v8.2H3.4z"/><path d="M5.6 2.6v3.6h4.6V2.6M5.6 13.4v-3.8h4.8v3.8"/>',
-  paragraph: '<path d="M3 3.2h10M3 6.6h10M3 10h7M3 13.4h10"/>',
 };
 
 const ALL_ICONS = { ...ICONS, ...MOBILE_ICONS };
@@ -249,13 +248,13 @@ export function buildMobileUI({ root, topBar, formatBar, commands, state }) {
     openSheet([
       {
         label: 'Rich Text',
-        icon: 'paragraph',
+        icon: 'richText',
         selected: mode === 'rich',
         action: () => commands.setMode('rich'),
       },
       {
         label: 'Markdown',
-        icon: 'code',
+        icon: 'markdown',
         selected: mode === 'source',
         action: () => commands.setMode('source'),
       },

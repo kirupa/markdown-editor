@@ -6,7 +6,7 @@
 // selection.
 
 import { api } from './api.js';
-import { makeRange } from './core/range.js';
+import { clampRange, makeRange } from './core/range.js';
 
 /** D-12: debounce after the last keystroke before autosaving in place. */
 const AUTOSAVE_DELAY_MS = 1500;
@@ -15,6 +15,23 @@ const AUTOSAVE_DELAY_MS = 1500;
 const UNDO_COALESCE_MS = 600;
 
 const UNTITLED = 'Untitled';
+
+/**
+ * D-5: what a new document starts as.
+ *
+ * An empty Heading 1 line, which is byte-for-byte what the Heading 1 command
+ * produces on an empty document — so a new file is in the same state as one
+ * where the first thing you did was choose Heading 1, and there is no second
+ * kind of "new" for the rest of the editor to know about.
+ *
+ * It is a starting point, not a rule: nothing forces the first line to stay a
+ * heading. Delete the marker and the line is a paragraph, which is what has to
+ * happen anyway for every document that is opened rather than created.
+ *
+ * The document is not dirty when it holds exactly this, so making a new
+ * document and then closing it still asks nothing.
+ */
+export const NEW_DOCUMENT_SOURCE = '# ';
 
 export class MarkdownDocumentModel extends EventTarget {
   constructor() {
@@ -79,16 +96,16 @@ export class MarkdownDocumentModel extends EventTarget {
     this.notify();
   }
 
-  /** D-5: a new document starts as an empty string. */
+  /** D-5: a new document starts on an empty Heading 1 line, caret inside it. */
   reset() {
     this.path = null;
     this.name = UNTITLED;
-    this.source = '';
-    this.savedSource = '';
+    this.source = NEW_DOCUMENT_SOURCE;
+    this.savedSource = NEW_DOCUMENT_SOURCE;
     this.hasByteOrderMark = false;
     this.isDirty = false;
     this.detachedPath = null;
-    this.selection = makeRange(0, 0);
+    this.selection = makeRange(NEW_DOCUMENT_SOURCE.length, 0);
     this.undoStack = [];
     this.redoStack = [];
     this.cancelAutosave();
@@ -192,6 +209,48 @@ export class MarkdownDocumentModel extends EventTarget {
   }
 
   /**
+   * WC-6: a newer revision of this document arrived from the server.
+   *
+   * The old text goes onto the undo stack before the new text replaces it, so
+   * a change made on another device is a normal undoable step: press Undo and
+   * your version is back, dirty, and on its way to being autosaved again. That
+   * matters because the alternative — clearing history the way `open()` does —
+   * would make an arriving revision the one edit in the editor that cannot be
+   * taken back.
+   *
+   * The caller decides *whether* to call this. It never checks `isDirty`
+   * itself, because "there are unsaved edits" is a question about what the
+   * person is doing, not about the text, and the answer lives in `live.js`.
+   *
+   * Returns false when the text is already what arrived, which is the common
+   * case: this browser's own save echoing back off the server.
+   */
+  applyRemote({ text, hasByteOrderMark = this.hasByteOrderMark, name = this.name, path = this.path }) {
+    if (text === this.source && text === this.savedSource) return false;
+
+    if (text !== this.source) {
+      this.undoStack.push({ source: this.source, selection: this.selection });
+      if (this.undoStack.length > 500) this.undoStack.shift();
+      this.redoStack = [];
+      this.lastUndoPushAt = 0;
+    }
+
+    this.source = text;
+    this.savedSource = text;
+    this.hasByteOrderMark = hasByteOrderMark;
+    this.name = name;
+    this.path = path;
+    this.isDirty = false;
+    this.detachedPath = null;
+    // The caret may have been past the end of the shorter incoming text.
+    this.selection = clampRange(this.selection, text.length);
+    this.cancelAutosave();
+    this.notify('open');
+    this.notify();
+    return true;
+  }
+
+  /**
    * D-12 through D-16: autosave in place, but only for a document that already
    * exists on disk. An untitled document has nowhere to go, so it waits for an
    * explicit Save instead.
@@ -199,7 +258,7 @@ export class MarkdownDocumentModel extends EventTarget {
   scheduleAutosave() {
     this.cancelAutosave();
     if (this.isUntitled || !this.isDirty) return;
-    this.autosaveTimer = window.setTimeout(() => {
+    this.autosaveTimer = setTimeout(() => {
       this.autosaveTimer = null;
       this.save({ isAutosave: true }).catch((error) => {
         // D-17: autosave never fails silently.
@@ -210,7 +269,7 @@ export class MarkdownDocumentModel extends EventTarget {
 
   cancelAutosave() {
     if (this.autosaveTimer !== null) {
-      window.clearTimeout(this.autosaveTimer);
+      clearTimeout(this.autosaveTimer);
       this.autosaveTimer = null;
     }
   }
@@ -228,15 +287,28 @@ export class MarkdownDocumentModel extends EventTarget {
     const target = path ?? this.path;
     if (!target) throw new Error('The document has no location to save to.');
 
-    const saved = await api.write(target, this.source, this.hasByteOrderMark);
+    // What is actually sent, captured before the await.
+    //
+    // Reading `this.source` again afterwards would be reading it as it is when
+    // the server replies, which is not what the server was given if anything
+    // was typed while the request was in flight — a real gap at autosave
+    // speeds. Recording the wrong text as saved used to cost one skipped
+    // autosave. Now that a revision arriving from elsewhere is compared
+    // against `savedSource` to recognise this browser's own echo, it would
+    // cost those keystrokes instead, so this has to be exact.
+    const written = this.source;
+
+    const saved = await api.write(target, written, this.hasByteOrderMark);
     this.path = saved.path;
     this.name = saved.name;
-    this.savedSource = this.source;
-    this.isDirty = false;
+    this.savedSource = written;
+    this.isDirty = this.source !== written;
     this.detachedPath = null;
     this.cancelAutosave();
     this.notify(isAutosave ? 'autosaved' : 'saved');
     this.notify();
+    // Anything typed during the write is still unsaved, and says so.
+    if (this.isDirty) this.scheduleAutosave();
     return saved;
   }
 }

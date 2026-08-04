@@ -42,6 +42,10 @@ const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
  * @property {(parent: string) => Promise<object[]>} childrenOf one level
  * @property {(folder: string) => Promise<object[]>} subtreeOf the folder and everything under it
  * @property {(writes: Array<{path: string, data?: object, remove?: boolean}>) => Promise<void>} commit
+ * @property {(parent: string, listener: (nodes: object[]) => void) => () => void} watchChildren
+ *   calls back with one level whenever it changes; returns an unsubscribe
+ * @property {(path: string, listener: (node: object|null) => void) => () => void} watchNode
+ *   calls back with one node, or null once it is gone; returns an unsubscribe
  */
 
 /**
@@ -506,6 +510,78 @@ export function createFirestoreBackend({ nodes, assets, workspaceName = 'kirupaM
     /** Synchronous by contract; `read` primes the cache. */
     imageURL(workspacePath) {
       return urlByPath.get(paths.normalize(workspacePath)) ?? null;
+    },
+
+    /**
+     * WC-1: one folder, watched. The listener is handed the same payload
+     * `tree()` returns, so a caller can treat a push exactly like a fetch.
+     *
+     * The query is `where('parent', '==', folder)` — the same shape `tree()`
+     * already issues, so watching a folder costs no more than listing it once
+     * and then costs nothing again until something actually changes.
+     */
+    watchFolder(path, listener) {
+      const folder = paths.normalize(path);
+      return nodes.watchChildren(folder, (rows) => {
+        listener({
+          path: folder,
+          entries: rows.map(entryFor).sort(paths.compareEntries),
+          ancestors: paths.ancestorsOf(folder, workspaceName),
+        });
+      });
+    },
+
+    /**
+     * WC-2: one document, watched. The listener receives the payload `read()`
+     * returns, or `null` once the document no longer exists.
+     *
+     * Asset URLs are refreshed from the node as they arrive, so an image added
+     * on another device resolves here without a reload. A folder or a
+     * non-Markdown file at this path reports `null` rather than throwing:
+     * a watcher has no call stack to fail into, and "there is nothing here to
+     * show you" is the honest answer in both cases.
+     */
+    watchDocument(path, listener) {
+      const target = paths.normalize(path);
+      return nodes.watchNode(target, (node) => {
+        if (!node || node.type === 'folder' || !paths.isMarkdown(node.name)) {
+          listener(null);
+          return;
+        }
+        const text = node.text ?? '';
+        listener({
+          path: node.path,
+          name: node.name,
+          text,
+          hasByteOrderMark: Boolean(node.hasByteOrderMark),
+          modified: node.modified ?? 0,
+          size: new TextEncoder().encode(text).length,
+        });
+      });
+    },
+
+    /**
+     * WC-3: the `<stem>.assets` folder beside a document, watched, so an image
+     * added on another device can be displayed rather than showing as missing.
+     * Only the URL cache is updated; the listener decides whether to re-render.
+     */
+    watchAssets(documentPath, listener) {
+      const target = paths.normalize(documentPath);
+      const assetFolder = paths.join(
+        paths.parentOf(target),
+        paths.assetsFolderName(target)
+      );
+      return nodes.watchChildren(assetFolder, (rows) => {
+        let changed = false;
+        for (const asset of rows) {
+          if (asset.type !== 'asset' || !asset.url) continue;
+          if (urlByPath.get(asset.path) !== asset.url) {
+            urlByPath.set(asset.path, asset.url);
+            changed = true;
+          }
+        }
+        if (changed) listener();
+      });
     },
   };
 }

@@ -50,7 +50,7 @@ function reportFailure(error, doing) {
 export async function createFirestoreNodeStore(uid) {
   const firebase = await loadFirebase();
   const {
-    collection, doc, getDoc, getDocs, query, where, writeBatch,
+    collection, doc, getDoc, getDocs, onSnapshot, query, where, writeBatch,
   } = firebase.firestore;
 
   const nodes = collection(firebase.db, USERS_COLLECTION, uid, NODES_COLLECTION);
@@ -64,6 +64,24 @@ export async function createFirestoreNodeStore(uid) {
       throw reportFailure(error, doing);
     }
   }
+
+  /**
+   * A snapshot this browser caused, which the caller has already applied.
+   *
+   * Firestore answers a write locally before the server has acknowledged it,
+   * so every save comes back through every listener within milliseconds. The
+   * editor already has that text — it is what it just sent — and treating it
+   * as an incoming change would mean re-rendering the pane out from under
+   * whoever is typing. `hasPendingWrites` is exactly "this snapshot contains
+   * a local write the server has not confirmed", so it is the precise signal
+   * to skip, and it costs nothing to check.
+   *
+   * The server's own echo of the same write arrives later with the flag
+   * cleared. That one is not skipped here — it is indistinguishable from
+   * another device sending identical text, so it is compared by content
+   * upstream, where the current text is known.
+   */
+  const isLocalEcho = (snapshot) => snapshot.metadata.hasPendingWrites;
 
   return {
     async read(path) {
@@ -127,6 +145,40 @@ export async function createFirestoreNodeStore(uid) {
           throw reportFailure(error, 'save that change');
         }
       }
+    },
+
+    /**
+     * WC-1: one folder level, pushed whenever it changes.
+     *
+     * The same `where('parent', '==', …)` as `childrenOf`, so it needs no
+     * index and sees exactly what a fetch would see.
+     *
+     * A listener error is not thrown — there is no caller standing underneath
+     * a callback to catch it. It is reported to the console and the
+     * subscription is left in place, because Firestore retries a dropped
+     * listener by itself and the editor keeps working from what it has.
+     */
+    watchChildren(parent, listener) {
+      return onSnapshot(
+        query(nodes, where('parent', '==', parent)),
+        (snapshot) => {
+          if (isLocalEcho(snapshot)) return;
+          listener(snapshot.docs.map((entry) => entry.data()));
+        },
+        (error) => console.warn('Live folder updates stopped:', error?.code ?? error)
+      );
+    },
+
+    /** WC-2: one node, pushed whenever it changes; `null` once it is gone. */
+    watchNode(path, listener) {
+      return onSnapshot(
+        refFor(path),
+        (snapshot) => {
+          if (isLocalEcho(snapshot)) return;
+          listener(snapshot.exists() ? snapshot.data() : null);
+        },
+        (error) => console.warn('Live document updates stopped:', error?.code ?? error)
+      );
     },
   };
 }

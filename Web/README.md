@@ -189,7 +189,7 @@ Two things to know before relying on it:
 
 | ID | Requirement |
 | --- | --- |
-| WD-1 | **New** (`⌘N`) starts an untitled empty document. |
+| WD-1 | **New** (`⌘N`) starts an untitled document on an empty **Heading 1** line, with the caret already inside it. Pressing Return there drops to a body paragraph, because a heading is not a list and has nothing to continue. Almost every document opens with a title, so the common shape needs no formatting command at all; the heading is ordinary text and deleting the `# ` leaves a blank document. |
 | WD-2 | **Open** (`⌘O`) prompts for a workspace-relative path; clicking a file in the explorer opens it directly. |
 | WD-3 | **Save** (`⌘S`) writes UTF-8 to the document's path. An untitled document prompts for a path first. |
 | WD-4 | **Save As** (`⇧⌘S`) always prompts, and the entered path must end in `.md` or `.markdown`. |
@@ -198,6 +198,7 @@ Two things to know before relying on it:
 | WD-7 | If the Save triggered from that prompt is itself cancelled or fails, the original action is abandoned too. Unsaved work is never lost to a dialog. |
 | WD-8 | Leaving the page with unsaved changes triggers the browser's own confirmation. |
 | WD-9 | **Autosave:** edits to a document that already has a path are written 1.5 seconds after typing stops, and immediately when the tab is hidden. Untitled documents are never written without a path. |
+| WD-13 | A save records the text it actually sent, captured before the request, not the text on screen when the reply arrives. Anything typed while a save is in flight stays unsaved and schedules another one. Reading the text again afterwards used to cost a skipped autosave; with [live updates](#live-updates) it would cost those keystrokes, because a revision is told apart from this browser's own echo by comparing against the last text saved. |
 | WD-10 | The status bar shows the document name, an "Edited" marker while dirty, and the result of the last save. |
 | WD-11 | A byte order mark present when the file was read is written back; one that was absent is never added. |
 | WD-12 | Undo (`⌘Z`) and Redo (`⇧⌘Z`) operate on the source text. Consecutive typing within 600 ms coalesces into one undo step, so undo moves in meaningful units. |
@@ -221,6 +222,7 @@ Two things to know before relying on it:
 | WE-11 | The Markdown pane shows every marker verbatim while giving headings, body text, and code their representative sizes and weights — size and weight only, matching `MarkdownSourceStyler`. |
 | WE-12 | Copy and cut place Markdown source on the clipboard from either pane; paste inserts text as Markdown. |
 | WE-13 | Input Method Editor composition is left alone until it commits, so non-Latin input works normally. |
+| WE-15 | The three modes are chosen with icons rather than words — a page, two panes, and the Markdown mark. They sit left of the formatting controls in a bar those controls already fill, and at that size three words crowd out the tools people reach for far more often. Each keeps its full name as its accessible name and shows it, with the shortcut, on hover, so nothing is only available to someone who recognises the picture. |
 | WE-14 | The rendered and source panes always contain exactly the text the model says they should. This is asserted by tests that compare the DOM's plain text against the model, and round-trip every character offset through the DOM. |
 
 ---
@@ -362,6 +364,22 @@ collection of nodes:
 | WR-17 | Deleting a document leaves its assets folder behind, as the local build does: it holds originals that may exist nowhere else. |
 | WR-18 | Images go to Cloud Storage under `users/{uid}/`, capped at 10 MB. Firestore's 1 MiB document limit makes storing them inline too restrictive. Opening a document loads its image URLs first, so the renderer — which resolves image sources synchronously — has them ready. |
 
+### Live updates
+
+A document open in a cloud account follows the account, not this browser. Both
+phones and both laptops show the same thing without anyone reloading.
+
+| ID | Requirement |
+| --- | --- |
+| WC-1 | Changes made elsewhere arrive on their own, through Firestore listeners rather than polling. A document saved on a phone appears on the laptop that has it open, and a file created on one device appears in the other's sidebar. |
+| WC-2 | **Unsaved edits are never overwritten.** If a revision arrives while there are unsaved changes on screen, it is refused and the status bar says *Changed elsewhere — your edits are kept*. The document stays dirty, so the next save writes this browser's version: last write wins, and the person actually typing is the one who wins it. Everything else here is a convenience; this is the requirement the feature has to earn. |
+| WC-3 | An adopted revision is one undo step, not a new history. `⌘Z` puts your text back, marks the document unsaved, and autosave sends it out again — so *no, mine* is a keystroke. An arriving change would otherwise be the only edit in the editor that could not be taken back. |
+| WC-4 | A document deleted or moved on another device detaches: the text stays on screen and becomes permanently unsaved, so the next Save asks where to put it. This is the same path a local delete already used ([WF-9](#11a-managing-files-and-folders)). |
+| WC-5 | This browser's own saves are silent. A write is recognised by comparing against the last text saved ([WD-13](#7-document-lifecycle)) rather than against the text on screen, which is what makes autosave-while-typing quiet: at that moment the two legitimately differ, and comparing against the screen would report every autosave as a change from another device. |
+| WC-6 | Only what is on screen is watched: the open document, its images, and the folders the sidebar has expanded. The listener is the same equality query [WR-12](#11b-cloud-storage-and-accounts) already issues, so watching a folder costs what listing it once cost, needs no composite index, and grows with what is visible rather than with the size of the account. Collapsing a folder or closing a document detaches its listener. |
+| WC-7 | **Local storage has no live channel, deliberately.** PHP on shared hosting offers no push, and polling the server on a timer would spend requests on a workspace only this browser can reach. The local backend answers the same three watch calls with a no-op, so nothing above it needs to know which storage is in use. |
+| WC-8 | Watching is restarted when storage is switched, and stopped on the way out, so signing out cannot leave a listener running against the previous account. |
+
 ### The API key is not a secret
 
 `Web/public/app/cloud/config.js` contains the real Firebase configuration,
@@ -398,7 +416,11 @@ Honest limits on the testing behind this section:
 
 - The Google sign-in round trip cannot run in headless Chrome, and no test
   writes to the real database. Sign-in, and reading and writing real documents
-  in a real account, are **unverified**.
+  in a real account, are **unverified** — and that now includes live updates,
+  which have only ever run against the in-memory Firestore. The decisions they
+  rest on are covered exhaustively; the delivery of a real `onSnapshot` is not.
+  What is checked directly is that the pinned SDK build actually exports
+  `onSnapshot`, since a missing import would fail only in cloud mode.
 - What *is* verified: the pinned SDK loads and initialises against this project,
   the store adapter builds against a real Firestore handle, the backend answers
   `config()` identically to the local one, and the cloud backend passes 30 tests
@@ -535,7 +557,12 @@ Web/
 │   │   │   ├── recent-documents.js    ← RecentDocumentsCatalog.swift
 │   │   │   └── saved-documents.js     Save-for-later list arithmetic
 │   │   ├── dom-text.js        Text ↔ DOM offset mapping
-│   │   ├── api.js             fetch wrapper; every failure becomes an ApiError
+│   │   ├── api.js             The storage contract; forwards to a backend
+│   │   ├── backends/
+│   │   │   ├── local.js               PHP: fetch, and no-op watchers
+│   │   │   └── firestore.js           Cloud: the same shapes out of Firestore
+│   │   ├── cloud/             Firebase: config, lazy SDK load, auth, store
+│   │   ├── live.js            What to do when the server says it changed
 │   │   ├── document.js        Document state, undo stack, autosave
 │   │   ├── ui/                Surfaces, renderers, explorer, toolbar, menus,
 │   │   │                      welcome, theme popover, dialogs, context menu,
@@ -556,6 +583,8 @@ Web/
 | WA-5 | Errors are `{ "error": …, "recovery": … }` with a non-200 status, and the client turns every one into a modal alert. |
 | WA-6 | Both editor panes are the same `EditorSurface` controller, parameterized by a projection that says how to render, how to read text, and how to map ranges. The rendered and source panes differ only in that object. |
 | WA-7 | An edit is applied by diffing the surface's text against what the model expects, mapping that difference to a source range, and replacing it — so the browser's own editing behavior is used, but the source stays canonical. |
+| WA-9 | Storage is one interface with two implementations behind `api.js`, so nothing above it knows whether a document is on the server or in an account — including the watch calls, which the local backend answers with a no-op ([WC-7](#live-updates)). |
+| WA-10 | What to do with a revision from elsewhere is a pure function of the model's state and the revision, separate from the subscription that delivers it. Every outcome — adopt, defer, detach, ignore — is decided in code reachable without a network, a DOM, or a timer, because that decision is where someone's work is at stake and it must be testable exhaustively. |
 | WA-8 | `Workspace::resolve()` follows symlinks and is used for reading *through* a path; `Workspace::resolveEntry()` resolves every ancestor but leaves the final component alone, and is used for acting *on* an item. Renaming or deleting through the first would operate on a link's target instead of the link. |
 
 ---
@@ -651,6 +680,8 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 | WY-10 | Gesture locking is verified by performing the gesture, not by reading a property, and always against a control: the same synthesized 2.5× pinch and horizontal drag must leave mobile at scale 1 and offset 0 *and* must still zoom and pan the desktop layout. Without the control case a harness that silently fails to dispatch anything looks like a pass. |
 | WY-9 | Layout regressions are checked by measuring geometry, not by reading the DOM: the last block of a scrolled-to-the-end document must sit above the pane's bottom edge, in every editor mode and both layouts. Assertions on structure alone passed while a bar covered the text. |
 | WY-8 | The saved-for-later list is pure list arithmetic in its own module, so ticking an already-ticked box, a rename, a delete, and a hand-edited `localStorage` value are all covered by unit tests rather than by clicking. |
+| WY-12 | Every branch that can lose work is mutation-tested, not merely covered: the guard is removed, the suite must go red, and the guard is put back. Thirteen mutants across the live-update path — adopting over unsaved edits, dropping the echo check, recording the wrong text as saved, forgetting to claim a watcher slot — are each killed by a named test, and a no-op mutant is included to prove the harness can still report a survivor. |
+| WY-13 | The live-update tests run against an in-memory Firestore whose watchers behave like the real ones, delivering current contents the moment a listener attaches. That attach snapshot is the source of the only two hazards found in this feature, so a double that skipped it would have hidden both. |
 | WY-11 | Touch behaviour is verified by tapping, never by calling `element.click()`. A programmatic click invokes the handler directly and passes whether or not a real tap ever reaches it, which is how every button in the mobile layout came to be dead while every assertion passed. The check that a control does not cancel the events a tap depends on is a unit test, because `dispatchEvent` produces untrusted events that never synthesize a click and so cannot reproduce the failure in a DOM test. |
 
 ---
@@ -659,6 +690,7 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 
 | Change | What shipped |
 | --- | --- |
+| Live updates | Cloud documents and folders now update on every signed-in device as they change, without a reload, and unsaved edits are never overwritten by one ([§Live updates](#live-updates)). The mode switch became icons ([WE-15](#8-editing-modes)), and a new document now starts on a Heading 1 line ([WD-1](#7-document-lifecycle)). |
 | Touch controls | Every button in the mobile layout was inert on a real phone — header icons, popovers, formatting, image insert — and the formatting row could not be scrolled by dragging along it. The buttons cancelled `touchstart` to hold the editor's selection, which also suppresses the `click` a tap generates ([WB-28](#12a-mobile-layout), [WB-29](#12a-mobile-layout)). |
 | Cloud storage | Documents can be stored in a Google account through Firebase Authentication and Firestore, chosen from the welcome screen or the File menu, with local files still the default and unchanged ([§11b](#11b-cloud-storage-and-accounts)). |
 | Docked tools | The formatting bar moved from floating above the keyboard to the header's second row, where the platform's own bottom furniture cannot cover it ([WB-20](#12a-mobile-layout), [WB-26](#12a-mobile-layout)). |
@@ -693,9 +725,15 @@ Specific to the web build:
 - Moving files by dragging them out of, or into, the operating system's file manager
 - Sharing a document, or any collaboration. Cloud storage is per-account and
   private to it ([§11b](#11b-cloud-storage-and-accounts))
-- Real-time sync between two devices with the same document open at once.
-  Cloud documents are read on open and written on save; there is no listener
-  reconciling a concurrent edit, so the last save wins
+- Collaborative editing. Cloud documents do update live on every signed-in
+  device ([§Live updates](#live-updates)), but two people typing in the same
+  document at the same moment are not merged: whole revisions replace whole
+  revisions, and unsaved edits win over an arriving one until they are saved
+  ([WC-2](#live-updates))
+- Live updates for documents stored on the server. That is a deliberate
+  limit of a PHP-only backend, not an oversight ([WC-7](#live-updates))
+- A new document starting as a Heading 1 in the macOS build. The web build
+  does ([WD-1](#7-document-lifecycle)); macOS still opens an empty document
 - Migrating documents between local and cloud storage. Switching mode changes
   which documents exist, it does not copy them ([WR-4](#11b-cloud-storage-and-accounts))
 - Sign-in providers other than Google

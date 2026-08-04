@@ -90,4 +90,22 @@ export const localBackend = {
   imageURL(workspacePath) {
     return `${ENDPOINT}?action=asset&path=${encodeURIComponent(workspacePath)}`;
   },
+
+  /**
+   * WC-4: no live updates here, by design.
+   *
+   * A change channel needs the server to push, and this backend is a PHP
+   * script that only answers requests. The alternative — polling `api.php` on
+   * a timer — would put a permanent request load on the host to catch an event
+   * that, with files on one server's disk, almost never happens without this
+   * browser having caused it.
+   *
+   * So these subscribe to nothing and unsubscribe from nothing. The callers
+   * still call them, because a backend is defined by answering the whole
+   * contract, and "nothing will change under you" is a truthful answer for a
+   * backend where nothing does. Real-time is what the cloud mode is for.
+   */
+  watchFolder: () => () => {},
+  watchDocument: () => () => {},
+  watchAssets: () => () => {},
 };

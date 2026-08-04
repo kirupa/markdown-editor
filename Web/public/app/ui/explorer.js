@@ -51,6 +51,8 @@ export class Explorer {
     this.onEntryCreated = () => {};
     this.onEntryMoved = () => {};
     this.onEntryDeleted = () => {};
+    /** WC-5: which folders are on screen changed, so watchers must follow. */
+    this.onFoldersChanged = () => {};
 
     this.pathMenu = document.createElement('ul');
     this.pathMenu.className = 'me-menu__list';
@@ -142,9 +144,35 @@ export class Explorer {
       empty.className = 'me-tree__empty';
       empty.textContent = 'This folder is empty.';
       this.tree.replaceChildren(empty);
+      this.onFoldersChanged();
       return;
     }
     this.tree.replaceChildren(...this.nodesFor(this.root));
+    this.onFoldersChanged();
+  }
+
+  /**
+   * WC-5: the folders whose contents are currently being shown.
+   *
+   * Exactly the set the sidebar would re-fetch on a refresh, which is what
+   * makes it the right set to watch: watching costs the same as one listing,
+   * and nothing is watched that nobody can see.
+   */
+  visibleFolders() {
+    return [...this.children.keys()];
+  }
+
+  /**
+   * WC-5: a folder's contents arrived from a watcher rather than a fetch.
+   *
+   * Ignored for a folder that is no longer displayed — a collapse and an
+   * in-flight snapshot can cross — so a stale push can never put a closed
+   * folder back on screen.
+   */
+  applyLiveListing(path, entries) {
+    if (!this.children.has(path)) return;
+    this.setChildren(path, entries);
+    this.render();
   }
 
   nodesFor(parent) {
