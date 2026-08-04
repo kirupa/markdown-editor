@@ -341,17 +341,18 @@ workspace is a folder nobody can reorganize without leaving the app.
 A phone cannot use the desktop chrome. A menu bar is a row of hover targets, the
 toolbar is twenty ~30px buttons on one line, the sidebar is docked, and the
 status bar spends a row on text nobody taps. `View ▸ Mobile Layout` (`⌃⌘M`)
-swaps all of it for an arrangement built for a thumb — the *same* commands, not
-a reduced editor.
+swaps all of it for an arrangement built for a touch screen — the *same*
+commands, not a reduced editor: a two-row header, the explorer as a drawer, and
+sheets in place of menus.
 
 | ID | Requirement |
 | --- | --- |
-| WB-1 | A single Mobile Layout toggle replaces the menu bar, the desktop toolbar, and the status bar with a slim top bar and a floating formatting bar. Nothing about the open document changes. |
+| WB-1 | A single Mobile Layout toggle replaces the menu bar, the desktop toolbar, and the status bar with a two-row header: a slim top bar and, docked beneath it, the formatting row. Nothing about the open document changes. |
 | WB-2 | The choice persists in `localStorage` and survives a reload at any window size. |
 | WB-3 | With no stored choice, the layout is guessed once from the device: a viewport ≤ 820px wide **or** a coarse pointer. After the user chooses, the guess never overrides them again. |
 | WB-4 | The top bar holds, left to right: a **Files** button, the document name (with a `•` while unsaved), **Undo**, the **theme** picker, a **save this file for later** checkbox, and an overflow button. |
-| WB-5 | The formatting bar floats above the bottom of the screen and scrolls horizontally: paragraph style, bold, italic, underline, strikethrough, inline code, bulleted / numbered / task list, quote, code block, link, image, horizontal rule. Buttons show the styles active at the caret, exactly as the desktop toolbar does. |
-| WB-6 | The floating bar rides above the on-screen keyboard, tracked through `visualViewport` rather than assumed, and clears the home indicator via `env(safe-area-inset-bottom)`. |
+| WB-5 | The formatting row spans the header's full width and scrolls horizontally: paragraph style, bold, italic, underline, strikethrough, inline code, bulleted / numbered / task list, quote, code block, link, image, horizontal rule. Buttons show the styles active at the caret, exactly as the desktop toolbar does. |
+| WB-6 | The app is sized to the space the keyboard leaves, measured through `visualViewport` rather than assumed, so nothing is left underneath the keys and the browser never scrolls the page to reveal the caret. The top of the header stays clear of the notch via `env(safe-area-inset-top)`, and the end of a document clears the home indicator via `env(safe-area-inset-bottom)`. |
 | WB-7 | The overflow button opens a bottom sheet with Rich Text / Markdown, New Document, Save, and **Desktop Layout** — the way back out once there is no menu bar. |
 | WB-8 | The **save for later** checkbox adds the open document to a list that is separate from recents. Recents reorder and age out, so simply using the editor would lose whatever you meant to return to; this list only changes when asked, is not capped, and keeps its order. |
 | WB-9 | The checkbox is disabled for an untitled document, which has no path to remember. |
@@ -360,16 +361,18 @@ a reduced editor.
 | WB-12 | The file explorer becomes an overlay drawer opened from the Files button and dismissed by tapping outside it. Its state is transient and does not overwrite the desktop sidebar preference. |
 | WB-13 | Side by Side is unavailable, since a phone has no room for two columns; entering the mobile layout switches to Rich Text and leaving it restores Side by Side. |
 | WB-14 | Every control is at least 36 × 36px, and buttons do not take focus, so a formatting tap acts on the live selection and does not dismiss the keyboard. |
-| WB-17 | The viewport is pinned: no pinch zoom, no double-tap zoom, and no dragging or rubber-banding the page behind the app. The app already fills the screen and every scroll happens inside a pane, so panning the page only slid the fixed top bar and floating tools out of reach. |
+| WB-17 | The viewport is pinned: no pinch zoom, no double-tap zoom, and no dragging or rubber-banding the page behind the app. The app already fills the screen and every scroll happens inside a pane, so panning the page only slid the docked header out of reach. |
 | WB-18 | Pinning takes three mechanisms because none alone is enough — the viewport meta tag for Android, `touch-action` for double-tap and pinch, and cancelled `gesture*` events plus two-finger drags for iOS Safari, which has ignored `user-scalable=no` since iOS 10. The `touch-action` is set on `<html>`, since the effective value is the intersection of an element's and all its ancestors'. |
 | WB-19 | Leaving mobile restores the original meta tag and drops the listeners, so a phone deliberately switched to Desktop Layout keeps pinch zoom — the cramped desktop chrome is where zoom is actually wanted. |
-| WB-20 | The formatting bar is a centred, inset palette rather than a full-width bottom bar, sized to its content up to a cap that leaves the document visible down both sides. Controls beyond the cap scroll horizontally, and the partly visible control at the edge is the affordance. |
-| WB-21 | The bar opts back into horizontal panning (`touch-action: pan-x`, which the root's `pan-x pan-y` permits — a root of `pan-y` would have intersected to allow nothing) and contains its own overscroll so a fling along it cannot pan the page or trigger a back-navigation. |
-| WB-16 | The end of a document scrolls clear of the floating bar. The editor surface sizes to its content rather than to the pane, so its bottom padding lands at the end of the scroll range instead of inside a fixed frame, and the mobile padding is measured from the bar's real height plus the safe-area inset. |
+| WB-20 | The formatting row is docked as the header's second row, directly beneath the top bar and directly above the document, and it stays there. Controls beyond the screen's width scroll horizontally, and the partly visible control at the edge is the affordance. |
+| WB-21 | The row opts back into horizontal panning (`touch-action: pan-x`, which the root's `pan-x pan-y` permits — a root of `pan-y` would have intersected to allow nothing) and contains its own overscroll so a fling along it cannot pan the page or trigger a back-navigation. |
+| WB-16 | A document scrolls all the way to its end with room to spare. The editor surface sizes to its content rather than to the pane, so its bottom padding lands at the end of the scroll range instead of inside a fixed frame where overflowing text scrolls straight past it. |
 | WB-22 | Nothing focusable in the mobile layout uses text under 16px — not the editing surfaces, not the paragraph-style menu, not a field in any sheet, dialog, or the welcome panel. iOS Safari zooms the whole page in when you focus text smaller than that, and it does so regardless of `user-scalable=no`. Mobile body text is therefore 16px rather than the desktop 15px. |
-| WB-23 | WB-22 exists because that one zoom is the cause of two symptoms that look unrelated: once the page is zoomed the layout viewport is wider than the screen, so the page slides sideways, and the fixed formatting bar is positioned against a viewport that no longer matches the screen, so it lands underneath the keyboard's AutoFill and dismiss row. Neither symptom is horizontal overflow — there is none at any iPhone width, even with unbreakable 90-character words and long bare URLs. |
-| WB-24 | While the on-screen keyboard is up the formatting bar lifts clear of the keyboard's accessory row rather than sitting flush against the keyboard, and it returns to rest when the keyboard closes. |
+| WB-23 | WB-22 exists because that one zoom is the cause of two symptoms that look unrelated: once the page is zoomed the layout viewport is wider than the screen, so the page slides sideways, and the fixed formatting bar is positioned against a viewport that no longer matches the screen, so it lands somewhere other than where it was put. Neither symptom is horizontal overflow — there is none at any iPhone width, even with unbreakable 90-character words and long bare URLs. |
+| WB-24 | The formatting row does not move when the keyboard opens or closes. Its position is not a function of the keyboard, the accessory row above it, or the home indicator, so there is nothing to get wrong. |
 | WB-25 | The `<html>` element carries a single `data-me-layout="mobile"` flag owned by the layout controller. The sheets, dialogs, and welcome panel render as siblings of the app root rather than inside it, so a rule scoped to the app cannot reach their controls; anything that must apply everywhere hangs off this flag. |
+| WB-26 | The formatting row is docked in the header rather than floating above the keyboard, because the bottom of a phone screen is not a place a web page can rely on. The platform stacks its own furniture there — on iOS the keyboard's AutoFill and dismiss row, and the home indicator — a page cannot reserve space above it, and `visualViewport` does not reliably report it. Anything floating at the bottom ends up behind something. The header is the one region the platform leaves alone. |
+| WB-27 | Docking costs the thumb-reach that put the tools at the bottom in the first place. That is the accepted trade: tools that are slightly further away beat tools that are partly unreachable, and the top of the screen is where a phone user already expects a document's controls. |
 | WB-15 | Every mobile control calls the same command table the menus and desktop toolbar use, and all keyboard shortcuts keep working. There is no second implementation of any command. |
 
 ---
@@ -551,7 +554,7 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 | WY-6 | The environment lookup is tested against `$_SERVER` as well as `getenv`, because that difference is invisible locally and breaks a deployment. |
 | WY-7 | File management is covered by tests that assert what must *not* happen: renaming or deleting a symlink leaves its target alone, a folder cannot be moved into itself, nothing is overwritten, and the workspace root cannot be renamed or deleted. |
 | WY-10 | Gesture locking is verified by performing the gesture, not by reading a property, and always against a control: the same synthesized 2.5× pinch and horizontal drag must leave mobile at scale 1 and offset 0 *and* must still zoom and pan the desktop layout. Without the control case a harness that silently fails to dispatch anything looks like a pass. |
-| WY-9 | Layout regressions are checked by measuring geometry, not by reading the DOM: the last block of a scrolled-to-the-end document must sit above the floating bar on a phone and above the pane's edge on the desktop, in every editor mode. Assertions on structure alone passed while the bar covered the text. |
+| WY-9 | Layout regressions are checked by measuring geometry, not by reading the DOM: the last block of a scrolled-to-the-end document must sit above the pane's bottom edge, in every editor mode and both layouts. Assertions on structure alone passed while a bar covered the text. |
 | WY-8 | The saved-for-later list is pure list arithmetic in its own module, so ticking an already-ticked box, a rename, a delete, and a hand-edited `localStorage` value are all covered by unit tests rather than by clicking. |
 
 ---
@@ -560,11 +563,12 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 
 | Change | What shipped |
 | --- | --- |
-| iOS zoom | Focusing any text under 16px made iOS Safari zoom the page in, which slid it sideways and pushed the formatting bar under the keyboard's controls. Nothing focusable is under 16px now, and the bar clears the keyboard's accessory row ([WB-22](#12a-mobile-layout), [WB-24](#12a-mobile-layout)). |
-| Pinned viewport | Mobile no longer pans or zooms, and the formatting bar became a centred, scrollable palette ([WB-17](#12a-mobile-layout), [WB-20](#12a-mobile-layout)). |
-| Document end | The last lines of a document sat under the floating bar with no way to scroll to them ([WB-16](#12a-mobile-layout)). |
+| Docked tools | The formatting bar moved from floating above the keyboard to the header's second row, where the platform's own bottom furniture cannot cover it ([WB-20](#12a-mobile-layout), [WB-26](#12a-mobile-layout)). |
+| iOS zoom | Focusing any text under 16px made iOS Safari zoom the page in, which slid it sideways and pushed the formatting bar under the keyboard's controls. Nothing focusable is under 16px now ([WB-22](#12a-mobile-layout)). |
+| Pinned viewport | Mobile no longer pans or zooms ([WB-17](#12a-mobile-layout)). |
+| Document end | The last lines of a document sat under the formatting bar with no way to scroll to them ([WB-16](#12a-mobile-layout)). |
 | Asset versioning | Deployed assets moved under `v/<hash>/` after a CDN cached one module and not another, breaking the live page ([WS-9](#15-run-deploy-and-test)). |
-| Mobile layout | A thumb-first arrangement with no menu bar: a top bar carrying Undo, the theme picker, and a save-for-later checkbox, a floating formatting bar that rides above the keyboard, the explorer as a drawer, and a responsive welcome screen ([§12a](#12a-mobile-layout)). |
+| Mobile layout | An arrangement with no menu bar: a top bar carrying Undo, the theme picker, and a save-for-later checkbox, a formatting bar, the explorer as a drawer, and a responsive welcome screen ([§12a](#12a-mobile-layout)). |
 | Published build | A split layout for hosts that cannot repoint the document root, and `Web/deploy.sh` to publish over FTPS ([§15](#15-run-deploy-and-test)). |
 | File management | A default `~/kirupaMarkdown` workspace, created and seeded on first run, plus create, rename, move, duplicate, and delete for files and folders from the sidebar ([§11a](#11a-managing-files-and-folders)). |
 | Repository restructure | macOS and Web builds separated into `macOS/` and `Web/`. |

@@ -474,10 +474,10 @@ body {
 .me-surface {
   /* Basis auto, not 0: with `flex: 1` the surface is pinned to the pane's
      height, its bottom padding sits inside that frame, and overflowing text
-     scrolls straight past it — so the last lines end up under the floating
-     bar with no way to scroll further. Sizing to content instead puts the
-     padding at the end of the scroll range, and grow still fills a short
-     document so the whole pane stays clickable. */
+     scrolls straight past it — so the document ends flush against the bottom
+     edge with no breathing room and no way to scroll further. Sizing to
+     content instead puts the padding at the end of the scroll range, and grow
+     still fills a short document so the whole pane stays clickable. */
   flex: 1 0 auto;
   min-height: 100%;
   padding: 20px 24px;      /* Y-7 */
@@ -969,8 +969,15 @@ body {
 .me-app[data-layout="mobile"] .me-format:not([hidden]) { display: block; }
 
 /* 100dvh, not 100%: a mobile URL bar that hides and shows changes the viewport
-   height, and a stale 100vh leaves the floating bar off-screen. */
-.me-app[data-layout="mobile"] { height: 100dvh; }
+   height, and a stale 100vh leaves the bottom of the app off-screen.
+
+   The keyboard inset is subtracted so the app ends where the keyboard begins.
+   Without it the app stays full height, the caret can land under the keyboard,
+   and the browser scrolls the whole page up to reveal it — taking the docked
+   header, and the formatting row with it, off the top of the screen. */
+.me-app[data-layout="mobile"] {
+  height: calc(100dvh - var(--me-keyboard-inset, 0px));
+}
 
 /* Set on <html> by mobile.js, not on `.me-app`, because a touch action is the
    intersection of an element's value and every ancestor's — it has to sit
@@ -989,9 +996,8 @@ body {
 /* iOS zooms the whole page in when you focus text smaller than 16px, and it
    ignores `user-scalable=no` when deciding to. Once it has zoomed, the layout
    viewport is wider than the screen — so the page has to be slid sideways to
-   see its edge — and the floating bar, positioned against a layout viewport
-   that no longer matches what is on screen, lands under the keyboard's own row
-   of controls. Both reported symptoms come from this one trigger, so every
+   see its edge — and a bar positioned against a layout viewport that no longer
+   matches what is on screen lands somewhere other than where it was put. Both reported symptoms come from this one trigger, so every
    focusable control in the mobile layout is at least 16px. */
 :root[data-me-layout="mobile"] { --me-body-size: 16px; }
 
@@ -1006,14 +1012,10 @@ body {
 
 .me-app[data-layout="mobile"] .me-body { position: relative; }
 
-/* Touch targets need room; 15px source text on a phone does not. The bottom
-   pad clears the floating bar (measured, plus its offset) so the end of a
-   document can still be scrolled into view and tapped. */
+/* Touch targets need room; 15px source text on a phone does not. */
 .me-app[data-layout="mobile"] .me-surface {
   padding: 16px 18px;
-  padding-bottom: calc(
-    var(--me-format-height, 52px) + 26px + env(safe-area-inset-bottom)
-  );
+  padding-bottom: calc(28px + env(safe-area-inset-bottom));
 }
 
 .me-app[data-layout="mobile"] .me-editor[data-mode] .me-pane { flex: 1; }
@@ -1028,10 +1030,11 @@ body {
   align-items: center;
   gap: 4px;
   flex: 0 0 auto;
-  padding: 6px 8px;
+  /* The formatting row (WB-26) sits directly beneath and carries the separator,
+     so the two rows sit tight and read as one header block. */
+  padding: 6px 8px 2px;
   padding-top: max(6px, env(safe-area-inset-top));
   background: var(--me-sidebar-background);
-  border-bottom: 1px solid var(--me-separator);
   user-select: none;
 }
 
@@ -1142,28 +1145,19 @@ body {
   outline-offset: 1px;
 }
 
-/* --- floating formatting bar --- */
+/* --- docked formatting row --- */
 
+/* The second row of the header. This was a floating palette above the keyboard,
+   which cannot be made to work on a phone: iOS stacks its own furniture over the
+   bottom of the screen — the keyboard's AutoFill and dismiss row, the home
+   indicator — and a web page has no way to reserve space above it or even to
+   measure it reliably. Docking the tools into the header puts them somewhere the
+   platform never covers, and keeps them in one fixed place instead of moving
+   with the keyboard. */
 .me-format {
-  position: absolute;
-  /* Centred and inset rather than edge to edge: this is a floating palette,
-     not a bottom bar, and leaving the document visible down both sides is
-     what makes it read as floating. `left`/`right: 0` plus `margin-inline:
-     auto` centres it at whatever width it ends up. */
-  left: 0;
-  right: 0;
-  margin-inline: auto;
-  width: fit-content;
-  max-width: calc(100% - 64px);
-  /* --me-keyboard-inset is published by mobile.js from visualViewport, so the
-     bar rides above the on-screen keyboard instead of under it. */
-  bottom: calc(10px + env(safe-area-inset-bottom) + var(--me-keyboard-inset, 0px));
-  z-index: 45;
-  border-radius: 13px;
-  background: color-mix(in srgb, var(--me-sidebar-background) 92%, transparent);
-  border: 1px solid var(--me-separator);
-  box-shadow: 0 6px 22px rgb(0 0 0 / 0.22);
-  backdrop-filter: blur(14px);
+  flex: 0 0 auto;
+  background: var(--me-sidebar-background);
+  border-bottom: 1px solid var(--me-separator);
   user-select: none;
 }
 
@@ -1171,30 +1165,17 @@ body {
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 5px 7px;
+  padding: 4px 6px;
   overflow-x: auto;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
-  /* Rounded parent, scrolling child: without this the end controls square off
-     the corners as they pass under them. */
-  border-radius: inherit;
-  /* The bar is the one place horizontal panning is wanted, and a fling along
+  /* The row is the one place horizontal panning is wanted, and a fling along
      it must not turn into a page pan or a back-navigation. */
   touch-action: pan-x;
   overscroll-behavior-x: contain;
 }
 
 .me-format__scroller::-webkit-scrollbar { display: none; }
-
-/* While the keyboard is up the platform stacks its own row above the keys —
-   iOS puts AutoFill and a dismiss key there — and that row is not reliably
-   excluded from the viewport the browser reports, which leaves the tools
-   sitting behind it. A keyboard row's worth of clearance keeps them reachable
-   either way. The home-indicator inset is dropped here because the keyboard
-   is covering the home indicator. */
-.me-app[data-layout="mobile"][data-keyboard="up"] .me-format {
-  bottom: calc(48px + var(--me-keyboard-inset, 0px));
-}
 
 .me-format__button {
   display: inline-flex;
@@ -1241,8 +1222,10 @@ body {
   background: var(--me-separator);
 }
 
-/* The bar would otherwise float over the scrim while the drawer is open,
-   leaving a live-looking control that is no longer reachable. */
+/* The drawer covers the document, and the formatting row acts on the document,
+   so it goes with it — leaving live-looking controls above a file list would be
+   a lie. The drawer takes over the row's space immediately, so the top bar
+   never moves and nothing jumps. */
 .me-app[data-layout="mobile"][data-drawer="open"] .me-format { display: none; }
 
 /* --- sidebar as a drawer --- */

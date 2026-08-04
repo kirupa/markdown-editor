@@ -68,8 +68,10 @@ $asset = static fn (string $path): string => $assetBase === '' ? $path : "$asset
 
   <div class="me-toolbar" id="toolbar"></div>
 
-  <!-- Mobile layout (WB-*): replaces the menu bar and toolbar above. -->
+  <!-- Mobile layout (WB-*): replaces the menu bar and toolbar above. The
+       formatting bar is the header's second row — see WB-26. -->
   <div class="me-mobile" id="mobileBar" hidden></div>
+  <div class="me-format" id="formatBar" role="toolbar" aria-label="Formatting" hidden></div>
 
   <div class="me-body">
     <aside class="me-sidebar" id="sidebar" aria-label="File explorer">
@@ -124,7 +126,6 @@ $asset = static fn (string $path): string => $assetBase === '' ? $path : "$asset
     <span id="statusSaved"></span>
   </div>
 
-  <div class="me-format" id="formatBar" role="toolbar" aria-label="Formatting" hidden></div>
   <div class="me-drawer-scrim" id="drawerScrim" hidden></div>
 </div>
 

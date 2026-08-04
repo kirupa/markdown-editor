@@ -13,7 +13,7 @@
 // Three pieces:
 //   - a slim top bar: files drawer, document name, Undo, theme, "save for
 //     later" checkbox;
-//   - a floating formatting bar near the thumb, scrolled horizontally;
+//   - a formatting row docked under the top bar, scrolled horizontally;
 //   - an overflow sheet for the things that no longer have a menu.
 
 import { ICONS } from './toolbar.js';
@@ -117,12 +117,15 @@ function openSheet(items) {
 }
 
 /**
- * Keeps the floating bar above the on-screen keyboard.
+ * Keeps the app sized to the space the keyboard leaves.
  *
- * A phone keyboard shrinks the *visual* viewport but leaves the layout
- * viewport alone, so `position: fixed; bottom: 0` ends up underneath it. The
- * difference between the two viewports is exactly how far up the bar has to
- * move, published as a CSS variable so the stylesheet owns the arithmetic.
+ * A phone keyboard shrinks the *visual* viewport but leaves the layout viewport
+ * alone, so an app sized to the full height keeps part of itself underneath the
+ * keys. The caret can then land under the keyboard, and the browser scrolls the
+ * whole page to reveal it — which pushes the docked header, and the formatting
+ * row with it, off the top of the screen. The difference between the two
+ * viewports is exactly how much height to give back, published as a CSS
+ * variable so the stylesheet owns the arithmetic.
  */
 function trackKeyboard(root) {
   const viewport = window.visualViewport;
@@ -134,10 +137,9 @@ function trackKeyboard(root) {
       window.innerHeight - viewport.height - viewport.offsetTop
     );
     root.style.setProperty('--me-keyboard-inset', `${Math.round(overlap)}px`);
-    // Lets the stylesheet give the bar more clearance while the keyboard is
-    // up, where the platform stacks its own controls above the keys.
-    if (overlap > 0) root.dataset.keyboard = 'up';
-    else delete root.dataset.keyboard;
+    // Undoes any scroll the browser already performed to reveal the caret,
+    // which would otherwise leave the header hanging above the screen.
+    if (window.scrollY !== 0) window.scrollTo(0, 0);
   };
 
   viewport.addEventListener('resize', update);
@@ -148,36 +150,6 @@ function trackKeyboard(root) {
     viewport.removeEventListener('resize', update);
     viewport.removeEventListener('scroll', update);
     root.style.removeProperty('--me-keyboard-inset');
-    delete root.dataset.keyboard;
-  };
-}
-
-/**
- * Publishes the floating bar's height so the editor can pad beneath it.
- *
- * The bar is absolutely positioned, so it covers the bottom of the document
- * rather than displacing it: at full scroll the last lines sit behind it and
- * no further scrolling can reveal them. Measuring is better than a constant
- * because the height follows the heading `<select>` and the user's text size.
- */
-function trackBarHeight(root, formatBar) {
-  const update = () => {
-    const height = formatBar.hidden ? 0 : formatBar.offsetHeight;
-    root.style.setProperty('--me-format-height', `${Math.round(height)}px`);
-  };
-
-  if (typeof ResizeObserver === 'undefined') {
-    update();
-    return () => root.style.removeProperty('--me-format-height');
-  }
-
-  const observer = new ResizeObserver(update);
-  observer.observe(formatBar);
-  update();
-
-  return () => {
-    observer.disconnect();
-    root.style.removeProperty('--me-format-height');
   };
 }
 
@@ -186,7 +158,7 @@ function trackBarHeight(root, formatBar) {
  *
  * The app already fills the screen and every scroll happens inside a pane, so
  * pinching or dragging the page itself does nothing useful — it just slides
- * the fixed top bar and floating tools out of reach.
+ * the docked header out of reach.
  *
  * This takes three separate mechanisms because no one of them is enough. The
  * meta tag covers Android. `touch-action` in the stylesheet drops pinch and
@@ -231,13 +203,12 @@ function lockViewport() {
  * @param {object} options
  * @param {HTMLElement} options.root         the `.me-app` element
  * @param {HTMLElement} options.topBar       container for the top bar
- * @param {HTMLElement} options.formatBar    container for the floating bar
+ * @param {HTMLElement} options.formatBar    container for the formatting row
  * @param {object} options.commands          the shared command table
  * @param {object} options.state             read-only accessors into app state
  */
 export function buildMobileUI({ root, topBar, formatBar, commands, state }) {
   let releaseKeyboardTracking = null;
-  let releaseBarTracking = null;
   let releaseViewportLock = null;
 
   // ---- top bar ------------------------------------------------------------
@@ -309,7 +280,7 @@ export function buildMobileUI({ root, topBar, formatBar, commands, state }) {
     moreButton
   );
 
-  // ---- floating formatting bar -------------------------------------------
+  // ---- formatting row -----------------------------------------------------
 
   const headings = document.createElement('select');
   headings.className = 'me-format__select';
@@ -385,14 +356,10 @@ export function buildMobileUI({ root, topBar, formatBar, commands, state }) {
       else delete document.documentElement.dataset.meLayout;
       if (enabled) {
         releaseKeyboardTracking ??= trackKeyboard(root);
-        // After unhiding, so the bar has a height to measure.
-        releaseBarTracking ??= trackBarHeight(root, formatBar);
         releaseViewportLock ??= lockViewport();
       } else {
         releaseKeyboardTracking?.();
         releaseKeyboardTracking = null;
-        releaseBarTracking?.();
-        releaseBarTracking = null;
         releaseViewportLock?.();
         releaseViewportLock = null;
       }
