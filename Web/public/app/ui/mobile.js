@@ -134,6 +134,10 @@ function trackKeyboard(root) {
       window.innerHeight - viewport.height - viewport.offsetTop
     );
     root.style.setProperty('--me-keyboard-inset', `${Math.round(overlap)}px`);
+    // Lets the stylesheet give the bar more clearance while the keyboard is
+    // up, where the platform stacks its own controls above the keys.
+    if (overlap > 0) root.dataset.keyboard = 'up';
+    else delete root.dataset.keyboard;
   };
 
   viewport.addEventListener('resize', update);
@@ -144,6 +148,7 @@ function trackKeyboard(root) {
     viewport.removeEventListener('resize', update);
     viewport.removeEventListener('scroll', update);
     root.style.removeProperty('--me-keyboard-inset');
+    delete root.dataset.keyboard;
   };
 }
 
@@ -199,11 +204,10 @@ function lockViewport() {
     meta.setAttribute('content', `${original}, maximum-scale=1, user-scalable=no`);
   }
 
-  // The stylesheet keys off this rather than off `.me-app`, because a touch
-  // action is the intersection of the element's and every ancestor's, so it
-  // has to be set above the popover layer to cover sheets too.
-  document.documentElement.dataset.meViewport = 'locked';
-
+  // The stylesheet keys off a flag on <html> rather than on `.me-app`: a touch
+  // action is the intersection of an element's and every ancestor's, so it has
+  // to be set above the popover layer, and the sheets and dialogs render
+  // outside `.me-app` too. `setEnabled` owns the flag.
   const blockGesture = (event) => event.preventDefault();
   const blockPinch = (event) => {
     if (event.touches.length > 1) event.preventDefault();
@@ -216,7 +220,6 @@ function lockViewport() {
 
   return () => {
     if (meta && original !== null) meta.setAttribute('content', original);
-    delete document.documentElement.dataset.meViewport;
     document.removeEventListener('gesturestart', blockGesture);
     document.removeEventListener('gesturechange', blockGesture);
     document.removeEventListener('gestureend', blockGesture);
@@ -375,6 +378,11 @@ export function buildMobileUI({ root, topBar, formatBar, commands, state }) {
     setEnabled(enabled) {
       topBar.hidden = !enabled;
       formatBar.hidden = !enabled;
+      // Sheets, dialogs, and the welcome panel render outside `.me-app`, and a
+      // touch action has to be set above them, so the layout is also flagged
+      // on <html> for the stylesheet to key off.
+      if (enabled) document.documentElement.dataset.meLayout = 'mobile';
+      else delete document.documentElement.dataset.meLayout;
       if (enabled) {
         releaseKeyboardTracking ??= trackKeyboard(root);
         // After unhiding, so the bar has a height to measure.

@@ -979,12 +979,27 @@ body {
    `pan-x pan-y` rather than `pan-y`: both keep pinch and double-tap zoom out,
    but `pan-y` would intersect with the formatting bar's `pan-x` to allow
    nothing at all, leaving the bar unscrollable. */
-:root[data-me-viewport="locked"] {
+:root[data-me-layout="mobile"] {
   touch-action: pan-x pan-y;
   overscroll-behavior: none;
 }
 
-:root[data-me-viewport="locked"] body { overscroll-behavior: none; }
+:root[data-me-layout="mobile"] body { overscroll-behavior: none; }
+
+/* iOS zooms the whole page in when you focus text smaller than 16px, and it
+   ignores `user-scalable=no` when deciding to. Once it has zoomed, the layout
+   viewport is wider than the screen — so the page has to be slid sideways to
+   see its edge — and the floating bar, positioned against a layout viewport
+   that no longer matches what is on screen, lands under the keyboard's own row
+   of controls. Both reported symptoms come from this one trigger, so every
+   focusable control in the mobile layout is at least 16px. */
+:root[data-me-layout="mobile"] { --me-body-size: 16px; }
+
+:root[data-me-layout="mobile"] input,
+:root[data-me-layout="mobile"] select,
+:root[data-me-layout="mobile"] textarea {
+  font-size: 16px;
+}
 
 /* Keeps a fling at the end of a pane from rubber-banding the page behind it. */
 .me-app[data-layout="mobile"] .me-pane { overscroll-behavior: contain; }
@@ -1170,6 +1185,16 @@ body {
 }
 
 .me-format__scroller::-webkit-scrollbar { display: none; }
+
+/* While the keyboard is up the platform stacks its own row above the keys —
+   iOS puts AutoFill and a dismiss key there — and that row is not reliably
+   excluded from the viewport the browser reports, which leaves the tools
+   sitting behind it. A keyboard row's worth of clearance keeps them reachable
+   either way. The home-indicator inset is dropped here because the keyboard
+   is covering the home indicator. */
+.me-app[data-layout="mobile"][data-keyboard="up"] .me-format {
+  bottom: calc(48px + var(--me-keyboard-inset, 0px));
+}
 
 .me-format__button {
   display: inline-flex;

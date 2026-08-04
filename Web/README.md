@@ -366,6 +366,10 @@ a reduced editor.
 | WB-20 | The formatting bar is a centred, inset palette rather than a full-width bottom bar, sized to its content up to a cap that leaves the document visible down both sides. Controls beyond the cap scroll horizontally, and the partly visible control at the edge is the affordance. |
 | WB-21 | The bar opts back into horizontal panning (`touch-action: pan-x`, which the root's `pan-x pan-y` permits — a root of `pan-y` would have intersected to allow nothing) and contains its own overscroll so a fling along it cannot pan the page or trigger a back-navigation. |
 | WB-16 | The end of a document scrolls clear of the floating bar. The editor surface sizes to its content rather than to the pane, so its bottom padding lands at the end of the scroll range instead of inside a fixed frame, and the mobile padding is measured from the bar's real height plus the safe-area inset. |
+| WB-22 | Nothing focusable in the mobile layout uses text under 16px — not the editing surfaces, not the paragraph-style menu, not a field in any sheet, dialog, or the welcome panel. iOS Safari zooms the whole page in when you focus text smaller than that, and it does so regardless of `user-scalable=no`. Mobile body text is therefore 16px rather than the desktop 15px. |
+| WB-23 | WB-22 exists because that one zoom is the cause of two symptoms that look unrelated: once the page is zoomed the layout viewport is wider than the screen, so the page slides sideways, and the fixed formatting bar is positioned against a viewport that no longer matches the screen, so it lands underneath the keyboard's AutoFill and dismiss row. Neither symptom is horizontal overflow — there is none at any iPhone width, even with unbreakable 90-character words and long bare URLs. |
+| WB-24 | While the on-screen keyboard is up the formatting bar lifts clear of the keyboard's accessory row rather than sitting flush against the keyboard, and it returns to rest when the keyboard closes. |
+| WB-25 | The `<html>` element carries a single `data-me-layout="mobile"` flag owned by the layout controller. The sheets, dialogs, and welcome panel render as siblings of the app root rather than inside it, so a rule scoped to the app cannot reach their controls; anything that must apply everywhere hangs off this flag. |
 | WB-15 | Every mobile control calls the same command table the menus and desktop toolbar use, and all keyboard shortcuts keep working. There is no second implementation of any command. |
 
 ---
@@ -556,6 +560,7 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 
 | Change | What shipped |
 | --- | --- |
+| iOS zoom | Focusing any text under 16px made iOS Safari zoom the page in, which slid it sideways and pushed the formatting bar under the keyboard's controls. Nothing focusable is under 16px now, and the bar clears the keyboard's accessory row ([WB-22](#12a-mobile-layout), [WB-24](#12a-mobile-layout)). |
 | Pinned viewport | Mobile no longer pans or zooms, and the formatting bar became a centred, scrollable palette ([WB-17](#12a-mobile-layout), [WB-20](#12a-mobile-layout)). |
 | Document end | The last lines of a document sat under the floating bar with no way to scroll to them ([WB-16](#12a-mobile-layout)). |
 | Asset versioning | Deployed assets moved under `v/<hash>/` after a CDN cached one module and not another, breaking the live page ([WS-9](#15-run-deploy-and-test)). |
@@ -595,5 +600,7 @@ Specific to the web build:
   so it is per-browser until there are accounts
 - Enlarging the text on a phone. Pinning the viewport ([WB-17](#12a-mobile-layout))
   removes pinch zoom, and there is no in-app text size control to replace it, so
-  the mobile build currently offers no way to make text bigger. Desktop Layout is
-  the only workaround. A text size preference is the fix
+  the mobile build currently offers no way to make text bigger. Mobile body text
+  is 16px rather than the desktop 15px ([WB-22](#12a-mobile-layout)), but that is
+  a fixed floor set to stop iOS auto-zoom, not an adjustable size. Desktop Layout
+  is the only workaround. A text size preference is the fix
