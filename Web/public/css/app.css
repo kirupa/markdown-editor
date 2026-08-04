@@ -972,6 +972,23 @@ body {
    height, and a stale 100vh leaves the floating bar off-screen. */
 .me-app[data-layout="mobile"] { height: 100dvh; }
 
+/* Set on <html> by mobile.js, not on `.me-app`, because a touch action is the
+   intersection of an element's value and every ancestor's — it has to sit
+   above the popover layer for sheets to be covered too.
+
+   `pan-x pan-y` rather than `pan-y`: both keep pinch and double-tap zoom out,
+   but `pan-y` would intersect with the formatting bar's `pan-x` to allow
+   nothing at all, leaving the bar unscrollable. */
+:root[data-me-viewport="locked"] {
+  touch-action: pan-x pan-y;
+  overscroll-behavior: none;
+}
+
+:root[data-me-viewport="locked"] body { overscroll-behavior: none; }
+
+/* Keeps a fling at the end of a pane from rubber-banding the page behind it. */
+.me-app[data-layout="mobile"] .me-pane { overscroll-behavior: contain; }
+
 .me-app[data-layout="mobile"] .me-body { position: relative; }
 
 /* Touch targets need room; 15px source text on a phone does not. The bottom
@@ -1114,8 +1131,15 @@ body {
 
 .me-format {
   position: absolute;
-  left: 8px;
-  right: 8px;
+  /* Centred and inset rather than edge to edge: this is a floating palette,
+     not a bottom bar, and leaving the document visible down both sides is
+     what makes it read as floating. `left`/`right: 0` plus `margin-inline:
+     auto` centres it at whatever width it ends up. */
+  left: 0;
+  right: 0;
+  margin-inline: auto;
+  width: fit-content;
+  max-width: calc(100% - 64px);
   /* --me-keyboard-inset is published by mobile.js from visualViewport, so the
      bar rides above the on-screen keyboard instead of under it. */
   bottom: calc(10px + env(safe-area-inset-bottom) + var(--me-keyboard-inset, 0px));
@@ -1136,6 +1160,13 @@ body {
   overflow-x: auto;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
+  /* Rounded parent, scrolling child: without this the end controls square off
+     the corners as they pass under them. */
+  border-radius: inherit;
+  /* The bar is the one place horizontal panning is wanted, and a fling along
+     it must not turn into a page pan or a back-navigation. */
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
 }
 
 .me-format__scroller::-webkit-scrollbar { display: none; }

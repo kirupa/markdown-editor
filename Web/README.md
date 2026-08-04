@@ -360,6 +360,11 @@ a reduced editor.
 | WB-12 | The file explorer becomes an overlay drawer opened from the Files button and dismissed by tapping outside it. Its state is transient and does not overwrite the desktop sidebar preference. |
 | WB-13 | Side by Side is unavailable, since a phone has no room for two columns; entering the mobile layout switches to Rich Text and leaving it restores Side by Side. |
 | WB-14 | Every control is at least 36 × 36px, and buttons do not take focus, so a formatting tap acts on the live selection and does not dismiss the keyboard. |
+| WB-17 | The viewport is pinned: no pinch zoom, no double-tap zoom, and no dragging or rubber-banding the page behind the app. The app already fills the screen and every scroll happens inside a pane, so panning the page only slid the fixed top bar and floating tools out of reach. |
+| WB-18 | Pinning takes three mechanisms because none alone is enough — the viewport meta tag for Android, `touch-action` for double-tap and pinch, and cancelled `gesture*` events plus two-finger drags for iOS Safari, which has ignored `user-scalable=no` since iOS 10. The `touch-action` is set on `<html>`, since the effective value is the intersection of an element's and all its ancestors'. |
+| WB-19 | Leaving mobile restores the original meta tag and drops the listeners, so a phone deliberately switched to Desktop Layout keeps pinch zoom — the cramped desktop chrome is where zoom is actually wanted. |
+| WB-20 | The formatting bar is a centred, inset palette rather than a full-width bottom bar, sized to its content up to a cap that leaves the document visible down both sides. Controls beyond the cap scroll horizontally, and the partly visible control at the edge is the affordance. |
+| WB-21 | The bar opts back into horizontal panning (`touch-action: pan-x`, which the root's `pan-x pan-y` permits — a root of `pan-y` would have intersected to allow nothing) and contains its own overscroll so a fling along it cannot pan the page or trigger a back-navigation. |
 | WB-16 | The end of a document scrolls clear of the floating bar. The editor surface sizes to its content rather than to the pane, so its bottom padding lands at the end of the scroll range instead of inside a fixed frame, and the mobile padding is measured from the bar's real height plus the safe-area inset. |
 | WB-15 | Every mobile control calls the same command table the menus and desktop toolbar use, and all keyboard shortcuts keep working. There is no second implementation of any command. |
 
@@ -541,6 +546,7 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 | WY-5 | The DOM tests assert the invariant everything else rests on: each surface's text equals the model's text exactly, and every character offset round-trips through the DOM. |
 | WY-6 | The environment lookup is tested against `$_SERVER` as well as `getenv`, because that difference is invisible locally and breaks a deployment. |
 | WY-7 | File management is covered by tests that assert what must *not* happen: renaming or deleting a symlink leaves its target alone, a folder cannot be moved into itself, nothing is overwritten, and the workspace root cannot be renamed or deleted. |
+| WY-10 | Gesture locking is verified by performing the gesture, not by reading a property, and always against a control: the same synthesized 2.5× pinch and horizontal drag must leave mobile at scale 1 and offset 0 *and* must still zoom and pan the desktop layout. Without the control case a harness that silently fails to dispatch anything looks like a pass. |
 | WY-9 | Layout regressions are checked by measuring geometry, not by reading the DOM: the last block of a scrolled-to-the-end document must sit above the floating bar on a phone and above the pane's edge on the desktop, in every editor mode. Assertions on structure alone passed while the bar covered the text. |
 | WY-8 | The saved-for-later list is pure list arithmetic in its own module, so ticking an already-ticked box, a rename, a delete, and a hand-edited `localStorage` value are all covered by unit tests rather than by clicking. |
 
@@ -550,6 +556,7 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 
 | Change | What shipped |
 | --- | --- |
+| Pinned viewport | Mobile no longer pans or zooms, and the formatting bar became a centred, scrollable palette ([WB-17](#12a-mobile-layout), [WB-20](#12a-mobile-layout)). |
 | Document end | The last lines of a document sat under the floating bar with no way to scroll to them ([WB-16](#12a-mobile-layout)). |
 | Asset versioning | Deployed assets moved under `v/<hash>/` after a CDN cached one module and not another, breaking the live page ([WS-9](#15-run-deploy-and-test)). |
 | Mobile layout | A thumb-first arrangement with no menu bar: a top bar carrying Undo, the theme picker, and a save-for-later checkbox, a floating formatting bar that rides above the keyboard, the explorer as a drawer, and a responsive welcome screen ([§12a](#12a-mobile-layout)). |
@@ -586,3 +593,7 @@ Specific to the web build:
   is the browser page rearranged, not a packaged app
 - Syncing the saved-for-later list between devices — it lives in `localStorage`,
   so it is per-browser until there are accounts
+- Enlarging the text on a phone. Pinning the viewport ([WB-17](#12a-mobile-layout))
+  removes pinch zoom, and there is no in-app text size control to replace it, so
+  the mobile build currently offers no way to make text bigger. Desktop Layout is
+  the only workaround. A text size preference is the fix

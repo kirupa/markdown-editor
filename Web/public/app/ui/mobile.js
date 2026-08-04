@@ -177,6 +177,54 @@ function trackBarHeight(root, formatBar) {
 }
 
 /**
+ * Pins the viewport while the mobile layout is on.
+ *
+ * The app already fills the screen and every scroll happens inside a pane, so
+ * pinching or dragging the page itself does nothing useful — it just slides
+ * the fixed top bar and floating tools out of reach.
+ *
+ * This takes three separate mechanisms because no one of them is enough. The
+ * meta tag covers Android. `touch-action` in the stylesheet drops pinch and
+ * double-tap zoom. iOS Safari has ignored `user-scalable=no` since iOS 10 and
+ * never routes pinch through touch events, so its own gesture events have to
+ * be cancelled, and a two-finger drag with them.
+ *
+ * Releasing restores the original meta tag, so a phone deliberately left in
+ * Desktop Layout keeps pinch zoom — the cramped desktop chrome needs it.
+ */
+function lockViewport() {
+  const meta = document.querySelector('meta[name="viewport"]');
+  const original = meta ? meta.getAttribute('content') : null;
+  if (meta && original !== null && !original.includes('user-scalable')) {
+    meta.setAttribute('content', `${original}, maximum-scale=1, user-scalable=no`);
+  }
+
+  // The stylesheet keys off this rather than off `.me-app`, because a touch
+  // action is the intersection of the element's and every ancestor's, so it
+  // has to be set above the popover layer to cover sheets too.
+  document.documentElement.dataset.meViewport = 'locked';
+
+  const blockGesture = (event) => event.preventDefault();
+  const blockPinch = (event) => {
+    if (event.touches.length > 1) event.preventDefault();
+  };
+
+  document.addEventListener('gesturestart', blockGesture, { passive: false });
+  document.addEventListener('gesturechange', blockGesture, { passive: false });
+  document.addEventListener('gestureend', blockGesture, { passive: false });
+  document.addEventListener('touchmove', blockPinch, { passive: false });
+
+  return () => {
+    if (meta && original !== null) meta.setAttribute('content', original);
+    delete document.documentElement.dataset.meViewport;
+    document.removeEventListener('gesturestart', blockGesture);
+    document.removeEventListener('gesturechange', blockGesture);
+    document.removeEventListener('gestureend', blockGesture);
+    document.removeEventListener('touchmove', blockPinch);
+  };
+}
+
+/**
  * @param {object} options
  * @param {HTMLElement} options.root         the `.me-app` element
  * @param {HTMLElement} options.topBar       container for the top bar
@@ -187,6 +235,7 @@ function trackBarHeight(root, formatBar) {
 export function buildMobileUI({ root, topBar, formatBar, commands, state }) {
   let releaseKeyboardTracking = null;
   let releaseBarTracking = null;
+  let releaseViewportLock = null;
 
   // ---- top bar ------------------------------------------------------------
 
@@ -330,11 +379,14 @@ export function buildMobileUI({ root, topBar, formatBar, commands, state }) {
         releaseKeyboardTracking ??= trackKeyboard(root);
         // After unhiding, so the bar has a height to measure.
         releaseBarTracking ??= trackBarHeight(root, formatBar);
+        releaseViewportLock ??= lockViewport();
       } else {
         releaseKeyboardTracking?.();
         releaseKeyboardTracking = null;
         releaseBarTracking?.();
         releaseBarTracking = null;
+        releaseViewportLock?.();
+        releaseViewportLock = null;
       }
     },
 
