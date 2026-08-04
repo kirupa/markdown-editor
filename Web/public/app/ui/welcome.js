@@ -8,9 +8,16 @@ import { api } from '../api.js';
 import * as recents from '../core/recent-documents.js';
 import * as saved from '../core/saved-documents.js';
 import { showError } from './dialogs.js';
+import {
+  scopedKey, storageMode, isCloud, useLocal, useCloud, signOutAndUseLocal,
+  currentAccount, CLOUD,
+} from '../storage.js';
 
-const RECENTS_KEY = 'markdown-editor.recents';
-const SAVED_KEY = 'markdown-editor.savedForLater';
+// Read through `scopedKey`, never directly: the same path names a different
+// document on disk and in an account, so each mode keeps its own lists and
+// switching modes cannot surface a recent document that is not there.
+const RECENTS_KEY = () => scopedKey('markdown-editor.recents');
+const SAVED_KEY = () => scopedKey('markdown-editor.savedForLater');
 const SHOW_AT_LAUNCH_KEY = 'markdown-editor.showWelcomeAtLaunch';
 
 const MARK =
@@ -22,7 +29,7 @@ const DOC_ICON =
 export const recentDocuments = {
   all() {
     try {
-      const stored = JSON.parse(localStorage.getItem(RECENTS_KEY) ?? '[]');
+      const stored = JSON.parse(localStorage.getItem(RECENTS_KEY()) ?? '[]');
       return Array.isArray(stored) ? stored.filter((item) => typeof item === 'string') : [];
     } catch {
       return [];
@@ -30,13 +37,13 @@ export const recentDocuments = {
   },
   note(path) {
     if (!path) return;
-    localStorage.setItem(RECENTS_KEY, JSON.stringify(recents.promoting(path, this.all())));
+    localStorage.setItem(RECENTS_KEY(), JSON.stringify(recents.promoting(path, this.all())));
   },
   forget(path) {
-    localStorage.setItem(RECENTS_KEY, JSON.stringify(recents.removing(path, this.all())));
+    localStorage.setItem(RECENTS_KEY(), JSON.stringify(recents.removing(path, this.all())));
   },
   clear() {
-    localStorage.setItem(RECENTS_KEY, '[]');
+    localStorage.setItem(RECENTS_KEY(), '[]');
   },
   get showAtLaunch() {
     return localStorage.getItem(SHOW_AT_LAUNCH_KEY) !== 'false';
@@ -54,14 +61,14 @@ export const recentDocuments = {
 export const savedDocuments = {
   all() {
     try {
-      const stored = JSON.parse(localStorage.getItem(SAVED_KEY) ?? '[]');
+      const stored = JSON.parse(localStorage.getItem(SAVED_KEY()) ?? '[]');
       return saved.normalized(Array.isArray(stored) ? stored : []);
     } catch {
       return [];
     }
   },
   write(paths) {
-    localStorage.setItem(SAVED_KEY, JSON.stringify(paths));
+    localStorage.setItem(SAVED_KEY(), JSON.stringify(paths));
     return paths;
   },
   includes(path) {
@@ -125,6 +132,109 @@ export class WelcomeScreen {
     this.root.replaceChildren(panel);
   }
 
+  /**
+   * The storage choice (WR-1).
+   *
+   * Both options are always visible and the current one is marked, rather than
+   * a single button that changes meaning. Where a document is saved is the one
+   * thing about this app that is genuinely hard to undo if it is not what you
+   * expected, so it should never require a click to find out.
+   */
+  buildStorage() {
+    const section = document.createElement('div');
+    section.className = 'me-welcome__storage';
+
+    const heading = document.createElement('h2');
+    heading.className = 'me-welcome__heading';
+    heading.textContent = 'Where documents are saved';
+    section.append(heading);
+
+    const account = currentAccount();
+    const cloudActive = isCloud();
+
+    const options = document.createElement('div');
+    options.className = 'me-storage';
+
+    options.append(
+      this.buildStorageOption({
+        active: cloudActive,
+        recommended: true,
+        title: account && cloudActive ? `Cloud — ${account.email || account.name}` : 'Your Google account',
+        detail: cloudActive
+          ? 'Synced to every device you sign in on.'
+          : 'Sign in to reach the same documents on every device.',
+        label: cloudActive ? 'Sign out' : 'Connect Google account',
+        action: async () => {
+          if (cloudActive) await signOutAndUseLocal();
+          else await useCloud();
+        },
+      }),
+      this.buildStorageOption({
+        active: !cloudActive,
+        recommended: false,
+        title: `On this server — ${this.workspaceName}`,
+        detail: cloudActive
+          ? 'Shared by everyone who visits this address.'
+          : 'Kept on the machine serving this page.',
+        label: cloudActive ? 'Use local files' : null,
+        action: async () => { useLocal(); },
+      })
+    );
+
+    section.append(options);
+    return section;
+  }
+
+  buildStorageOption({ active, recommended, title, detail, label, action }) {
+    const option = document.createElement('div');
+    option.className = `me-storage__option${active ? ' me-storage__option--active' : ''}`;
+
+    const name = document.createElement('div');
+    name.className = 'me-storage__title';
+    name.textContent = title;
+    if (recommended && !active) {
+      const badge = document.createElement('span');
+      badge.className = 'me-storage__badge';
+      badge.textContent = 'Recommended';
+      name.append(' ', badge);
+    }
+    if (active) {
+      const badge = document.createElement('span');
+      badge.className = 'me-storage__badge me-storage__badge--active';
+      badge.textContent = 'In use';
+      name.append(' ', badge);
+    }
+
+    const description = document.createElement('p');
+    description.className = 'me-storage__detail';
+    description.textContent = detail;
+    option.append(name, description);
+
+    if (label) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'me-button me-button--small';
+      button.textContent = label;
+      button.addEventListener('click', async () => {
+        button.disabled = true;
+        const previous = button.textContent;
+        button.textContent = 'Working…';
+        try {
+          await action();
+          if (this.actions.storageChanged) await this.actions.storageChanged();
+          this.render();
+        } catch (error) {
+          button.disabled = false;
+          button.textContent = previous;
+          showError(error);
+        }
+      });
+      option.append(button);
+    }
+
+    return option;
+  }
+
   buildSide() {
     const side = document.createElement('div');
     side.className = 'me-welcome__side';
@@ -184,7 +294,7 @@ export class WelcomeScreen {
       footer.append(dismiss);
     }
 
-    side.append(title, subtitle, actions, footer);
+    side.append(title, subtitle, actions, this.buildStorage(), footer);
     return side;
   }
 

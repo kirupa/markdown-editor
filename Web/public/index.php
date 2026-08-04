@@ -123,6 +123,7 @@ $asset = static fn (string $path): string => $assetBase === '' ? $path : "$asset
   <div class="me-statusbar" id="statusbar">
     <span id="statusDocument">No document</span>
     <span class="me-statusbar__spacer"></span>
+    <span class="me-statusbar__storage" id="storageIndicator"></span>
     <span id="statusSaved"></span>
   </div>
 

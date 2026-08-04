@@ -11,6 +11,9 @@ export const CORE_TEST_MODULES = [
   './text-difference.test.js',
   './recent-documents.test.js',
   './saved-documents.test.js',
+  './cloud-paths.test.js',
+  './cloud-backend.test.js',
+  './storage-mode.test.js',
 ];
 
 /** Needs a real DOM, so these run only in the browser page. */

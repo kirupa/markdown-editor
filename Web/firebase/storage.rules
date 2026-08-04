@@ -1,0 +1,32 @@
+rules_version = '2';
+
+// Who may read or write an image in the cloud workspace.
+//
+// Same shape as the Firestore rules and the same reasoning: the bucket path
+// begins with the owner's uid, so ownership is structural. Publish with
+//
+//   firebase deploy --only storage
+//
+// or paste into Storage ▸ Rules in the console.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /users/{userId}/{allPaths=**} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+
+      // The editor caps an image at 10 MB before uploading; this is the same
+      // limit enforced where a client cannot talk its way around it. Only
+      // images, so the bucket cannot be used as general file hosting.
+      allow write: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

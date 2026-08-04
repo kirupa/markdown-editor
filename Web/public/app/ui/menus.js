@@ -180,6 +180,17 @@ function menuDefinitions(commands, state) {
         },
         separator,
         { title: 'Close', shortcut: { command: true, key: 'w' }, action: commands.close },
+        separator,
+        // Storage lives in File because it decides where Save goes (WR-6).
+        {
+          title: state.isCloud() ? 'Cloud Storage (Connected)' : 'Connect Google Account…',
+          action: commands.connectCloud,
+        },
+        {
+          title: 'Use Files On This Device',
+          disabled: !state.isCloud(),
+          action: commands.useLocalStorage,
+        },
       ],
     },
     {

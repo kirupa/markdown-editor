@@ -74,7 +74,7 @@ try {
     await import(specifier);
   }
 
-  const summary = runAll((event) => {
+  const summary = await runAll((event) => {
     if (event.kind === 'suite') {
       const heading = document.createElement('div');
       heading.className = 'suite';

@@ -16,7 +16,7 @@ const red = (text) => `\u001b[31m${text}\u001b[0m`;
 const green = (text) => `\u001b[32m${text}\u001b[0m`;
 const dim = (text) => `\u001b[2m${text}\u001b[0m`;
 
-const summary = runAll((event) => {
+const summary = await runAll((event) => {
   if (event.kind === 'suite') {
     console.log(dim(`\n${event.name} (${event.count})`));
   } else if (event.kind === 'pass') {

@@ -1,84 +1,45 @@
-// Thin wrapper over the PHP endpoint.
+// The storage seam.
 //
-// Every failure arrives as `{ error, recovery }` and is rethrown as an
-// ApiError carrying both strings, so callers never have to decide whether a
-// request failed — and nothing can fail silently (PRD G-6).
+// `api` used to be the PHP client itself. It is now a façade in front of
+// whichever backend is active — the server's disk, or the signed-in user's
+// Firestore. Every method forwards, so the four modules that call `api` did
+// not have to change and cannot tell the difference: a backend is defined
+// entirely by answering these calls with the same payload shapes.
+//
+// Forwarding is written out rather than generated with a Proxy so that this
+// list *is* the contract. Adding a method here is what forces both backends to
+// implement it.
 
-const ENDPOINT = 'api.php';
+import { localBackend } from './backends/local.js';
 
-export class ApiError extends Error {
-  constructor(message, recovery = '') {
-    super(message);
-    this.name = 'ApiError';
-    this.recovery = recovery;
-  }
+export { ApiError } from './backends/api-error.js';
+
+let active = localBackend;
+
+/** Swaps the storage backend. Called by `storage.js`, which owns the choice. */
+export function setBackend(backend) {
+  active = backend;
 }
 
-async function request(url, options = {}) {
-  let response;
-  try {
-    response = await fetch(url, options);
-  } catch (cause) {
-    throw new ApiError(
-      'The editor could not reach the server.',
-      'Check that the site is still running, then try again.'
-    );
-  }
-
-  const text = await response.text();
-  let payload;
-  try {
-    payload = text === '' ? {} : JSON.parse(text);
-  } catch {
-    throw new ApiError(
-      'The server returned a response the editor could not read.',
-      response.ok ? 'Check the web server error log.' : `HTTP ${response.status}.`
-    );
-  }
-
-  if (!response.ok || payload.error) {
-    throw new ApiError(
-      payload.error ?? `The request failed with HTTP ${response.status}.`,
-      payload.recovery ?? ''
-    );
-  }
-
-  return payload;
-}
-
-function get(action, params = {}) {
-  const query = new URLSearchParams({ action, ...params });
-  return request(`${ENDPOINT}?${query}`);
-}
-
-function postJson(action, body) {
-  return request(`${ENDPOINT}?action=${encodeURIComponent(action)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+export function activeBackend() {
+  return active;
 }
 
 export const api = {
-  config: () => get('config'),
-  tree: (path = '') => get('tree', { path }),
-  read: (path) => get('read', { path }),
-  exists: (path) => get('exists', { path }),
-  write: (path, text, hasByteOrderMark = false) =>
-    postJson('write', { path, text, hasByteOrderMark }),
-  create: (path) => postJson('create', { path }),
+  config: (...args) => active.config(...args),
+  tree: (...args) => active.tree(...args),
+  read: (...args) => active.read(...args),
+  exists: (...args) => active.exists(...args),
+  write: (...args) => active.write(...args),
+  create: (...args) => active.create(...args),
 
-  newFolder: (parent, name) => postJson('newFolder', { parent, name }),
-  newDocument: (parent, name) => postJson('newDocument', { parent, name }),
-  rename: (path, name) => postJson('rename', { path, name }),
-  move: (path, parent) => postJson('move', { path, parent }),
-  duplicate: (path) => postJson('duplicate', { path }),
-  remove: (path) => postJson('delete', { path }),
+  newFolder: (...args) => active.newFolder(...args),
+  newDocument: (...args) => active.newDocument(...args),
+  rename: (...args) => active.rename(...args),
+  move: (...args) => active.move(...args),
+  duplicate: (...args) => active.duplicate(...args),
+  remove: (...args) => active.remove(...args),
 
-  uploadImage(documentPath, file) {
-    const form = new FormData();
-    form.append('path', documentPath);
-    form.append('image', file, file.name);
-    return request(`${ENDPOINT}?action=upload`, { method: 'POST', body: form });
-  },
+  uploadImage: (...args) => active.uploadImage(...args),
+  imageURL: (...args) => active.imageURL(...args),
 };

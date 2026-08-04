@@ -1,0 +1,44 @@
+rules_version = '2';
+
+// Who may touch a document in the cloud workspace.
+//
+// This file, not the API key in `app/cloud/config.js`, is what protects the
+// data. The key is a public identifier every client must have; these rules are
+// the access control. Publish them before anyone signs in:
+//
+//   firebase deploy --only firestore:rules
+//
+// or paste them into Firestore ▸ Rules in the console.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Every node lives under the user that owns it, so ownership is the path
+    // itself and cannot be got wrong per-document. There is no rule that lets
+    // one account read another's documents, and no field a client could set to
+    // grant itself one.
+    match /users/{userId}/nodes/{nodeId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+
+      allow create, update: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasAll(['type', 'path', 'parent', 'name'])
+        && request.resource.data.type in ['file', 'folder', 'asset']
+        && request.resource.data.path is string
+        && request.resource.data.path.size() > 0
+        && request.resource.data.path.size() < 1024
+        // A document larger than this cannot be written anyway: Firestore
+        // caps a document at 1 MiB. Refusing earlier turns a confusing
+        // write failure into a clear one.
+        && (!('text' in request.resource.data)
+            || request.resource.data.text.size() < 900000);
+
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Nothing else in the project is reachable from the editor.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

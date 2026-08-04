@@ -30,6 +30,7 @@ nothing installed on the host but PHP itself.
 10. [Images and assets](#10-images-and-assets)
 11. [File explorer](#11-file-explorer)
 11a. [Managing files and folders](#11a-managing-files-and-folders)
+11b. [Cloud storage and accounts](#11b-cloud-storage-and-accounts)
 12. [Themes, typography, and layout](#12-themes-typography-and-layout)
 13. [Keyboard shortcut reference](#13-keyboard-shortcut-reference)
 14. [Architecture](#14-architecture)
@@ -317,6 +318,98 @@ workspace is a folder nobody can reorganize without leaving the app.
 
 ---
 
+## 11b. Cloud storage and accounts
+
+Documents can live in one of two places, and the editor never guesses which.
+
+| ID | Requirement |
+| --- | --- |
+| WR-1 | The welcome screen offers both storage options at once, with the active one marked **In use**. Where a document is saved is the one thing here that is hard to undo if it is not what you expected, so it is never a click away from being visible. |
+| WR-2 | **On this server** is the default and works with no account: files in the workspace folder, exactly as before this section existed. Everything in [§5](#5-the-workspace) and [§11a](#11a-managing-files-and-folders) describes it. |
+| WR-3 | **Your Google account** is the recommended option: sign in with Firebase Authentication and every document is stored in Firestore under that account, reachable from any device that signs in. |
+| WR-4 | Switching storage closes the open document rather than carrying it across. A document from one place shown while saves go to the other is worse than closing it. |
+| WR-5 | The status bar always says which storage is in use — `This device`, or `Cloud · your@email`. |
+| WR-6 | Storage can also be switched from **File ▸ Connect Google Account…** and **File ▸ Use Files On This Device**. |
+| WR-7 | Switching storage goes through the same unsaved-changes prompt as any other command that closes a document ([WD-6](#7-document-lifecycle)). |
+| WR-8 | The remembered choice is restored at launch. Cloud is only restored if Firebase says the session is still valid; it never opens a sign-in window during boot, because an unrequested pop-up is blocked anyway. An expired session falls back to local storage and says so, rather than starting on an error. |
+| WR-9 | Recent documents and the Saved for Later list are kept separately per storage mode. The same path names different documents in each, so one shared list would offer to open files that are not there. Local keeps the original keys, so an existing install loses nothing. |
+| WR-10 | The Firebase SDK is only downloaded when an account is actually used. A local-only session fetches nothing from a CDN. |
+| WR-11 | Every cloud failure is reported with a recovery step, never swallowed ([G-6](#2-goals-and-non-goals)). A closed sign-in window, a blocked pop-up, an unauthorised domain, a missing provider, unpublished rules, and a disabled Storage bucket each say what specifically to do. |
+
+### How documents are stored
+
+Firestore has no folders, so a tree is a reading of a `path` field on a flat
+collection of nodes:
+
+    users/{uid}/nodes/{documentId}      documentId = encodeURIComponent(path)
+
+| Field | Meaning |
+| --- | --- |
+| `type` | `file`, `folder`, or `asset` |
+| `path` | Workspace-relative path — the identity of the node |
+| `parent` | The containing folder's path, `''` at the root |
+| `name` | The last path component |
+| `text`, `hasByteOrderMark`, `size` | Documents only |
+| `storagePath`, `url`, `contentType` | Images only; the bytes live in Cloud Storage |
+
+| ID | Requirement |
+| --- | --- |
+| WR-12 | Listing a folder is an equality query on `parent`, sorted in the client. Adding `orderBy` would make it a composite query that Firestore refuses to serve until an index is built by hand, so the app would not work the moment it was deployed. |
+| WR-13 | Subtree operations use a range query on `path`, then **filter the result**. `path >= 'Notes'` also matches `Notes 2/Out.md` and `Notes.md`, because a range over strings knows nothing about separators — without the filter, renaming a folder would silently drag its similarly named siblings along. |
+| WR-14 | Writes are committed in batches of 500, Firestore's limit. A batch is atomic; several are not, so every create is ordered before the delete it replaces. An interruption mid-move leaves documents duplicated rather than lost. |
+| WR-15 | Naming rules match the local build exactly, verified against PHP's own output: duplicates become `stem-2.ext`, `PATHINFO` splits on the last dot wherever it is, and entries sort folders-first then `strnatcasecmp` order. |
+| WR-16 | A document's `<stem>.assets` folder follows it through a rename, move, or duplicate, and the image references inside the document are rewritten — the same behaviour as [WM-8](#11a-managing-files-and-folders). A duplicated document gets its own copy of the image bytes, so deleting one cannot blank the other. |
+| WR-17 | Deleting a document leaves its assets folder behind, as the local build does: it holds originals that may exist nowhere else. |
+| WR-18 | Images go to Cloud Storage under `users/{uid}/`, capped at 10 MB. Firestore's 1 MiB document limit makes storing them inline too restrictive. Opening a document loads its image URLs first, so the renderer — which resolves image sources synchronously — has them ready. |
+
+### The API key is not a secret
+
+`Web/public/app/cloud/config.js` contains the real Firebase configuration,
+committed to a public repository on purpose. A Firebase web API key is an
+identifier, not a credential: it names the project so the SDK knows where to
+send requests, and every client that loads the app must have it. It grants
+nothing on its own. [Google documents this
+directly](https://firebase.google.com/docs/projects/api-keys).
+
+What actually controls access is the Security Rules, which ship beside it:
+
+- `Web/firebase/firestore.rules`
+- `Web/firebase/storage.rules`
+
+Both scope every document to the account that owns it, structurally — ownership
+is the path, so it cannot be got wrong per-document. There is no rule that lets
+one account reach another's documents.
+
+### Setup steps that cannot be done from this repository
+
+These are Firebase console actions. Until they are done, the cloud option will
+fail, and it will say which of these is missing.
+
+| ID | Step |
+| --- | --- |
+| WR-19 | **Publish the security rules.** `firebase deploy --only firestore:rules,storage`, or paste both files into the console. **A new project starts in open test mode, where anyone with the API key can read and write everything.** This was verified to still be the case at the time of writing, so it is the first thing to do and the one that matters. |
+| WR-20 | **Enable the Google sign-in provider** under Authentication ▸ Sign-in method. |
+| WR-21 | **Add the authorised domains** under Authentication ▸ Settings: `www.kirupa.com` for the published build, and `127.0.0.1` for local preview if you reach it by IP. `localhost` is allowed by default, but `127.0.0.1` is a different host string to Firebase — reaching the preview at `http://localhost:8000` avoids needing this. |
+| WR-22 | **Enable Cloud Storage** for the project, or image upload will fail. |
+
+### What has not been verified
+
+Honest limits on the testing behind this section:
+
+- The Google sign-in round trip cannot run in headless Chrome, and no test
+  writes to the real database. Sign-in, and reading and writing real documents
+  in a real account, are **unverified**.
+- What *is* verified: the pinned SDK loads and initialises against this project,
+  the store adapter builds against a real Firestore handle, the backend answers
+  `config()` identically to the local one, and the cloud backend passes 30 tests
+  against an in-memory Firestore that enforces the same query semantics —
+  including the prefix-boundary case in [WR-13](#11b-cloud-storage-and-accounts),
+  proven by mutation testing to fail when that filter is removed.
+- Local storage is proven untouched by this change: the file tree, document
+  reads, and image URLs all still work through the new façade.
+
+---
+
 ## 12. Themes, typography, and layout
 
 | ID | Requirement |
@@ -563,6 +656,7 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 
 | Change | What shipped |
 | --- | --- |
+| Cloud storage | Documents can be stored in a Google account through Firebase Authentication and Firestore, chosen from the welcome screen or the File menu, with local files still the default and unchanged ([§11b](#11b-cloud-storage-and-accounts)). |
 | Docked tools | The formatting bar moved from floating above the keyboard to the header's second row, where the platform's own bottom furniture cannot cover it ([WB-20](#12a-mobile-layout), [WB-26](#12a-mobile-layout)). |
 | iOS zoom | Focusing any text under 16px made iOS Safari zoom the page in, which slid it sideways and pushed the formatting bar under the keyboard's controls. Nothing focusable is under 16px now ([WB-22](#12a-mobile-layout)). |
 | Pinned viewport | Mobile no longer pans or zooms ([WB-17](#12a-mobile-layout)). |
@@ -593,11 +687,16 @@ Specific to the web build:
 - Multiple documents open at once
 - Undoing a file operation — delete is final ([WM-11](#11a-managing-files-and-folders))
 - Moving files by dragging them out of, or into, the operating system's file manager
-- Any form of authentication. Basic Auth at the web server is the stopgap
-  ([WS-7](#15-run-deploy-and-test)); real accounts are intended to arrive with a
-  Firebase integration, which is also what would make more than one person's
-  workspace possible
-- Offline use; the editor needs the server to read and write files
+- Sharing a document, or any collaboration. Cloud storage is per-account and
+  private to it ([§11b](#11b-cloud-storage-and-accounts))
+- Real-time sync between two devices with the same document open at once.
+  Cloud documents are read on open and written on save; there is no listener
+  reconciling a concurrent edit, so the last save wins
+- Migrating documents between local and cloud storage. Switching mode changes
+  which documents exist, it does not copy them ([WR-4](#11b-cloud-storage-and-accounts))
+- Sign-in providers other than Google
+- Offline use; the editor needs either the server or a network connection to
+  read and write documents
 - A native app shell for phones; the mobile layout ([§12a](#12a-mobile-layout))
   is the browser page rearranged, not a packaged app
 - Syncing the saved-for-later list between devices — it lives in `localStorage`,

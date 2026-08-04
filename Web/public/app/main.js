@@ -5,6 +5,9 @@
 // import, the dividers, and scroll/selection synchronization.
 
 import { api, ApiError } from './api.js';
+import {
+  restoreStorage, storageMode, isCloud, currentAccount, useCloud, signOutAndUseLocal,
+} from './storage.js';
 import { MarkdownDocumentModel } from './document.js';
 import { makeRange, maxRange } from './core/range.js';
 import { renderMarkdown } from './core/render-model.js';
@@ -113,7 +116,44 @@ const welcome = new WelcomeScreen(element('welcome'), {
   newDocument: () => commands.newDocument(),
   open: () => commands.open(),
   openPath: (path) => openDocument(path),
+  storageChanged: () => adoptStorage(),
 });
+
+/**
+ * Re-reads everything that depends on which storage is active (WR-4).
+ *
+ * Switching storage does not just change where a save goes; it changes what
+ * documents exist. The open document is closed rather than carried across,
+ * because keeping it would leave the editor showing a file from one place
+ * while saving to another.
+ */
+async function adoptStorage() {
+  model.reset();
+  try {
+    config = await api.config();
+    welcome.workspaceName = config.workspaceName;
+    explorer.rootName = config.workspaceName;
+    await explorer.setRoot('');
+  } catch (error) {
+    showError(error);
+  }
+  updateStorageIndicator();
+  updateStatus();
+}
+
+/** Says which storage is in use, so it is never a guess (WR-5). */
+function updateStorageIndicator() {
+  const indicator = document.getElementById('storageIndicator');
+  if (!indicator) return;
+  const account = currentAccount();
+  indicator.textContent = isCloud()
+    ? `Cloud · ${account?.email || account?.name || 'signed in'}`
+    : 'This device';
+  indicator.dataset.storage = storageMode();
+  indicator.title = isCloud()
+    ? 'Documents are stored in your Google account and sync across devices.'
+    : 'Documents are stored in the workspace folder on the server hosting this page.';
+}
 
 // In Split, a command applies to whichever pane the user was last editing.
 // Tracking that explicitly means a control that steals focus on click cannot
@@ -152,7 +192,7 @@ function resolveImageURL(destination) {
     : '';
   const relative = destination.split('/').map(decodeSegment).join('/');
   const joined = folder ? `${folder}/${relative}` : relative;
-  return `api.php?action=asset&path=${encodeURIComponent(joined)}`;
+  return api.imageURL(joined);
 }
 
 function decodeSegment(segment) {
@@ -164,6 +204,35 @@ function decodeSegment(segment) {
 }
 
 const commands = {
+  /**
+   * Switching storage closes the open document, so it goes through the same
+   * unsaved-changes guard every other document-closing command does (WR-7).
+   */
+  async connectCloud() {
+    if (isCloud()) {
+      welcome.show({ dismissable: true });
+      return;
+    }
+    if (!(await guardUnsaved())) return;
+    try {
+      await useCloud();
+      await adoptStorage();
+    } catch (error) {
+      showError(error);
+    }
+  },
+
+  async useLocalStorage() {
+    if (!isCloud()) return;
+    if (!(await guardUnsaved())) return;
+    try {
+      await signOutAndUseLocal();
+      await adoptStorage();
+    } catch (error) {
+      showError(error);
+    }
+  },
+
   inline(name) {
     applyResult(toggleInline(InlineStyle[name], model.source, currentSelection()));
   },
@@ -251,6 +320,7 @@ buildMenus(element('menubar'), commands, {
   mode: () => mode,
   sidebarVisible: () => sidebarVisible,
   mobileLayout: () => mobileLayout,
+  isCloud: () => isCloud(),
 });
 
 const mobileUI = buildMobileUI({
@@ -770,6 +840,12 @@ async function start() {
   setMobileLayout(mobileLayout);
   element('app').hidden = false;
 
+  // Storage first: `config` and the tree both depend on which backend answers.
+  // A remembered cloud session that has expired falls back to local rather
+  // than blocking the launch, and says why (WR-3).
+  const storage = await restoreStorage();
+  updateStorageIndicator();
+
   try {
     config = await api.config();
     welcome.workspaceName = config.workspaceName;
@@ -777,6 +853,18 @@ async function start() {
     await explorer.setRoot('');
   } catch (error) {
     showError(error);
+  }
+
+  if (storage.reason === 'signed-out') {
+    showError(new ApiError(
+      'You were signed out of your cloud workspace.',
+      'Reconnect your Google account from the welcome screen to reach those documents.'
+    ));
+  } else if (storage.reason) {
+    showError(new ApiError(
+      'Your cloud workspace could not be reached, so local files are being used.',
+      storage.reason
+    ));
   }
 
   model.reset();

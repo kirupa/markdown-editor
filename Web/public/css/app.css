@@ -652,7 +652,7 @@ body {
 .me-welcome {
   display: flex;
   width: 760px;
-  height: 470px;
+  height: 560px;
   max-width: calc(100vw - 32px);
   max-height: calc(100vh - 32px);
   overflow: hidden;
@@ -664,6 +664,9 @@ body {
 .me-welcome__side {
   display: flex;
   flex-direction: column;
+  /* The storage picker made this column tall enough to clip on a short
+     screen, and the panel's own overflow is hidden. */
+  overflow-y: auto;
   flex: 0 0 300px;
   padding: 34px 28px;
   background: var(--me-sidebar-background);
@@ -696,7 +699,40 @@ body {
   font-weight: 600;
 }
 
-.me-welcome__footer { margin-top: auto; display: flex; flex-direction: column; gap: 10px; }
+.me-welcome__footer { margin-top: auto; padding-top: 16px; display: flex; flex-direction: column; gap: 10px; }
+
+/* Storage picker (WR-1). Both options stay visible so where a document is
+   saved is never something you have to click to discover. */
+.me-welcome__storage { margin-top: 22px; }
+.me-welcome__heading {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--me-secondary-text); margin: 0 0 8px;
+}
+.me-storage { display: flex; flex-direction: column; gap: 8px; }
+.me-storage__option {
+  border: 1px solid var(--me-separator); border-radius: 8px; padding: 10px 12px;
+  background: var(--me-page-background);
+}
+.me-storage__option--active { border-color: var(--me-accent); }
+.me-storage__title { font-size: 13px; font-weight: 600; }
+.me-storage__detail {
+  margin: 3px 0 0; font-size: 12px; line-height: 1.45; color: var(--me-secondary-text);
+}
+.me-storage__badge {
+  display: inline-block; vertical-align: 1px; font-size: 10px; font-weight: 600;
+  letter-spacing: 0.04em; text-transform: uppercase; padding: 1px 6px; border-radius: 999px;
+  background: var(--me-separator); color: var(--me-secondary-text);
+}
+.me-storage__badge--active { background: var(--me-accent); color: #fff; }
+.me-button--small { margin-top: 8px; padding: 3px 10px; font-size: 12px; }
+
+/* Which storage is in use, permanently on screen (WR-5). */
+.me-statusbar__storage { color: var(--me-secondary-text); }
+.me-statusbar__storage[data-storage="cloud"] { color: var(--me-accent); }
+.me-statusbar__storage::after {
+  content: ""; display: inline-block; width: 1px; height: 10px; margin: 0 8px -1px;
+  background: var(--me-separator);
+}
 
 .me-checkbox { display: flex; align-items: center; gap: 7px; color: var(--me-secondary-text); }
 .me-checkbox input { accent-color: var(--me-accent); }

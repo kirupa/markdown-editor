@@ -50,6 +50,21 @@ export function expectThrows(body, message = 'expected an error to be thrown') {
   throw new ExpectationFailure(message);
 }
 
+/**
+ * The asynchronous counterpart of `expectThrows`.
+ *
+ * Separate rather than folded into `expectThrows`, because a rejected promise
+ * escaping a `try` block is precisely the mistake this is here to catch.
+ */
+export async function expectRejects(body, message = 'expected a rejection') {
+  try {
+    await body();
+  } catch {
+    return;
+  }
+  throw new ExpectationFailure(message);
+}
+
 function deepEqual(a, b) {
   if (a === b) return true;
   if (typeof a !== typeof b) return false;
@@ -81,10 +96,14 @@ function display(value) {
 /**
  * Runs every registered suite.
  *
+ * Async, and awaits whatever a test returns. It has to: a test body that
+ * returns a rejected promise would otherwise be recorded as a pass, and the
+ * cloud backend is asynchronous throughout.
+ *
  * @param {(event: object) => void} [report] receives `suite`, `pass`, `fail`,
  *   and `done` events so callers can render however they like.
  */
-export function runAll(report = () => {}) {
+export async function runAll(report = () => {}) {
   let passed = 0;
   const failures = [];
 
@@ -92,7 +111,7 @@ export function runAll(report = () => {}) {
     report({ kind: 'suite', name: entry.name, count: entry.tests.length });
     for (const unit of entry.tests) {
       try {
-        unit.body();
+        await unit.body();
         passed += 1;
         report({ kind: 'pass', suite: entry.name, name: unit.name });
       } catch (error) {
