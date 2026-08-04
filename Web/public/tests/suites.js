@@ -14,6 +14,7 @@ export const CORE_TEST_MODULES = [
   './cloud-paths.test.js',
   './cloud-backend.test.js',
   './storage-mode.test.js',
+  './keep-focus.test.js',
 ];
 
 /** Needs a real DOM, so these run only in the browser page. */

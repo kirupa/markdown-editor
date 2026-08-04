@@ -5,6 +5,8 @@
 // Buttons report their state through `aria-pressed`, which is also what the
 // stylesheet keys the active look off — one source of truth, no class juggling.
 
+import { keepFocus } from './keep-focus.js';
+
 export const ICONS = {
   bold: '<path d="M4.4 2.6h4a2.7 2.7 0 0 1 0 5.4h-4zM4.4 8h4.7a2.75 2.75 0 0 1 0 5.5H4.4z"/>',
   italic: '<path d="M6.6 2.9h5M4.6 13.1h5M9.5 2.9 6.7 13.1"/>',
@@ -37,10 +39,8 @@ function iconButton(name, title, onClick) {
   button.title = title;
   button.setAttribute('aria-label', title);
   button.innerHTML = `<svg viewBox="0 0 16 16" aria-hidden="true">${ICONS[name]}</svg>`;
-  // Keeping focus in the editor is what lets a command act on the live selection.
-  button.addEventListener('mousedown', (event) => event.preventDefault());
   button.addEventListener('click', onClick);
-  return button;
+  return keepFocus(button);
 }
 
 function group(...children) {
@@ -76,8 +76,8 @@ export function buildToolbar(root, commands) {
     button.className = 'me-segmented__option';
     button.textContent = label;
     button.setAttribute('aria-pressed', 'false');
-    button.addEventListener('mousedown', (event) => event.preventDefault());
     button.addEventListener('click', () => commands.setMode(mode));
+    keepFocus(button);
     modeButtons.set(mode, button);
     segmented.append(button);
   }

@@ -17,6 +17,7 @@
 //   - an overflow sheet for the things that no longer have a menu.
 
 import { ICONS } from './toolbar.js';
+import { keepFocus } from './keep-focus.js';
 
 /** Icons that only the mobile layout needs. */
 const MOBILE_ICONS = {
@@ -42,14 +43,9 @@ function svg(name) {
 /**
  * Buttons must not steal focus: a formatting command acts on the live
  * selection, and on iOS taking focus also dismisses the keyboard, which would
- * make the bar jump down the screen on every tap.
+ * make the bar jump down the screen on every tap. See `keep-focus.js` for why
+ * that is one cancelled event and not two.
  */
-function keepFocus(button) {
-  button.addEventListener('mousedown', (event) => event.preventDefault());
-  button.addEventListener('touchstart', (event) => event.preventDefault(), { passive: false });
-  return button;
-}
-
 function button(className, iconName, title, onClick) {
   const element = document.createElement('button');
   element.type = 'button';

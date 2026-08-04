@@ -454,6 +454,8 @@ sheets in place of menus.
 | WB-12 | The file explorer becomes an overlay drawer opened from the Files button and dismissed by tapping outside it. Its state is transient and does not overwrite the desktop sidebar preference. |
 | WB-13 | Side by Side is unavailable, since a phone has no room for two columns; entering the mobile layout switches to Rich Text and leaving it restores Side by Side. |
 | WB-14 | Every control is at least 36 × 36px, and buttons do not take focus, so a formatting tap acts on the live selection and does not dismiss the keyboard. |
+| WB-28 | Keeping focus means cancelling `mousedown` and nothing else. A tap synthesizes `mousedown` before `click`, so cancelling it holds the selection on touch as well as with a mouse. Cancelling `touchstart` or `pointerdown` looks like the same idea and is not: it suppresses the whole compatibility chain, so `click` never fires and the control is dead on a phone. That is registered in one shared helper (`ui/keep-focus.js`) with one test, rather than re-derived at each button. |
+| WB-29 | A control that keeps focus must still be draggable, because most of the formatting row's width is buttons and the row is scrolled by dragging along it. Cancelling `touchstart` would swallow that drag as well as the click. |
 | WB-17 | The viewport is pinned: no pinch zoom, no double-tap zoom, and no dragging or rubber-banding the page behind the app. The app already fills the screen and every scroll happens inside a pane, so panning the page only slid the docked header out of reach. |
 | WB-18 | Pinning takes three mechanisms because none alone is enough — the viewport meta tag for Android, `touch-action` for double-tap and pinch, and cancelled `gesture*` events plus two-finger drags for iOS Safari, which has ignored `user-scalable=no` since iOS 10. The `touch-action` is set on `<html>`, since the effective value is the intersection of an element's and all its ancestors'. |
 | WB-19 | Leaving mobile restores the original meta tag and drops the listeners, so a phone deliberately switched to Desktop Layout keeps pinch zoom — the cramped desktop chrome is where zoom is actually wanted. |
@@ -649,6 +651,7 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 | WY-10 | Gesture locking is verified by performing the gesture, not by reading a property, and always against a control: the same synthesized 2.5× pinch and horizontal drag must leave mobile at scale 1 and offset 0 *and* must still zoom and pan the desktop layout. Without the control case a harness that silently fails to dispatch anything looks like a pass. |
 | WY-9 | Layout regressions are checked by measuring geometry, not by reading the DOM: the last block of a scrolled-to-the-end document must sit above the pane's bottom edge, in every editor mode and both layouts. Assertions on structure alone passed while a bar covered the text. |
 | WY-8 | The saved-for-later list is pure list arithmetic in its own module, so ticking an already-ticked box, a rename, a delete, and a hand-edited `localStorage` value are all covered by unit tests rather than by clicking. |
+| WY-11 | Touch behaviour is verified by tapping, never by calling `element.click()`. A programmatic click invokes the handler directly and passes whether or not a real tap ever reaches it, which is how every button in the mobile layout came to be dead while every assertion passed. The check that a control does not cancel the events a tap depends on is a unit test, because `dispatchEvent` produces untrusted events that never synthesize a click and so cannot reproduce the failure in a DOM test. |
 
 ---
 
@@ -656,6 +659,7 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 
 | Change | What shipped |
 | --- | --- |
+| Touch controls | Every button in the mobile layout was inert on a real phone — header icons, popovers, formatting, image insert — and the formatting row could not be scrolled by dragging along it. The buttons cancelled `touchstart` to hold the editor's selection, which also suppresses the `click` a tap generates ([WB-28](#12a-mobile-layout), [WB-29](#12a-mobile-layout)). |
 | Cloud storage | Documents can be stored in a Google account through Firebase Authentication and Firestore, chosen from the welcome screen or the File menu, with local files still the default and unchanged ([§11b](#11b-cloud-storage-and-accounts)). |
 | Docked tools | The formatting bar moved from floating above the keyboard to the header's second row, where the platform's own bottom furniture cannot cover it ([WB-20](#12a-mobile-layout), [WB-26](#12a-mobile-layout)). |
 | iOS zoom | Focusing any text under 16px made iOS Safari zoom the page in, which slid it sideways and pushed the formatting bar under the keyboard's controls. Nothing focusable is under 16px now ([WB-22](#12a-mobile-layout)). |
