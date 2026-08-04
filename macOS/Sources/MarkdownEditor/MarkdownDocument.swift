@@ -17,7 +17,10 @@ struct MarkdownDocument: FileDocument {
     var text: String
     private var hasUTF8ByteOrderMark: Bool
 
-    init(text: String = "") {
+    /// A new document starts on an empty Heading 1 line — see
+    /// ``NewMarkdownDocument``. Reading a file from disk goes through
+    /// `init(configuration:)` and is unaffected.
+    init(text: String = NewMarkdownDocument.text) {
         self.text = text
         hasUTF8ByteOrderMark = false
     }

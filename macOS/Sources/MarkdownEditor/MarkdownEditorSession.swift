@@ -17,17 +17,24 @@ final class MarkdownEditorSession: ObservableObject {
     private let imageImporter: MarkdownImageImporter
     private weak var activeEditor: (any MarkdownEditingSurface)?
     private var attachedEditors: [WeakEditingSurface] = []
-    private var rememberedSelection = NSRange(location: 0, length: 0)
+    private var rememberedSelection: NSRange
     private var isSynchronizingScroll = false
     private var isSynchronizingSelection = false
 
     init(
         fileURL: URL?,
+        initialText: String = "",
         imageImporter: MarkdownImageImporter = MarkdownImageImporter()
     ) {
         self.fileURL = fileURL
         fileExplorer = FileExplorerModel(documentURL: fileURL)
         self.imageImporter = imageImporter
+        // The first editor to attach is given this, so a new document opens
+        // with the caret inside its heading rather than in front of the `#`.
+        rememberedSelection = NewMarkdownDocument.initialSelection(
+            text: initialText,
+            isNewDocument: fileURL == nil
+        )
     }
 
     func setViewMode(_ mode: EditorViewMode) {

@@ -21,7 +21,10 @@ struct MarkdownEditorView: View {
     ) {
         _document = document
         _session = StateObject(
-            wrappedValue: MarkdownEditorSession(fileURL: fileURL)
+            wrappedValue: MarkdownEditorSession(
+                fileURL: fileURL,
+                initialText: document.wrappedValue.text
+            )
         )
         _themeColorRawValue = themeColorRawValue
         _appearanceModeRawValue = appearanceModeRawValue

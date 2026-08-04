@@ -732,8 +732,6 @@ Specific to the web build:
   ([WC-2](#live-updates))
 - Live updates for documents stored on the server. That is a deliberate
   limit of a PHP-only backend, not an oversight ([WC-7](#live-updates))
-- A new document starting as a Heading 1 in the macOS build. The web build
-  does ([WD-1](#7-document-lifecycle)); macOS still opens an empty document
 - Migrating documents between local and cloud storage. Switching mode changes
   which documents exist, it does not copy them ([WR-4](#11b-cloud-storage-and-accounts))
 - Sign-in providers other than Google

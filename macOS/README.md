@@ -218,10 +218,12 @@ Open With and lets the association point at a bundle that `make clean` deletes.
 | ID | Requirement |
 | --- | --- |
 | D-4 | The app uses SwiftUI's `DocumentGroup` with a `FileDocument`, so New, Open, Save, Save As, Duplicate, Rename, Move To, Revert, and Close are provided by the system with their standard shortcuts and dialogs. |
-| D-5 | A new document starts as an empty string. |
+| D-5 | A new document starts as an **empty Heading 1** — the two characters `# ` — with the caret placed after the marker, so the first keystroke becomes the title. Documents almost always open with one, and the heading is ordinary Markdown, not a mode: deleting the `# ` leaves a blank document. |
 | D-6 | Closing a document with unsaved changes presents the standard macOS save prompt. Nothing custom overrides this. |
 | D-7 | Each document opens in its own window. |
 | D-18 | Launch is intercepted so an empty launch presents the welcome window instead of an untitled document or an Open panel. See [Welcome window](#4-welcome-window). |
+| D-26 | The initial caret is applied only to a document that has never been saved *and* whose text is still exactly `# `. Every other document opens with the caret at offset 0. |
+| D-27 | The starting heading is not a change: a new document is not dirty and closing it untouched does not prompt. The web build starts a new document identically. |
 
 ### 5.4 Text encoding
 
@@ -689,6 +691,7 @@ not expose it directly.
 | Add welcome window | Landing window at launch with New Document, Open, and a pruned recent-documents list; replaces the launch Open panel |
 | Wait for window restoration | Restored documents no longer flash the welcome window on their way in |
 | Become a Finder Markdown handler | App and document icons, `make install`, and an in-app way to become the default handler |
+| Start new documents on a Heading 1 | A new document opens as an empty Heading 1 with the caret past the marker, matching the web build |
 
 ---
 
