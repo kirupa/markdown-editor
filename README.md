@@ -157,6 +157,11 @@ Contract/ What every build must agree on, as runnable fixtures
 Windows/  The brief for a WinUI 3 build. Not written yet
 ```
 
+Starting the Windows build? Read [`Windows/README.md`](Windows/README.md)
+first. The short version: WinUI 3 cannot be compiled on macOS, so run that
+session on Windows, and port the platform-independent half — which is most of
+it — against [`Contract/`](Contract/README.md).
+
 ## How the three stay in step
 
 Two different mechanisms, because only two of the three can share Swift.
