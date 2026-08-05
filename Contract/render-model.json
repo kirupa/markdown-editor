@@ -1,0 +1,1022 @@
+{
+  "about" : "Each corpus document rendered: the text the reading view shows, and every style span with the source range it maps back to.",
+  "cases" : [
+    {
+      "document" : "empty",
+      "spans" : [
+
+      ],
+      "text" : ""
+    },
+    {
+      "document" : "plain",
+      "spans" : [
+
+      ],
+      "text" : "One plain paragraph with no markup at all.\n"
+    },
+    {
+      "document" : "headings",
+      "spans" : [
+        {
+          "argument" : "1",
+          "includesMarkup" : true,
+          "isAtomic" : false,
+          "rendered" : [
+            0,
+            5
+          ],
+          "source" : [
+            0,
+            7
+          ],
+          "style" : "heading"
+        },
+        {
+          "argument" : "2",
+          "includesMarkup" : true,
+          "isAtomic" : false,
+          "rendered" : [
+            29,
+            10
+          ],
+          "source" : [
+            31,
+            13
+          ],
+          "style" : "heading"
+        },
+        {
+          "argument" : "3",
+          "includesMarkup" : true,
+          "isAtomic" : false,
+          "rendered" : [
+            40,
+            11
+          ],
+          "source" : [
+            45,
+            15
+          ],
+          "style" : "heading"
+        },
+        {
+          "argument" : "1",
+          "includesMarkup" : true,
+          "isAtomic" : false,
+          "rendered" : [
+            90,
+            21
+          ],
+          "source" : [
+            99,
+            26
+          ],
+          "style" : "heading"
+        }
+      ],
+      "text" : "Title\nBody under the title.\n\nSubheading\nThird level\n####### Seven hashes is not a heading\nThree spaces still is\n#NoSpace is not a heading"
+    },
+    {
+      "document" : "emphasis",
+      "spans" : [
+        {
+          "includesMarkup" : true,
+          "isAtomic" : false,
+          "rendered" : [
+            5,
+            4
+          ],
+          "source" : [
+            5,
+            8
+          ],
+          "style" : "bold"
+        },
+        {
+          "includesMarkup" : true,
+          "isAtomic" : false,
+          "rendered" : [
+            14,
+            6
+          ],
+          "source" : [
+            18,
+            8
+          ],
+          "style" : "italic"
+        },
+        {
+          "includesMarkup" : true,
+          "isAtomic" : false,
+          "rendered" : [
+            25,
+            4
+          ],
+          "source" : [
+            31,
+            10
+          ],
+          "style" : "bold"
+        },
+        {
+          "includesMarkup" : true,
+          "isAtomic" : false,
+          "rendered" : [
+            25,
+            4
+          ],
+          "source" : [
+            31,
+            10
+          ],
+          "style" : "italic"
+        },
+        {
+          "includesMarkup" : true,
+          "isAtomic" : false,
+          "rendered" : [
+            58,
+            14
+          ],
+          "source" : [
+            70,
+            16
+          ],
+          "style" : "italic"
+        },
+        {
+          "includesMarkup" : true,
+          "isAtomic" : false,
+          "rendered" : [
+            75,
+            6
+          ],
+          "source" : [
+            89,
+            10
+          ],
+          "style" : "strikethrough"
+        },
+        {
+          "includesMarkup" : true,
+          "isAtomic" : false,
+          "rendered" : [
+            94,
+            16
+          ],
+          "source" : [
+            112,
+            20
+          ],
+          "style" : "bold"
+        },
+        {
+          "includesMarkup" : true,
+          "isAtomic" : false,
+          "rendered" : [
+            117,
+            4
+          ],
+          "source" : [
+            139,
+            6
+          ],
+          "style" : "italic"
+        }
+      ],
+      "text" : "Some bold and italic and both.\nsnake_case_stays_plain but this is italic.\nAstrikethrough, and underscored bold.\nintrawordemphasis with asterisks."
+    },
+    {
+      "document" : "code",
+      "spans" : [
+        {
+          "includesMarkup" : true,
+          "isAtomic" : false,
+          "rendered" : [
+            7,
+            4
+          ],
+          "source" : [
+            7,
+            6
+          ],
+          "style" : "inlineCode"
+        },
+        {
+          "includesMarkup" : true,
+          "isAtomic" : false,
+          "rendered" : [
+            16,
+            15
+          ],
+          "source" : [
+            18,
+            19
+          ],
+          "style" : "inlineCode"
+        },
+        {
+          "includesMarkup" : true,
+          "isAtomic" : false,
+          "rendered" : [
+            36,
+            6
+          ],
+          "source" : [
+            42,
+            10
+          ],
+          "style" : "inlineCode"
+        },
+        {
+          "argument" : "swift",
+          "includesMarkup" : false,
+          "isAtomic" : false,
+          "rendered" : [
+            45,
+            10
+          ],
+          "source" : [
+            64,
+            10
+          ],
+          "style" : "codeBlock"
+        },
+        {
+          "argument" : "swift",
+          "includesMarkup" : true,
+          "isAtomic" : false,
+          "rendered" : [
+            45,
+            10
+          ],
+          "source" : [
+            55,
+            23
+          ],
+          "style" : "codeBlock"
+        }
+      ],
+      "text" : "Inline code and a `tick` inside and padded.\n\nlet x = 1\n\nTrailing text."
+    },
+    {
+      "document" : "lists",
+      "spans" : [
+        {
+          "includesMarkup" : false,
+          "isAtomic" : true,
+          "rendered" : [
+            0,
+            1
+          ],
+          "source" : [
+            0,
+            1
+          ],
+          "style" : "bulletedList"
+        },
+        {
+          "includesMarkup" : false,
+          "isAtomic" : false,
+          "rendered" : [
+            0,
+            7
+          ],
+          "source" : [
+            0,
+            7
+          ],
+          "style" : "bulletedList"
+        },
+        {
+          "includesMarkup" : false,
+          "isAtomic" : true,
+          "rendered" : [
+            8,
+            1
+          ],
+          "source" : [
+            8,
+            1
+          ],
+          "style" : "bulletedList"
+        },
+        {
+          "includesMarkup" : false,
+          "isAtomic" : false,
+          "rendered" : [
+            8,
+            8
+          ],
+          "source" : [
+            8,
+            8
+          ],
+          "style" : "bulletedList"
+        },
+        {
+          "includesMarkup" : false,
+          "isAtomic" : true,
+          "rendered" : [
+            17,
+            1
+          ],
+          "source" : [
+            19,
+            1
+          ],
+          "style" : "bulletedList"
+        },
+        {
+          "includesMarkup" : false,
+          "isAtomic" : false,
+          "rendered" : [
+            17,
+            8
+          ],
+          "source" : [
+            17,
+            10
+          ],
+          "style" : "bulletedList"
+        },
+        {
+          "includesMarkup" : false,
+          "isAtomic" : true,
+          "rendered" : [
+            26,
+            1
+          ],
+          "source" : [
+            28,
+            1
+          ],
+          "style" : "bulletedList"
+        },
+        {
+          "includesMarkup" : false,
+          "isAtomic" : false,
+          "rendered" : [
+            26,
+            13
+          ],
+          "source" : [
+            28,
+            13
+          ],
+          "style" : "bulletedList"
+        },
+        {
+          "includesMarkup" : false,
+          "isAtomic" : true,
+          "rendered" : [
+            40,
+            1
+          ],
+          "source" : [
+            42,
+            1
+          ],
+          "style" : "bulletedList"
+        },
+        {
+          "includesMarkup" : false,
+          "isAtomic" : false,
+          "rendered" : [
+            40,
+            13
+          ],
+          "source" : [
+            42,
+            13
+          ],
+          "style" : "bulletedList"
+        },
+        {
+          "includesMarkup" : false,
+          "isAtomic" : false,
+          "rendered" : [
+            55,
+            6
+          ],
+          "source" : [
+            57,
+            6
+          ],
+          "style" : "numberedList"
+        },
+        {
+          "includesMarkup" : false,
+          "isAtomic" : false,
+          "rendered" : [
+            62,
+            6
+          ],
+          "source" : [
+            64,
+            6
+          ],
+          "style" : "numberedList"
+        },
+        {
+          "includesMarkup" : false,
+          "isAtomic" : false,
+          "rendered" : [
+            69,
+            20
+          ],
+          "source" : [
+            71,
+            20
+          ],
+          "style" : "numberedList"
+        }
+      ],
+      "text" : "• first\n• second\n• nested\n• star bullet\n• plus bullet\n\n1. one\n2. two\n7. seven starts here"
+    },
+    {
+      "document" : "tasks",
+      "spans" : [
+        {
+          "argument" : "unchecked",
+          "includesMarkup" : false,
+          "isAtomic" : true,
+          "rendered" : [
+            0,
+            1
+          ],
+          "source" : [
+            0,
+            5
+          ],
+          "style" : "taskList"
+        },
+        {
+          "argument" : "unchecked",
+          "includesMarkup" : false,
+          "isAtomic" : false,
+          "rendered" : [
+            0,
+            11
+          ],
+          "source" : [
+            0,
+            15
+          ],
+          "style" : "taskList"
+        },
+        {
+          "argument" : "checked",
+          "includesMarkup" : false,
+          "isAtomic" : true,
+          "rendered" : [
+            12,
+            1
+          ],
+          "source" : [
+            16,
+            5
+          ],
+          "style" : "taskList"
+        },
+        {
+          "argument" : "checked",
+          "includesMarkup" : false,
+          "isAtomic" : false,
+          "rendered" : [
+            12,
+            9
+          ],
+          "source" : [
+            16,
+            13
+          ],
+          "style" : "taskList"
+        },
+        {
+          "argument" : "checked",
+          "includesMarkup" : false,
+          "isAtomic" : true,
+          "rendered" : [
+            22,
+            1
+          ],
+          "source" : [
+            30,
+            5
+          ],
+          "style" : "taskList"
+        },
+        {
+          "argument" : "checked",
+          "includesMarkup" : false,
+          "isAtomic" : false,
+          "rendered" : [
+            22,
+            9
+          ],
+          "source" : [
+            30,
+            13
+          ],
+          "style" : "taskList"
+        },
+        {
+          "includesMarkup" : false,
+          "isAtomic" : true,
+          "rendered" : [
+            32,
+            1
+          ],
+          "source" : [
+            44,
+            1
+          ],
+          "style" : "bulletedList"
+        },
+        {
+          "includesMarkup" : false,
+          "isAtomic" : false,
+          "rendered" : [
+            32,
+            15
+          ],
+          "source" : [
+            44,
+            15
+          ],
+          "style" : "bulletedList"
+        }
+      ],
+      "text" : "☐ unchecked\n☑ checked\n☑ capital\n• [] not a task"
+    },
+    {
+      "document" : "quotes",
+      "spans" : [
+        {
+          "includesMarkup" : true,
+          "isAtomic" : false,
+          "rendered" : [
+            0,
+            11
+          ],
+          "source" : [
+            0,
+            13
+          ],
+          "style" : "quote"
+        },
+        {
+          "includesMarkup" : true,
+          "isAtomic" : false,
+          "rendered" : [
+            12,
+            18
+          ],
+          "source" : [
+            14,
+            20
+          ],
+          "style" : "quote"
+        },
+        {
+          "includesMarkup" : true,
+          "isAtomic" : false,
+          "rendered" : [
+            49,
+            14
+          ],
+          "source" : [
+            53,
+            15
+          ],
+          "style" : "quote"
+        }
+      ],
+      "text" : "quoted line\nsecond quoted line\nlazy continuation\n> nested quote\n\nNot quoted."
+    },
+    {
+      "document" : "links",
+      "spans" : [
+        {
+          "argument" : "https://example.com",
+          "includesMarkup" : true,
+          "isAtomic" : false,
+          "rendered" : [
+            2,
+            4
+          ],
+          "source" : [
+            2,
+            27
+          ],
+          "style" : "link"
+        },
+        {
+          "argument" : "image\u001fTrip.assets/a%20shot.png",
+          "includesMarkup" : true,
+          "isAtomic" : true,
+          "rendered" : [
+            14,
+            1
+          ],
+          "source" : [
+            37,
+            34
+          ],
+          "style" : "image"
+        },
+        {
+          "includesMarkup" : true,
+          "isAtomic" : false,
+          "rendered" : [
+            29,
+            4
+          ],
+          "source" : [
+            86,
+            8
+          ],
+          "style" : "bold"
+        },
+        {
+          "argument" : "https://example.com/x",
+          "includesMarkup" : true,
+          "isAtomic" : false,
+          "rendered" : [
+            19,
+            14
+          ],
+          "source" : [
+            75,
+            43
+          ],
+          "style" : "link"
+        }
+      ],
+      "text" : "A link and an ￼.\nA link with bold inside.\nBare https://example.com is not a link."
+    },
+    {
+      "document" : "rules-and-escapes",
+      "spans" : [
+        {
+          "includesMarkup" : true,
+          "isAtomic" : true,
+          "rendered" : [
+            8,
+            1
+          ],
+          "source" : [
+            8,
+            3
+          ],
+          "style" : "horizontalRule"
+        },
+        {
+          "includesMarkup" : true,
+          "isAtomic" : true,
+          "rendered" : [
+            17,
+            1
+          ],
+          "source" : [
+            19,
+            2
+          ],
+          "style" : "escaped"
+        },
+        {
+          "includesMarkup" : true,
+          "isAtomic" : true,
+          "rendered" : [
+            28,
+            1
+          ],
+          "source" : [
+            31,
+            2
+          ],
+          "style" : "escaped"
+        },
+        {
+          "includesMarkup" : true,
+          "isAtomic" : true,
+          "rendered" : [
+            34,
+            1
+          ],
+          "source" : [
+            38,
+            2
+          ],
+          "style" : "escaped"
+        },
+        {
+          "includesMarkup" : true,
+          "isAtomic" : true,
+          "rendered" : [
+            74,
+            1
+          ],
+          "source" : [
+            79,
+            2
+          ],
+          "style" : "escaped"
+        }
+      ],
+      "text" : "Above.\n\n—\n\nBelow *not italic* and # not a heading.\nA backslash at the end \\"
+    },
+    {
+      "document" : "astral",
+      "spans" : [
+        {
+          "includesMarkup" : true,
+          "isAtomic" : false,
+          "rendered" : [
+            14,
+            14
+          ],
+          "source" : [
+            14,
+            18
+          ],
+          "style" : "bold"
+        },
+        {
+          "includesMarkup" : true,
+          "isAtomic" : false,
+          "rendered" : [
+            33,
+            10
+          ],
+          "source" : [
+            37,
+            12
+          ],
+          "style" : "italic"
+        }
+      ],
+      "text" : "Emoji 😀 then bold 🇬🇧 flag and ligature ﬁ.\nA family 👨‍👩‍👧‍👦 spans several code units."
+    },
+    {
+      "document" : "line-endings",
+      "spans" : [
+        {
+          "includesMarkup" : false,
+          "isAtomic" : true,
+          "rendered" : [
+            27,
+            1
+          ],
+          "source" : [
+            27,
+            1
+          ],
+          "style" : "bulletedList"
+        },
+        {
+          "includesMarkup" : false,
+          "isAtomic" : false,
+          "rendered" : [
+            27,
+            22
+          ],
+          "source" : [
+            27,
+            22
+          ],
+          "style" : "bulletedList"
+        }
+      ],
+      "text" : "First line\r\nSecond line\r\n\r\n• bullet after a blank\r\n\tTabbed line\n"
+    },
+    {
+      "document" : "mixed",
+      "spans" : [
+        {
+          "argument" : "1",
+          "includesMarkup" : true,
+          "isAtomic" : false,
+          "rendered" : [
+            0,
+            10
+          ],
+          "source" : [
+            0,
+            12
+          ],
+          "style" : "heading"
+        },
+        {
+          "includesMarkup" : true,
+          "isAtomic" : false,
+          "rendered" : [
+            17,
+            4
+          ],
+          "source" : [
+            19,
+            8
+          ],
+          "style" : "bold"
+        },
+        {
+          "argument" : "https://example.com",
+          "includesMarkup" : true,
+          "isAtomic" : false,
+          "rendered" : [
+            30,
+            4
+          ],
+          "source" : [
+            36,
+            27
+          ],
+          "style" : "link"
+        },
+        {
+          "argument" : "unchecked",
+          "includesMarkup" : false,
+          "isAtomic" : true,
+          "rendered" : [
+            42,
+            1
+          ],
+          "source" : [
+            71,
+            5
+          ],
+          "style" : "taskList"
+        },
+        {
+          "argument" : "unchecked",
+          "includesMarkup" : false,
+          "isAtomic" : false,
+          "rendered" : [
+            42,
+            6
+          ],
+          "source" : [
+            71,
+            10
+          ],
+          "style" : "taskList"
+        },
+        {
+          "argument" : "checked",
+          "includesMarkup" : false,
+          "isAtomic" : true,
+          "rendered" : [
+            49,
+            1
+          ],
+          "source" : [
+            82,
+            5
+          ],
+          "style" : "taskList"
+        },
+        {
+          "argument" : "checked",
+          "includesMarkup" : false,
+          "isAtomic" : false,
+          "rendered" : [
+            49,
+            12
+          ],
+          "source" : [
+            82,
+            16
+          ],
+          "style" : "taskList"
+        },
+        {
+          "includesMarkup" : true,
+          "isAtomic" : false,
+          "rendered" : [
+            76,
+            4
+          ],
+          "source" : [
+            115,
+            6
+          ],
+          "style" : "inlineCode"
+        },
+        {
+          "includesMarkup" : true,
+          "isAtomic" : false,
+          "rendered" : [
+            63,
+            24
+          ],
+          "source" : [
+            100,
+            28
+          ],
+          "style" : "quote"
+        },
+        {
+          "argument" : "shot\u001fTrip.assets/shot.png",
+          "includesMarkup" : true,
+          "isAtomic" : true,
+          "rendered" : [
+            89,
+            1
+          ],
+          "source" : [
+            130,
+            29
+          ],
+          "style" : "image"
+        },
+        {
+          "includesMarkup" : false,
+          "isAtomic" : false,
+          "rendered" : [
+            92,
+            8
+          ],
+          "source" : [
+            161,
+            8
+          ],
+          "style" : "numberedList"
+        },
+        {
+          "includesMarkup" : false,
+          "isAtomic" : false,
+          "rendered" : [
+            101,
+            9
+          ],
+          "source" : [
+            170,
+            9
+          ],
+          "style" : "numberedList"
+        }
+      ],
+      "text" : "Trip notes\n\nSome bold text, a link, and:\n\n☐ pack\n☑ book train\n\nA quote with code in it.\n\n￼\n\n1. first\n2. second"
+    }
+  ],
+  "documents" : [
+    {
+      "id" : "empty",
+      "text" : ""
+    },
+    {
+      "id" : "plain",
+      "text" : "One plain paragraph with no markup at all.\n"
+    },
+    {
+      "id" : "headings",
+      "text" : "# Title\nBody under the title.\n\n## Subheading\n### Third level\n####### Seven hashes is not a heading\n   # Three spaces still is\n#NoSpace is not a heading"
+    },
+    {
+      "id" : "emphasis",
+      "text" : "Some **bold** and *italic* and ***both***.\nsnake_case_stays_plain but _this is italic_.\nA~~strike~~through, and __underscored bold__.\nintra*word*emphasis with asterisks."
+    },
+    {
+      "id" : "code",
+      "text" : "Inline `code` and ``a `tick` inside`` and ` padded `.\n\n```swift\nlet x = 1\n```\n\nTrailing text."
+    },
+    {
+      "id" : "lists",
+      "text" : "- first\n- second\n  - nested\n* star bullet\n+ plus bullet\n\n1. one\n2. two\n7. seven starts here"
+    },
+    {
+      "id" : "tasks",
+      "text" : "- [ ] unchecked\n- [x] checked\n- [X] capital\n- [] not a task"
+    },
+    {
+      "id" : "quotes",
+      "text" : "> quoted line\n> second quoted line\nlazy continuation\n>> nested quote\n\nNot quoted."
+    },
+    {
+      "id" : "links",
+      "text" : "A [link](https://example.com) and an ![image](Trip.assets/a%20shot.png).\nA [link with **bold**](https://example.com/x) inside.\nBare https://example.com is not a link."
+    },
+    {
+      "id" : "rules-and-escapes",
+      "text" : "Above.\n\n---\n\nBelow \\*not italic\\* and \\# not a heading.\nA backslash at the end \\\\"
+    },
+    {
+      "id" : "astral",
+      "text" : "Emoji 😀 then **bold 🇬🇧 flag** and *ligature ﬁ*.\nA family 👨‍👩‍👧‍👦 spans several code units."
+    },
+    {
+      "id" : "line-endings",
+      "text" : "First line\r\nSecond line\r\n\r\n- bullet after a blank\r\n\tTabbed line\n"
+    },
+    {
+      "id" : "mixed",
+      "text" : "# Trip notes\n\nSome **bold** text, a [link](https://example.com), and:\n\n- [ ] pack\n- [x] book train\n\n> A quote with `code` in it.\n\n![shot](Trip.assets/shot.png)\n\n1. first\n2. second"
+    }
+  ],
+  "offsets" : "UTF-16 code units. Rendered ranges index the rendered text; source ranges index the original document.",
+  "source" : "Shared/Sources/MarkdownEditorCore/MarkdownRenderModel.swift",
+  "version" : 1
+}

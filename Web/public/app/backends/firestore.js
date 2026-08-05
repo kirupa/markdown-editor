@@ -36,6 +36,12 @@ const IMAGE_EXTENSIONS = [
  */
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
+// Firestore caps a document at 1 MiB, and `firestore.rules` refuses a longer
+// one. Checking here as well turns a rules rejection — which arrives as a bare
+// permission error, indistinguishable from being signed out — into a sentence
+// that says what happened. The native builds check the same number.
+const MAX_DOCUMENT_BYTES = 900_000;
+
 /**
  * @typedef {object} NodeStore
  * @property {(path: string) => Promise<object|null>} read one node, or null
@@ -312,6 +318,12 @@ export function createFirestoreBackend({ nodes, assets, workspaceName = 'kirupaM
       const writes = [];
       await ensureAncestors(target, writes);
       const size = new TextEncoder().encode(text ?? '').length;
+      if (size >= MAX_DOCUMENT_BYTES) {
+        throw new ApiError(
+          `That document is too large to save to the cloud: ${paths.nameOf(target)}`,
+          `Cloud documents must be under ${Math.round(MAX_DOCUMENT_BYTES / 1000)} KB, and this one is ${Math.round(size / 1000)} KB. Split it, or switch this document to local storage.`
+        );
+      }
       const modified = Date.now();
       writes.push({
         path: target,

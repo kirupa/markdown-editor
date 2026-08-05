@@ -17,7 +17,8 @@ let package = Package(
     products: [
         .library(name: "MarkdownEditorCore", targets: ["MarkdownEditorCore"]),
         .library(name: "MarkdownEditorUI", targets: ["MarkdownEditorUI"]),
-        .library(name: "MarkdownEditorCloud", targets: ["MarkdownEditorCloud"])
+        .library(name: "MarkdownEditorCloud", targets: ["MarkdownEditorCloud"]),
+        .executable(name: "markdown-contract", targets: ["markdown-contract"])
     ],
     targets: [
         // Pure Foundation: no AppKit, no UIKit, no SwiftUI.
@@ -37,6 +38,17 @@ let package = Package(
             name: "MarkdownEditorCloud",
             dependencies: ["MarkdownEditorCore"]
         ),
+        // The cross-platform contract: the corpus, and the fixtures generated
+        // from the compiled Swift that any other implementation of this editor
+        // is checked against. See Contract/README.md.
+        .target(
+            name: "MarkdownEditorContract",
+            dependencies: ["MarkdownEditorCore", "MarkdownEditorCloud"]
+        ),
+        .executableTarget(
+            name: "markdown-contract",
+            dependencies: ["MarkdownEditorContract"]
+        ),
         .testTarget(
             name: "MarkdownEditorCoreTests",
             dependencies: ["MarkdownEditorCore"]
@@ -48,6 +60,10 @@ let package = Package(
         .testTarget(
             name: "MarkdownEditorCloudTests",
             dependencies: ["MarkdownEditorCloud"]
+        ),
+        .testTarget(
+            name: "MarkdownEditorContractTests",
+            dependencies: ["MarkdownEditorContract"]
         )
     ]
 )

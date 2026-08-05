@@ -1,0 +1,891 @@
+{
+  "about" : "Workspace-path arithmetic: normalisation, naming, descendancy, subtree rewriting, and collision numbering.",
+  "cases" : [
+    {
+      "function" : "normalize",
+      "input" : [
+        ""
+      ],
+      "output" : ""
+    },
+    {
+      "function" : "name",
+      "input" : [
+        ""
+      ],
+      "output" : ""
+    },
+    {
+      "function" : "parent",
+      "input" : [
+        ""
+      ],
+      "output" : ""
+    },
+    {
+      "function" : "stem",
+      "input" : [
+        ""
+      ],
+      "output" : ""
+    },
+    {
+      "function" : "fileExtension",
+      "input" : [
+        ""
+      ],
+      "output" : ""
+    },
+    {
+      "function" : "isMarkdown",
+      "input" : [
+        ""
+      ],
+      "output" : "false"
+    },
+    {
+      "function" : "assetsFolderName",
+      "input" : [
+        ""
+      ],
+      "output" : ".assets"
+    },
+    {
+      "error" : "rootIsNotADocument",
+      "function" : "documentId",
+      "input" : [
+        ""
+      ]
+    },
+    {
+      "function" : "normalize",
+      "input" : [
+        "/"
+      ],
+      "output" : ""
+    },
+    {
+      "function" : "name",
+      "input" : [
+        "/"
+      ],
+      "output" : ""
+    },
+    {
+      "function" : "parent",
+      "input" : [
+        "/"
+      ],
+      "output" : ""
+    },
+    {
+      "function" : "stem",
+      "input" : [
+        "/"
+      ],
+      "output" : ""
+    },
+    {
+      "function" : "fileExtension",
+      "input" : [
+        "/"
+      ],
+      "output" : ""
+    },
+    {
+      "function" : "isMarkdown",
+      "input" : [
+        "/"
+      ],
+      "output" : "false"
+    },
+    {
+      "function" : "assetsFolderName",
+      "input" : [
+        "/"
+      ],
+      "output" : ".assets"
+    },
+    {
+      "error" : "rootIsNotADocument",
+      "function" : "documentId",
+      "input" : [
+        "/"
+      ]
+    },
+    {
+      "function" : "normalize",
+      "input" : [
+        "Notes.md"
+      ],
+      "output" : "Notes.md"
+    },
+    {
+      "function" : "name",
+      "input" : [
+        "Notes.md"
+      ],
+      "output" : "Notes.md"
+    },
+    {
+      "function" : "parent",
+      "input" : [
+        "Notes.md"
+      ],
+      "output" : ""
+    },
+    {
+      "function" : "stem",
+      "input" : [
+        "Notes.md"
+      ],
+      "output" : "Notes"
+    },
+    {
+      "function" : "fileExtension",
+      "input" : [
+        "Notes.md"
+      ],
+      "output" : "md"
+    },
+    {
+      "function" : "isMarkdown",
+      "input" : [
+        "Notes.md"
+      ],
+      "output" : "true"
+    },
+    {
+      "function" : "assetsFolderName",
+      "input" : [
+        "Notes.md"
+      ],
+      "output" : "Notes.assets"
+    },
+    {
+      "function" : "documentId",
+      "input" : [
+        "Notes.md"
+      ],
+      "output" : "Notes.md"
+    },
+    {
+      "function" : "normalize",
+      "input" : [
+        "/Notes.md"
+      ],
+      "output" : "Notes.md"
+    },
+    {
+      "function" : "name",
+      "input" : [
+        "/Notes.md"
+      ],
+      "output" : "Notes.md"
+    },
+    {
+      "function" : "parent",
+      "input" : [
+        "/Notes.md"
+      ],
+      "output" : ""
+    },
+    {
+      "function" : "stem",
+      "input" : [
+        "/Notes.md"
+      ],
+      "output" : "Notes"
+    },
+    {
+      "function" : "fileExtension",
+      "input" : [
+        "/Notes.md"
+      ],
+      "output" : "md"
+    },
+    {
+      "function" : "isMarkdown",
+      "input" : [
+        "/Notes.md"
+      ],
+      "output" : "true"
+    },
+    {
+      "function" : "assetsFolderName",
+      "input" : [
+        "/Notes.md"
+      ],
+      "output" : "Notes.assets"
+    },
+    {
+      "function" : "documentId",
+      "input" : [
+        "/Notes.md"
+      ],
+      "output" : "Notes.md"
+    },
+    {
+      "function" : "normalize",
+      "input" : [
+        "a/b/c.md"
+      ],
+      "output" : "a/b/c.md"
+    },
+    {
+      "function" : "name",
+      "input" : [
+        "a/b/c.md"
+      ],
+      "output" : "c.md"
+    },
+    {
+      "function" : "parent",
+      "input" : [
+        "a/b/c.md"
+      ],
+      "output" : "a/b"
+    },
+    {
+      "function" : "stem",
+      "input" : [
+        "a/b/c.md"
+      ],
+      "output" : "c"
+    },
+    {
+      "function" : "fileExtension",
+      "input" : [
+        "a/b/c.md"
+      ],
+      "output" : "md"
+    },
+    {
+      "function" : "isMarkdown",
+      "input" : [
+        "a/b/c.md"
+      ],
+      "output" : "true"
+    },
+    {
+      "function" : "assetsFolderName",
+      "input" : [
+        "a/b/c.md"
+      ],
+      "output" : "c.assets"
+    },
+    {
+      "function" : "documentId",
+      "input" : [
+        "a/b/c.md"
+      ],
+      "output" : "a%2Fb%2Fc.md"
+    },
+    {
+      "function" : "normalize",
+      "input" : [
+        "a//b"
+      ],
+      "output" : "a/b"
+    },
+    {
+      "function" : "name",
+      "input" : [
+        "a//b"
+      ],
+      "output" : "b"
+    },
+    {
+      "function" : "parent",
+      "input" : [
+        "a//b"
+      ],
+      "output" : "a"
+    },
+    {
+      "function" : "stem",
+      "input" : [
+        "a//b"
+      ],
+      "output" : "b"
+    },
+    {
+      "function" : "fileExtension",
+      "input" : [
+        "a//b"
+      ],
+      "output" : ""
+    },
+    {
+      "function" : "isMarkdown",
+      "input" : [
+        "a//b"
+      ],
+      "output" : "false"
+    },
+    {
+      "function" : "assetsFolderName",
+      "input" : [
+        "a//b"
+      ],
+      "output" : "b.assets"
+    },
+    {
+      "function" : "documentId",
+      "input" : [
+        "a//b"
+      ],
+      "output" : "a%2Fb"
+    },
+    {
+      "function" : "normalize",
+      "input" : [
+        "a/./b"
+      ],
+      "output" : "a/b"
+    },
+    {
+      "function" : "name",
+      "input" : [
+        "a/./b"
+      ],
+      "output" : "b"
+    },
+    {
+      "function" : "parent",
+      "input" : [
+        "a/./b"
+      ],
+      "output" : "a"
+    },
+    {
+      "function" : "stem",
+      "input" : [
+        "a/./b"
+      ],
+      "output" : "b"
+    },
+    {
+      "function" : "fileExtension",
+      "input" : [
+        "a/./b"
+      ],
+      "output" : ""
+    },
+    {
+      "function" : "isMarkdown",
+      "input" : [
+        "a/./b"
+      ],
+      "output" : "false"
+    },
+    {
+      "function" : "assetsFolderName",
+      "input" : [
+        "a/./b"
+      ],
+      "output" : "b.assets"
+    },
+    {
+      "function" : "documentId",
+      "input" : [
+        "a/./b"
+      ],
+      "output" : "a%2Fb"
+    },
+    {
+      "function" : "normalize",
+      "input" : [
+        "  spaced.md  "
+      ],
+      "output" : "  spaced.md  "
+    },
+    {
+      "function" : "name",
+      "input" : [
+        "  spaced.md  "
+      ],
+      "output" : "  spaced.md  "
+    },
+    {
+      "function" : "parent",
+      "input" : [
+        "  spaced.md  "
+      ],
+      "output" : ""
+    },
+    {
+      "function" : "stem",
+      "input" : [
+        "  spaced.md  "
+      ],
+      "output" : "  spaced"
+    },
+    {
+      "function" : "fileExtension",
+      "input" : [
+        "  spaced.md  "
+      ],
+      "output" : "md  "
+    },
+    {
+      "function" : "isMarkdown",
+      "input" : [
+        "  spaced.md  "
+      ],
+      "output" : "false"
+    },
+    {
+      "function" : "assetsFolderName",
+      "input" : [
+        "  spaced.md  "
+      ],
+      "output" : "  spaced.assets"
+    },
+    {
+      "function" : "documentId",
+      "input" : [
+        "  spaced.md  "
+      ],
+      "output" : "%20%20spaced.md%20%20"
+    },
+    {
+      "function" : "normalize",
+      "input" : [
+        "Trip.assets/a shot.png"
+      ],
+      "output" : "Trip.assets/a shot.png"
+    },
+    {
+      "function" : "name",
+      "input" : [
+        "Trip.assets/a shot.png"
+      ],
+      "output" : "a shot.png"
+    },
+    {
+      "function" : "parent",
+      "input" : [
+        "Trip.assets/a shot.png"
+      ],
+      "output" : "Trip.assets"
+    },
+    {
+      "function" : "stem",
+      "input" : [
+        "Trip.assets/a shot.png"
+      ],
+      "output" : "a shot"
+    },
+    {
+      "function" : "fileExtension",
+      "input" : [
+        "Trip.assets/a shot.png"
+      ],
+      "output" : "png"
+    },
+    {
+      "function" : "isMarkdown",
+      "input" : [
+        "Trip.assets/a shot.png"
+      ],
+      "output" : "false"
+    },
+    {
+      "function" : "assetsFolderName",
+      "input" : [
+        "Trip.assets/a shot.png"
+      ],
+      "output" : "a shot.assets"
+    },
+    {
+      "function" : "documentId",
+      "input" : [
+        "Trip.assets/a shot.png"
+      ],
+      "output" : "Trip.assets%2Fa%20shot.png"
+    },
+    {
+      "function" : "normalize",
+      "input" : [
+        "Notes"
+      ],
+      "output" : "Notes"
+    },
+    {
+      "function" : "name",
+      "input" : [
+        "Notes"
+      ],
+      "output" : "Notes"
+    },
+    {
+      "function" : "parent",
+      "input" : [
+        "Notes"
+      ],
+      "output" : ""
+    },
+    {
+      "function" : "stem",
+      "input" : [
+        "Notes"
+      ],
+      "output" : "Notes"
+    },
+    {
+      "function" : "fileExtension",
+      "input" : [
+        "Notes"
+      ],
+      "output" : ""
+    },
+    {
+      "function" : "isMarkdown",
+      "input" : [
+        "Notes"
+      ],
+      "output" : "false"
+    },
+    {
+      "function" : "assetsFolderName",
+      "input" : [
+        "Notes"
+      ],
+      "output" : "Notes.assets"
+    },
+    {
+      "function" : "documentId",
+      "input" : [
+        "Notes"
+      ],
+      "output" : "Notes"
+    },
+    {
+      "function" : "normalize",
+      "input" : [
+        "Notes 2/Out.md"
+      ],
+      "output" : "Notes 2/Out.md"
+    },
+    {
+      "function" : "name",
+      "input" : [
+        "Notes 2/Out.md"
+      ],
+      "output" : "Out.md"
+    },
+    {
+      "function" : "parent",
+      "input" : [
+        "Notes 2/Out.md"
+      ],
+      "output" : "Notes 2"
+    },
+    {
+      "function" : "stem",
+      "input" : [
+        "Notes 2/Out.md"
+      ],
+      "output" : "Out"
+    },
+    {
+      "function" : "fileExtension",
+      "input" : [
+        "Notes 2/Out.md"
+      ],
+      "output" : "md"
+    },
+    {
+      "function" : "isMarkdown",
+      "input" : [
+        "Notes 2/Out.md"
+      ],
+      "output" : "true"
+    },
+    {
+      "function" : "assetsFolderName",
+      "input" : [
+        "Notes 2/Out.md"
+      ],
+      "output" : "Out.assets"
+    },
+    {
+      "function" : "documentId",
+      "input" : [
+        "Notes 2/Out.md"
+      ],
+      "output" : "Notes%202%2FOut.md"
+    },
+    {
+      "function" : "normalize",
+      "input" : [
+        "Ünïcøde/文档.md"
+      ],
+      "output" : "Ünïcøde/文档.md"
+    },
+    {
+      "function" : "name",
+      "input" : [
+        "Ünïcøde/文档.md"
+      ],
+      "output" : "文档.md"
+    },
+    {
+      "function" : "parent",
+      "input" : [
+        "Ünïcøde/文档.md"
+      ],
+      "output" : "Ünïcøde"
+    },
+    {
+      "function" : "stem",
+      "input" : [
+        "Ünïcøde/文档.md"
+      ],
+      "output" : "文档"
+    },
+    {
+      "function" : "fileExtension",
+      "input" : [
+        "Ünïcøde/文档.md"
+      ],
+      "output" : "md"
+    },
+    {
+      "function" : "isMarkdown",
+      "input" : [
+        "Ünïcøde/文档.md"
+      ],
+      "output" : "true"
+    },
+    {
+      "function" : "assetsFolderName",
+      "input" : [
+        "Ünïcøde/文档.md"
+      ],
+      "output" : "文档.assets"
+    },
+    {
+      "function" : "documentId",
+      "input" : [
+        "Ünïcøde/文档.md"
+      ],
+      "output" : "%C3%9Cn%C3%AFc%C3%B8de%2F%E6%96%87%E6%A1%A3.md"
+    },
+    {
+      "function" : "normalize",
+      "input" : [
+        "emoji 😀.md"
+      ],
+      "output" : "emoji 😀.md"
+    },
+    {
+      "function" : "name",
+      "input" : [
+        "emoji 😀.md"
+      ],
+      "output" : "emoji 😀.md"
+    },
+    {
+      "function" : "parent",
+      "input" : [
+        "emoji 😀.md"
+      ],
+      "output" : ""
+    },
+    {
+      "function" : "stem",
+      "input" : [
+        "emoji 😀.md"
+      ],
+      "output" : "emoji 😀"
+    },
+    {
+      "function" : "fileExtension",
+      "input" : [
+        "emoji 😀.md"
+      ],
+      "output" : "md"
+    },
+    {
+      "function" : "isMarkdown",
+      "input" : [
+        "emoji 😀.md"
+      ],
+      "output" : "true"
+    },
+    {
+      "function" : "assetsFolderName",
+      "input" : [
+        "emoji 😀.md"
+      ],
+      "output" : "emoji 😀.assets"
+    },
+    {
+      "function" : "documentId",
+      "input" : [
+        "emoji 😀.md"
+      ],
+      "output" : "emoji%20%F0%9F%98%80.md"
+    },
+    {
+      "function" : "join",
+      "input" : [
+        "",
+        "a.md"
+      ],
+      "output" : "a.md"
+    },
+    {
+      "function" : "join",
+      "input" : [
+        "a",
+        "b.md"
+      ],
+      "output" : "a/b.md"
+    },
+    {
+      "function" : "join",
+      "input" : [
+        "a/b",
+        "c.md"
+      ],
+      "output" : "a/b/c.md"
+    },
+    {
+      "function" : "join",
+      "input" : [
+        "Notes",
+        ""
+      ],
+      "output" : "Notes"
+    },
+    {
+      "function" : "join",
+      "input" : [
+        "Notes",
+        "/x"
+      ],
+      "output" : "Notes/x"
+    },
+    {
+      "function" : "isDescendant",
+      "input" : [
+        "Notes/In.md",
+        "Notes"
+      ],
+      "output" : "true"
+    },
+    {
+      "function" : "isDescendant",
+      "input" : [
+        "Notes 2/Out.md",
+        "Notes"
+      ],
+      "output" : "false"
+    },
+    {
+      "function" : "isDescendant",
+      "input" : [
+        "Notes.md",
+        "Notes"
+      ],
+      "output" : "false"
+    },
+    {
+      "function" : "isDescendant",
+      "input" : [
+        "Notes",
+        "Notes"
+      ],
+      "output" : "false"
+    },
+    {
+      "function" : "isDescendant",
+      "input" : [
+        "a/b/c",
+        "a"
+      ],
+      "output" : "true"
+    },
+    {
+      "function" : "isDescendant",
+      "input" : [
+        "a/b/c",
+        ""
+      ],
+      "output" : "true"
+    },
+    {
+      "function" : "rewrite",
+      "input" : [
+        "Notes/In.md",
+        "Notes",
+        "Journal"
+      ],
+      "output" : "Journal/In.md"
+    },
+    {
+      "function" : "rewrite",
+      "input" : [
+        "Notes",
+        "Notes",
+        "Journal"
+      ],
+      "output" : "Journal"
+    },
+    {
+      "function" : "rewrite",
+      "input" : [
+        "Notes 2/Out.md",
+        "Notes",
+        "Journal"
+      ],
+      "output" : "Notes 2/Out.md"
+    },
+    {
+      "function" : "rewrite",
+      "input" : [
+        "a/b/c.md",
+        "a/b",
+        "x"
+      ],
+      "output" : "x/c.md"
+    },
+    {
+      "function" : "nextAvailableName",
+      "input" : [
+        "Notes.md",
+        "Notes.md"
+      ],
+      "output" : "Notes-2.md"
+    },
+    {
+      "function" : "nextAvailableName",
+      "input" : [
+        "Notes-2.md|Notes.md",
+        "Notes.md"
+      ],
+      "output" : "Notes-3.md"
+    },
+    {
+      "function" : "nextAvailableName",
+      "input" : [
+        "a-2.png|a-3.png|a.png",
+        "a.png"
+      ],
+      "output" : "a-4.png"
+    },
+    {
+      "function" : "nextAvailableName",
+      "input" : [
+        "noext|noext-2",
+        "noext"
+      ],
+      "output" : "noext-3"
+    }
+  ],
+  "source" : "Shared/Sources/MarkdownEditorCloud/CloudPath.swift",
+  "version" : 1
+}

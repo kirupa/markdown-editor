@@ -90,6 +90,28 @@ suite('Cloud backend', () => {
     await expectRejects(() => backend.write('notes.txt', 'x'));
   });
 
+  test('writing refuses a document past the Firestore limit', async () => {
+    const { backend, nodes } = build();
+    // The rules refuse this too, but a rules rejection arrives as a bare
+    // permission error. The point of the client check is the message.
+    await expectRejects(() => backend.write('Huge.md', 'x'.repeat(900_000)));
+    expectEqual(await nodes.read('Huge.md'), null, 'nothing was written');
+  });
+
+  test('writing counts bytes, not characters, against the limit', async () => {
+    const { backend } = build();
+    // Every one of these is four UTF-8 bytes, so a document well under the
+    // limit in characters is well over it in bytes. A port that measures
+    // `length` accepts this and is then refused by the rules.
+    await expectRejects(() => backend.write('Emoji.md', '😀'.repeat(240_000)));
+  });
+
+  test('writing accepts a document just under the limit', async () => {
+    const { backend } = build();
+    const written = await backend.write('Big.md', 'x'.repeat(899_999));
+    expectEqual(written.size, 899_999, 'size is the UTF-8 byte count');
+  });
+
   test('creating refuses to land on something that already exists', async () => {
     const { backend } = build([fileNode('Ideas.md', 'kept')]);
     await expectRejects(() => backend.create('Ideas.md'));
