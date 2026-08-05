@@ -383,7 +383,46 @@ phones and both laptops show the same thing without anyone reloading.
 | WC-7 | **Local storage has no live channel, deliberately.** PHP on shared hosting offers no push, and polling the server on a timer would spend requests on a workspace only this browser can reach. The local backend answers the same three watch calls with a no-op, so nothing above it needs to know which storage is in use. |
 | WC-8 | Watching is restarted when storage is switched, and stopped on the way out, so signing out cannot leave a listener running against the previous account. |
 
-### The API key is not a secret
+### Working offline
+
+Cloud mode keeps a copy of what it has seen on the device, so losing the
+network is not the same as losing the documents.
+
+| ID | Requirement |
+| --- | --- |
+| WR-23 | Firestore is opened with a **persistent local cache** in IndexedDB, not the in-memory default. `getFirestore()` caches only for the life of the tab, so a reload with no signal would show an empty workspace — in cloud mode the server holds the only copy. Opened this way, a reload offline opens the same documents. |
+| WR-24 | **The cache holds what this device has opened, not the whole account.** Firestore caches documents this client has read or written. A document written on another device and never opened here is not available offline. Calling the local copy a full backup would be wrong, and it is worth being plain about which half is true. |
+| WR-25 | Edits made offline are queued locally and sent when the network returns. Firestore's writes resolve against the local cache immediately, so the editor behaves the same whether or not there is a connection, and [WC-2](#11b-cloud-storage-and-accounts) still decides who wins when a queued write meets a newer one. |
+| WR-26 | **Images are not covered by this.** Firestore's persistence caches Firestore documents; Cloud Storage objects are ordinary HTTPS downloads and have no offline layer. An image already displayed may be served from the browser's HTTP cache, but that is the browser's decision, not a guarantee. Offline, an image not already fetched will not render. Closing this needs an explicit image cache — see [§17](#17-out-of-scope--not-yet-supported). |
+| WR-27 | Persistence is genuinely unavailable in some browsers — private browsing in parts of Safari and Firefox, and anywhere IndexedDB is switched off. That falls back to the in-memory cache with a console warning: offline support stops working, the editor still opens. Refusing to start would be the wrong trade. |
+| WR-28 | The multi-tab manager is used, so two tabs of the editor share one cache. Without it only the first tab gets persistence and the others silently run without. |
+
+### Where the image bytes live
+
+Worth stating plainly, because it is the one piece of user data that is *not*
+in Firestore.
+
+| | Documents | Images |
+| --- | --- | --- |
+| Stored in | Firestore, `users/{uid}/nodes/{id}` | Cloud Storage, `users/{uid}/<path>#<timestamp>` |
+| Firestore holds | the Markdown text itself | an `asset` node: `storagePath`, `url`, `contentType` |
+| Size limit | 1 MiB per Firestore document, refused above ~900 KB | 10 MB per image, enforced in the client *and* in `storage.rules` |
+| Offline | yes, once opened ([WR-23](#11b-cloud-storage-and-accounts)) | **no** ([WR-26](#11b-cloud-storage-and-accounts)) |
+| Governed by | `Web/firebase/firestore.rules` | `Web/firebase/storage.rules` |
+
+Storing images inline in Firestore was considered and rejected: base64 inflates
+bytes by about a third, against a hard 1 MiB document limit, which would cap an
+image at roughly 700 KB *and* spend the same budget the document text needs. It
+would buy offline images for free, which is the one real argument for it, but at
+a size limit low enough to reject ordinary screenshots.
+
+The Markdown text never contains a Storage URL. It keeps the same relative
+`<stem>.assets/name.png` reference the local and native builds write, and the
+URL is resolved at render time from the `asset` node. That is what lets the same
+document open in any of the four builds, and what lets a download URL be
+rotated without rewriting anyone's prose.
+
+
 
 `Web/public/app/cloud/config.js` contains the real Firebase configuration,
 committed to a public repository on purpose. A Firebase web API key is an
@@ -406,12 +445,16 @@ one account reach another's documents.
 These are Firebase console actions. Until they are done, the cloud option will
 fail, and it will say which of these is missing.
 
+**Both of the first two were re-checked against the live project on 5 August
+2026, and both are still outstanding.** The commands are below so the checks can
+be repeated rather than taken on trust.
+
 | ID | Step |
 | --- | --- |
-| WR-19 | **Publish the security rules.** `firebase deploy --only firestore:rules,storage`, or paste both files into the console. **A new project starts in open test mode, where anyone with the API key can read and write everything.** This was verified to still be the case at the time of writing, so it is the first thing to do and the one that matters. |
+| WR-19 | **Publish the security rules.** `firebase deploy --only firestore:rules,storage`, or paste both files into the console. **The project is still in open test mode: anyone with the API key can read and write everything.** Verified by an unauthenticated REST call carrying only the public API key, which returned `200` and an empty result rather than `403 PERMISSION_DENIED`: `curl "https://firestore.googleapis.com/v1/projects/kirupa-markdown/databases/(default)/documents/users/probe/nodes?key=<apiKey>"`. Once the rules are published that call returns `403`. This is the first thing to do and the one that matters — the live listeners in [WC-1](#11b-cloud-storage-and-accounts) make it worse, because an attacker can subscribe to changes rather than poll for them. |
 | WR-20 | **Enable the Google sign-in provider** under Authentication ▸ Sign-in method. |
 | WR-21 | **Add the authorised domains** under Authentication ▸ Settings: `www.kirupa.com` for the published build, and `127.0.0.1` for local preview if you reach it by IP. `localhost` is allowed by default, but `127.0.0.1` is a different host string to Firebase — reaching the preview at `http://localhost:8000` avoids needing this. |
-| WR-22 | **Enable Cloud Storage** for the project, or image upload will fail. |
+| WR-22 | **Enable Cloud Storage** for the project, or image upload will fail. **The bucket does not exist yet.** `curl "https://firebasestorage.googleapis.com/v0/b/kirupa-markdown.firebasestorage.app/o"` returns `404 Not Found`, as does the `.appspot.com` spelling — a bucket that exists but denies access answers `403`. This is why image upload reports `storage/retry-limit-exceeded`. Firebase now requires the pay-as-you-go Blaze plan to create a default bucket, which is the likely reason it was never provisioned. Until it exists, **no image path in cloud mode can be exercised at all**, including by any test. |
 
 ### What has not been verified
 
@@ -422,8 +465,10 @@ Honest limits on the testing behind this section:
   in a real account, are **unverified** — and that now includes live updates,
   which have only ever run against the in-memory Firestore. The decisions they
   rest on are covered exhaustively; the delivery of a real `onSnapshot` is not.
-  What is checked directly is that the pinned SDK build actually exports
-  `onSnapshot`, since a missing import would fail only in cloud mode.
+  What is checked directly is that every symbol the app imports from the pinned
+  SDK is actually exported by it ([WY-14](#tests)) — a real check now, run by
+  `Web/tools/check-firebase-sdk.mjs`, rather than the one-off inspection this
+  previously described.
 - What *is* verified: the pinned SDK loads and initialises against this project,
   the store adapter builds against a real Firestore handle, the backend answers
   `config()` identically to the local one, and the cloud backend passes 30 tests
@@ -432,6 +477,12 @@ Honest limits on the testing behind this section:
   proven by mutation testing to fail when that filter is removed.
 - Local storage is proven untouched by this change: the file tree, document
   reads, and image URLs all still work through the new façade.
+- Offline persistence is verified at the seam and not beyond it. Five tests
+  assert that Firestore is opened with a persistent, multi-tab cache and that an
+  unavailable IndexedDB falls back rather than failing — mutation tested, four
+  of them fail if the persistent cache is removed. What no test covers is a real
+  browser reloading with the network off, because that needs a signed-in account
+  against a live database, which is the same thing blocking everything else here.
 
 ---
 
@@ -670,6 +721,7 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 | Open `/tests/` in a browser | The full client suite, including the DOM tests. Needs only PHP. |
 | `node Web/tests/run.mjs` | The same client suites minus the DOM ones. Node is optional and used only for a fast terminal loop. |
 | `php Web/tests/php/run.php` | Workspace path safety, document read/write, file tree, file management, image import and its content validation, and how settings are read from the environment. |
+| `node Web/tools/check-firebase-sdk.mjs` | Every symbol the app imports from the pinned Firebase build is actually exported by it. Needs the network, so it is not part of the suite; run it after changing `FIREBASE_VERSION`. |
 
 | ID | Requirement |
 | --- | --- |
@@ -686,6 +738,7 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 | WY-12 | Every branch that can lose work is mutation-tested, not merely covered: the guard is removed, the suite must go red, and the guard is put back. Thirteen mutants across the live-update path — adopting over unsaved edits, dropping the echo check, recording the wrong text as saved, forgetting to claim a watcher slot — are each killed by a named test, and a no-op mutant is included to prove the harness can still report a survivor. |
 | WY-13 | The live-update tests run against an in-memory Firestore whose watchers behave like the real ones, delivering current contents the moment a listener attaches. That attach snapshot is the source of the only two hazards found in this feature, so a double that skipped it would have hidden both. |
 | WY-11 | Touch behaviour is verified by tapping, never by calling `element.click()`. A programmatic click invokes the handler directly and passes whether or not a real tap ever reaches it, which is how every button in the mobile layout came to be dead while every assertion passed. The check that a control does not cancel the events a tap depends on is a unit test, because `dispatchEvent` produces untrusted events that never synthesize a click and so cannot reproduce the failure in a DOM test. |
+| WY-14 | The pinned Firebase build is checked against the symbols the app imports from it, by `Web/tools/check-firebase-sdk.mjs`. This is the one failure the suite structurally cannot reach: every cloud test runs against an in-memory double, deliberately, so the real SDK is never loaded and a symbol it stopped exporting would pass everything and break only in a browser after signing in. The symbol list is read out of `app/cloud/` rather than written down, so it cannot drift from what the app does — 23 symbols across auth, Firestore, and Storage at the time of writing. Mutation tested: adding an import the SDK does not export makes it fail. |
 
 ---
 
@@ -693,6 +746,7 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 
 | Change | What shipped |
 | --- | --- |
+| Offline cloud documents | Firestore now opens with a persistent, multi-tab local cache, so a cloud workspace survives a reload with no network and edits made offline are queued and sent on reconnect ([§Working offline](#working-offline)). Firestore was previously opened the default way, which caches only for the life of the tab. Images are not covered ([WR-26](#working-offline)), and the two console steps blocking the rest of the cloud path were re-checked and are still outstanding ([WR-19](#setup-steps-that-cannot-be-done-from-this-repository), [WR-22](#setup-steps-that-cannot-be-done-from-this-repository)). |
 | Live updates | Cloud documents and folders now update on every signed-in device as they change, without a reload, and unsaved edits are never overwritten by one ([§Live updates](#live-updates)). The mode switch became icons ([WE-15](#8-editing-modes)), and a new document now starts on a Heading 1 line ([WD-1](#7-document-lifecycle)). |
 | Touch controls | Every button in the mobile layout was inert on a real phone — header icons, popovers, formatting, image insert — and the formatting row could not be scrolled by dragging along it. The buttons cancelled `touchstart` to hold the editor's selection, which also suppresses the `click` a tap generates ([WB-28](#12a-mobile-layout), [WB-29](#12a-mobile-layout)). |
 | Cloud storage | Documents can be stored in a Google account through Firebase Authentication and Firestore, chosen from the welcome screen or the File menu, with local files still the default and unchanged ([§11b](#11b-cloud-storage-and-accounts)). |
@@ -738,8 +792,16 @@ Specific to the web build:
 - Migrating documents between local and cloud storage. Switching mode changes
   which documents exist, it does not copy them ([WR-4](#11b-cloud-storage-and-accounts))
 - Sign-in providers other than Google
-- Offline use; the editor needs either the server or a network connection to
-  read and write documents
+- Offline use for documents stored **on the server**. The PHP backend needs the
+  server to be reachable. Cloud documents *do* work offline once they have been
+  opened on the device ([WR-23](#11b-cloud-storage-and-accounts))
+- Offline **images**. Firestore's persistence covers Firestore, not Cloud
+  Storage, so an image not already fetched will not render without a network
+  ([WR-26](#11b-cloud-storage-and-accounts)). Closing this needs the image bytes
+  cached deliberately — in IndexedDB, with `imageURL` handing back a blob URL, or
+  behind a service worker. It is not written yet because the Storage bucket does
+  not exist ([WR-22](#11b-cloud-storage-and-accounts)), so none of it could be
+  run even once
 - A native app shell for phones; the mobile layout ([§12a](#12a-mobile-layout))
   is the browser page rearranged, not a packaged app
 - Syncing the saved-for-later list between devices — it lives in `localStorage`,
