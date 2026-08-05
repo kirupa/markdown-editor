@@ -16,7 +16,8 @@ let package = Package(
     ],
     products: [
         .library(name: "MarkdownEditorCore", targets: ["MarkdownEditorCore"]),
-        .library(name: "MarkdownEditorUI", targets: ["MarkdownEditorUI"])
+        .library(name: "MarkdownEditorUI", targets: ["MarkdownEditorUI"]),
+        .library(name: "MarkdownEditorCloud", targets: ["MarkdownEditorCloud"])
     ],
     targets: [
         // Pure Foundation: no AppKit, no UIKit, no SwiftUI.
@@ -28,6 +29,14 @@ let package = Package(
             name: "MarkdownEditorUI",
             dependencies: ["MarkdownEditorCore"]
         ),
+        // The cloud workspace's decisions: path arithmetic, collisions,
+        // subtree moves, image import. No Firebase, on purpose — it talks to
+        // the CloudNodeStore and CloudAssetStore protocols, so all of it runs
+        // under test against in-memory doubles with no network.
+        .target(
+            name: "MarkdownEditorCloud",
+            dependencies: ["MarkdownEditorCore"]
+        ),
         .testTarget(
             name: "MarkdownEditorCoreTests",
             dependencies: ["MarkdownEditorCore"]
@@ -35,6 +44,10 @@ let package = Package(
         .testTarget(
             name: "MarkdownEditorUITests",
             dependencies: ["MarkdownEditorUI"]
+        ),
+        .testTarget(
+            name: "MarkdownEditorCloudTests",
+            dependencies: ["MarkdownEditorCloud"]
         )
     ]
 )
