@@ -1,4 +1,5 @@
 import AppKit
+import MarkdownEditorUI
 
 @MainActor
 final class RichMarkdownTextView: NSTextView {

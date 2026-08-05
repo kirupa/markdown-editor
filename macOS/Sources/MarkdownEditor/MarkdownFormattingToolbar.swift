@@ -1,3 +1,4 @@
+import MarkdownEditorUI
 import SwiftUI
 
 struct MarkdownFormattingToolbar: ToolbarContent {

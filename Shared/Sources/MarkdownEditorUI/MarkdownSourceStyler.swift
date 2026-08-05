@@ -1,54 +1,78 @@
+#if canImport(AppKit)
 import AppKit
+#endif
+#if canImport(UIKit)
+import UIKit
+#endif
+
+import CoreGraphics
+import Foundation
 import MarkdownEditorCore
 
+/// The small surface of a plain-text view the source styler needs.
+///
+/// `NSTextView` and `UITextView` agree on almost everything here but disagree
+/// on the spelling: `string` versus `text`, a method versus a property for the
+/// selection, and an optional versus a non-optional text storage. Naming the
+/// four things that are actually used keeps the styling rules — which are
+/// identical on both platforms — in one place.
 @MainActor
-enum MarkdownSourceStyler {
-    static func apply(
+public protocol MarkdownSourceTextView: AnyObject {
+    var sourceTextStorage: NSTextStorage? { get }
+    var sourceText: String { get }
+    var sourceSelectionLocation: Int { get }
+    var sourceTypingAttributes: [NSAttributedString.Key: Any] { get set }
+    var sourceUndoManager: UndoManager? { get }
+}
+
+@MainActor
+public enum MarkdownSourceStyler {
+    public static func apply(
         _ markdown: String,
-        to textView: NSTextView,
+        to textView: some MarkdownSourceTextView,
         colorTheme: EditorColorTheme
     ) {
-        let undoManager = textView.undoManager
+        let undoManager = textView.sourceUndoManager
         undoManager?.disableUndoRegistration()
         defer {
             undoManager?.enableUndoRegistration()
         }
-        textView.textStorage?.setAttributedString(
+        textView.sourceTextStorage?.setAttributedString(
             attributedString(for: markdown, colorTheme: colorTheme)
         )
         updateTypingAttributes(in: textView, colorTheme: colorTheme)
     }
 
-    static func updateTypingAttributes(
-        in textView: NSTextView,
+    public static func updateTypingAttributes(
+        in textView: some MarkdownSourceTextView,
         colorTheme: EditorColorTheme
     ) {
-        guard let textStorage = textView.textStorage,
+        guard let textStorage = textView.sourceTextStorage,
             textStorage.length > 0
         else {
-            textView.typingAttributes = baseAttributes(
+            textView.sourceTypingAttributes = baseAttributes(
                 colorTheme: colorTheme
             )
             return
         }
 
-        let selectionLocation = textView.selectedRange().location
+        let selectionLocation = textView.sourceSelectionLocation
         if selectionLocation >= textStorage.length,
-            textView.string.hasSuffix("\n")
+            textView.sourceText.hasSuffix("\n")
         {
-            textView.typingAttributes = baseAttributes(
+            textView.sourceTypingAttributes = baseAttributes(
                 colorTheme: colorTheme
             )
             return
         }
         let location = min(selectionLocation, textStorage.length - 1)
-        textView.typingAttributes = textStorage.attributes(
+        textView.sourceTypingAttributes = textStorage.attributes(
             at: max(0, location),
             effectiveRange: nil
         )
     }
 
-    private static func attributedString(
+    public static func attributedString(
         for markdown: String,
         colorTheme: EditorColorTheme
     ) -> NSAttributedString {
@@ -74,7 +98,7 @@ enum MarkdownSourceStyler {
                 paragraphStyle.paragraphSpacing = 8
                 text.addAttributes(
                     [
-                        .font: NSFont.monospacedSystemFont(
+                        .font: PlatformFont.monospacedSystemFont(
                             ofSize: MarkdownTypography.headingFontSize(
                                 level: level
                             ),
@@ -94,7 +118,7 @@ enum MarkdownSourceStyler {
                 }
                 text.addAttribute(
                     .font,
-                    value: NSFont.monospacedSystemFont(
+                    value: PlatformFont.monospacedSystemFont(
                         ofSize: MarkdownTypography.codeFontSize,
                         weight: .regular
                     ),
@@ -108,11 +132,11 @@ enum MarkdownSourceStyler {
         return text
     }
 
-    private static func baseAttributes(
+    public static func baseAttributes(
         colorTheme: EditorColorTheme
     ) -> [NSAttributedString.Key: Any] {
         [
-            .font: NSFont.monospacedSystemFont(
+            .font: PlatformFont.monospacedSystemFont(
                 ofSize: MarkdownTypography.bodyFontSize,
                 weight: .regular
             ),

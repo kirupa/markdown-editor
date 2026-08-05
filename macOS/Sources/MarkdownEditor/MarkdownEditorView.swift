@@ -1,4 +1,5 @@
 import AppKit
+import MarkdownEditorUI
 import SwiftUI
 
 struct MarkdownEditorView: View {

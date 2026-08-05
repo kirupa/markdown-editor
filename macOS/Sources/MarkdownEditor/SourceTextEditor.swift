@@ -1,5 +1,6 @@
 import AppKit
 import MarkdownEditorCore
+import MarkdownEditorUI
 import SwiftUI
 
 struct SourceTextEditor: NSViewRepresentable {

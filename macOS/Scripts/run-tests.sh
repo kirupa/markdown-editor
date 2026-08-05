@@ -2,7 +2,9 @@
 
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# The tests cover the shared package, which is where all the logic the two
+# apps have in common now lives. The macOS target above it is interface code.
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../Shared" && pwd)"
 
 if swift -e 'import Foundation; import Testing' >/dev/null 2>&1; then
   exec swift test --package-path "$ROOT"

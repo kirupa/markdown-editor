@@ -1,4 +1,5 @@
 import MarkdownEditorCore
+import MarkdownEditorUI
 import SwiftUI
 
 struct FileExplorerSidebar: View {

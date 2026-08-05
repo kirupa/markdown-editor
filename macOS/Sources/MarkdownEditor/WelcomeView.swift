@@ -1,5 +1,6 @@
 import AppKit
 import MarkdownEditorCore
+import MarkdownEditorUI
 import SwiftUI
 
 /// The landing page shown at launch: app identity, the two ways to get a

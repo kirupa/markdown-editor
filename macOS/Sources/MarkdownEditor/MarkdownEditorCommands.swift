@@ -1,3 +1,4 @@
+import MarkdownEditorUI
 import SwiftUI
 
 private struct MarkdownEditorSessionKey: FocusedValueKey {

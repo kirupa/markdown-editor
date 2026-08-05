@@ -1,8 +1,16 @@
+#if canImport(AppKit)
 import AppKit
+#endif
+#if canImport(UIKit)
+import UIKit
+#endif
+
+import CoreGraphics
+import Foundation
 import MarkdownEditorCore
 
-enum RichMarkdownStyler {
-    static func attributedString(
+public enum RichMarkdownStyler {
+    public static func attributedString(
         for model: MarkdownRenderModel,
         documentURL: URL?,
         colorTheme: EditorColorTheme
@@ -14,7 +22,7 @@ enum RichMarkdownStyler {
         let attributedText = NSMutableAttributedString(
             string: model.text,
             attributes: [
-                .font: NSFont.systemFont(
+                .font: PlatformFont.systemFont(
                     ofSize: MarkdownTypography.bodyFontSize
                 ),
                 .foregroundColor: colorTheme.primaryTextColor,
@@ -61,7 +69,7 @@ enum RichMarkdownStyler {
         case .heading(let level):
             text.addAttribute(
                 .font,
-                value: NSFont.systemFont(
+                value: PlatformFont.systemFont(
                     ofSize: MarkdownTypography.headingFontSize(level: level),
                     weight: .bold
                 ),
@@ -81,7 +89,7 @@ enum RichMarkdownStyler {
             }
             text.addAttributes(
                 [
-                    .font: NSFont.monospacedSystemFont(
+                    .font: PlatformFont.monospacedSystemFont(
                         ofSize: MarkdownTypography.codeFontSize,
                         weight: .regular
                     ),
@@ -145,7 +153,7 @@ enum RichMarkdownStyler {
             text.addAttributes(
                 [
                     .foregroundColor: colorTheme.separatorColor,
-                    .font: NSFont.systemFont(ofSize: 24, weight: .light),
+                    .font: PlatformFont.systemFont(ofSize: 24, weight: .light),
                     .kern: 6,
                     .paragraphStyle: paragraphStyle
                 ],
@@ -169,9 +177,9 @@ enum RichMarkdownStyler {
 
         switch span.style {
         case .bold:
-            applyFontTrait(.boldFontMask, to: text, range: range)
+            applyFontTrait(.bold, to: text, range: range)
         case .italic:
-            applyFontTrait(.italicFontMask, to: text, range: range)
+            applyFontTrait(.italic, to: text, range: range)
         case .underline:
             text.addAttribute(
                 .underlineStyle,
@@ -187,7 +195,7 @@ enum RichMarkdownStyler {
         case .inlineCode:
             text.addAttributes(
                 [
-                    .font: NSFont.monospacedSystemFont(
+                    .font: PlatformFont.monospacedSystemFont(
                         ofSize: MarkdownTypography.codeFontSize,
                         weight: .regular
                     ),
@@ -200,7 +208,7 @@ enum RichMarkdownStyler {
             text.addAttributes(
                 [
                     .link: destination,
-                    .foregroundColor: NSColor.linkColor,
+                    .foregroundColor: PlatformColor.markdownLinkColor,
                     .underlineStyle: NSUnderlineStyle.single.rawValue
                 ],
                 range: range
@@ -219,13 +227,15 @@ enum RichMarkdownStyler {
         case .taskList(let checked):
             text.addAttribute(
                 .foregroundColor,
-                value: checked ? NSColor.systemGreen : NSColor.controlAccentColor,
+                value: checked
+                    ? PlatformColor.systemGreen
+                    : PlatformColor.markdownAccentColor,
                 range: range
             )
         case .bulletedList:
             text.addAttribute(
                 .foregroundColor,
-                value: NSColor.controlAccentColor,
+                value: PlatformColor.markdownAccentColor,
                 range: range
             )
         default:
@@ -234,20 +244,17 @@ enum RichMarkdownStyler {
     }
 
     private static func applyFontTrait(
-        _ trait: NSFontTraitMask,
+        _ trait: MarkdownFontTrait,
         to text: NSMutableAttributedString,
         range: NSRange
     ) {
         text.enumerateAttribute(.font, in: range) { value, subrange, _ in
-            let font = value as? NSFont ?? NSFont.systemFont(
+            let font = value as? PlatformFont ?? PlatformFont.systemFont(
                 ofSize: MarkdownTypography.bodyFontSize
             )
             text.addAttribute(
                 .font,
-                value: NSFontManager.shared.convert(
-                    font,
-                    toHaveTrait: trait
-                ),
+                value: font.markdownFont(withTrait: trait),
                 range: subrange
             )
         }
@@ -318,12 +325,14 @@ enum RichMarkdownStyler {
         let image = localImage(
             destination: destination,
             documentURL: documentURL
-        ) ?? NSImage(
-            systemSymbolName: "photo",
+        ) ?? PlatformImage.markdownSymbol(
+            named: "photo",
             accessibilityDescription: altText
-        ) ?? NSImage(size: NSSize(width: 48, height: 48))
+        ) ?? PlatformImage.markdownBlank(
+            size: CGSize(width: 48, height: 48)
+        )
 
-        let maxSize = NSSize(width: 560, height: 380)
+        let maxSize = CGSize(width: 560, height: 380)
         let sourceSize = image.size
         let widthScale = sourceSize.width > 0
             ? maxSize.width / sourceSize.width
@@ -335,7 +344,7 @@ enum RichMarkdownStyler {
 
         let attachment = NSTextAttachment()
         attachment.image = image
-        attachment.bounds = NSRect(
+        attachment.bounds = CGRect(
             x: 0,
             y: -4,
             width: max(24, sourceSize.width * scale),
@@ -347,7 +356,7 @@ enum RichMarkdownStyler {
     private static func localImage(
         destination: String,
         documentURL: URL?
-    ) -> NSImage? {
+    ) -> PlatformImage? {
         guard let documentURL else {
             return nil
         }
@@ -375,7 +384,7 @@ enum RichMarkdownStyler {
         guard imageURL.path.hasPrefix(directoryPrefix) else {
             return nil
         }
-        return NSImage(contentsOf: imageURL)
+        return PlatformImage.markdownImage(contentsOf: imageURL)
     }
 
     private static func paragraphStyle(
