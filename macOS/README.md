@@ -1,8 +1,10 @@
 # Markdown Editor — Product Requirements Document
 
 A dependency-free native macOS Markdown editor built with SwiftUI and AppKit.
-The [web build](../Web/README.md) reimplements this same product for the
-browser; this document is the specification both builds are held to.
+The [iOS build](../iOS/README.md) is the same product on iPhone and iPad,
+compiled from the same shared Swift source; the [web build](../Web/README.md)
+reimplements it for the browser. This document is the specification all three
+are held to.
 
 **Status:** Living document. Written retroactively to describe everything the
 app supports as of the current `main`.
@@ -572,37 +574,48 @@ Quote, Horizontal Rule.
 
 ## 15. Architecture
 
+The Markdown engine and the styling live in `../Shared`, a Swift package this
+app and the [iOS app](../iOS/README.md) both compile. Only the AppKit interface
+layer below is macOS-specific.
+
 ```
-Sources/
+../Shared/Sources/
 ├── MarkdownEditorCore/          UI-free, fully unit-tested logic
 │   ├── MarkdownFormatting       Source-to-source formatting transforms
 │   ├── MarkdownRenderModel      Markdown parser + bidirectional range mapping
 │   ├── MarkdownImageImporter    Asset folder resolution, copying, referencing
+│   ├── MarkdownTextInsertion    Caret-relative literal insertion
 │   ├── MarkdownTextCodec        UTF-8 and BOM handling
 │   ├── MarkdownTextDifference   Minimal-replacement diffing
 │   ├── RecentDocumentsCatalog   Recent-document ordering, filtering, pruning
 │   └── FileTreeScanner          Directory listing and ordering
-└── MarkdownEditor/              SwiftUI + AppKit application
-    ├── MarkdownEditorApp        DocumentGroup scene, persisted preferences
-    ├── MarkdownEditorAppDelegate Launch interception for the welcome window
-    ├── MarkdownDocument         FileDocument conformance
-    ├── MarkdownEditorView       Layout, panes, dividers, autosave wiring
-    ├── MarkdownEditorSession    Shared editing state and command dispatch
-    ├── MarkdownEditorCommands   Menu bar commands
-    ├── MarkdownFormattingToolbar Toolbar items
-    ├── WelcomeWindowController  Landing window hosting and lifecycle
-    ├── WelcomeView              Landing window UI
-    ├── RecentDocumentsModel     Persisted recent-document store
-    ├── DefaultMarkdownHandler   Reads and sets the default Markdown app
-    ├── RichTextEditor           Rendered editing surface
-    ├── RichMarkdownTextView     NSTextView subclass: pasteboard, code backgrounds
-    ├── RichMarkdownStyler       Applies attributes from the render model
-    ├── SourceTextEditor         Raw Markdown editing surface
-    ├── MarkdownSourceStyler     Representative source typography
-    ├── FileExplorer*            Sidebar model, outline view, header
-    ├── DocumentAutosaveController Debounced autosave
+└── MarkdownEditorUI/            Cross-platform presentation
+    ├── PlatformTypes            AppKit/UIKit aliases and portable colour blending
+    ├── PlatformTextView         NSTextView and UITextView conformances
     ├── EditorColorTheme         Palettes and derived colors
-    └── ThemePickerPopover       Customize Theme UI
+    ├── MarkdownTypography       Shared type scale
+    ├── RichMarkdownStyler       Applies attributes from the render model
+    ├── MarkdownSourceStyler     Representative source typography
+    ├── MarkdownDocument         FileDocument conformance
+    └── EditorViewMode           The three modes and their symbols
+
+Sources/MarkdownEditor/          SwiftUI + AppKit application, macOS only
+├── MarkdownEditorApp            DocumentGroup scene, persisted preferences
+├── MarkdownEditorAppDelegate    Launch interception for the welcome window
+├── MarkdownEditorView           Layout, panes, dividers, autosave wiring
+├── MarkdownEditorSession        Shared editing state and command dispatch
+├── MarkdownEditorCommands       Menu bar commands
+├── MarkdownFormattingToolbar    Toolbar items
+├── WelcomeWindowController      Landing window hosting and lifecycle
+├── WelcomeView                  Landing window UI
+├── RecentDocumentsModel         Persisted recent-document store
+├── DefaultMarkdownHandler       Reads and sets the default Markdown app
+├── RichTextEditor               Rendered editing surface
+├── RichMarkdownTextView         NSTextView subclass: pasteboard, code backgrounds
+├── SourceTextEditor             Raw Markdown editing surface
+├── EditorColorThemeAppKit       NSAppearance for a theme
+├── FileExplorer*                Sidebar model, outline view, header
+└── ThemePickerPopover           Customize Theme UI
 ```
 
 **Key design decisions**
@@ -615,6 +628,9 @@ Sources/
    which is what makes selection sync and rendered-view editing possible.
 4. *Logic lives outside the UI.* Anything testable without an app lives in
    `MarkdownEditorCore`.
+5. *Platforms share source rather than being ported to.* iOS compiles the same
+   `Shared/` package. Everything AppKit and UIKit disagree about is named in one
+   file, `PlatformTypes.swift`.
 
 ---
 
@@ -652,23 +668,27 @@ development and `make install` for the copy Finder should open files with.
 with `iconutil`, so there is no asset catalog or design tool in the loop. The
 results are committed, so a normal build never runs it.
 
-`Scripts/run-tests.sh` runs `swift test`, adding the Swift Testing framework
-search path and rpath from the active Xcode toolchain when the toolchain does
-not expose it directly.
+`Scripts/run-tests.sh` runs `swift test` against the **`../Shared` package**,
+adding the Swift Testing framework search path and rpath from the active Xcode
+toolchain when the toolchain does not expose it directly. The tests live with
+the code they cover, so this one command covers the iOS build's engine too.
 
 ### 16.1 Test coverage
 
-82 tests across 7 suites, all in `MarkdownEditorCore`:
+109 tests across 10 suites, in the shared package:
 
 | Suite | Tests | Covers |
 | --- | --- | --- |
 | Markdown formatting | 30 | Every inline and block transform, toggle-off detection, renumbering, list continuation |
 | Markdown render model | 24 | Block and inline parsing, boundary rules, escapes, range mapping |
 | Recent documents catalog | 10 | Merge order, de-duplication, Markdown filtering, caps, promotion, removal, pruning of missing files, home-relative paths |
+| Markdown text insertion | 8 | Caret placement, clamping stale selections, UTF-16 offsets |
+| Platform types | 7 | AppKit/UIKit parity; portable colour blending within 1/255 of `NSColor.blended` on every colour the app displays |
 | Markdown image importer | 6 | Assets folder naming, collisions, symlink rejection, unsaved documents, unsupported types |
 | File tree scanner | 6 | Ordering, hidden files, packages, symlinks |
 | Markdown text codec | 3 | UTF-8 round trip, BOM preservation, invalid input |
 | Markdown text difference | 3 | Minimal replacement computation |
+| New document | 2 | Heading 1 seeding |
 
 ---
 
@@ -692,6 +712,7 @@ not expose it directly.
 | Wait for window restoration | Restored documents no longer flash the welcome window on their way in |
 | Become a Finder Markdown handler | App and document icons, `make install`, and an in-app way to become the default handler |
 | Start new documents on a Heading 1 | A new document opens as an empty Heading 1 with the caret past the marker, matching the web build |
+| Share the Swift core between platforms | Core and styling moved to `../Shared` and compiled by both native apps; `NSColor`'s Generic RGB blending reproduced portably for UIKit; no user-visible change on macOS |
 
 ---
 

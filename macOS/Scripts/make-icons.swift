@@ -274,3 +274,54 @@ func writeIconSet(
 let destination = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
 try writeIconSet(named: "AppIcon", into: destination, draw: drawAppIcon)
 try writeIconSet(named: "MarkdownDocument", into: destination, draw: drawDocumentIcon)
+
+/// The iOS app icon.
+///
+/// Full-bleed and square: iOS applies its own rounded-rectangle mask and
+/// shadow, so an icon that draws its own rounded plate the way the macOS one
+/// does ends up with a visible double edge inside the system's corners.
+func drawIOSAppIcon(_ context: CGContext, _ size: CGFloat) {
+    let plate = NSRect(x: 0, y: 0, width: size, height: size)
+
+    context.saveGState()
+    let gradient = NSGradient(
+        colors: [
+            NSColor(srgbRed: 0x4F / 255, green: 0xB8 / 255, blue: 0xFF / 255, alpha: 1),
+            brand,
+            brandDark,
+        ],
+        atLocations: [0, 0.55, 1],
+        colorSpace: .sRGB
+    )!
+    gradient.draw(in: plate, angle: -90)
+    context.restoreGState()
+
+    let glyph = NSRect(
+        x: plate.midX - plate.width * 0.28,
+        y: plate.midY - plate.height * 0.28,
+        width: plate.width * 0.56,
+        height: plate.height * 0.56
+    )
+    drawSymbol("doc.richtext", in: glyph, weight: .regular, color: .white)
+}
+
+/// Writes the single 1024×1024 PNG an iOS asset catalog expects.
+func writeIOSAppIcon(into appIconSet: URL) throws {
+    let representation = makeBitmap(size: 1024, draw: drawIOSAppIcon)
+    guard let data = representation.representation(using: .png, properties: [:])
+    else {
+        throw NSError(domain: "png", code: 1)
+    }
+    try FileManager.default.createDirectory(
+        at: appIconSet, withIntermediateDirectories: true
+    )
+    let file = appIconSet.appendingPathComponent("AppIcon.png")
+    try data.write(to: file)
+    print("Wrote \(file.path)")
+}
+
+if CommandLine.arguments.count > 2 {
+    try writeIOSAppIcon(
+        into: URL(fileURLWithPath: CommandLine.arguments[2], isDirectory: true)
+    )
+}

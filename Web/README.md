@@ -21,7 +21,7 @@ nothing installed on the host but PHP itself.
 1. [Product summary](#1-product-summary)
 2. [Goals and non-goals](#2-goals-and-non-goals)
 3. [Platform and hosting requirements](#3-platform-and-hosting-requirements)
-4. [Parity with the macOS build](#4-parity-with-the-macos-build)
+4. [Parity with the native builds](#4-parity-with-the-native-builds)
 5. [The workspace](#5-the-workspace)
 6. [Welcome screen](#6-welcome-screen)
 7. [Document lifecycle](#7-document-lifecycle)
@@ -66,7 +66,7 @@ touch survives byte for byte.
 | --- | --- |
 | WG-6 | Reproduce the macOS editor's behavior closely enough that the same PRD describes both. |
 | WG-7 | Deploy by copying a folder onto any PHP host. |
-| WG-8 | Keep the Markdown logic *provably* identical to the macOS build rather than approximately similar (see [§4](#4-parity-with-the-macos-build)). |
+| WG-8 | Keep the Markdown logic *provably* identical to the macOS build rather than approximately similar (see [§4](#4-parity-with-the-native-builds)). |
 | WG-9 | Work with the keyboard alone, and remain usable with a screen reader. |
 
 ### Non-goals
@@ -94,17 +94,20 @@ touch survives byte for byte.
 
 ---
 
-## 4. Parity with the macOS build
+## 4. Parity with the native builds
 
-The two builds share no runtime code — one is Swift, the other JavaScript — so
-parity is *demonstrated* rather than assumed.
+The [macOS](../macOS/README.md) and [iOS](../iOS/README.md) apps share their
+Markdown engine as compiled Swift source, so they cannot drift from each other.
+This build shares no runtime code with either — one side is Swift, the other
+JavaScript — so its parity is *demonstrated* rather than assumed.
 
 | ID | Requirement |
 | --- | --- |
 | WX-1 | `render-model.js` is a line-by-line port of `MarkdownRenderModel.swift`, and `formatting.js` of `MarkdownFormatting.swift`, preserving structure and naming so the two can be diffed by eye. |
 | WX-2 | Ports rely on the fact that Swift's `NSString` offsets and JavaScript string indices are both UTF-16 code units, so every range in the Swift source is already correct in JavaScript with no conversion. |
 | WX-3 | The ports were validated by differential testing against the compiled Swift: 14,148 formatting cases (every command against a corpus of documents and selections) and 41 documents through the render model, comparing rendered text, every style span, and every source ↔ rendered range mapping. Zero mismatches. |
-| WX-4 | `themes.css` is **generated** by compiling the app's real `EditorColorTheme.swift` and printing the resulting colors, so derived values — blends, WCAG-contrast text picks — cannot drift. See `tools/generate-theme-css.swift`. |
+| WX-4 | `themes.css` is **generated** by compiling the app's real `EditorColorTheme.swift` and printing the resulting colors, so derived values — blends, WCAG-contrast text picks — cannot drift. See `tools/generate-theme-css.swift`. That file now lives in `../Shared`; moving it was verified by regenerating this CSS and confirming it came out byte-identical. |
+| WX-13 | The generated blends are AppKit's, which are computed in Apple's Generic RGB space rather than sRGB — black halfway to white is `0.573`, not `0.5`. This is a property of the palette, not of macOS, so the CSS is correct for every build. |
 | WX-5 | The JavaScript suites assert the same expectations as the Swift suites, and both builds' tests must pass before a change ships. |
 
 ### Deliberate differences

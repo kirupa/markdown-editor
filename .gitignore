@@ -3,6 +3,13 @@
 build/
 .DS_Store
 
+# Xcode per-user state: window layout, breakpoints, and the scheme management
+# file, none of which describe the project.
+xcuserdata/
+*.xcuserdatad
+/iOS/MarkdownEditor.xcodeproj/project.xcworkspace/xcshareddata/
+/iOS/MarkdownEditor.xcodeproj/xcshareddata/IDEWorkspaceChecks.plist
+
 # Documents belong to whoever is running the editor, never to the repository.
 # The default workspace is ~/kirupaMarkdown and so is already outside the
 # checkout; these cover the in-tree fallback and the older sample folder.

@@ -1,0 +1,327 @@
+# Markdown Editor for iOS — Product Requirements Document
+
+A native iPhone and iPad Markdown editor built with SwiftUI and UIKit, sharing
+its Markdown engine, formatting commands, and palettes as **compiled Swift
+source** with the [macOS build](../macOS/README.md).
+
+**Status:** Living document.
+**Bundle identifier:** `com.kirupa.markdown-editor`
+**Platform:** iOS 17.0 or newer, iPhone and iPad (`TARGETED_DEVICE_FAMILY = 1,2`)
+**Repository:** <https://github.com/kirupa/markdown-editor>
+
+> **Maintenance rule:** every change that adds, removes, or alters a
+> user-visible capability must update the matching requirement here in the same
+> commit, and add a line to [Release history](#10-release-history).
+
+---
+
+## Table of contents
+
+1. [Product summary](#1-product-summary)
+2. [What is shared, and what is not](#2-what-is-shared-and-what-is-not)
+3. [Document lifecycle](#3-document-lifecycle)
+4. [Editing modes and adaptive layout](#4-editing-modes-and-adaptive-layout)
+5. [Formatting](#5-formatting)
+6. [Images](#6-images)
+7. [Themes](#7-themes)
+8. [Architecture](#8-architecture)
+9. [Build, run, and test](#9-build-run-and-test)
+10. [Release history](#10-release-history)
+11. [Verification status](#11-verification-status)
+12. [Out of scope / not yet supported](#12-out-of-scope--not-yet-supported)
+
+---
+
+## 1. Product summary
+
+The same product as the macOS app, on a touch screen: **the Markdown source is
+always the canonical document**, the rendered view is an editable projection of
+it, and every keystroke resolves back to exact Markdown text on disk.
+
+This is not a reimplementation. The parser, the range mapping, the formatting
+transforms, the image importer, the type scale, and all sixteen palettes are
+*the same Swift files* the Mac compiles, in a package both apps depend on.
+
+---
+
+## 2. What is shared, and what is not
+
+The repository now has three builds and two kinds of sharing.
+
+| Build | Relationship to the core | How it is kept correct |
+| --- | --- | --- |
+| macOS | Compiles `Shared/` | Directly — it is the same source |
+| **iOS** | **Compiles `Shared/`** | **Directly — it is the same source** |
+| Web | Hand port to ES modules | Differential testing against the compiled Swift |
+
+| ID | Requirement |
+| --- | --- |
+| S-1 | Markdown parsing, range mapping, formatting commands, image import, text codec, and diffing live in `MarkdownEditorCore` and are compiled unchanged for both platforms. |
+| S-2 | Palettes, type scale, and the attributed-string builders live in `MarkdownEditorUI`, written against `PlatformColor`/`PlatformFont` aliases that resolve to AppKit on macOS and UIKit on iOS. |
+| S-3 | `MarkdownDocument` — the `FileDocument` conformance, UTF-8 and BOM handling, and the `net.daringfireball.markdown` type — is shared, so a document behaves identically on both platforms. |
+| S-4 | `EditorViewMode` and its SF Symbols are shared, because which modes exist is a product decision rather than a platform one. |
+| S-5 | Only the interface layer is per-platform: `macOS/Sources/MarkdownEditor` (AppKit) and `iOS/Sources/MarkdownEditorIOS` (UIKit). |
+
+### 2.1 The colour finding
+
+Sharing these files surfaced something worth recording. `NSColor.blended(withFraction:of:)`
+— which the palettes use to derive tints — does **not** interpolate in sRGB. It
+converts to Apple's *Generic RGB* space (different primaries, gamma 1.8), mixes
+there, and converts back. Black blended halfway with white is sRGB **0.573**,
+not 0.5.
+
+UIKit has no equivalent method, so iOS needed one. A naive sRGB interpolation
+was wrong by up to **46/255**.
+
+| ID | Requirement |
+| --- | --- |
+| S-6 | `PlatformColorBlending` reproduces AppKit's Generic RGB blending on iOS with hand-derived conversion matrices, including AppKit's gamut clipping and its identity short-circuit at fraction 0. |
+| S-7 | Every one of the 176 colours the app actually displays is within **1/255** of the AppKit result; the worst case across arbitrary palette blends is 5/255. This is asserted by test, not assumed. |
+| S-8 | macOS continues to call AppKit directly. The portable path is used on iOS and, behind a test hook, to verify the two agree. |
+
+This mattered beyond iOS: `Web/public/css/themes.css` is *generated* by
+compiling `EditorColorTheme.swift`, so the web build ships AppKit's numbers too.
+Moving the file was verified by regenerating that CSS and confirming it came out
+byte-identical.
+
+---
+
+## 3. Document lifecycle
+
+| ID | Requirement |
+| --- | --- |
+| ID-1 | The app is a SwiftUI `DocumentGroup`, so it gets the system document browser, Files and iCloud Drive integration, rename, duplicate, and move for free. |
+| ID-2 | Opening, saving, and the unsaved-changes prompt are the standard system behaviours. There is no custom save path and no custom autosave timer — iOS saves through `UIDocument`. |
+| ID-3 | Documents are read and written as UTF-8, preserving a byte-order mark if the file had one, by the shared `MarkdownTextCodec`. |
+| ID-4 | `.md` and `.markdown` files open in the app from Files, Mail, and any share sheet, via an imported `net.daringfireball.markdown` type declaration. |
+| ID-5 | `LSSupportsOpeningDocumentsInPlace` and `UIFileSharingEnabled` are set, so files are edited where they live rather than copied into the app. |
+| ID-6 | A new document starts as an empty Heading 1, matching the macOS and web builds. |
+
+---
+
+## 4. Editing modes and adaptive layout
+
+| ID | Requirement |
+| --- | --- |
+| ID-7 | Three modes exist, the same three as every other build: **Rich Text**, **Markdown**, and **Split**. |
+| ID-8 | Split is offered only when the horizontal size class is `.regular` — an iPad, or an iPhone in landscape on the largest models. Two panes on a phone screen would be two unusable panes. |
+| ID-9 | If the size class changes to compact while Split is showing, the mode falls back to Rich Text rather than leaving an unreadable layout. |
+| ID-10 | The mode switch is a segmented control in the navigation bar, using the shared SF Symbols. |
+| ID-11 | Editing the rendered view edits the Markdown. Surface edits are mapped back through `MarkdownRenderModel.sourceRange(for:)`, so Markdown the renderer does not display is preserved untouched. |
+| ID-12 | The raw Markdown pane shows representative typography — real heading sizes, monospaced body — while preserving every source character and marker. |
+| ID-13 | Smart quotes and smart dashes are disabled in both panes. iOS substitutes typographic characters by default, which would silently corrupt Markdown punctuation. |
+
+---
+
+## 5. Formatting
+
+| ID | Requirement |
+| --- | --- |
+| ID-14 | A horizontally scrolling formatting bar sits directly below the navigation bar, in the same position on both idioms. |
+| ID-15 | The bar offers the complete set — Heading 1/2/3 and Body; bold, italic, underline, strikethrough, inline code; bulleted, numbered, and task lists; quote, fenced code block, divider; link and image. **The set is identical on a phone and an iPad.** A smaller screen is not a reason to be given a less capable editor. |
+| ID-16 | The bar scrolls rather than wrapping or collapsing into an overflow menu, so no command is more than a swipe away. |
+| ID-17 | Every button calls `MarkdownFormatting`. Nothing about what "bold" means is decided in the iOS layer. |
+| ID-18 | Commands toggle: applying bold to already-bold text removes it, the same detection the other builds use. |
+| ID-19 | Link insertion prompts for a destination, defaulting to `https://`, and uses the current selection as the label. |
+
+The bar is docked, not floating. The web build learned this the hard way on a
+real iPhone — a bottom bar fights the keyboard accessory row and the home
+indicator, and `visualViewport` does not reliably report either. A native app
+could place a bar in `.keyboard` toolbar placement, but that only exists while
+the keyboard is up; docking it below the navigation bar means its position is
+never a function of the keyboard, which is the property that makes it reliable.
+
+---
+
+## 6. Images
+
+| ID | Requirement |
+| --- | --- |
+| ID-20 | Images can be added from the photo library (`PhotosPicker`) or from Files (`fileImporter`). |
+| ID-21 | Both routes go through the **same shared `MarkdownImageImporter`** the Mac uses, so the `<document-stem>.assets/` convention, collision handling (`photo-2.jpg`), percent-encoding, and alt-text escaping are identical and a folder written on one platform opens correctly on the other. |
+| ID-22 | A photo-library asset is not a file on disk. Its bytes are written to a temporary file first, imported from there, and the temporary file is removed whether or not the import succeeded. |
+| ID-23 | Files chosen through `fileImporter` are accessed inside a security-scoped resource, balanced with `stopAccessingSecurityScopedResource` even on the error path. |
+| ID-24 | Adding an image to a document that has never been saved is refused with an explanation, because the assets folder location is derived from the document's location. |
+| ID-25 | Every failure is surfaced in an alert. Nothing fails silently. |
+| ID-26 | The reference is inserted at the caret by the shared, unit-tested `MarkdownTextInsertion`, which clamps a stale selection rather than trapping and places the caret in UTF-16 units. |
+| ID-27 | `NSPhotoLibraryUsageDescription` explains that the photo is copied into a folder beside the document. |
+
+---
+
+## 7. Themes
+
+| ID | Requirement |
+| --- | --- |
+| ID-28 | The same sixteen themes as every other build: eight kirupa.com colours on an independent light/dark axis, from the shared `EditorColorTheme`. |
+| ID-29 | The picker is a sheet with an appearance control, a swatch grid, and a live preview showing heading, body, secondary text, and inline code. |
+| ID-30 | The choice is an application preference persisted in `UserDefaults`, not a document property — matching macOS. |
+| ID-31 | The chosen appearance drives `preferredColorScheme` and the accent colour drives `tint`, so system controls match the document. |
+| ID-32 | The app icon is drawn with Core Graphics by `../macOS/Scripts/make-icons.swift`, the same generator the Mac icons come from, so both platforms share one mark and there is no design tool in the loop. It is full-bleed and square, because iOS applies its own rounded mask. Regenerate with `make icons`. |
+
+---
+
+## 8. Architecture
+
+```
+Shared/                            One SwiftPM package, two platforms
+├── Sources/MarkdownEditorCore/    Pure Foundation. No AppKit, no UIKit, no SwiftUI.
+│   ├── MarkdownFormatting         Source-to-source formatting transforms
+│   ├── MarkdownRenderModel        Parser + bidirectional range mapping
+│   ├── MarkdownImageImporter      Assets folder resolution, copying, referencing
+│   ├── MarkdownTextInsertion      Caret-relative literal insertion
+│   ├── MarkdownTextCodec          UTF-8 and BOM handling
+│   ├── MarkdownTextDifference     Minimal-replacement diffing
+│   ├── RecentDocumentsCatalog     Recent-document ordering and pruning
+│   └── FileTreeScanner            Directory listing and ordering
+└── Sources/MarkdownEditorUI/      Cross-platform presentation
+    ├── PlatformTypes              AppKit/UIKit aliases; the colour blending
+    ├── PlatformTextView           NSTextView and UITextView conformances
+    ├── EditorColorTheme           Palettes and derived colours
+    ├── MarkdownTypography         Shared type scale
+    ├── RichMarkdownStyler         Attributes from the render model
+    ├── MarkdownSourceStyler       Representative source typography
+    ├── MarkdownDocument           FileDocument conformance
+    └── EditorViewMode             The three modes and their symbols
+
+iOS/Sources/MarkdownEditorIOS/     UIKit + SwiftUI, iOS only
+├── MarkdownEditorIOSApp           DocumentGroup scene, persisted theme store
+├── DocumentEditorView             Adaptive layout, image import, alerts
+├── EditorController               View mode, selection, errors, revisions
+├── MarkdownFormattingBar          The scrolling formatting bar
+├── MarkdownRichTextEditor         Editable rendered pane (UIViewRepresentable)
+├── MarkdownSourceTextEditor       Raw Markdown pane (UIViewRepresentable)
+└── ThemePickerSheet               Theme UI
+```
+
+**Key design decisions**
+
+1. *Share source, do not port.* A port needs differential testing forever; the
+   same file compiled twice cannot drift.
+2. *The document stays in `DocumentGroup`.* `EditorController` deliberately does
+   **not** hold the text, so undo, autosave, and the close prompt keep working
+   the way the system expects.
+3. *Platform differences are named, not scattered.* Everything AppKit and UIKit
+   disagree about is in `PlatformTypes.swift`.
+4. *Logic lives outside the UI.* Anything testable without an app is in
+   `MarkdownEditorCore`, which is why the insertion arithmetic was moved there.
+
+---
+
+## 9. Build, run, and test
+
+### 9.1 With Xcode (recommended)
+
+```bash
+git clone https://github.com/kirupa/markdown-editor.git
+open markdown-editor/iOS/MarkdownEditor.xcodeproj
+```
+
+Pick an iPhone or iPad simulator and press **⌘R**. The project references
+`../Shared` as a local Swift package; there is nothing to resolve and no
+third-party dependency to fetch. To run on a device, set your own team under
+Signing & Capabilities.
+
+### 9.2 Without Xcode
+
+```bash
+cd markdown-editor/iOS
+./Scripts/build-app.sh
+```
+
+Produces an ad-hoc-signed `build/Markdown Editor.app` for the iOS Simulator.
+
+This path exists because `xcodebuild` and `simctl` refuse to run until Xcode's
+licence has been accepted — which needs an administrator password — while
+`swiftc` does not. The script compiles the shared package for the simulator
+through a SwiftPM destination file, gathers its objects into a static library,
+compiles the app sources against it, assembles the bundle, compiles the asset
+catalog, and signs ad hoc.
+
+`actool` needs Xcode's first-launch packages — the ones the licence prompt
+installs — so on a machine where those are missing the asset catalog is skipped
+and the script says so explicitly rather than producing a silently icon-less
+app. Building through Xcode always compiles it.
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `MDE_XCODE` | `/Applications/Xcode.app/Contents/Developer` | Where to find the iOS SDK |
+| `MDE_TOOLCHAIN` | `/Library/Developer/CommandLineTools` | Which Swift toolchain compiles |
+| `MDE_ARCH` | host architecture | Simulator architecture |
+| `IOS_DEPLOYMENT_TARGET` | `17.0` | Minimum iOS version |
+
+Install and launch it with:
+
+```bash
+xcrun simctl install booted "build/Markdown Editor.app"
+xcrun simctl launch booted com.kirupa.markdown-editor
+```
+
+### 9.3 Tests
+
+```bash
+macOS/Scripts/run-tests.sh
+```
+
+109 tests in 10 suites. The suite covers the shared package, so it exercises
+the iOS build's entire Markdown engine — the iOS layer above it is views.
+
+| Suite | Tests | Covers |
+| --- | --- | --- |
+| Markdown formatting | 30 | Every inline and block transform, toggle-off, renumbering, continuation |
+| Markdown render model | 24 | Block and inline parsing, boundaries, escapes, range mapping |
+| Recent documents catalog | 10 | Ordering, de-duplication, caps, pruning |
+| Markdown text insertion | 8 | Caret placement, clamping stale selections, UTF-16 offsets |
+| Platform types | 7 | AppKit/UIKit parity, and the colour blending above |
+| Markdown image importer | 6 | Assets naming, collisions, symlink rejection, unsaved documents |
+| File tree scanner | 6 | Ordering, hidden files, packages, symlinks |
+| Markdown text codec | 3 | UTF-8 round trip, BOM preservation, invalid input |
+| Markdown text difference | 3 | Minimal replacement computation |
+| New document | 2 | Heading 1 seeding |
+
+---
+
+## 10. Release history
+
+| Change | Summary |
+| --- | --- |
+| Share the Swift core between platforms | `Shared/` package; AppKit's Generic RGB blending reproduced portably; `themes.css` verified byte-identical |
+| Add a native iOS app | iPhone and iPad `DocumentGroup` app compiling the shared package: three modes, adaptive split, full formatting bar, photo and Files image import, sixteen themes, generated app icon |
+
+---
+
+## 11. Verification status
+
+Recorded plainly, because "it builds" and "it runs" are different claims.
+
+**Verified:**
+
+- The shared package compiles for `arm64-apple-ios17.0-simulator`.
+- All seven iOS sources type-check against the real iOS SDK with **zero errors
+  and zero warnings**.
+- `Scripts/build-app.sh` produces a bundle whose Mach-O load command reports
+  `platform IOSSIMULATOR, minos 17.0`, which `codesign --verify --strict`
+  accepts.
+- 109 shared tests pass, including the colour parity assertions.
+- The macOS app still builds and runs unchanged after the restructure.
+
+**Not verified:** the app has **never been launched**. Running it needs a
+simulator, and on this machine `simctl` is gated behind Xcode's unaccepted
+licence *and* CoreSimulator is not installed — both of which need an
+administrator password. Nothing has confirmed the layout, the gestures, the
+photo picker, or the document browser at runtime.
+
+---
+
+## 12. Out of scope / not yet supported
+
+Known gaps, recorded deliberately so they are not mistaken for bugs:
+
+| ID | Gap |
+| --- | --- |
+| ID-33 | No file explorer sidebar. iOS's document browser replaces it, but there is no in-app tree. |
+| ID-34 | No welcome screen or recent-documents list. `DocumentGroup` provides its own browser. |
+| ID-35 | No drag-and-drop or paste image import. The picker and Files both work; drop targets are not wired. |
+| ID-36 | No keyboard shortcuts for formatting. A hardware keyboard on an iPad should get the macOS shortcuts. |
+| ID-37 | No scroll or selection synchronization between the Split panes. macOS has both. |
+| ID-38 | No Firebase or cloud storage. That exists only in the web build. |
+| ID-39 | Split is unavailable on compact-width iPhones, by design (ID-8). |

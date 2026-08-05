@@ -3,29 +3,29 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 extension UTType {
-    static let markdownDocument = UTType(
+    public static let markdownDocument = UTType(
         importedAs: "net.daringfireball.markdown",
         conformingTo: .plainText
     )
 }
 
-struct MarkdownDocument: FileDocument {
-    static var readableContentTypes: [UTType] {
+public struct MarkdownDocument: FileDocument {
+    public static var readableContentTypes: [UTType] {
         [.markdownDocument]
     }
 
-    var text: String
+    public var text: String
     private var hasUTF8ByteOrderMark: Bool
 
     /// A new document starts on an empty Heading 1 line — see
     /// ``NewMarkdownDocument``. Reading a file from disk goes through
     /// `init(configuration:)` and is unaffected.
-    init(text: String = NewMarkdownDocument.text) {
+    public init(text: String = NewMarkdownDocument.text) {
         self.text = text
         hasUTF8ByteOrderMark = false
     }
 
-    init(configuration: ReadConfiguration) throws {
+    public init(configuration: ReadConfiguration) throws {
         guard let data = configuration.file.regularFileContents else {
             throw CocoaError(.fileReadCorruptFile)
         }
@@ -35,7 +35,7 @@ struct MarkdownDocument: FileDocument {
         hasUTF8ByteOrderMark = decodedText.hasByteOrderMark
     }
 
-    func fileWrapper(
+    public func fileWrapper(
         configuration: WriteConfiguration
     ) throws -> FileWrapper {
         FileWrapper(
