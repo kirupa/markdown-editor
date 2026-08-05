@@ -33,9 +33,20 @@ public enum MarkdownSourceStyler {
         colorTheme: EditorColorTheme
     ) {
         let undoManager = textView.sourceUndoManager
-        undoManager?.disableUndoRegistration()
+        // Styling is not an edit, so it must not land on the undo stack — but
+        // `enableUndoRegistration` throws if the manager is not currently
+        // disabled, and UIKit resets that count out from under us when the
+        // text storage is replaced (`removeAllActions` re-enables). Balancing
+        // the calls blindly therefore crashes the source pane on iOS the
+        // first time it is shown. Only undo what we actually did.
+        let didDisable = undoManager?.isUndoRegistrationEnabled ?? false
+        if didDisable {
+            undoManager?.disableUndoRegistration()
+        }
         defer {
-            undoManager?.enableUndoRegistration()
+            if didDisable, undoManager?.isUndoRegistrationEnabled == false {
+                undoManager?.enableUndoRegistration()
+            }
         }
         textView.sourceTextStorage?.setAttributedString(
             attributedString(for: markdown, colorTheme: colorTheme)

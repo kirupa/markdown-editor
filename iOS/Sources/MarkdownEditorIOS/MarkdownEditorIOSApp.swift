@@ -1,5 +1,6 @@
 import MarkdownEditorUI
 import SwiftUI
+import UIKit
 
 /// The iOS app.
 ///
@@ -22,6 +23,35 @@ struct MarkdownEditorIOSApp: App {
             .environmentObject(theme)
             .preferredColorScheme(theme.theme.mode == .dark ? .dark : .light)
             .tint(Color(platformColor: theme.theme.accentColor))
+            .background(
+                WindowInterfaceStyle(
+                    style: theme.theme.mode == .dark ? .dark : .light
+                )
+            )
+        }
+    }
+}
+
+/// Pushes the chosen appearance onto the window itself.
+///
+/// `preferredColorScheme` only reaches SwiftUI's own content. In a
+/// `DocumentGroup` the navigation bar, its title, and the status bar belong to
+/// UIKit and keep following the device, so choosing a dark theme on a light
+/// phone left the document dark and the title dark-on-light-glass — close to
+/// unreadable. Overriding the window covers the browser chrome too.
+private struct WindowInterfaceStyle: UIViewRepresentable {
+    let style: UIUserInterfaceStyle
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.isUserInteractionEnabled = false
+        return view
+    }
+
+    func updateUIView(_ view: UIView, context: Context) {
+        let style = style
+        DispatchQueue.main.async {
+            view.window?.overrideUserInterfaceStyle = style
         }
     }
 }
@@ -32,24 +62,30 @@ struct MarkdownEditorIOSApp: App {
 /// the theme is an application preference rather than a document property.
 @MainActor
 final class EditorThemeStore: ObservableObject {
-    private static let colorKey = "EditorThemeColor"
-    private static let modeKey = "EditorThemeMode"
-
     @Published var theme: EditorColorTheme {
         didSet {
             guard theme != oldValue else { return }
             let defaults = UserDefaults.standard
-            defaults.set(theme.color.rawValue, forKey: Self.colorKey)
-            defaults.set(theme.mode.rawValue, forKey: Self.modeKey)
+            defaults.set(
+                theme.color.rawValue,
+                forKey: EditorThemeColor.storageKey
+            )
+            defaults.set(
+                theme.mode.rawValue,
+                forKey: EditorAppearanceMode.storageKey
+            )
         }
     }
 
     init() {
+        // The keys come from the shared package rather than being spelled out
+        // here, so that a Mac and an iPhone agree on what a stored theme means.
         let defaults = UserDefaults.standard
-        let color = defaults.string(forKey: Self.colorKey)
+        let color = defaults.string(forKey: EditorThemeColor.storageKey)
             .flatMap(EditorThemeColor.init(rawValue:)) ?? .blue
-        let mode = defaults.string(forKey: Self.modeKey)
-            .flatMap(EditorAppearanceMode.init(rawValue:)) ?? .light
+        let mode = defaults.string(forKey: EditorAppearanceMode.storageKey)
+            .flatMap(EditorAppearanceMode.init(rawValue:))
+            ?? .systemDefault
         theme = EditorColorTheme(color: color, mode: mode)
     }
 }

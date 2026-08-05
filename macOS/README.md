@@ -675,7 +675,7 @@ the code they cover, so this one command covers the iOS build's engine too.
 
 ### 16.1 Test coverage
 
-109 tests across 10 suites, in the shared package:
+113 tests across 11 suites, in the shared package:
 
 | Suite | Tests | Covers |
 | --- | --- | --- |
@@ -683,6 +683,7 @@ the code they cover, so this one command covers the iOS build's engine too.
 | Markdown render model | 24 | Block and inline parsing, boundary rules, escapes, range mapping |
 | Recent documents catalog | 10 | Merge order, de-duplication, Markdown filtering, caps, promotion, removal, pruning of missing files, home-relative paths |
 | Markdown text insertion | 8 | Caret placement, clamping stale selections, UTF-16 offsets |
+| Markdown source styler | 4 | Styling is not undoable, and survives a text view that resets its undo manager mid-edit |
 | Platform types | 7 | AppKit/UIKit parity; portable colour blending within 1/255 of `NSColor.blended` on every colour the app displays |
 | Markdown image importer | 6 | Assets folder naming, collisions, symlink rejection, unsaved documents, unsupported types |
 | File tree scanner | 6 | Ordering, hidden files, packages, symlinks |

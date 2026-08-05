@@ -6,7 +6,11 @@ set -euo pipefail
 # apps have in common now lives. The macOS target above it is interface code.
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../Shared" && pwd)"
 
-if swift -e 'import Foundation; import Testing' >/dev/null 2>&1; then
+# Whether Swift Testing is usable depends on the selected toolchain, and the
+# only reliable way to ask is to build the test targets — they import it.
+# A bare `swift -e 'import Testing'` says no even when `swift test` works,
+# because script mode does not get SwiftPM's search paths.
+if swift build --package-path "$ROOT" --build-tests >/dev/null 2>&1; then
   exec swift test --package-path "$ROOT"
 fi
 

@@ -37,6 +37,23 @@ struct DocumentEditorView: View {
         allowsSplit ? EditorViewMode.allCases : [.rich, .source]
     }
 
+    /// The mode actually shown, which is the remembered one unless this size
+    /// class cannot offer it.
+    ///
+    /// Kept separate from the stored preference so that an iPad user who
+    /// chose Split and then slides the app into a compact width gets Rich
+    /// Text for the moment without losing Split when they slide back.
+    private var effectiveMode: EditorViewMode {
+        availableModes.contains(controller.viewMode) ? controller.viewMode : .rich
+    }
+
+    private var modeSelection: Binding<EditorViewMode> {
+        Binding(
+            get: { effectiveMode },
+            set: { controller.viewMode = $0 }
+        )
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             MarkdownFormattingBar(
@@ -99,21 +116,11 @@ struct DocumentEditorView: View {
         } message: {
             Text(controller.errorMessage ?? "")
         }
-        .onAppear {
-            if !availableModes.contains(controller.viewMode) {
-                controller.viewMode = .rich
-            }
-        }
-        .onChange(of: horizontalSizeClass) { _, _ in
-            if !availableModes.contains(controller.viewMode) {
-                controller.viewMode = .rich
-            }
-        }
     }
 
     @ViewBuilder
     private var editors: some View {
-        switch controller.viewMode {
+        switch effectiveMode {
         case .rich:
             richEditor
         case .source:
@@ -146,16 +153,35 @@ struct DocumentEditorView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        ToolbarItem(placement: .principal) {
-            Picker("View", selection: $controller.viewMode) {
-                ForEach(availableModes) { mode in
-                    Label(mode.rawValue, systemImage: mode.systemImage)
-                        .labelStyle(.iconOnly)
-                        .tag(mode)
+        // The document title and its rename/duplicate menu live in the centre
+        // of the navigation bar and belong to DocumentGroup. Putting the mode
+        // switch there displaces them, so the segmented control is only used
+        // where there is room beside them; a phone gets a menu instead.
+        if allowsSplit {
+            ToolbarItem(placement: .topBarTrailing) {
+                Picker("View", selection: modeSelection) {
+                    ForEach(availableModes) { mode in
+                        Label(mode.rawValue, systemImage: mode.systemImage)
+                            .labelStyle(.iconOnly)
+                            .tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 150)
+            }
+        } else {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Picker("View", selection: modeSelection) {
+                        ForEach(availableModes) { mode in
+                            Label(mode.rawValue, systemImage: mode.systemImage)
+                                .tag(mode)
+                        }
+                    }
+                } label: {
+                    Label("View", systemImage: effectiveMode.systemImage)
                 }
             }
-            .pickerStyle(.segmented)
-            .frame(maxWidth: 180)
         }
         ToolbarItem(placement: .topBarTrailing) {
             Button {

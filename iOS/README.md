@@ -105,8 +105,9 @@ byte-identical.
 | --- | --- |
 | ID-7 | Three modes exist, the same three as every other build: **Rich Text**, **Markdown**, and **Split**. |
 | ID-8 | Split is offered only when the horizontal size class is `.regular` — an iPad, or an iPhone in landscape on the largest models. Two panes on a phone screen would be two unusable panes. |
-| ID-9 | If the size class changes to compact while Split is showing, the mode falls back to Rich Text rather than leaving an unreadable layout. |
-| ID-10 | The mode switch is a segmented control in the navigation bar, using the shared SF Symbols. |
+| ID-9 | If the size class changes to compact while Split is showing, the mode falls back to Rich Text rather than leaving an unreadable layout. The stored preference is left alone, so sliding an iPad app back to a regular width returns to Split. |
+| ID-10 | The mode switch uses the shared SF Symbols, on the trailing side of the navigation bar: a segmented control where all three modes fit, and a menu on a compact width. It never takes the centre, which belongs to the document title and its rename menu. |
+| ID-10a | The chosen mode is remembered in `UserDefaults` under `EditorViewMode.storageKey`. A document browser builds a fresh editor for every file, so without this someone who works in Markdown source would be put back into the rendered view each time. |
 | ID-11 | Editing the rendered view edits the Markdown. Surface edits are mapped back through `MarkdownRenderModel.sourceRange(for:)`, so Markdown the renderer does not display is preserved untouched. |
 | ID-12 | The raw Markdown pane shows representative typography — real heading sizes, monospaced body — while preserving every source character and marker. |
 | ID-13 | Smart quotes and smart dashes are disabled in both panes. iOS substitutes typographic characters by default, which would silently corrupt Markdown punctuation. |
@@ -153,6 +154,8 @@ never a function of the keyboard, which is the property that makes it reliable.
 | ID | Requirement |
 | --- | --- |
 | ID-28 | The same sixteen themes as every other build: eight kirupa.com colours on an independent light/dark axis, from the shared `EditorColorTheme`. |
+| ID-28a | The theme is stored under the *shared* `EditorThemeColor.storageKey` and `EditorAppearanceMode.storageKey`, not keys invented here, so a Mac and an iPhone agree on what a stored theme means. |
+| ID-28b | A dark theme overrides the window's `overrideUserInterfaceStyle`, not just SwiftUI's `preferredColorScheme`. In a `DocumentGroup` the navigation bar and status bar belong to UIKit, so without this a dark theme on a light device left the title unreadable. |
 | ID-29 | The picker is a sheet with an appearance control, a swatch grid, and a live preview showing heading, body, secondary text, and inline code. |
 | ID-30 | The choice is an application preference persisted in `UserDefaults`, not a document property — matching macOS. |
 | ID-31 | The chosen appearance drives `preferredColorScheme` and the accent colour drives `tint`, so system controls match the document. |
@@ -262,7 +265,7 @@ xcrun simctl launch booted com.kirupa.markdown-editor
 macOS/Scripts/run-tests.sh
 ```
 
-109 tests in 10 suites. The suite covers the shared package, so it exercises
+113 tests in 11 suites. The suite covers the shared package, so it exercises
 the iOS build's entire Markdown engine — the iOS layer above it is views.
 
 | Suite | Tests | Covers |
@@ -271,6 +274,7 @@ the iOS build's entire Markdown engine — the iOS layer above it is views.
 | Markdown render model | 24 | Block and inline parsing, boundaries, escapes, range mapping |
 | Recent documents catalog | 10 | Ordering, de-duplication, caps, pruning |
 | Markdown text insertion | 8 | Caret placement, clamping stale selections, UTF-16 offsets |
+| Markdown source styler | 4 | Styling is not undoable, and survives a text view that resets its undo manager mid-edit |
 | Platform types | 7 | AppKit/UIKit parity, and the colour blending above |
 | Markdown image importer | 6 | Assets naming, collisions, symlink rejection, unsaved documents |
 | File tree scanner | 6 | Ordering, hidden files, packages, symlinks |
@@ -286,6 +290,7 @@ the iOS build's entire Markdown engine — the iOS layer above it is views.
 | --- | --- |
 | Share the Swift core between platforms | `Shared/` package; AppKit's Generic RGB blending reproduced portably; `themes.css` verified byte-identical |
 | Add a native iOS app | iPhone and iPad `DocumentGroup` app compiling the shared package: three modes, adaptive split, full formatting bar, photo and Files image import, sixteen themes, generated app icon |
+| Run it on a simulator | Fixed three bugs only a running app could show: a missing `CFBundleExecutable`, a crash in the source pane from unbalanced undo registration, and a light navigation bar under a dark theme. Mode is now remembered, and the theme uses the shared storage keys. |
 
 ---
 
@@ -293,22 +298,46 @@ the iOS build's entire Markdown engine — the iOS layer above it is views.
 
 Recorded plainly, because "it builds" and "it runs" are different claims.
 
-**Verified:**
+**Verified by building:**
 
 - The shared package compiles for `arm64-apple-ios17.0-simulator`.
 - All seven iOS sources type-check against the real iOS SDK with **zero errors
   and zero warnings**.
+- `xcodebuild -scheme MarkdownEditor` succeeds from a clone, compiling the
+  asset catalogue.
 - `Scripts/build-app.sh` produces a bundle whose Mach-O load command reports
   `platform IOSSIMULATOR, minos 17.0`, which `codesign --verify --strict`
   accepts.
-- 109 shared tests pass, including the colour parity assertions.
+- 113 shared tests pass, including the colour parity assertions.
 - The macOS app still builds and runs unchanged after the restructure.
 
-**Not verified:** the app has **never been launched**. Running it needs a
-simulator, and on this machine `simctl` is gated behind Xcode's unaccepted
-licence *and* CoreSimulator is not installed — both of which need an
-administrator password. Nothing has confirmed the layout, the gestures, the
-photo picker, or the document browser at runtime.
+**Verified by running**, on an iPhone 17 Pro and an iPad Pro 11-inch simulator
+(iOS 26.5), with a document opened from the app's container:
+
+- The app installs, launches, and opens a `.md` file through the document
+  browser.
+- Rendered mode draws headings, bold, italic, strikethrough, inline code,
+  links, a blockquote, both list kinds, and a fenced code block.
+- Markdown mode draws the source with representative typography and every
+  marker intact.
+- Split mode lays out both panes side by side on the iPad, and is correctly
+  absent on the iPhone.
+- The formatting bar scrolls on the phone and fits whole on the iPad.
+- The document title and its rename menu stay in the navigation bar.
+- A dark theme repaints the document, the formatting bar, the navigation bar,
+  and the status bar, including on a device whose system appearance is light.
+- The chosen mode survives closing and reopening a document.
+
+Three bugs were found this way that no compile-time check could have caught,
+and all three are fixed: a missing `CFBundleExecutable` that made `simctl
+install` reject the bundle; an unbalanced `enableUndoRegistration` that crashed
+the Markdown pane the first time it was shown (see ID-40); and a light
+navigation bar left behind by a dark theme.
+
+**Not verified:** anything needing a real gesture. The simulator can be
+screenshotted but not tapped, so the photo picker, the link prompt, drag to
+resize, and the theme sheet have been seen only in code. Nothing has run on
+real hardware.
 
 ---
 
@@ -325,3 +354,4 @@ Known gaps, recorded deliberately so they are not mistaken for bugs:
 | ID-37 | No scroll or selection synchronization between the Split panes. macOS has both. |
 | ID-38 | No Firebase or cloud storage. That exists only in the web build. |
 | ID-39 | Split is unavailable on compact-width iPhones, by design (ID-8). |
+| ID-40 | Styling the source pane cannot use `disable`/`enableUndoRegistration` as a matched pair: UIKit calls `removeAllActions` when the text storage is replaced, which re-enables registration, so the balancing call raises. `MarkdownSourceStyler` now re-enables only when it still needs to. |

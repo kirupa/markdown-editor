@@ -11,7 +11,15 @@ import UIKit
 /// caret is in the *source*, and any error worth putting in front of someone.
 @MainActor
 final class EditorController: ObservableObject {
-    @Published var viewMode: EditorViewMode = .rich
+    @Published var viewMode: EditorViewMode = EditorController.storedViewMode {
+        didSet {
+            guard viewMode != oldValue else { return }
+            UserDefaults.standard.set(
+                viewMode.rawValue,
+                forKey: EditorViewMode.storageKey
+            )
+        }
+    }
     @Published var selection = NSRange(location: 0, length: 0)
     @Published var errorMessage: String?
     @Published var isShowingThemePicker = false
@@ -25,6 +33,12 @@ final class EditorController: ObservableObject {
     /// Set while a formatting command is rewriting the source, so the text
     /// views can tell an edit they caused from one they did not.
     private(set) var isApplyingCommand = false
+
+    /// The last mode chosen on this device, or Rich Text the first time.
+    private static var storedViewMode: EditorViewMode {
+        UserDefaults.standard.string(forKey: EditorViewMode.storageKey)
+            .flatMap(EditorViewMode.init(rawValue:)) ?? .rich
+    }
 
     func report(_ error: Error) {
         errorMessage = error.localizedDescription

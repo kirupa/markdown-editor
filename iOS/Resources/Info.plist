@@ -7,6 +7,8 @@
   <string>en</string>
   <key>CFBundleDisplayName</key>
   <string>Markdown Editor</string>
+  <key>CFBundleExecutable</key>
+  <string>$(EXECUTABLE_NAME)</string>
   <key>CFBundleDocumentTypes</key>
   <array>
     <dict>

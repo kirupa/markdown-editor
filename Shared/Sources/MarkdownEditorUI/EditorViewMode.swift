@@ -9,6 +9,13 @@ public enum EditorViewMode: String, CaseIterable, Identifiable {
     case source = "Markdown"
     case split = "Split"
 
+    /// Where the chosen mode is remembered between documents.
+    ///
+    /// A document browser presents a fresh editor for every file, so without
+    /// this someone who works in Markdown source would be put back into the
+    /// rendered view each time they opened something.
+    public static let storageKey = "editorViewMode"
+
     public var id: Self {
         self
     }
