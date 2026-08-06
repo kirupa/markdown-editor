@@ -30,6 +30,13 @@ service cloud.firestore {
         // A document larger than this cannot be written anyway: Firestore
         // caps a document at 1 MiB. Refusing earlier turns a confusing
         // write failure into a clear one.
+        //
+        // Note that `size()` on a string counts characters, while the client
+        // counts UTF-8 bytes, which is what Firestore's own limit is measured
+        // in. There is no byte-length function in the rules language, so the
+        // two cannot be made to agree. This is a backstop; the client's check
+        // is the accurate one, and it is the stricter of the two for any
+        // document containing a non-ASCII character.
         && (!('text' in request.resource.data)
             || request.resource.data.text.size() < 900000);
 

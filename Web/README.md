@@ -447,15 +447,17 @@ one account reach another's documents.
 These are Firebase console actions. Until they are done, the cloud option will
 fail, and it will say which of these is missing.
 
-**Re-checked against the live project on 6 August 2026.** The Storage bucket now
-exists; publishing the rules is still outstanding and is the one that matters.
-The commands are below so the checks can be repeated rather than taken on trust.
+**Re-checked against the live project on 6 August 2026. Three of the four are now
+done** — the Storage bucket exists, Google sign-in is enabled, and `www.kirupa.com`
+is an authorised domain. **Publishing the rules is the one that is left, and it is
+the one that matters.** The commands are below so every check can be repeated
+rather than taken on trust.
 
 | ID | Step |
 | --- | --- |
 | WR-19 | **Publish the security rules.** `firebase deploy --only firestore:rules,storage`, or paste both files into the console. **The project is still in open test mode: anyone with the API key can read and write everything.** Verified by an unauthenticated REST call carrying only the public API key, which returned `200` and an empty result rather than `403 PERMISSION_DENIED`: `curl "https://firestore.googleapis.com/v1/projects/kirupa-markdown/databases/(default)/documents/users/probe/nodes?key=<apiKey>"`. Once the rules are published that call returns `403`. This is the first thing to do and the one that matters — the live listeners in [WC-1](#11b-cloud-storage-and-accounts) make it worse, because an attacker can subscribe to changes rather than poll for them. |
-| WR-20 | **Enable the Google sign-in provider** under Authentication ▸ Sign-in method. |
-| WR-21 | **Add the authorised domains** under Authentication ▸ Settings: `www.kirupa.com` for the published build, and `127.0.0.1` for local preview if you reach it by IP. `localhost` is allowed by default, but `127.0.0.1` is a different host string to Firebase — reaching the preview at `http://localhost:8000` avoids needing this. |
+| WR-20 | **Enable the Google sign-in provider** under Authentication ▸ Sign-in method. **Done — confirmed 6 August 2026.** `curl -X POST "https://identitytoolkit.googleapis.com/v1/accounts:createAuthUri?key=<apiKey>" -H 'Content-Type: application/json' -d '{"providerId":"google.com","continueUri":"https://www.kirupa.com/markdown/"}'` returns a real `authUri` carrying the project's OAuth client ID. A disabled provider answers `OPERATION_NOT_ALLOWED` instead — which is still what anonymous and email/password return, so neither of those is available as a fallback. |
+| WR-21 | **Add the authorised domains** under Authentication ▸ Settings: `www.kirupa.com` for the published build, and `127.0.0.1` for local preview if you reach it by IP. `localhost` is allowed by default, but `127.0.0.1` is a different host string to Firebase — reaching the preview at `http://localhost:8000` avoids needing this. **`www.kirupa.com` is done — confirmed 6 August 2026** by the same call as [WR-20](#setup-steps-that-cannot-be-done-from-this-repository): it accepted that origin as a `continueUri`, which an unauthorised domain is refused for. |
 | WR-22 | **Enable Cloud Storage** for the project, or image upload will fail. **Done — the bucket exists as of 6 August 2026.** `curl "https://firebasestorage.googleapis.com/v0/b/kirupa-markdown.firebasestorage.app/o"` now answers `403` rather than `404`; a bucket that does not exist answers `404`, which is still what the `.appspot.com` spelling returns, confirming `.firebasestorage.app` is the right name and that it is the one both builds are configured with. `403` is the expected answer to an unauthenticated list and is what publishing [WR-19](#11b-cloud-storage-and-accounts) will make permanent. No bucket CORS configuration is needed: the upload endpoint already answers a cross-origin preflight with `access-control-allow-origin: *`. |
 
 ### What has not been verified

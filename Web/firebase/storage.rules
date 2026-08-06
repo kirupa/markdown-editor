@@ -12,6 +12,13 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
     match /users/{userId}/{allPaths=**} {
+      // This governs the SDK's own reads, including `getDownloadURL`. Be aware
+      // that the URL it returns carries a download token and is a shareable
+      // capability: anyone holding that URL can fetch the image without
+      // signing in. That is how Firebase download URLs work, and it is not
+      // something a rule can change. It is fine here — the URLs are only ever
+      // put in the DOM of a signed-in session — but it does mean an image URL
+      // pasted elsewhere stays live until the token is revoked in the console.
       allow read: if request.auth != null && request.auth.uid == userId;
 
       // The editor caps an image at 10 MB before uploading; this is the same
