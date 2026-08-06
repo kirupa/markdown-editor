@@ -122,20 +122,26 @@ suite that runs in a third of a second and one that needs a UI.
   be the least pleasant part, and note that the existing builds' cloud paths are
   themselves unverified end to end (below).
 
-## Before you start: two things are broken upstream
+## Before you start: one thing is broken upstream
 
-Both apply to every build, including this one, and neither can be fixed from
-this repository:
+It applies to every build, including this one, and cannot be fixed from this
+repository:
 
-- **The Cloud Storage bucket does not exist**, so no image in cloud mode can be
-  uploaded or fetched by anyone.
 - **The Firestore security rules are unpublished**, so the database is currently
   readable and writable by anyone holding the (public, by design) API key.
 
-Commands to re-check both are in
+The Cloud Storage bucket, previously listed here as missing, now exists.
+
+Commands to re-check are in
 [Web/README.md § 11b](../Web/README.md#setup-steps-that-cannot-be-done-from-this-repository).
-Until they are done, build the local-storage path and treat the cloud path as
+Until it is done, build the local-storage path and treat the cloud path as
 written-but-unproven, which is exactly the state the other two builds are in.
+
+One thing to carry over that no fixture can express: an image upload must send a
+content type derived from the file's extension, because the Storage rule accepts
+only `image/*` and an untyped upload is stored as `application/octet-stream` and
+refused. The map is in
+[Contract/README.md](../Contract/README.md#the-assets-convention).
 
 ## Validating the port
 

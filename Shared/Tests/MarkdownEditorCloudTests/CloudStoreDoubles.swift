@@ -115,6 +115,7 @@ final class InMemoryNodeStore: CloudNodeStore, @unchecked Sendable {
 /// An in-memory Cloud Storage.
 final class InMemoryAssetStore: CloudAssetStore, @unchecked Sendable {
     private var objects: [String: Data] = [:]
+    private var types: [String: String?] = [:]
     private let lock = NSLock()
     private(set) var removed: [String] = []
     var failNextUpload: CloudError?
@@ -126,6 +127,9 @@ final class InMemoryAssetStore: CloudAssetStore, @unchecked Sendable {
         }
         return lock.withLock {
             objects[storagePath] = data
+            // Recorded because the Storage rules accept only `image/*`: an
+            // upload that loses its type is refused by the server, not here.
+            types[storagePath] = contentType
             return "https://storage.test/\(storagePath)"
         }
     }
@@ -148,6 +152,14 @@ final class InMemoryAssetStore: CloudAssetStore, @unchecked Sendable {
 
     var storedPaths: [String] {
         lock.withLock { objects.keys.sorted() }
+    }
+
+    func contentType(at storagePath: String) -> String? {
+        lock.withLock { types[storagePath] ?? nil }
+    }
+
+    var storedTypes: [String] {
+        lock.withLock { types.values.compactMap { $0 }.sorted() }
     }
 }
 

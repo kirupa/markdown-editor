@@ -29,6 +29,29 @@ const IMAGE_EXTENSIONS = [
 ];
 
 /**
+ * The type to record when the browser does not supply one.
+ *
+ * `File.type` is empty surprisingly often — dragging from some applications,
+ * and anything constructed by hand — and an upload with no type is stored as
+ * `application/octet-stream`. The Storage rules only accept `image/*`, so an
+ * image that arrives without a type is refused by the server, which the user
+ * sees as an image that silently will not add. The extension is already
+ * checked against IMAGE_EXTENSIONS by then, so the type can be derived from
+ * it rather than guessed.
+ */
+const IMAGE_TYPES = {
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+  heic: 'image/heic', heif: 'image/heif', tiff: 'image/tiff', tif: 'image/tiff',
+  bmp: 'image/bmp', webp: 'image/webp', svg: 'image/svg+xml',
+};
+
+function imageTypeFor(file, extension) {
+  const declared = (file.type || '').toLowerCase();
+  if (declared.startsWith('image/')) return declared;
+  return IMAGE_TYPES[extension] ?? 'application/octet-stream';
+}
+
+/**
  * A cap on a single image, since Storage imposes no useful one of its own.
  * The local build's limit comes from PHP's `upload_max_filesize`; this is the
  * cloud equivalent, chosen to be larger than any screenshot and smaller than
@@ -67,6 +90,25 @@ export function createFirestoreBackend({ nodes, assets, workspaceName = 'kirupaM
   // images that document refers to, so by the time anything renders the answer
   // is already here.
   const urlByPath = new Map();
+
+  /**
+   * Keeps the URL cache in step when a path changes.
+   *
+   * The renderer resolves image sources synchronously while it builds the DOM,
+   * and renaming the open document does not reload it — the model is relocated
+   * in place. So a moved image has to be reachable under its new path straight
+   * away, or every image in the document breaks until the page is reloaded.
+   */
+  function recache(fromPath, toPath, url) {
+    const cached = urlByPath.get(fromPath);
+    if (url !== undefined) {
+      // A copy owns fresh bytes at a fresh URL, and the original stays put.
+      urlByPath.set(toPath, url);
+      return;
+    }
+    urlByPath.delete(fromPath);
+    if (cached !== undefined) urlByPath.set(toPath, cached);
+  }
 
   function entryFor(node) {
     const isDirectory = node.type === 'folder';
@@ -173,6 +215,7 @@ export function createFirestoreBackend({ nodes, assets, workspaceName = 'kirupaM
 
       writes.push({ path: destination, data: moved });
       if (!copy) writes.push({ path: node.path, remove: true });
+      if (node.type === 'asset') recache(node.path, destination, copy ? moved.url : undefined);
     }
 
     return { oldFolderName, newFolderName };
@@ -229,6 +272,14 @@ export function createFirestoreBackend({ nodes, assets, workspaceName = 'kirupaM
     }
 
     await nodes.commit(writes);
+
+    // Renaming a folder moves any assets inside it; the sibling assets folder
+    // of a renamed document is handled by carryAssets above.
+    for (const member of subtree) {
+      if (member.type !== 'asset') continue;
+      recache(member.path, paths.rewrite(member.path, source, destination));
+    }
+
     return entryFor({ ...node, path: destination, name: paths.nameOf(destination) });
   }
 
@@ -483,7 +534,8 @@ export function createFirestoreBackend({ nodes, assets, workspaceName = 'kirupaM
       // A collision-proof key, so re-uploading after a delete cannot land on a
       // path Storage still has bytes at.
       const storagePath = `${target}#${Date.now()}`;
-      const url = await assets.upload(storagePath, file, file.type);
+      const contentType = imageTypeFor(file, extension);
+      const url = await assets.upload(storagePath, file, contentType);
 
       const writes = [];
       await ensureAncestors(target, writes);
@@ -501,7 +553,7 @@ export function createFirestoreBackend({ nodes, assets, workspaceName = 'kirupaM
           name: fileName,
           storagePath,
           url,
-          contentType: file.type || '',
+          contentType,
           size: file.size,
           modified: Date.now(),
         },

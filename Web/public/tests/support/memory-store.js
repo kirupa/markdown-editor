@@ -113,12 +113,17 @@ export function createMemoryNodeStore(seed = []) {
 
 export function createMemoryAssetStore() {
   const bytes = new Map();
+  const types = new Map();
   let counter = 0;
 
   return {
     bytes,
-    async upload(storagePath, file) {
+    types,
+    async upload(storagePath, file, contentType) {
       bytes.set(storagePath, file);
+      // Recorded because the Storage rules only accept `image/*`: an upload
+      // that loses its type is refused by the server, not by this double.
+      types.set(storagePath, contentType);
       counter += 1;
       return `https://storage.test/${counter}`;
     },

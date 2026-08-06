@@ -249,6 +249,103 @@ suite('Cloud backend images', () => {
     expectEqual(backend.imageURL('Kyoto.assets/a.png'), 'https://storage.test/seed/k1');
   });
 
+  test('renaming a document keeps its images resolvable', async () => {
+    const { backend } = build([
+      fileNode('Kyoto.md', '![a](Kyoto.assets/a.png)'),
+      folderNode('Kyoto.assets'), assetNode('Kyoto.assets/a.png', 'k1'),
+    ]);
+    await backend.read('Kyoto.md');
+    await backend.rename('Kyoto.md', 'Osaka.md');
+
+    // Deliberately no re-read: renaming the open document does not reload it,
+    // it just relocates the model in place. The renderer then asks for URLs
+    // under the new paths while it builds the DOM, so if the cache still only
+    // knows the old ones every image in the document breaks until reload.
+    expect(
+      backend.imageURL('Osaka.assets/a.png') !== null,
+      'the image resolves under its new path'
+    );
+    expectEqual(backend.imageURL('Kyoto.assets/a.png'), null, 'the old path is gone');
+  });
+
+  test('an image with no declared type still uploads as an image', async () => {
+    const { backend, assets, nodes } = build([fileNode('Kyoto.md', '')]);
+    // Dragging from some applications gives a File with an empty type. The
+    // Storage rules accept only image/*, so uploading it as-is would be
+    // refused by the server and look, to the user, like nothing happened.
+    await backend.uploadImage('Kyoto.md', fakeImage('shot.png', { type: '' }));
+
+    const [storagePath] = [...assets.types.keys()];
+    expectEqual(assets.types.get(storagePath), 'image/png', 'type came from the extension');
+    expectEqual((await nodes.read('Kyoto.assets/shot.png')).contentType, 'image/png');
+  });
+
+  test('a wrong declared type is corrected from the extension', async () => {
+    const { backend, assets } = build([fileNode('Kyoto.md', '')]);
+    await backend.uploadImage('Kyoto.md', fakeImage('shot.jpg', { type: 'application/octet-stream' }));
+
+    const [storagePath] = [...assets.types.keys()];
+    expectEqual(assets.types.get(storagePath), 'image/jpeg');
+  });
+
+  test('a declared image type is kept as it is', async () => {
+    const { backend, assets } = build([fileNode('Kyoto.md', '')]);
+    // jpg maps to image/jpeg, so keeping the browser's answer is visible here.
+    await backend.uploadImage('Kyoto.md', fakeImage('shot.jpg', { type: 'image/webp' }));
+
+    const [storagePath] = [...assets.types.keys()];
+    expectEqual(assets.types.get(storagePath), 'image/webp');
+  });
+
+  test('every accepted extension maps to an image type', async () => {
+    const { backend, assets } = build([fileNode('Kyoto.md', '')]);
+    const config = await backend.config();
+    for (const extension of config.imageExtensions) {
+      await backend.uploadImage('Kyoto.md', fakeImage(`shot.${extension}`, { type: '' }));
+    }
+    // Any extension the picker offers but the map misses would upload as
+    // octet-stream and be refused by the rules.
+    for (const type of assets.types.values()) {
+      expect(type.startsWith('image/'), `${type} is an image type`);
+    }
+    expectEqual(assets.types.size, config.imageExtensions.length);
+  });
+
+  test('renaming a folder keeps the images inside it resolvable', async () => {
+    const { backend } = build([
+      folderNode('Trips'), fileNode('Trips/Kyoto.md', '![a](Kyoto.assets/a.png)'),
+      folderNode('Trips/Kyoto.assets'), assetNode('Trips/Kyoto.assets/a.png', 'k1'),
+    ]);
+    await backend.read('Trips/Kyoto.md');
+    await backend.rename('Trips', 'Journeys');
+
+    // Here the images are inside the moved subtree rather than in a sibling
+    // folder, so this is a different code path from renaming the document.
+    expect(
+      backend.imageURL('Journeys/Kyoto.assets/a.png') !== null,
+      'the image resolves under the new folder'
+    );
+    expectEqual(backend.imageURL('Trips/Kyoto.assets/a.png'), null, 'the old path is gone');
+  });
+
+  test('a duplicate resolves to its own copy, and the original is untouched', async () => {
+    const { backend, assets } = build([
+      fileNode('Kyoto.md', '![a](Kyoto.assets/a.png)'),
+      folderNode('Kyoto.assets'), assetNode('Kyoto.assets/a.png', 'k1'),
+    ]);
+    assets.bytes.set('k1', 'original');
+    await backend.read('Kyoto.md');
+    const copy = await backend.duplicate('Kyoto.md');
+
+    const originalURL = backend.imageURL('Kyoto.assets/a.png');
+    const copyURL = backend.imageURL(`${copy.path.replace(/\.md$/, '')}.assets/a.png`);
+    expect(originalURL !== null, 'the original still resolves');
+    expect(copyURL !== null, 'the copy resolves too');
+    // Copies own their bytes, so sharing a URL would mean deleting one breaks
+    // the other.
+    expect(copyURL !== originalURL, 'the copy has its own URL');
+  });
+
   test('renaming a document renames its assets folder and its references', async () => {
     const { backend, nodes } = build([
       fileNode('Kyoto.md', 'before ![a](Kyoto.assets/a.png) and ![b](Kyoto.assets/my%20b.png)'),

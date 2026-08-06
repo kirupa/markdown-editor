@@ -386,6 +386,51 @@ struct CloudWorkspaceTests {
         #expect(storagePath.hasPrefix("Trip.assets/a.png#"))
     }
 
+    @Test("An image with no declared type is uploaded as an image anyway")
+    func importImageDerivesContentType() async throws {
+        let (workspace, store, assets) = workspace([file("Trip.md")])
+        // Every platform can hand over a file with no type: a drag from some
+        // applications, a paste, or bytes read straight off disk. The Storage
+        // rules accept only image/*, so uploading it untyped is refused by the
+        // server and looks to the user like nothing happened.
+        try await workspace.importImage(Data([1]), named: "a.png", intoDocumentAt: "Trip.md")
+
+        let storagePath = try #require(store.node(at: "Trip.assets/a.png")?.storagePath)
+        #expect(assets.contentType(at: storagePath) == "image/png")
+        #expect(store.node(at: "Trip.assets/a.png")?.contentType == "image/png")
+    }
+
+    @Test("A declared image type is kept, a wrong one is corrected")
+    func importImageKeepsDeclaredType() async throws {
+        let (workspace, store, assets) = workspace([file("Trip.md")])
+        try await workspace.importImage(
+            Data([1]), named: "a.jpg", intoDocumentAt: "Trip.md", contentType: "image/webp"
+        )
+        try await workspace.importImage(
+            Data([1]), named: "b.jpg", intoDocumentAt: "Trip.md",
+            contentType: "application/octet-stream"
+        )
+
+        let first = try #require(store.node(at: "Trip.assets/a.jpg")?.storagePath)
+        let second = try #require(store.node(at: "Trip.assets/b.jpg")?.storagePath)
+        #expect(assets.contentType(at: first) == "image/webp")
+        #expect(assets.contentType(at: second) == "image/jpeg")
+    }
+
+    @Test("Every accepted extension maps to an image type")
+    func everyExtensionMapsToAnImageType() async throws {
+        let (workspace, _, assets) = workspace([file("Trip.md")])
+        for extensionName in CloudWorkspace.imageExtensions.sorted() {
+            try await workspace.importImage(
+                Data([1]), named: "shot.\(extensionName)", intoDocumentAt: "Trip.md"
+            )
+        }
+        // An extension the picker offers but the map misses would upload as
+        // octet-stream and be refused by the rules.
+        #expect(assets.storedTypes.count == CloudWorkspace.imageExtensions.count)
+        #expect(assets.storedTypes.allSatisfy { $0.hasPrefix("image/") })
+    }
+
     @Test("A file that is not an image is refused before anything is uploaded")
     func importImageRefusesNonImage() async throws {
         let (workspace, store, assets) = workspace([file("Trip.md")])

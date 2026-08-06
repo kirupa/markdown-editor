@@ -366,6 +366,8 @@ collection of nodes:
 | WR-16 | A document's `<stem>.assets` folder follows it through a rename, move, or duplicate, and the image references inside the document are rewritten — the same behaviour as [WM-8](#11a-managing-files-and-folders). A duplicated document gets its own copy of the image bytes, so deleting one cannot blank the other. |
 | WR-17 | Deleting a document leaves its assets folder behind, as the local build does: it holds originals that may exist nowhere else. |
 | WR-18 | Images go to Cloud Storage under `users/{uid}/`, capped at 10 MB. Firestore's 1 MiB document limit makes storing them inline too restrictive. Opening a document loads its image URLs first, so the renderer — which resolves image sources synchronously — has them ready. |
+| WR-29 | **An image is uploaded with a real `image/*` content type, derived from its extension rather than taken on trust.** A `File` can arrive with an empty `type` — a drag from some applications, a paste, or a handle built by a script — and an upload with no type is stored as `application/octet-stream`, which the Storage rule refuses. The extension has already been checked against the accepted list by that point, so deriving the type from it is safe, and a declared type is only kept when it is itself an `image/*`. Without this, adding an image against published rules fails with a bare permission error and looks to the user like nothing happened. The same rule is applied identically by the native builds. |
+| WR-30 | **The image URL cache follows a rename.** Image sources have to resolve synchronously ([WR-18](#11b-cloud-storage-and-accounts)), so URLs are cached by path when a document is read. Renaming a document or a folder moves the model in place without re-reading it, so every cached URL must be re-keyed at the same moment — including the sibling `<stem>.assets` folder, which is *not* a descendant of the document and so is missed by any subtree walk. Otherwise every image in a renamed document breaks until the page is reloaded. |
 
 ### Live updates
 
@@ -445,16 +447,16 @@ one account reach another's documents.
 These are Firebase console actions. Until they are done, the cloud option will
 fail, and it will say which of these is missing.
 
-**Both of the first two were re-checked against the live project on 5 August
-2026, and both are still outstanding.** The commands are below so the checks can
-be repeated rather than taken on trust.
+**Re-checked against the live project on 6 August 2026.** The Storage bucket now
+exists; publishing the rules is still outstanding and is the one that matters.
+The commands are below so the checks can be repeated rather than taken on trust.
 
 | ID | Step |
 | --- | --- |
 | WR-19 | **Publish the security rules.** `firebase deploy --only firestore:rules,storage`, or paste both files into the console. **The project is still in open test mode: anyone with the API key can read and write everything.** Verified by an unauthenticated REST call carrying only the public API key, which returned `200` and an empty result rather than `403 PERMISSION_DENIED`: `curl "https://firestore.googleapis.com/v1/projects/kirupa-markdown/databases/(default)/documents/users/probe/nodes?key=<apiKey>"`. Once the rules are published that call returns `403`. This is the first thing to do and the one that matters — the live listeners in [WC-1](#11b-cloud-storage-and-accounts) make it worse, because an attacker can subscribe to changes rather than poll for them. |
 | WR-20 | **Enable the Google sign-in provider** under Authentication ▸ Sign-in method. |
 | WR-21 | **Add the authorised domains** under Authentication ▸ Settings: `www.kirupa.com` for the published build, and `127.0.0.1` for local preview if you reach it by IP. `localhost` is allowed by default, but `127.0.0.1` is a different host string to Firebase — reaching the preview at `http://localhost:8000` avoids needing this. |
-| WR-22 | **Enable Cloud Storage** for the project, or image upload will fail. **The bucket does not exist yet.** `curl "https://firebasestorage.googleapis.com/v0/b/kirupa-markdown.firebasestorage.app/o"` returns `404 Not Found`, as does the `.appspot.com` spelling — a bucket that exists but denies access answers `403`. This is why image upload reports `storage/retry-limit-exceeded`. Firebase now requires the pay-as-you-go Blaze plan to create a default bucket, which is the likely reason it was never provisioned. Until it exists, **no image path in cloud mode can be exercised at all**, including by any test. |
+| WR-22 | **Enable Cloud Storage** for the project, or image upload will fail. **Done — the bucket exists as of 6 August 2026.** `curl "https://firebasestorage.googleapis.com/v0/b/kirupa-markdown.firebasestorage.app/o"` now answers `403` rather than `404`; a bucket that does not exist answers `404`, which is still what the `.appspot.com` spelling returns, confirming `.firebasestorage.app` is the right name and that it is the one both builds are configured with. `403` is the expected answer to an unauthenticated list and is what publishing [WR-19](#11b-cloud-storage-and-accounts) will make permanent. No bucket CORS configuration is needed: the upload endpoint already answers a cross-origin preflight with `access-control-allow-origin: *`. |
 
 ### What has not been verified
 
@@ -746,6 +748,7 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 
 | Change | What shipped |
 | --- | --- |
+| Cloud images | The Storage bucket now exists, and the two things that would have stopped an image reaching it were fixed before it was tried: an upload with no content type was refused by the Storage rule ([WR-29](#11b-cloud-storage-and-accounts)), and the image URL cache did not follow a rename, so images in a renamed document broke until reload ([WR-30](#11b-cloud-storage-and-accounts)). Both apply to the native builds too. |
 | Offline cloud documents | Firestore now opens with a persistent, multi-tab local cache, so a cloud workspace survives a reload with no network and edits made offline are queued and sent on reconnect ([§Working offline](#working-offline)). Firestore was previously opened the default way, which caches only for the life of the tab. Images are not covered ([WR-26](#working-offline)), and the two console steps blocking the rest of the cloud path were re-checked and are still outstanding ([WR-19](#setup-steps-that-cannot-be-done-from-this-repository), [WR-22](#setup-steps-that-cannot-be-done-from-this-repository)). |
 | Live updates | Cloud documents and folders now update on every signed-in device as they change, without a reload, and unsaved edits are never overwritten by one ([§Live updates](#live-updates)). The mode switch became icons ([WE-15](#8-editing-modes)), and a new document now starts on a Heading 1 line ([WD-1](#7-document-lifecycle)). |
 | Touch controls | Every button in the mobile layout was inert on a real phone — header icons, popovers, formatting, image insert — and the formatting row could not be scrolled by dragging along it. The buttons cancelled `touchstart` to hold the editor's selection, which also suppresses the `click` a tap generates ([WB-28](#12a-mobile-layout), [WB-29](#12a-mobile-layout)). |

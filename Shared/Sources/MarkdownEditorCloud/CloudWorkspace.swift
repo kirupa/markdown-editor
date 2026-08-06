@@ -28,6 +28,30 @@ public struct CloudWorkspace: Sendable {
         "png", "jpg", "jpeg", "gif", "heic", "heif", "tiff", "tif", "bmp", "webp", "svg",
     ]
 
+    /// The type to record when the caller does not supply one.
+    ///
+    /// The Storage rules accept only `image/*`, and an upload with no type is
+    /// stored as `application/octet-stream`, so an image whose type went
+    /// missing is refused by the server — which a user sees as an image that
+    /// silently will not add. The extension has already been checked against
+    /// `imageExtensions` by the time this is consulted, so the type can be
+    /// derived rather than guessed.
+    static let imageTypes: [String: String] = [
+        "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+        "gif": "image/gif", "heic": "image/heic", "heif": "image/heif",
+        "tiff": "image/tiff", "tif": "image/tiff", "bmp": "image/bmp",
+        "webp": "image/webp", "svg": "image/svg+xml",
+    ]
+
+    /// - Parameter declared: what the caller believes the type to be, which on
+    ///   every platform can be absent or wrong.
+    public static func imageType(for fileExtension: String, declared: String? = nil) -> String {
+        if let declared, declared.lowercased().hasPrefix("image/") {
+            return declared.lowercased()
+        }
+        return imageTypes[fileExtension.lowercased()] ?? "application/octet-stream"
+    }
+
     public let nodes: CloudNodeStore
     public let assets: CloudAssetStore
     public let workspaceName: String
@@ -286,7 +310,8 @@ public struct CloudWorkspace: Sendable {
         // The timestamp keeps a re-uploaded image from being served from the
         // CDN's copy of the previous one at the same object path.
         let storagePath = "\(path)#\(Int(Date().timeIntervalSince1970 * 1000))"
-        let url = try await assets.upload(data, to: storagePath, contentType: contentType)
+        let resolvedType = Self.imageType(for: extensionName, declared: contentType)
+        let url = try await assets.upload(data, to: storagePath, contentType: resolvedType)
 
         let asset = CloudNode(
             kind: .asset,
@@ -294,7 +319,7 @@ public struct CloudWorkspace: Sendable {
             size: data.count,
             storagePath: storagePath,
             url: url,
-            contentType: contentType
+            contentType: resolvedType
         )
         var writes = missingAncestors(of: path, alreadyKnown: [])
         writes.append(.put(asset))

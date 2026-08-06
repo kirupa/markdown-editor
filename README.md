@@ -212,7 +212,7 @@ features are deliberately left to each platform.
 ## Tests
 
 ```bash
-macOS/Scripts/run-tests.sh      # 167 tests — the shared Swift core, both apps
+macOS/Scripts/run-tests.sh      # 170 tests — the shared Swift core, both apps
 php Web/tests/php/run.php       # 71 tests — the PHP backend
-open http://127.0.0.1:8000/tests/   # 210 tests — the browser client
+open http://127.0.0.1:8000/tests/   # 217 tests — the browser client
 ```

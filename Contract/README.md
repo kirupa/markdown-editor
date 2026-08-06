@@ -177,6 +177,31 @@ previous one at the same object path. The limit is 10 MiB, enforced in the app
 and again in `Web/firebase/storage.rules`, where a client cannot talk its way
 around it.
 
+**Every port must send a real `image/*` content type, derived from the file
+extension rather than taken from the platform's file handle.** The Storage rule
+accepts only `contentType.matches('image/.*')`, and an upload with no declared
+type is stored as `application/octet-stream` and refused. Platforms hand over
+untyped files routinely — a drag from some applications, a paste, bytes read
+straight off disk — so the type has to be derived. By the time it is needed the
+extension has already been checked against the accepted list, so deriving it is
+safe. A type the platform *does* declare is kept only when it is itself an
+`image/*`. The map is the one below; a port that skips this sees images that
+silently fail to add, reported as a bare permission error.
+
+| Extension | Type | | Extension | Type |
+| --- | --- | --- | --- | --- |
+| `png` | `image/png` | | `bmp` | `image/bmp` |
+| `jpg`, `jpeg` | `image/jpeg` | | `webp` | `image/webp` |
+| `gif` | `image/gif` | | `svg` | `image/svg+xml` |
+| `heic` | `image/heic` | | `tiff`, `tif` | `image/tiff` |
+| `heif` | `image/heif` | | | |
+
+A second thing no fixture can express: **if a port caches image URLs by path so
+the renderer can resolve them synchronously, the cache must be re-keyed whenever
+a path changes.** A document's assets folder is a *sibling*, not a descendant, so
+a subtree walk over the renamed path does not reach it and has to be handled
+separately.
+
 **The Markdown text never contains a Storage URL.** It keeps the relative
 reference every build writes, and the URL is resolved at render time from the
 `asset` node. That is what keeps a document portable between builds.
@@ -291,14 +316,15 @@ could be verified at all.
 
 ## Standing caveats
 
-Two things about the Firebase project are outstanding and block any end-to-end
+One thing about the Firebase project is outstanding and blocks any end-to-end
 check of the cloud path, on every build including the ones that already have one:
 
-- **The Cloud Storage bucket does not exist.** No image in cloud mode can be
-  uploaded or fetched, anywhere, until it is created.
 - **The Firestore security rules are unpublished.** The database is readable and
   writable by anyone with the API key, which is public by design.
 
-Both were re-checked on 5 August 2026, with the commands to repeat the checks, in
+The Cloud Storage bucket, previously listed here, **now exists** — an
+unauthenticated list answers `403` rather than `404`.
+
+Re-checked on 6 August 2026, with the commands to repeat the checks, in
 [Web/README.md § 11b](../Web/README.md#setup-steps-that-cannot-be-done-from-this-repository).
-Neither can be done from this repository; both are console work.
+It cannot be done from this repository; it is console work.
