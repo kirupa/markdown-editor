@@ -83,9 +83,16 @@ cp -R "$here/src" "$here/seed" "$here/bootstrap.php" "$stage/private/"
 # relative imports inherit the new directory without a build step. The hash is
 # of the contents, so an unchanged deploy re-uses the same directory and
 # nothing has to be re-downloaded.
+#
+# The hash is computed from *inside* the staging directory on purpose. `shasum`
+# prints the file's path next to its digest, and the staging directory is a
+# fresh `mktemp -d` every run, so hashing absolute paths made the version change
+# on every deploy no matter what the files said — which is precisely the
+# behavior the paragraph above says it avoids. Relative paths keep it honest.
 asset_version="$(
-  find "$stage/public/app" "$stage/public/css" -type f -print0 |
-    sort -z | xargs -0 shasum | shasum | cut -c1-12
+  cd "$stage/public" &&
+  find app css -type f -print0 |
+    LC_ALL=C sort -z | xargs -0 shasum | shasum | cut -c1-12
 )"
 mkdir -p "$stage/public/v/$asset_version"
 mv "$stage/public/app" "$stage/public/css" "$stage/public/v/$asset_version/"
