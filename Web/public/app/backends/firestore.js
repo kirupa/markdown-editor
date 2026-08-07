@@ -22,6 +22,7 @@
 
 import { ApiError } from './api-error.js';
 import * as paths from '../cloud/paths.js';
+import { nullImageCache } from '../cloud/image-cache.js';
 
 /** Image formats the local build accepts, so both modes take the same files. */
 const IMAGE_EXTENSIONS = [
@@ -84,7 +85,12 @@ const MAX_DOCUMENT_BYTES = 900_000;
  * @property {(from: string, to: string) => Promise<string>} copy returns the new download URL
  */
 
-export function createFirestoreBackend({ nodes, assets, workspaceName = 'kirupaMarkdown' }) {
+export function createFirestoreBackend({
+  nodes,
+  assets,
+  images = nullImageCache(),
+  workspaceName = 'kirupaMarkdown',
+}) {
   // `imageURL` has to answer synchronously, because the renderer resolves image
   // sources while it builds the DOM. Reading a document fills this in for the
   // images that document refers to, so by the time anything renders the answer
@@ -328,9 +334,16 @@ export function createFirestoreBackend({ nodes, assets, workspaceName = 'kirupaM
         paths.parentOf(node.path),
         paths.assetsFolderName(node.path)
       );
+      const assetURLs = [];
       for (const asset of await nodes.subtreeOf(assetFolder)) {
-        if (asset.type === 'asset' && asset.url) urlByPath.set(asset.path, asset.url);
+        if (asset.type === 'asset' && asset.url) {
+          urlByPath.set(asset.path, asset.url);
+          assetURLs.push(asset.url);
+        }
       }
+      // Bytes already on the device are adopted before returning, so a document
+      // opened with no network renders its pictures rather than broken frames.
+      await images.warm(assetURLs);
 
       const text = node.text ?? '';
       return {
@@ -492,6 +505,7 @@ export function createFirestoreBackend({ nodes, assets, workspaceName = 'kirupaM
       if (storagePaths.length > 0) await assets.removeAll(storagePaths);
 
       for (const member of subtree) urlByPath.delete(member.path);
+      await images.forget(subtree.map((member) => member.url));
       return { ...entryFor(node), deleted: true };
     },
 
@@ -564,6 +578,9 @@ export function createFirestoreBackend({ nodes, assets, workspaceName = 'kirupaM
       });
       await nodes.commit(writes);
       urlByPath.set(target, url);
+      // These bytes are in hand right now, so the picture just added is
+      // offline-ready without downloading back what was just sent.
+      await images.remember(url, file);
 
       const relativePath =
         `${paths.encodeComponent(folderName)}/${paths.encodeComponent(fileName)}`;
@@ -575,9 +592,17 @@ export function createFirestoreBackend({ nodes, assets, workspaceName = 'kirupaM
       };
     },
 
-    /** Synchronous by contract; `read` primes the cache. */
+    /**
+     * Synchronous by contract; `read` primes both caches.
+     *
+     * The local copy wins whenever there is one. That is not only for offline:
+     * it also means an image is fetched across the network once per device
+     * rather than once per document open.
+     */
     imageURL(workspacePath) {
-      return urlByPath.get(paths.normalize(workspacePath)) ?? null;
+      const remote = urlByPath.get(paths.normalize(workspacePath)) ?? null;
+      if (remote === null) return null;
+      return images.localURLFor(remote) ?? remote;
     },
 
     /**

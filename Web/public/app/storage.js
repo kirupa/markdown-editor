@@ -11,6 +11,8 @@ import { api, setBackend } from './api.js';
 import { localBackend } from './backends/local.js';
 import { createFirestoreBackend } from './backends/firestore.js';
 import { createFirestoreNodeStore, createFirebaseAssetStore } from './cloud/firestore-store.js';
+import { createImageCache, nullImageCache } from './cloud/image-cache.js';
+import { createIndexedDBImageStore, canCacheImages } from './cloud/image-store.js';
 import { restoreAccount, currentAccount, signIn, signOutOfAccount } from './cloud/session.js';
 
 const MODE_KEY = 'markdown-editor.storageMode';
@@ -70,7 +72,13 @@ async function activateCloud(uid) {
     createFirestoreNodeStore(uid),
     createFirebaseAssetStore(uid),
   ]);
-  setBackend(createFirestoreBackend({ nodes, assets }));
+  // Firestore's persistent cache covers documents but not Storage objects, so
+  // images need a cache of their own or an offline document renders empty
+  // frames. A browser without IndexedDB simply keeps working online.
+  const images = canCacheImages()
+    ? createImageCache({ store: createIndexedDBImageStore() })
+    : nullImageCache();
+  setBackend(createFirestoreBackend({ nodes, assets, images }));
   mode = CLOUD;
 }
 

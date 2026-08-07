@@ -396,7 +396,13 @@ network is not the same as losing the documents.
 | WR-23 | Firestore is opened with a **persistent local cache** in IndexedDB, not the in-memory default. `getFirestore()` caches only for the life of the tab, so a reload with no signal would show an empty workspace — in cloud mode the server holds the only copy. Opened this way, a reload offline opens the same documents. |
 | WR-24 | **The cache holds what this device has opened, not the whole account.** Firestore caches documents this client has read or written. A document written on another device and never opened here is not available offline. Calling the local copy a full backup would be wrong, and it is worth being plain about which half is true. |
 | WR-25 | Edits made offline are queued locally and sent when the network returns. Firestore's writes resolve against the local cache immediately, so the editor behaves the same whether or not there is a connection, and [WC-2](#11b-cloud-storage-and-accounts) still decides who wins when a queued write meets a newer one. |
-| WR-26 | **Images are not covered by this.** Firestore's persistence caches Firestore documents; Cloud Storage objects are ordinary HTTPS downloads and have no offline layer. An image already displayed may be served from the browser's HTTP cache, but that is the browser's decision, not a guarantee. Offline, an image not already fetched will not render. Closing this needs an explicit image cache — see [§17](#17-out-of-scope--not-yet-supported). |
+| WR-26 | **Images have a cache of their own,** because Firestore's persistence covers Firestore documents and nothing else — Cloud Storage objects are ordinary HTTPS downloads with no offline layer. Without one, an offline document opened with its text intact and every picture broken, which reads as damage rather than as unavailability. Image bytes are kept in IndexedDB and served as `blob:` URLs, so a document that has been opened once renders completely with no network. |
+| WR-33 | **Entries are keyed by download URL, not by the path of the image.** Two things follow, and both are the reason for the choice. Renaming a document moves its images and the backend already carries each URL across, so a rename needs no cache bookkeeping at all. And a download URL carries a token that changes when the bytes behind it are replaced, so a replaced image *misses* rather than serving the picture it replaced: the cache cannot go stale, only empty. |
+| WR-34 | **A miss is never a missing image.** If the bytes are not on the device, `imageURL` returns the download URL exactly as before, so the picture loads whenever the network is there. The cache can only improve on the previous behaviour, never fall short of it. |
+| WR-35 | Bytes already on the device are adopted *before* a document is returned, so it renders complete rather than filling in afterwards. Bytes that are **not** there are downloaded in the background and not waited for: a miss only matters offline, and offline the download would fail anyway — blocking every document open on fetching its images would spend something real to buy something hypothetical. |
+| WR-36 | An uploaded image is offline-ready immediately, cached from the bytes in hand rather than downloaded back from the server it was just sent to. |
+| WR-37 | Deleting an image drops its bytes and releases its `blob:` URL. A browser that cannot store the bytes at all — private browsing, no quota, no IndexedDB — still renders normally for the session; only the offline guarantee is lost. |
+| WR-38 | Cached images make the network cheaper as well as optional: an image is fetched once per device rather than once per document open. |
 | WR-27 | Persistence is genuinely unavailable in some browsers — private browsing in parts of Safari and Firefox, and anywhere IndexedDB is switched off. That falls back to the in-memory cache with a console warning: offline support stops working, the editor still opens. Refusing to start would be the wrong trade. |
 | WR-28 | The multi-tab manager is used, so two tabs of the editor share one cache. Without it only the first tab gets persistence and the others silently run without. |
 
@@ -410,14 +416,22 @@ in Firestore.
 | Stored in | Firestore, `users/{uid}/nodes/{id}` | Cloud Storage, `users/{uid}/<path>#<timestamp>` |
 | Firestore holds | the Markdown text itself | an `asset` node: `storagePath`, `url`, `contentType` |
 | Size limit | 1 MiB per Firestore document, refused above ~900 KB | 10 MB per image, enforced in the client *and* in `storage.rules` |
-| Offline | yes, once opened ([WR-23](#11b-cloud-storage-and-accounts)) | **no** ([WR-26](#11b-cloud-storage-and-accounts)) |
+| Offline | yes, once opened ([WR-23](#11b-cloud-storage-and-accounts)) | yes, once opened ([WR-26](#11b-cloud-storage-and-accounts)) |
 | Governed by | `Web/firebase/firestore.rules` | `Web/firebase/storage.rules` |
 
 Storing images inline in Firestore was considered and rejected: base64 inflates
 bytes by about a third, against a hard 1 MiB document limit, which would cap an
 image at roughly 700 KB *and* spend the same budget the document text needs. It
 would buy offline images for free, which is the one real argument for it, but at
-a size limit low enough to reject ordinary screenshots.
+a size limit low enough to reject ordinary screenshots. That argument is now
+spent anyway: [WR-26](#working-offline) buys offline images without the limit.
+
+The Cache Storage API looks like the closer fit than IndexedDB for caching
+downloads, and was rejected for a specific reason: the browser does not consult
+it for an `<img src>` unless a service worker sits in front of every request.
+A service worker brings its own scope, update lifecycle, and deployment story —
+a large commitment for something needed in exactly one place. IndexedDB hands
+back the bytes and the caller decides what to do with them.
 
 The Markdown text never contains a Storage URL. It keeps the same relative
 `<stem>.assets/name.png` reference the local and native builds write, and the
@@ -757,6 +771,7 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 | --- | --- |
 | Rules published | The Firestore and Storage rules are live, so the database is no longer readable by anyone with the API key ([WR-19](#setup-steps-that-cannot-be-done-from-this-repository)). Publishing them made one latent disagreement reachable: the web build accepted an image of exactly 10 MB that the rule refuses ([WR-31](#11b-cloud-storage-and-accounts)). The in-memory Firestore now enforces the rules on every write, and the transcription is checked against the rules files themselves ([WY-15](#tests), [WY-16](#tests)). |
 | Cloud images | The Storage bucket now exists, and the two things that would have stopped an image reaching it were fixed before it was tried: an upload with no content type was refused by the Storage rule ([WR-29](#11b-cloud-storage-and-accounts)), and the image URL cache did not follow a rename, so images in a renamed document broke until reload ([WR-30](#11b-cloud-storage-and-accounts)). Both apply to the native builds too. |
+| Offline images | Cloud Storage objects are now cached on the device and served as `blob:` URLs, so a cloud document opened once renders completely with no network ([WR-26](#working-offline)…[WR-38](#working-offline)). Firestore's persistent cache covers Firestore documents only, so before this an offline document opened with its text intact and every picture broken. Entries are keyed by download URL, which makes a rename free and makes a replaced image miss rather than serve the picture it replaced. Verified in a real browser with real IndexedDB, the network cut by the debugger, and a control proving it was actually off. |
 | Offline cloud documents | Firestore now opens with a persistent, multi-tab local cache, so a cloud workspace survives a reload with no network and edits made offline are queued and sent on reconnect ([§Working offline](#working-offline)). Firestore was previously opened the default way, which caches only for the life of the tab. Images are not covered ([WR-26](#working-offline)), and the two console steps blocking the rest of the cloud path were re-checked and are still outstanding ([WR-19](#setup-steps-that-cannot-be-done-from-this-repository), [WR-22](#setup-steps-that-cannot-be-done-from-this-repository)). |
 | Live updates | Cloud documents and folders now update on every signed-in device as they change, without a reload, and unsaved edits are never overwritten by one ([§Live updates](#live-updates)). The mode switch became icons ([WE-15](#8-editing-modes)), and a new document now starts on a Heading 1 line ([WD-1](#7-document-lifecycle)). |
 | Touch controls | Every button in the mobile layout was inert on a real phone — header icons, popovers, formatting, image insert — and the formatting row could not be scrolled by dragging along it. The buttons cancelled `touchstart` to hold the editor's selection, which also suppresses the `click` a tap generates ([WB-28](#12a-mobile-layout), [WB-29](#12a-mobile-layout)). |
@@ -806,13 +821,11 @@ Specific to the web build:
 - Offline use for documents stored **on the server**. The PHP backend needs the
   server to be reachable. Cloud documents *do* work offline once they have been
   opened on the device ([WR-23](#11b-cloud-storage-and-accounts))
-- Offline **images**. Firestore's persistence covers Firestore, not Cloud
-  Storage, so an image not already fetched will not render without a network
-  ([WR-26](#11b-cloud-storage-and-accounts)). Closing this needs the image bytes
-  cached deliberately — in IndexedDB, with `imageURL` handing back a blob URL, or
-  behind a service worker. It is not written yet because the Storage bucket does
-  not exist ([WR-22](#11b-cloud-storage-and-accounts)), so none of it could be
-  run even once
+- Pre-caching images the device has **not** opened. Image bytes are kept for
+  offline use once a document has been opened ([WR-26](#11b-cloud-storage-and-accounts)),
+  which is the same bargain Firestore's own cache strikes
+  ([WR-24](#11b-cloud-storage-and-accounts)): the device holds what it has seen,
+  not the whole account
 - A native app shell for phones; the mobile layout ([§12a](#12a-mobile-layout))
   is the browser page rearranged, not a packaged app
 - Syncing the saved-for-later list between devices — it lives in `localStorage`,

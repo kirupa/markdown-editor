@@ -184,6 +184,27 @@ fails on upload with a bare permission error, which is the one outcome the
 client-side check exists to prevent. The web build had this wrong until the
 rules were published and it became reachable.
 
+**Every port must cache image bytes on the device.** Firestore's offline
+persistence covers Firestore documents and nothing else; Storage objects are
+ordinary HTTPS downloads. A port that relies on Firestore's cache alone opens an
+offline document with its text intact and every picture broken, which reads to
+the person holding the device as damage rather than as being offline. The web
+build keeps the bytes in IndexedDB; a native port has a filesystem and should
+use it. Three rules make the cache correct on any platform:
+
+* **Key by download URL, not by the image's path in the workspace.** A rename
+  moves images, and the download URL moves with them, so a rename needs no cache
+  bookkeeping. The URL also carries a token that changes when the bytes behind it
+  are replaced, so a replaced image misses instead of serving the old picture:
+  the cache can go empty but it cannot go stale.
+* **A miss must fall back to the download URL,** never to a missing image. The
+  cache is only ever allowed to improve on the uncached behaviour.
+* **Adopt what is already on the device before returning the document; do not
+  wait on what is not.** A miss only matters with no network, and with no network
+  the download fails anyway — so blocking every open on fetching images spends
+  something real to buy something hypothetical. Bytes that were just *uploaded*
+  are cached from the copy in hand rather than downloaded back.
+
 **Every port must send a real `image/*` content type, derived from the file
 extension rather than taken from the platform's file handle.** The Storage rule
 accepts only `contentType.matches('image/.*')`, and an upload with no declared

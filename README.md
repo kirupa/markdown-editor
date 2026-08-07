@@ -233,11 +233,18 @@ features are deliberately left to each platform.
 ```bash
 macOS/Scripts/run-tests.sh      # 171 tests — the shared Swift core, both apps
 php Web/tests/php/run.php       # 71 tests — the PHP backend
-open http://127.0.0.1:8000/tests/   # 219 tests — the browser client
-node Web/tests/run.mjs          # 214 tests — the same, minus the DOM tests,
+open http://127.0.0.1:8000/tests/   # 241 tests — the browser client
+node Web/tests/run.mjs          # 236 tests — the same, minus the DOM tests,
                                 #   plus 5 that check the code still agrees
                                 #   with the published Firebase rules
+
+swift test --package-path Shared/Firebase   # 5 tests — the Firebase adapter
 ```
+
+The last one is deliberately separate. `Shared/Package.swift` declares no
+dependencies at all, so `run-tests.sh` neither downloads nor builds the Firebase
+SDK and the fast loop stays fast; the SDK is declared in a second package that
+only the apps will depend on.
 
 The browser page is the one that needs nothing but PHP, and it is where the DOM
 tests run. It is not a superset, though: the rules-conformance tests read the
