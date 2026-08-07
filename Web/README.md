@@ -368,6 +368,7 @@ collection of nodes:
 | WR-18 | Images go to Cloud Storage under `users/{uid}/`, capped at 10 MB. Firestore's 1 MiB document limit makes storing them inline too restrictive. Opening a document loads its image URLs first, so the renderer — which resolves image sources synchronously — has them ready. |
 | WR-29 | **An image is uploaded with a real `image/*` content type, derived from its extension rather than taken on trust.** A `File` can arrive with an empty `type` — a drag from some applications, a paste, or a handle built by a script — and an upload with no type is stored as `application/octet-stream`, which the Storage rule refuses. The extension has already been checked against the accepted list by that point, so deriving the type from it is safe, and a declared type is only kept when it is itself an `image/*`. Without this, adding an image against published rules fails with a bare permission error and looks to the user like nothing happened. The same rule is applied identically by the native builds. |
 | WR-30 | **The image URL cache follows a rename.** Image sources have to resolve synchronously ([WR-18](#11b-cloud-storage-and-accounts)), so URLs are cached by path when a document is read. Renaming a document or a folder moves the model in place without re-reading it, so every cached URL must be re-keyed at the same moment — including the sibling `<stem>.assets` folder, which is *not* a descendant of the document and so is missed by any subtree walk. Otherwise every image in a renamed document breaks until the page is reloaded. |
+| WR-31 | **The client refuses an image that reaches the 10 MB limit, not one that exceeds it.** `storage.rules` allows `request.resource.size < 10 * 1024 * 1024`, so a file of exactly 10,485,760 bytes is refused by the server. Checking `>` accepted it here and then failed on upload with a bare permission error — the single outcome the client-side check exists to prevent. The native builds always drew the line correctly; this was the web build disagreeing with both them and the rule, and it only became reachable when the rules were published. |
 
 ### Live updates
 
@@ -445,17 +446,17 @@ one account reach another's documents.
 ### Setup steps that cannot be done from this repository
 
 These are Firebase console actions. Until they are done, the cloud option will
-fail, and it will say which of these is missing.
+fail, and it will say which of these is missing. They are kept here, done, so the
+checks stay repeatable — a rule can be edited in the console at any time.
 
-**Re-checked against the live project on 6 August 2026. Three of the four are now
-done** — the Storage bucket exists, Google sign-in is enabled, and `www.kirupa.com`
-is an authorised domain. **Publishing the rules is the one that is left, and it is
-the one that matters.** The commands are below so every check can be repeated
-rather than taken on trust.
+**All four are now done, re-checked against the live project on 6 August 2026.**
+The rules are published, the Storage bucket exists, Google sign-in is enabled, and
+`www.kirupa.com` is an authorised domain. The commands are below so every check can
+be repeated rather than taken on trust.
 
 | ID | Step |
 | --- | --- |
-| WR-19 | **Publish the security rules.** `firebase deploy --only firestore:rules,storage`, or paste both files into the console. **The project is still in open test mode: anyone with the API key can read and write everything.** Verified by an unauthenticated REST call carrying only the public API key, which returned `200` and an empty result rather than `403 PERMISSION_DENIED`: `curl "https://firestore.googleapis.com/v1/projects/kirupa-markdown/databases/(default)/documents/users/probe/nodes?key=<apiKey>"`. Once the rules are published that call returns `403`. This is the first thing to do and the one that matters — the live listeners in [WC-1](#11b-cloud-storage-and-accounts) make it worse, because an attacker can subscribe to changes rather than poll for them. |
+| WR-19 | **Publish the security rules.** `firebase deploy --only firestore:rules,storage`, or paste both files into the console. **Done — verified 6 August 2026.** An unauthenticated REST call carrying only the public API key now returns `403 PERMISSION_DENIED` where it previously returned `200` and an empty result: `curl "https://firestore.googleapis.com/v1/projects/kirupa-markdown/databases/(default)/documents/users/probe/nodes?key=<apiKey>"`. An unauthenticated write returns `403` as well, and both an object read and a bucket list on Cloud Storage return `403`. The database is no longer open. |
 | WR-20 | **Enable the Google sign-in provider** under Authentication ▸ Sign-in method. **Done — confirmed 6 August 2026.** `curl -X POST "https://identitytoolkit.googleapis.com/v1/accounts:createAuthUri?key=<apiKey>" -H 'Content-Type: application/json' -d '{"providerId":"google.com","continueUri":"https://www.kirupa.com/markdown/"}'` returns a real `authUri` carrying the project's OAuth client ID. A disabled provider answers `OPERATION_NOT_ALLOWED` instead — which is still what anonymous and email/password return, so neither of those is available as a fallback. |
 | WR-21 | **Add the authorised domains** under Authentication ▸ Settings: `www.kirupa.com` for the published build, and `127.0.0.1` for local preview if you reach it by IP. `localhost` is allowed by default, but `127.0.0.1` is a different host string to Firebase — reaching the preview at `http://localhost:8000` avoids needing this. **`www.kirupa.com` is done — confirmed 6 August 2026** by the same call as [WR-20](#setup-steps-that-cannot-be-done-from-this-repository): it accepted that origin as a `continueUri`, which an unauthorised domain is refused for. |
 | WR-22 | **Enable Cloud Storage** for the project, or image upload will fail. **Done — the bucket exists as of 6 August 2026.** `curl "https://firebasestorage.googleapis.com/v0/b/kirupa-markdown.firebasestorage.app/o"` now answers `403` rather than `404`; a bucket that does not exist answers `404`, which is still what the `.appspot.com` spelling returns, confirming `.firebasestorage.app` is the right name and that it is the one both builds are configured with. `403` is the expected answer to an unauthenticated list and is what publishing [WR-19](#11b-cloud-storage-and-accounts) will make permanent. No bucket CORS configuration is needed: the upload endpoint already answers a cross-origin preflight with `access-control-allow-origin: *`. |
@@ -723,14 +724,14 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 | Command | Covers |
 | --- | --- |
 | Open `/tests/` in a browser | The full client suite, including the DOM tests. Needs only PHP. |
-| `node Web/tests/run.mjs` | The same client suites minus the DOM ones. Node is optional and used only for a fast terminal loop. |
+| `node Web/tests/run.mjs` | The same client suites minus the DOM ones, plus the rules-conformance suite, which reads the `.rules` files and so cannot run in the browser. Node is optional and used only for a fast terminal loop. |
 | `php Web/tests/php/run.php` | Workspace path safety, document read/write, file tree, file management, image import and its content validation, and how settings are read from the environment. |
 | `node Web/tools/check-firebase-sdk.mjs` | Every symbol the app imports from the pinned Firebase build is actually exported by it. Needs the network, so it is not part of the suite; run it after changing `FIREBASE_VERSION`. |
 
 | ID | Requirement |
 | --- | --- |
 | WY-1 | The client suites are the source of truth for the ported core and run in the browser, so the environment under test is the one that ships. |
-| WY-2 | The browser page and the node runner import the same list of modules, so they cannot disagree about what "the test suite" is. |
+| WY-2 | The browser page and the node runner import the same list of modules, so they cannot disagree about what "the test suite" is. Two lists are environment-specific and named as such: the DOM tests need a browser, and the rules-conformance tests need to read files from the repository. |
 | WY-3 | The PHP suite runs without PHPUnit or any other dependency. |
 | WY-4 | Path-traversal, symlink-escape, invalid-UTF-8, mislabeled-image, and scriptable-SVG rejection are covered by tests, not just by inspection. |
 | WY-5 | The DOM tests assert the invariant everything else rests on: each surface's text equals the model's text exactly, and every character offset round-trips through the DOM. |
@@ -743,6 +744,8 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 | WY-13 | The live-update tests run against an in-memory Firestore whose watchers behave like the real ones, delivering current contents the moment a listener attaches. That attach snapshot is the source of the only two hazards found in this feature, so a double that skipped it would have hidden both. |
 | WY-11 | Touch behaviour is verified by tapping, never by calling `element.click()`. A programmatic click invokes the handler directly and passes whether or not a real tap ever reaches it, which is how every button in the mobile layout came to be dead while every assertion passed. The check that a control does not cancel the events a tap depends on is a unit test, because `dispatchEvent` produces untrusted events that never synthesize a click and so cannot reproduce the failure in a DOM test. |
 | WY-14 | The pinned Firebase build is checked against the symbols the app imports from it, by `Web/tools/check-firebase-sdk.mjs`. This is the one failure the suite structurally cannot reach: every cloud test runs against an in-memory double, deliberately, so the real SDK is never loaded and a symbol it stopped exporting would pass everything and break only in a browser after signing in. The symbol list is read out of `app/cloud/` rather than written down, so it cannot drift from what the app does — 23 symbols across auth, Firestore, and Storage at the time of writing. Mutation tested: adding an import the SDK does not export makes it fail. |
+| WY-15 | **The in-memory Firestore refuses what the published rules refuse**, so every write in every test is checked against them rather than only against what the client needs. Before the rules were published any write passed, which meant a write the server would reject could pass the entire suite — and the rules were published against code that was already written and already tested. Mutation tested: dropping `parent` from a folder write turns 10 tests red, and renaming the `asset` type to one the rules do not list turns 7 red. |
+| WY-16 | **The transcription of the rules is checked against the rules files themselves**, because a transcription that drifts from its source reports conformance that is no longer being checked. The type list, the required fields, both size limits, the image-size *comparison operator*, and the deny-by-default catch-all are all read out of `Web/firebase/*.rules` at test time. Mutation tested: changing the text limit, loosening the image comparison to `<=`, or opening the catch-all each turns the suite red. |
 
 ---
 
@@ -750,6 +753,7 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 
 | Change | What shipped |
 | --- | --- |
+| Rules published | The Firestore and Storage rules are live, so the database is no longer readable by anyone with the API key ([WR-19](#setup-steps-that-cannot-be-done-from-this-repository)). Publishing them made one latent disagreement reachable: the web build accepted an image of exactly 10 MB that the rule refuses ([WR-31](#11b-cloud-storage-and-accounts)). The in-memory Firestore now enforces the rules on every write, and the transcription is checked against the rules files themselves ([WY-15](#tests), [WY-16](#tests)). |
 | Cloud images | The Storage bucket now exists, and the two things that would have stopped an image reaching it were fixed before it was tried: an upload with no content type was refused by the Storage rule ([WR-29](#11b-cloud-storage-and-accounts)), and the image URL cache did not follow a rename, so images in a renamed document broke until reload ([WR-30](#11b-cloud-storage-and-accounts)). Both apply to the native builds too. |
 | Offline cloud documents | Firestore now opens with a persistent, multi-tab local cache, so a cloud workspace survives a reload with no network and edits made offline are queued and sent on reconnect ([§Working offline](#working-offline)). Firestore was previously opened the default way, which caches only for the life of the tab. Images are not covered ([WR-26](#working-offline)), and the two console steps blocking the rest of the cloud path were re-checked and are still outstanding ([WR-19](#setup-steps-that-cannot-be-done-from-this-repository), [WR-22](#setup-steps-that-cannot-be-done-from-this-repository)). |
 | Live updates | Cloud documents and folders now update on every signed-in device as they change, without a reload, and unsaved edits are never overwritten by one ([§Live updates](#live-updates)). The mode switch became icons ([WE-15](#8-editing-modes)), and a new document now starts on a Heading 1 line ([WD-1](#7-document-lifecycle)). |

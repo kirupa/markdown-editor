@@ -6,6 +6,8 @@
 // applied only after every write in it validates — because a double that is
 // more forgiving than the real thing tests nothing.
 
+import { firestoreRuleViolation } from './security-rules.js';
+
 export function createMemoryNodeStore(seed = []) {
   const rows = new Map(seed.map((node) => [node.path, node]));
 
@@ -86,6 +88,10 @@ export function createMemoryNodeStore(seed = []) {
       for (const write of writes) {
         if (!write.path) throw new Error('a write with no path');
         if (!write.remove && !write.data) throw new Error('a write with no data');
+        // The published rules refuse malformed writes, so this double does
+        // too. Without it a write the server rejects passes every test.
+        const violation = write.remove ? null : firestoreRuleViolation(write.data);
+        if (violation) throw new Error(`${write.path}: ${violation}`);
       }
       for (const write of writes) {
         if (write.remove) rows.delete(write.path);

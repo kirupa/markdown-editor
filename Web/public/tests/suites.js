@@ -23,6 +23,17 @@ export const CORE_TEST_MODULES = [
 /** Needs a real DOM, so these run only in the browser page. */
 export const DOM_TEST_MODULES = ['./dom.test.js'];
 
-export function discoverTestModules({ includeDOM = false } = {}) {
-  return includeDOM ? [...CORE_TEST_MODULES, ...DOM_TEST_MODULES] : CORE_TEST_MODULES;
+/**
+ * Needs to read files from the repository, so these run only under node. They
+ * check the repository rather than the running app -- that the code still
+ * agrees with the security rules as published.
+ */
+export const NODE_TEST_MODULES = ['./rules-conformance.test.js'];
+
+export function discoverTestModules({ includeDOM = false, includeNode = false } = {}) {
+  return [
+    ...CORE_TEST_MODULES,
+    ...(includeDOM ? DOM_TEST_MODULES : []),
+    ...(includeNode ? NODE_TEST_MODULES : []),
+  ];
 }

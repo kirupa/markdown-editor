@@ -177,6 +177,13 @@ previous one at the same object path. The limit is 10 MiB, enforced in the app
 and again in `Web/firebase/storage.rules`, where a client cannot talk its way
 around it.
 
+**Refuse an image that reaches the limit, not one that exceeds it.** The rule is
+`request.resource.size < 10 * 1024 * 1024`, so a file of exactly 10,485,760 bytes
+is denied by the server. A port that checks `> limit` accepts that file and then
+fails on upload with a bare permission error, which is the one outcome the
+client-side check exists to prevent. The web build had this wrong until the
+rules were published and it became reachable.
+
 **Every port must send a real `image/*` content type, derived from the file
 extension rather than taken from the platform's file handle.** The Storage rule
 accepts only `contentType.matches('image/.*')`, and an upload with no declared
@@ -316,15 +323,17 @@ could be verified at all.
 
 ## Standing caveats
 
-One thing about the Firebase project is outstanding and blocks any end-to-end
-check of the cloud path, on every build including the ones that already have one:
+**Nothing about the Firebase project is outstanding any more.** The rules are
+published and the Storage bucket exists: an unauthenticated read, an
+unauthenticated write, and both Storage operations all answer `403`, where the
+Firestore calls previously answered `200`.
 
-- **The Firestore security rules are unpublished.** The database is readable and
-  writable by anyone with the API key, which is public by design.
-
-The Cloud Storage bucket, previously listed here, **now exists** — an
-unauthenticated list answers `403` rather than `404`.
+What remains true is that **no build has been exercised end to end against the
+real project**, because only Google sign-in is enabled and a token for it cannot
+be minted headlessly. Every cloud test on every build runs against an in-memory
+double. A port should treat the cloud path as written-and-conformant rather than
+proven, and the first real sign-in is the moment to watch for.
 
 Re-checked on 6 August 2026, with the commands to repeat the checks, in
 [Web/README.md § 11b](../Web/README.md#setup-steps-that-cannot-be-done-from-this-repository).
-It cannot be done from this repository; it is console work.
+The console work itself is done.

@@ -510,7 +510,11 @@ export function createFirestoreBackend({ nodes, assets, workspaceName = 'kirupaM
           `Supported formats are ${IMAGE_EXTENSIONS.join(', ')}.`
         );
       }
-      if (file.size > MAX_IMAGE_BYTES) {
+      // `>=`, not `>`: `storage.rules` allows `size < MAX_IMAGE_BYTES`, so a
+      // file of exactly the limit is refused by the server. Being one byte
+      // more permissive than the rule means the largest accepted file fails
+      // with a bare permission error instead of this sentence.
+      if (file.size >= MAX_IMAGE_BYTES) {
         throw new ApiError(
           `That image is too large: ${paths.nameOf(file.name)}`,
           `Images must be under ${Math.round(MAX_IMAGE_BYTES / 1024 / 1024)} MB.`

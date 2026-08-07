@@ -122,26 +122,34 @@ suite that runs in a third of a second and one that needs a UI.
   be the least pleasant part, and note that the existing builds' cloud paths are
   themselves unverified end to end (below).
 
-## Before you start: one thing is broken upstream
+## Before you start: the Firebase project is ready now
 
-It applies to every build, including this one, and cannot be fixed from this
-repository:
-
-- **The Firestore security rules are unpublished**, so the database is currently
-  readable and writable by anyone holding the (public, by design) API key.
-
-The Cloud Storage bucket, previously listed here as missing, now exists.
-
-Commands to re-check are in
+Both things previously listed here as broken are fixed. The security rules are
+published and the Storage bucket exists, so the cloud path is reachable for the
+first time. Commands to re-check are in
 [Web/README.md § 11b](../Web/README.md#setup-steps-that-cannot-be-done-from-this-repository).
-Until it is done, build the local-storage path and treat the cloud path as
-written-but-unproven, which is exactly the state the other two builds are in.
 
-One thing to carry over that no fixture can express: an image upload must send a
-content type derived from the file's extension, because the Storage rule accepts
-only `image/*` and an untyped upload is stored as `application/octet-stream` and
-refused. The map is in
-[Contract/README.md](../Contract/README.md#the-assets-convention).
+What is still true is that **no build has been exercised end to end against the
+real project** — only Google sign-in is enabled, and a token for it cannot be
+minted from a script, so every cloud test on every build runs against an
+in-memory double. Treat the cloud path as written-and-conformant rather than
+proven.
+
+Two things to carry over that no fixture can express, both learned by publishing
+the rules against code that was already written and already tested:
+
+- An image upload must send a content type **derived from the file's extension**,
+  not taken from the platform's file handle. The Storage rule accepts only
+  `image/*`, and an untyped upload is stored as `application/octet-stream` and
+  refused.
+- Refuse an image that **reaches** the 10 MiB limit, not one that exceeds it. The
+  rule is `size < 10 * 1024 * 1024`. The web build checked `>` and so accepted a
+  file of exactly 10,485,760 bytes that the server then denied.
+
+Both are specified in
+[Contract/README.md](../Contract/README.md#the-assets-convention). It is worth
+mirroring the web build's approach of making the test double enforce the rules,
+so a write the server would reject cannot pass the suite.
 
 ## Validating the port
 

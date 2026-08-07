@@ -8,7 +8,7 @@
 import { runAll } from '../public/tests/harness.js';
 import { discoverTestModules } from '../public/tests/suites.js';
 
-for (const specifier of discoverTestModules()) {
+for (const specifier of discoverTestModules({ includeNode: true })) {
   await import(`../public/tests/${specifier.replace('./', '')}`);
 }
 

@@ -386,6 +386,28 @@ struct CloudWorkspaceTests {
         #expect(storagePath.hasPrefix("Trip.assets/a.png#"))
     }
 
+    @Test("An image of exactly the limit is refused, because the rule refuses it")
+    func importImageRefusesExactlyTheLimit() async throws {
+        // `storage.rules` allows `request.resource.size < 10 * 1024 * 1024`, so
+        // a file of exactly that size is denied by the server. The web build
+        // had this as `>` and accepted it, which turned the clear message
+        // below into a bare permission error.
+        let (workspace, _, assets) = workspace([file("Trip.md")])
+        await #expect(throws: CloudError.self) {
+            try await workspace.importImage(
+                Data(count: CloudWorkspace.maximumImageBytes),
+                named: "exact.png", intoDocumentAt: "Trip.md"
+            )
+        }
+        #expect(assets.storedPaths.isEmpty)
+
+        try await workspace.importImage(
+            Data(count: CloudWorkspace.maximumImageBytes - 1),
+            named: "under.png", intoDocumentAt: "Trip.md"
+        )
+        #expect(assets.storedPaths.count == 1)
+    }
+
     @Test("An image with no declared type is uploaded as an image anyway")
     func importImageDerivesContentType() async throws {
         let (workspace, store, assets) = workspace([file("Trip.md")])

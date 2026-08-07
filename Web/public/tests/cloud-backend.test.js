@@ -234,6 +234,26 @@ suite('Cloud backend images', () => {
     );
   });
 
+  test('an image of exactly the limit is refused, because the rule refuses it', async () => {
+    // `storage.rules` allows `request.resource.size < 10 * 1024 * 1024`, so a
+    // file of exactly that size is denied by the server. Letting it past here
+    // turns a clear message into a bare permission error, and the Swift build
+    // already draws the line in the right place — so this is also the two
+    // builds disagreeing with each other.
+    const { backend } = build([fileNode('Kyoto.md', '')]);
+    await expectRejects(() =>
+      backend.uploadImage('Kyoto.md', fakeImage('exact.png', { size: 10 * 1024 * 1024 }))
+    );
+  });
+
+  test('an image one byte under the limit is still accepted', async () => {
+    const { backend } = build([fileNode('Kyoto.md', '')]);
+    const added = await backend.uploadImage(
+      'Kyoto.md', fakeImage('just-under.png', { size: 10 * 1024 * 1024 - 1 })
+    );
+    expectEqual(added.fileName, 'just-under.png');
+  });
+
   test('an unsaved document has nowhere to put an image, and says so', async () => {
     const { backend } = build();
     await expectRejects(() => backend.uploadImage('', fakeImage('photo.png')));
