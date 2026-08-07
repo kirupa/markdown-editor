@@ -77,9 +77,9 @@ welcome window offers recent documents at launch.
 | --- | --- |
 | NG-1 | Being a general-purpose CommonMark or GitHub Flavored Markdown reference implementation. |
 | NG-2 | Exporting to HTML, PDF, or other formats. |
-| NG-3 | Cloud sync, collaboration, or multi-user editing. |
+| NG-3 | ~~Cloud sync, collaboration, or multi-user editing.~~ **No longer a non-goal, and not yet built.** The stated direction for the product is now cloud-first with local copies for offline use, which the web build already implements. A Firebase adapter for the native builds lives in `Shared/Firebase/` and compiles for macOS, but **nothing in this app reaches it** — there is no sign-in, no cloud document list, and no cloud open or save, so the app on disk today is exactly as local as this row used to promise. Two things gate the work, in order: an Apple app has to be registered in the Firebase console before sign-in can succeed at all (see the root README), and the cloud path has never been exercised against the real project on any build. Multi-user editing of one document remains a non-goal. |
 | NG-4 | Plugin or extension support. |
-| NG-5 | iOS, iPadOS, or cross-platform support. |
+| NG-5 | ~~iOS, iPadOS, or cross-platform support.~~ **Superseded.** This row described the app when it was the only one. There is now an iOS app (`iOS/`), a browser build (`Web/`), a brief for a Windows one (`Windows/`), and a language-neutral fixture set (`Contract/`) that holds them to the same behaviour. What survives of the intent is narrower and still true: this target is native macOS, and nothing here is compromised to make it portable. |
 
 ---
 

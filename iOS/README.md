@@ -352,6 +352,6 @@ Known gaps, recorded deliberately so they are not mistaken for bugs:
 | ID-35 | No drag-and-drop or paste image import. The picker and Files both work; drop targets are not wired. |
 | ID-36 | No keyboard shortcuts for formatting. A hardware keyboard on an iPad should get the macOS shortcuts. |
 | ID-37 | No scroll or selection synchronization between the Split panes. macOS has both. |
-| ID-38 | No Firebase or cloud storage. That exists only in the web build. |
+| ID-38 | No Firebase or cloud storage **in the app**. A Firebase adapter now lives in `Shared/Firebase/` and compiles for iOS, so it is no longer true that this exists only in the web build — but no screen reaches it, and the app stores documents exactly as it did. Wiring it up is gated on registering an Apple app in the Firebase console, without which sign-in cannot succeed; the app ID checked into the adapter is a placeholder that refuses itself rather than failing later as an OAuth error. |
 | ID-39 | Split is unavailable on compact-width iPhones, by design (ID-8). |
 | ID-40 | Styling the source pane cannot use `disable`/`enableUndoRegistration` as a matched pair: UIKit calls `removeAllActions` when the text storage is replaced, which re-enables registration, so the balancing call raises. `MarkdownSourceStyler` now re-enables only when it still needs to. |

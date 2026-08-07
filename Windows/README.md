@@ -146,7 +146,18 @@ the rules against code that was already written and already tested:
   rule is `size < 10 * 1024 * 1024`. The web build checked `>` and so accepted a
   file of exactly 10,485,760 bytes that the server then denied.
 
-Both are specified in
+A third, learned by building offline support rather than by publishing rules:
+
+- **Cache image bytes yourself.** Firestore's offline persistence covers
+  Firestore documents and nothing else; Storage objects are ordinary HTTPS
+  downloads. A port that leans on Firestore's cache alone opens an offline
+  document with its text intact and every picture broken, which reads as damage
+  rather than as being offline. Key the cache by *download URL*, not by the
+  image's path — a rename then needs no bookkeeping, and a replaced image misses
+  instead of serving the picture it replaced. A miss must fall back to the
+  download URL, never to a missing image.
+
+All three are specified in
 [Contract/README.md](../Contract/README.md#the-assets-convention). It is worth
 mirroring the web build's approach of making the test double enforce the rules,
 so a write the server would reject cannot pass the suite.
