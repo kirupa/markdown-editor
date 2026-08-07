@@ -66,6 +66,14 @@ public final class FirebaseSession: ObservableObject {
         failure = nil
         defer { isWorking = false }
 
+        // Checked before the browser opens. Without this the flow fails only
+        // once the user has picked a Google account, with a message about the
+        // OAuth request rather than about the app ID that caused it.
+        if let problem = FirebaseConfiguration.unresolvedConfiguration {
+            failure = .signInFailed(problem)
+            return
+        }
+
         do {
             let credential = try await GoogleSignInFlow.credential(presentingFrom: anchor)
             _ = try await Auth.auth().signIn(with: credential)

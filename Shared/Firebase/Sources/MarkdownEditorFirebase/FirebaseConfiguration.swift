@@ -24,9 +24,50 @@ public enum FirebaseConfiguration {
     public static let storageBucket = "kirupa-markdown.firebasestorage.app"
     public static let messagingSenderID = "777425511524"
 
-    /// A Firebase app ID is per platform, so this is not the web build's ID.
-    /// Both point at the same project and therefore the same Firestore data.
-    public static let appID = "1:777425511524:ios:1bb6b0d961ab673031ab71"
+    /// The Apple app's Firebase app ID. **Not yet a real one.**
+    ///
+    /// A Firebase app ID is per registered app, and the trailing hash is issued
+    /// by Firebase at registration. The value below was derived from the web
+    /// app's ID by changing `web` to `ios`, which produces a well-formed string
+    /// that is not any registered app: the web app's hash cannot also belong to
+    /// an Apple app. It is left visible, and named, rather than quietly
+    /// shipped, because sign-in built on it fails with an OAuth error that says
+    /// nothing about the cause.
+    ///
+    /// To make it real: Firebase console ▸ Project settings ▸ Your apps ▸ add an
+    /// Apple app with bundle ID `com.kirupa.markdown-editor`, then copy its
+    /// `GOOGLE_APP_ID` here. One registration covers both apps, since they share
+    /// a bundle ID. Nothing else in this file changes — an app ID selects an
+    /// app, and the project, key, and data are already right.
+    public static let appID = placeholderAppID
+
+    /// The derived value described above: compared against, never trusted.
+    static let placeholderAppID = "1:777425511524:ios:1bb6b0d961ab673031ab71"
+
+    /// The web build's ID, from `Web/public/app/cloud/config.js`, so the check
+    /// below can say exactly why the placeholder is not an app ID.
+    static let webAppID = "1:777425511524:web:1bb6b0d961ab673031ab71"
+
+    /// Why the native apps cannot reach Firebase yet, or `nil` when they can.
+    ///
+    /// Consulted before sign-in so the failure names the console step to take
+    /// instead of surfacing as a generic authentication error.
+    public static var unresolvedConfiguration: String? {
+        unresolvedConfiguration(for: appID)
+    }
+
+    static func unresolvedConfiguration(for id: String) -> String? {
+        let hash = { (value: String) in value.split(separator: ":").last.map(String.init) ?? "" }
+        // The second test is the one that matters: it catches the placeholder
+        // being "fixed" by pasting the web ID, or by changing its platform
+        // token again, which look like real app IDs and are not.
+        guard id == placeholderAppID || hash(id) == hash(webAppID) else { return nil }
+        return "This build has no Firebase app ID of its own: the one in "
+            + "FirebaseConfiguration is the web app's ID with the platform changed, "
+            + "which is not a registered app. Add an Apple app with bundle ID "
+            + "com.kirupa.markdown-editor in Firebase console ▸ Project settings, "
+            + "then put its app ID in FirebaseConfiguration.appID."
+    }
 
     /// The collection layout, matching `config.js`: a subcollection per user, so
     /// the rules are a path match and cannot be got wrong for one document.

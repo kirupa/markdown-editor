@@ -449,13 +449,15 @@ These are Firebase console actions. Until they are done, the cloud option will
 fail, and it will say which of these is missing. They are kept here, done, so the
 checks stay repeatable — a rule can be edited in the console at any time.
 
-**All four are now done, re-checked against the live project on 6 August 2026.**
-The rules are published, the Storage bucket exists, Google sign-in is enabled, and
-`www.kirupa.com` is an authorised domain. The commands are below so every check can
-be repeated rather than taken on trust.
+**Everything the web build needs is done, re-checked against the live project on
+6 August 2026:** the rules are published, the Storage bucket exists, Google sign-in
+is enabled, and `www.kirupa.com` is an authorised domain. One step remains, and it
+affects the native builds only — registering an Apple app. The commands are below so
+every check can be repeated rather than taken on trust.
 
 | ID | Step |
 | --- | --- |
+| WR-32 | **Register an Apple app** under Project settings ▸ Your apps, with bundle ID `com.kirupa.markdown-editor`, and paste its app ID into `Shared/Firebase/Sources/MarkdownEditorFirebase/FirebaseConfiguration.swift`. **Outstanding — this is the only one left, and it affects the native builds only.** A Firebase app ID belongs to a registered app; the value there now is this project's *web* app ID with `web` changed to `ios`, which is well-formed and is not a real app. It is checked before sign-in opens a browser, so the native apps report the missing console step rather than a generic OAuth failure. One registration covers both the macOS and iOS apps, which share a bundle ID. Nothing in the web build is affected. |
 | WR-19 | **Publish the security rules.** `firebase deploy --only firestore:rules,storage`, or paste both files into the console. **Done — verified 6 August 2026.** An unauthenticated REST call carrying only the public API key now returns `403 PERMISSION_DENIED` where it previously returned `200` and an empty result: `curl "https://firestore.googleapis.com/v1/projects/kirupa-markdown/databases/(default)/documents/users/probe/nodes?key=<apiKey>"`. An unauthenticated write returns `403` as well, and both an object read and a bucket list on Cloud Storage return `403`. The database is no longer open. |
 | WR-20 | **Enable the Google sign-in provider** under Authentication ▸ Sign-in method. **Done — confirmed 6 August 2026.** `curl -X POST "https://identitytoolkit.googleapis.com/v1/accounts:createAuthUri?key=<apiKey>" -H 'Content-Type: application/json' -d '{"providerId":"google.com","continueUri":"https://www.kirupa.com/markdown/"}'` returns a real `authUri` carrying the project's OAuth client ID. A disabled provider answers `OPERATION_NOT_ALLOWED` instead — which is still what anonymous and email/password return, so neither of those is available as a fallback. |
 | WR-21 | **Add the authorised domains** under Authentication ▸ Settings: `www.kirupa.com` for the published build, and `127.0.0.1` for local preview if you reach it by IP. `localhost` is allowed by default, but `127.0.0.1` is a different host string to Firebase — reaching the preview at `http://localhost:8000` avoids needing this. **`www.kirupa.com` is done — confirmed 6 August 2026** by the same call as [WR-20](#setup-steps-that-cannot-be-done-from-this-repository): it accepted that origin as a `continueUri`, which an unauthorised domain is refused for. |

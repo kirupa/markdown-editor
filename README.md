@@ -89,20 +89,25 @@ underneath: `Shared/Sources/MarkdownEditorCloud/` holds every cloud decision
 with no Firebase in it at all — 49 tests, run by `run-tests.sh` in a third of a
 second with no network — and `Shared/Firebase/` holds the adapter that puts
 Firestore and Cloud Storage behind them. Both build for macOS and iOS. Neither
-is reachable from a menu yet.
+is reachable from a menu yet, and the adapter additionally needs an Apple app
+registered in the Firebase console before it can sign anyone in — see step 4.
 
 Getting the rest of the way needs, in order:
 
-1. **Enable Cloud Storage and publish the security rules.** Console work, and
-   the only steps nobody can do from this repository. Until the bucket exists no
-   image in cloud mode can be uploaded, fetched, or tested even once, and until
-   the rules are published the database is readable and writable by anyone with
-   the API key. Both were re-checked on 5 August 2026 and both are still
-   outstanding — with the exact commands to repeat the checks — in
+1. ~~**Enable Cloud Storage and publish the security rules.**~~ **Done on
+   6 August 2026.** The bucket exists and the rules are published: an
+   unauthenticated read, an unauthenticated write, and both Storage operations
+   now answer `403`, where the Firestore calls previously answered `200` and an
+   empty result. The commands to repeat every check are in
    [Web/README.md § 11b](Web/README.md#setup-steps-that-cannot-be-done-from-this-repository).
 2. **Verify the cloud path against the real backend.** Every cloud decision is
    tested against an in-memory Firestore; not one byte has been written to the
    real one. Making Firestore the default while that is true would be reckless.
+   This needs a real interactive Google sign-in — the only provider enabled — so
+   it cannot be done by a script, and with no JDK on the build machine the
+   Firebase emulator is not an alternative. What has been done instead is to
+   make the in-memory Firestore *enforce the published rules on every write*, so
+   a write the real server would reject can no longer pass the suite.
 3. **Make cloud the default in the web build**, with local demoted to a fallback
    for anyone not signed in.
 4. **Add Firestore to the native builds.** Half done, and the half that is done
@@ -116,9 +121,23 @@ Getting the rest of the way needs, in order:
 
    The dependency is quarantined. `Shared/Package.swift` still has none, so
    `run-tests.sh` neither downloads nor builds Firebase; the SDK is declared in
-   a second package, `Shared/Firebase/`, that only the apps depend on. What is
-   left is the interface: sign-in, a cloud document list, and open/save wired to
-   `CloudWorkspace`.
+   a second package, `Shared/Firebase/`, which nothing depends on yet and which
+   only the apps ever will. It builds for macOS and iOS, and
+   `swift test --package-path Shared/Firebase` covers its configuration.
+
+   **Before any of it can run, the project needs an Apple app registered.** A
+   Firebase app ID belongs to a registered app, and the one in
+   `FirebaseConfiguration` is the *web* app's ID with `web` changed to `ios` —
+   well-formed, right project, not a real app, because the web app's hash cannot
+   also belong to an Apple one. It is named `placeholderAppID` and checked
+   before sign-in opens a browser, so the failure says which console step is
+   missing rather than surfacing as an OAuth error. Fixing it is one action:
+   Firebase console ▸ Project settings ▸ Your apps ▸ add an Apple app with
+   bundle ID `com.kirupa.markdown-editor`, then paste its app ID in. One
+   registration covers both apps, as they share the bundle ID.
+
+   After that, what is left is the interface: sign-in, a cloud document list,
+   and open/save wired to `CloudWorkspace`.
 
 ### How images fit
 

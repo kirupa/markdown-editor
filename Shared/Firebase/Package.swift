@@ -39,6 +39,12 @@ let package = Package(
                 .product(name: "FirebaseFirestore", package: "firebase-ios-sdk"),
                 .product(name: "FirebaseStorage", package: "firebase-ios-sdk")
             ]
+        ),
+        // Covers the configuration, not the adapter: a wrong value here fails
+        // at runtime with a message that names the wrong cause.
+        .testTarget(
+            name: "MarkdownEditorFirebaseTests",
+            dependencies: ["MarkdownEditorFirebase"]
         )
     ]
 )
