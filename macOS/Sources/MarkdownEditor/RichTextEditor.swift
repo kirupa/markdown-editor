@@ -151,6 +151,38 @@ struct RichTextEditor: NSViewRepresentable {
             self.documentURL = documentURL
             self.session = session
             self.colorTheme = colorTheme
+            super.init()
+            observeRemoteImages()
+        }
+
+        /// An image referenced by web address is not on disk when the document
+        /// is first styled, so the reference draws as a placeholder. When the
+        /// bytes arrive the document is styled again and the picture appears in
+        /// place. Without this the editor would show the placeholder until the
+        /// next keystroke happened to redraw it.
+        // The selector form is used rather than the block form so the
+        // observation is a zeroing weak reference the notification centre drops
+        // by itself. A token would have to be removed in `deinit`, which under
+        // Swift 6 cannot touch a main-actor property.
+        private func observeRemoteImages() {
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(remoteImageDidLoad),
+                name: RemoteImageStore.didLoadImage,
+                object: nil
+            )
+        }
+
+        @objc private func remoteImageDidLoad() {
+            guard textView != nil, !isRendering else { return }
+            // Re-styling replaces the text storage, so the caret has to be put
+            // back exactly where it was, and the view must not scroll: the
+            // image may be far from what the writer is looking at.
+            render(
+                sourceSelection: selectedSourceRange,
+                scrollToSelection: false,
+                publishesScroll: false
+            )
         }
 
         var sourceText: String {

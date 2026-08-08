@@ -329,6 +329,8 @@ public enum RichMarkdownStyler {
         let image = localImage(
             destination: destination,
             documentURL: documentURL
+        ) ?? RemoteImageStore.shared.image(
+            for: destination
         ) ?? PlatformImage.markdownSymbol(
             named: "photo",
             accessibilityDescription: altText

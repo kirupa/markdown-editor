@@ -310,6 +310,30 @@ An image may also be referenced by URL instead of being copied into the assets
 folder. Nothing is uploaded in that case and the document points at the original
 address.
 
+### Drawing an image held at a web address
+
+A browser draws `<img src="https://…">` itself; a native build has to fetch the
+bytes. That difference is invisible in every fixture here, so it is written down
+instead — the macOS and iOS builds both once drew a placeholder glyph for every
+address, and a port that reads only the fixtures would reproduce that.
+
+The rules a native port must follow, all shared between macOS and iOS in
+`RemoteImageStore` and worth copying rather than reinventing:
+
+| Rule | Why |
+| --- | --- |
+| Look up synchronously; download asynchronously | Styling re-runs on every keystroke, so a lookup must be instant. On a miss, draw the placeholder, start one download, and re-style when it lands. |
+| `http` and `https` only | A `file:` address would let a document read any file on disk, defeating the containment that keeps an import inside the document's own folder. `data:` is already bytes. |
+| Record a failure as a failure | Otherwise a broken address costs one request per keystroke. One attempt per address per launch. |
+| Cap the transfer, while streaming | 25 MB. `Content-Length` may be absent, so the ceiling has to be enforced against bytes actually received, and a missing length is not itself grounds to refuse. |
+| Require the bytes to decode as an image | A server answering an error page with HTTP 200 is a failure, not a picture. |
+| Unescape the destination before parsing the URL | A Markdown `\)` inside an address parses as a different URL if it is read literally. |
+
+Re-styling on arrival must preserve the selection and must not scroll. A cached
+image also supplies the natural size, so an address can be resized
+proportionally like a local file; before it loads there is no shape to preserve,
+which is the same "not loaded" case the sizing rules above already describe.
+
 ### Reading the paths fixture
 
 `paths.json` is a flat list of calls. Each case names a `function`, its

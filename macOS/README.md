@@ -430,6 +430,31 @@ operation.
 | --- | --- |
 | I-18 | The resolved assets directory must resolve to a real subdirectory of the document's own folder. Symlinked assets folders are rejected so an import can never write outside the document's directory. |
 
+### 9.4 Images by web address
+
+| ID | Requirement |
+| --- | --- |
+| I-19 | **Insert ▸ Image…** first asks where the image comes from: **Choose File…** (the import above) or **Image Address…**. |
+| I-20 | An address is referenced where it is; nothing is copied and no assets folder is created, so an address works in an unsaved document. |
+| I-21 | The address field is single-line and never wraps. A long address scrolls horizontally within the field and the caret stays visible at the end. The Insert ▸ Link… field behaves the same way. |
+| I-22 | The reference is written as `![image](address)`, with the alt text left selected so typing replaces it. |
+
+### 9.5 Rendering an image held at a web address
+
+The rendered editor draws remote images for real rather than showing a
+placeholder glyph. Styling is synchronous and re-runs on every keystroke, so
+the lookup must be instant and the download must not be.
+
+| ID | Requirement |
+| --- | --- |
+| I-23 | An `http`/`https` image is drawn from an in-memory cache. On a miss the styler draws the placeholder and starts one download; when it arrives the visible editors re-style in place, preserving selection and scroll position. |
+| I-24 | Only `http` and `https` are fetched. A `file:` address is refused, because fetching one would let a document read any file on disk and bypass the assets containment in I-18. |
+| I-25 | An address is downloaded at most once per launch. A failure is recorded as a failure, so a broken address costs one request rather than one request per keystroke, and continues to render the placeholder. |
+| I-26 | A download over **25 MB** is abandoned. The limit is enforced while streaming, not from `Content-Length` alone, since a server may omit it. |
+| I-27 | Downloaded bytes must decode as an image. A server answering an error page with HTTP 200 is treated as a failure, not as an image. |
+| I-28 | A cached remote image supplies the natural size for **Insert ▸ Image Size…**, so an address can be resized proportionally like a local file. Before it has loaded, the size cannot be measured and the app says so. |
+| I-29 | The cache is not evicted; entries live for the lifetime of the process. A text editor references few enough images for this to be the simpler correct choice. |
+
 ---
 
 ## 10. Links
@@ -676,21 +701,41 @@ the code they cover, so this one command covers the iOS build's engine too.
 
 ### 16.1 Test coverage
 
-113 tests across 11 suites, in the shared package:
+244 tests across 16 suites, in the shared package:
 
 | Suite | Tests | Covers |
 | --- | --- | --- |
-| Markdown formatting | 30 | Every inline and block transform, toggle-off detection, renumbering, list continuation |
-| Markdown render model | 24 | Block and inline parsing, boundary rules, escapes, range mapping |
+| Markdown formatting | 42 | Every inline and block transform, toggle-off detection, renumbering, list continuation |
+| Cloud workspace | 39 | Firestore tree reads and writes, moves, and the prefix filter a range query needs |
+| Markdown render model | 31 | Block and inline parsing, boundary rules, escapes, range mapping |
+| Remote images | 29 | Which addresses are fetched, the transfer ceiling enforced against a stubbed server, decoding, failure caching |
+| Image tags | 25 | `<img …>` parsing and writing, liberal attribute forms, proportional sizing |
+| Cloud paths | 14 | Stems, extensions, parents, descendancy, collision numbering |
 | Recent documents catalog | 10 | Merge order, de-duplication, Markdown filtering, caps, promotion, removal, pruning of missing files, home-relative paths |
+| New document | 10 | Heading 1 seeding |
+| Platform types | 9 | AppKit/UIKit parity; portable colour blending within 1/255 of `NSColor.blended` on every colour the app displays |
 | Markdown text insertion | 8 | Caret placement, clamping stale selections, UTF-16 offsets |
-| Markdown source styler | 4 | Styling is not undoable, and survives a text view that resets its undo manager mid-edit |
-| Platform types | 7 | AppKit/UIKit parity; portable colour blending within 1/255 of `NSColor.blended` on every colour the app displays |
 | Markdown image importer | 6 | Assets folder naming, collisions, symlink rejection, unsaved documents, unsupported types |
 | File tree scanner | 6 | Ordering, hidden files, packages, symlinks |
+| Cross-platform contract | 5 | The exported fixtures still describe the compiled Swift |
+| Markdown source styler | 4 | Styling is not undoable, and survives a text view that resets its undo manager mid-edit |
 | Markdown text codec | 3 | UTF-8 round trip, BOM preservation, invalid input |
 | Markdown text difference | 3 | Minimal replacement computation |
-| New document | 2 | Heading 1 seeding |
+
+The remote-image suite talks to a stubbed `URLProtocol` rather than the network,
+because the rules that matter are inside the transfer. An earlier version tested
+only the pure helpers around it, and a mutation run showed what that was worth:
+deleting the size check from the streaming loop left all 235 tests green. Eight
+mutants are now killed, including that one, ignoring the HTTP status, an
+off-by-one on the ceiling, accepting a `file:` URL, and never recording a
+failure.
+
+Two things that cost time there and are worth knowing before adding to it.
+Swift Testing runs a suite's tests **in parallel**, so a shared `reset()` on the
+stub table wipes stubs another test has just registered — each test uses a URL
+of its own instead. And `file:///etc/passwd` is refused by the *host* check, not
+the scheme check, so a test using only that form cannot tell whether the scheme
+check exists; `file://localhost/etc/passwd` is the one that proves it.
 
 ---
 
@@ -698,6 +743,7 @@ the code they cover, so this one command covers the iOS build's engine too.
 
 | Change | Summary |
 | --- | --- |
+| Draw images held at a web address | An image referenced by `https://…` renders as the real picture instead of a placeholder glyph, in both the rendered and split editors, and can be measured for proportional resizing. The address and link fields no longer wrap a long URL. |
 | Sized images and insert by address | Insert ▸ Image asks for a file or a web address; Insert ▸ Image Size… (⇧⌥⌘I) sets a proportional width and height on the image at the caret. The size is written as `<img …>`, the one spelling GitHub honours. |
 | Add native Markdown editor app | Document lifecycle, File menu, UTF-8/BOM handling, image import with `.assets` convention, unit tests, app bundling |
 | Add WYSIWYG Markdown formatting | Directly editable rendered view, full inline and block formatting, toolbar and menus |

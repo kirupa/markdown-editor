@@ -59,6 +59,24 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
 
         init(parent: MarkdownRichTextEditor) {
             self.parent = parent
+            super.init()
+            // An image given as a web address is not on disk when the document
+            // is first styled, so it draws as a placeholder. Styling again when
+            // the bytes arrive is what puts the picture on screen; otherwise it
+            // would not appear until the next keystroke happened to redraw.
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(remoteImageDidLoad),
+                name: RemoteImageStore.didLoadImage,
+                object: nil
+            )
+        }
+
+        @objc private func remoteImageDidLoad() {
+            guard !isApplyingProgrammatically, let applied = appliedText,
+                  let theme = appliedTheme
+            else { return }
+            render(applied, theme: theme, documentURL: parent.documentURL)
         }
 
         func render(

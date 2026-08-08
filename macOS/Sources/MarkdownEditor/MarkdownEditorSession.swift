@@ -372,9 +372,17 @@ final class MarkdownEditorSession: ObservableObject {
     }
 
     /// The image's own pixel dimensions, so a resize can keep its shape.
+    ///
+    /// An image referenced by web address is measured too, but only from what
+    /// the renderer has already downloaded — opening this sheet must not start
+    /// a fetch and then block on it. An address not yet loaded simply has no
+    /// natural size, which the sheet says rather than guessing at.
     private func naturalSize(
         of destination: String
     ) -> MarkdownImageTag.Size? {
+        if let remote = RemoteImageStore.shared.loadedImage(for: destination) {
+            return Self.pixelSize(of: remote)
+        }
         guard let fileURL else { return nil }
         let decoded = destination.removingPercentEncoding ?? destination
         guard !decoded.contains("://") else { return nil }
@@ -382,11 +390,12 @@ final class MarkdownEditorSession: ObservableObject {
             fileURLWithPath: decoded,
             relativeTo: fileURL.deletingLastPathComponent()
         )
-        guard
-            let image = NSImage(contentsOf: url),
-            image.size.width > 0,
-            image.size.height > 0
-        else { return nil }
+        guard let image = NSImage(contentsOf: url) else { return nil }
+        return Self.pixelSize(of: image)
+    }
+
+    private static func pixelSize(of image: NSImage) -> MarkdownImageTag.Size? {
+        guard image.size.width > 0, image.size.height > 0 else { return nil }
         return MarkdownImageTag.Size(
             width: Int(image.size.width.rounded()),
             height: Int(image.size.height.rounded())
@@ -410,10 +419,14 @@ final class MarkdownEditorSession: ObservableObject {
         editor.commitPendingComposition()
 
         let destinationField = NSTextField(
-            frame: NSRect(x: 0, y: 0, width: 320, height: 24)
+            frame: NSRect(x: 0, y: 0, width: 420, height: 24)
         )
         destinationField.placeholderString = "https://example.com"
         destinationField.stringValue = "https://"
+        destinationField.usesSingleLineMode = true
+        destinationField.lineBreakMode = .byClipping
+        destinationField.cell?.wraps = false
+        destinationField.cell?.isScrollable = true
 
         let alert = NSAlert()
         alert.messageText = "Insert Link"
@@ -490,11 +503,19 @@ final class MarkdownEditorSession: ObservableObject {
     func chooseImageAddress() {
         let editor = currentEditor()
 
+        // A URL is one long unbreakable token, so a field that wraps turns a
+        // pasted address into a ragged block and hides its end. `usesSingleLineMode`
+        // alone is not enough — the cell must also be told to scroll instead of
+        // wrap, or the text is simply clipped at the right edge.
         let destinationField = NSTextField(
-            frame: NSRect(x: 0, y: 0, width: 320, height: 24)
+            frame: NSRect(x: 0, y: 0, width: 420, height: 24)
         )
         destinationField.placeholderString = "https://example.com/photo.png"
         destinationField.stringValue = "https://"
+        destinationField.usesSingleLineMode = true
+        destinationField.lineBreakMode = .byClipping
+        destinationField.cell?.wraps = false
+        destinationField.cell?.isScrollable = true
 
         let alert = NSAlert()
         alert.messageText = "Image address"

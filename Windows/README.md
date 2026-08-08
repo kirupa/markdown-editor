@@ -168,6 +168,18 @@ A third, learned by building offline support rather than by publishing rules:
   destination, and an unterminated `<img …` is *not* a tag — treat it as text,
   or `Check <img src="a.png" in the docs` is swallowed to end of line.
 
+- **An image referenced by web address must be downloaded and drawn.** A browser
+  does this for you; WinUI will not, and both Apple builds shipped a bug here
+  first — every `https://` image drew a placeholder glyph, because only local
+  files were ever loaded. Look up from a cache synchronously (styling re-runs on
+  every keystroke), download on a miss, and re-style in place when it arrives,
+  preserving the selection and without scrolling. Fetch `http`/`https` only — a
+  `file:` address would read arbitrary disk and defeat the assets containment —
+  record a failure so a broken address costs one request rather than one per
+  keystroke, enforce the size ceiling while streaming rather than trusting
+  `Content-Length`, and require the bytes to decode as an image so an HTML error
+  page returned with HTTP 200 is not mistaken for one.
+
 All of these are specified in
 [Contract/README.md](../Contract/README.md#the-assets-convention). It is worth
 mirroring the web build's approach of making the test double enforce the rules,

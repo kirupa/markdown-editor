@@ -149,9 +149,10 @@ never a function of the keyboard, which is the property that makes it reliable.
 | ID-41 | **Image Address…** takes a URL and inserts a reference to it. Nothing is copied and no assets folder is created, so it works in a document that has never been saved. An empty address, or the bare `https://` placeholder, inserts nothing. |
 | ID-42 | An **Image Size** button beside Add Image opens a sheet for the image the caret is on. It is disabled — visible but greyed — whenever the caret is not on an image, so the toolbar does not reflow. |
 | ID-43 | The sheet's Width and Height drive each other through the shared `MarkdownImageTag.proportionalSize`, so setting one derives the other from the image's own pixel dimensions and the picture keeps its shape. The number typed is always kept exactly. |
-| ID-44 | The natural size comes from `UIImage` reading the file beside the document. A remote address cannot be measured from here, so both fields stay independent and the sheet says so rather than guessing. |
+| ID-44 | The natural size comes from `UIImage` reading the file beside the document, or from the shared remote-image cache once an address has downloaded. Before an address has loaded there is nothing to measure, so both fields stay independent and the sheet says so rather than guessing. |
 | ID-45 | **Use the image's own size** clears both, converting the reference back to plain `![alt](path)` Markdown. |
 | ID-46 | Sizing is a **sheet driven by the caret**, not click-to-select-and-drag as in the browser. A rendered image is one `NSTextAttachment` character; anchoring a floating panel to it is fragile, and a sheet is the platform idiom. The Markdown written is byte-identical across all three builds. |
+| ID-47 | An image held at an `http`/`https` address is drawn as the real picture, from the shared `RemoteImageStore` the Mac uses. On a cache miss the placeholder is drawn and one download starts; when it arrives the editor re-styles in place, keeping the selection. The store's rules are shared, so they hold identically here: http/https only, one attempt per address per launch, a 25 MB ceiling enforced while streaming, bytes that must decode as an image, and no eviction. |
 
 ---
 
@@ -271,22 +272,27 @@ xcrun simctl launch booted com.kirupa.markdown-editor
 macOS/Scripts/run-tests.sh
 ```
 
-113 tests in 11 suites. The suite covers the shared package, so it exercises
+244 tests in 16 suites. The suite covers the shared package, so it exercises
 the iOS build's entire Markdown engine — the iOS layer above it is views.
 
 | Suite | Tests | Covers |
 | --- | --- | --- |
-| Markdown formatting | 30 | Every inline and block transform, toggle-off, renumbering, continuation |
-| Markdown render model | 24 | Block and inline parsing, boundaries, escapes, range mapping |
+| Markdown formatting | 42 | Every inline and block transform, toggle-off, renumbering, continuation |
+| Cloud workspace | 39 | Firestore tree reads, writes, moves, and the prefix filter a range query needs |
+| Markdown render model | 31 | Block and inline parsing, boundaries, escapes, range mapping |
+| Remote images | 29 | Which addresses are fetched, the size ceiling, decoding, failure caching |
+| Image tags | 25 | `<img …>` parsing and writing, proportional sizing, aspect ratio |
+| Cloud paths | 14 | Stems, extensions, and parents, matched against PHP's real output |
 | Recent documents catalog | 10 | Ordering, de-duplication, caps, pruning |
+| New document | 10 | Heading 1 seeding |
+| Platform types | 9 | AppKit/UIKit parity, and the colour blending above |
 | Markdown text insertion | 8 | Caret placement, clamping stale selections, UTF-16 offsets |
-| Markdown source styler | 4 | Styling is not undoable, and survives a text view that resets its undo manager mid-edit |
-| Platform types | 7 | AppKit/UIKit parity, and the colour blending above |
 | Markdown image importer | 6 | Assets naming, collisions, symlink rejection, unsaved documents |
 | File tree scanner | 6 | Ordering, hidden files, packages, symlinks |
+| Cross-platform contract | 5 | The exported fixtures still match the compiled Swift |
+| Markdown source styler | 4 | Styling is not undoable, and survives a text view that resets its undo manager mid-edit |
 | Markdown text codec | 3 | UTF-8 round trip, BOM preservation, invalid input |
 | Markdown text difference | 3 | Minimal replacement computation |
-| New document | 2 | Heading 1 seeding |
 
 ---
 
@@ -294,6 +300,7 @@ the iOS build's entire Markdown engine — the iOS layer above it is views.
 
 | Change | Summary |
 | --- | --- |
+| Draw images held at a web address | An `https://` image renders as the real picture instead of a placeholder glyph, and can now be measured for proportional resizing. Verified on a booted simulator: two remote images drawn, a broken address still a placeholder. |
 | Share the Swift core between platforms | `Shared/` package; AppKit's Generic RGB blending reproduced portably; `themes.css` verified byte-identical |
 | Add a native iOS app | iPhone and iPad `DocumentGroup` app compiling the shared package: three modes, adaptive split, full formatting bar, photo and Files image import, sixteen themes, generated app icon |
 | Insert by address and resize | Add Image now offers Photo / File / **Image Address…**. A new **Image Size** sheet sets width and height proportionally, writing the same `<img …>` the Mac and the browser write. Verified on a booted iPhone 17 Pro simulator with real taps. |
@@ -315,7 +322,7 @@ Recorded plainly, because "it builds" and "it runs" are different claims.
 - `Scripts/build-app.sh` produces a bundle whose Mach-O load command reports
   `platform IOSSIMULATOR, minos 17.0`, which `codesign --verify --strict`
   accepts.
-- 113 shared tests pass, including the colour parity assertions.
+- 244 shared tests pass, including the colour parity assertions.
 - The macOS app still builds and runs unchanged after the restructure.
 
 **Verified by running**, on an iPhone 17 Pro and an iPad Pro 11-inch simulator
@@ -353,6 +360,12 @@ Add Image → **Image Address…** → a typed URL → Insert produced an image;
 **Image Size** button, correctly disabled a moment earlier, became enabled;
 the sheet took a width of 300; and the Markdown pane showed exactly
 `<img src="https://example.com/pic.png" alt="image" width="300">`.
+
+Remote drawing (ID-47) was verified the same way, on a document seeded into the
+app's container holding three references to real addresses. Both live images —
+one sized to 200, one at its natural size — drew the actual picture, and the
+deliberately broken address kept the placeholder glyph. That is the whole of the
+bug: before this change all three looked like the third one.
 
 **Still not verified:** the photo picker and Files import (both need a real
 picker), drag to resize, and the theme sheet. Nothing has run on real hardware.

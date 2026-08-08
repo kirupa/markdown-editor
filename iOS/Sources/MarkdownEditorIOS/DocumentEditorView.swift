@@ -301,6 +301,12 @@ struct DocumentEditorView: View {
     private func naturalSize(
         of destination: String
     ) -> MarkdownImageTag.Size? {
+        // A web address is measured from what the renderer already downloaded.
+        // Opening the sheet must not start a fetch and wait on it, so an image
+        // that has not arrived yet simply has no natural size.
+        if let remote = RemoteImageStore.shared.loadedImage(for: destination) {
+            return pixelSize(of: remote)
+        }
         guard let documentURL else { return nil }
         let decoded = destination.removingPercentEncoding ?? destination
         guard !decoded.contains("://") else { return nil }
@@ -310,10 +316,13 @@ struct DocumentEditorView: View {
         )
         guard
             let data = try? Data(contentsOf: url),
-            let image = UIImage(data: data),
-            image.size.width > 0,
-            image.size.height > 0
+            let image = UIImage(data: data)
         else { return nil }
+        return pixelSize(of: image)
+    }
+
+    private func pixelSize(of image: UIImage) -> MarkdownImageTag.Size? {
+        guard image.size.width > 0, image.size.height > 0 else { return nil }
         return MarkdownImageTag.Size(
             width: Int(image.size.width.rounded()),
             height: Int(image.size.height.rounded())

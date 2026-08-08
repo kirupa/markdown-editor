@@ -28,7 +28,10 @@ with every image still resolving.
   standard shortcuts
 - **Images** dragged, pasted, or chosen, copied into `<document>.assets/` beside
   the file and referenced relatively, with collisions resolved rather than
-  overwritten
+  overwritten — or referenced by web address and left where they are, which
+  every build downloads and draws for real
+- **Image sizing** by selecting an image and setting a width or height, the
+  other following to keep the aspect ratio
 - **A file explorer** with lazy expansion, reveal, and an ancestor path dropdown
 - **File management**, in the web build: create, rename, duplicate, drag to move,
   and delete files and folders from the sidebar — with a document's images
@@ -231,7 +234,7 @@ features are deliberately left to each platform.
 ## Tests
 
 ```bash
-macOS/Scripts/run-tests.sh      # 215 tests — the shared Swift core, both apps
+macOS/Scripts/run-tests.sh      # 244 tests — the shared Swift core, both apps
 php Web/tests/php/run.php       # 71 tests — the PHP backend
 open http://127.0.0.1:8000/tests/   # 281 tests — the browser client
 node Web/tests/run.mjs          # 290 tests — the same, minus the DOM tests,
