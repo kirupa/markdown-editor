@@ -18,6 +18,8 @@ import {
   applyHeading,
   insertHorizontalRule,
   insertLink,
+  insertImage,
+  setImageSize,
   toggleInline,
   toggleList,
   toggleQuote,
@@ -32,7 +34,14 @@ import { buildToolbar } from './ui/toolbar.js';
 import { buildMenus } from './ui/menus.js';
 import { WelcomeScreen, recentDocuments, savedDocuments } from './ui/welcome.js';
 import { buildMobileUI } from './ui/mobile.js';
-import { confirmAction, confirmDiscard, showError, showPrompt } from './ui/dialogs.js';
+import { ImageSelection } from './ui/image-selection.js';
+import {
+  chooseImageSource,
+  confirmAction,
+  confirmDiscard,
+  showError,
+  showPrompt,
+} from './ui/dialogs.js';
 import { theme, openThemePopover } from './ui/theme.js';
 
 const MODE_KEY = 'markdown-editor.mode';
@@ -288,7 +297,7 @@ const commands = {
     if (destination === null) return;
     applyResult(insertLink(destination, model.source, currentSelection()));
   },
-  image: () => pickImage(),
+  image: () => addImage(),
   undo: () => model.undo(),
   redo: () => model.redo(),
   selectAll() {
@@ -412,6 +421,34 @@ function refreshActiveStyles() {
 function refreshSurfaces(options = {}) {
   richSurface.sync(model.source, model.selection, options);
   sourceSurface.sync(model.source, model.selection, options);
+  // A sync replaces every element in the rendered pane, so a selected image
+  // has to be found again or the size panel would close on its own first
+  // keystroke.
+  imageSelection.restore();
+}
+
+// ── Selecting an image to resize (WI-17) ─────────────────────────────────────
+
+const imageSelection = new ImageSelection(element('richSurface').parentElement, (range, size) => {
+  applyResult(setImageSize(model.source, range, size));
+});
+
+element('richSurface').addEventListener('mousedown', (event) => {
+  const wrapper = event.target.closest?.('.me-image');
+  if (wrapper) {
+    // The wrapper is not editable, so a click would otherwise land the caret
+    // beside it and leave nothing selected to act on.
+    event.preventDefault();
+    imageSelection.select(wrapper);
+  } else {
+    imageSelection.clear();
+  }
+});
+
+// Any edit elsewhere means the panel is describing an image the caret has
+// left, so it stops applying.
+for (const surface of [richSurface, sourceSurface]) {
+  surface.element.addEventListener('keydown', () => imageSelection.clear());
 }
 
 model.addEventListener('change', () => {
@@ -621,6 +658,33 @@ imageInput.addEventListener('change', () => {
 
 function pickImage() {
   imageInput.click();
+}
+
+/**
+ * WI-15: an image comes either from a file, which is copied in beside the
+ * document, or from a URL, which is referenced where it already lives.
+ */
+async function addImage() {
+  const source = await chooseImageSource();
+  if (source === 'file') pickImage();
+  else if (source === 'url') await insertImageURL();
+}
+
+/** WI-16: reference an image that is already on the web. */
+async function insertImageURL() {
+  const destination = await showPrompt({
+    title: 'Image address',
+    message: 'The image stays where it is; this document just points at it.',
+    value: 'https://',
+    confirmLabel: 'Insert',
+  });
+  if (destination === null || destination.trim() === 'https://') return;
+  const altText = await showPrompt({
+    title: 'Description',
+    message: 'Shown if the image cannot load, and read aloud by screen readers.',
+    confirmLabel: 'Insert',
+  });
+  applyResult(insertImage(destination.trim(), altText ?? '', model.source, currentSelection()));
 }
 
 /**

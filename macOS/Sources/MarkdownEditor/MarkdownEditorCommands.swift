@@ -169,6 +169,11 @@ struct MarkdownEditorCommands: Commands {
             }
             .keyboardShortcut("i", modifiers: [.command, .option])
             .disabled(session == nil)
+            Button("Image Size…") {
+                session?.chooseImageSize()
+            }
+            .keyboardShortcut("i", modifiers: [.command, .option, .shift])
+            .disabled(session == nil)
         }
     }
 }

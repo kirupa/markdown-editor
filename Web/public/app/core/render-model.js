@@ -5,6 +5,7 @@ import {
     substringWithRange,
     lineBounds,
 } from './range.js';
+import { parseImageTag } from './image-tag.js';
 
 // ─── Style constructors ───────────────────────────────────────────────────────
 // Each style is a tagged plain object whose `kind` matches the Swift enum case
@@ -23,7 +24,13 @@ export const bulletedList   = Object.freeze({ kind: 'bulletedList' });
 export const numberedList   = Object.freeze({ kind: 'numberedList' });
 export function taskList(checked)           { return { kind: 'taskList', checked }; }
 export function link(destination)           { return { kind: 'link', destination }; }
-export function image(altText, destination) { return { kind: 'image', altText, destination }; }
+/**
+ * `width` and `height` are pixel counts, or null when the image carries no size.
+ * Markdown's own `![alt](src)` can never carry one; only the HTML form can.
+ */
+export function image(altText, destination, width = null, height = null) {
+    return { kind: 'image', altText, destination, width, height };
+}
 export const horizontalRule = Object.freeze({ kind: 'horizontalRule' });
 export const escaped        = Object.freeze({ kind: 'escaped' });
 
@@ -407,6 +414,27 @@ class Parser {
                 continue;
             }
 
+            // HTML image: <img src="…" width="…"> — the only way to express a
+            // size, since Markdown has none. Parsed to the same atomic image
+            // span so a sized image is still a picture and not a wall of text.
+            const htmlImage = this._htmlImageToken(location, end);
+            if (htmlImage !== null) {
+                this._builder.advanceSource(htmlImage.fullRange.location);
+                const renderedRange = this._builder.appendSynthetic('\uFFFC', htmlImage.fullRange);
+                this._builder.addSpan(
+                    image(
+                        htmlImage.altText,
+                        htmlImage.destination,
+                        htmlImage.width,
+                        htmlImage.height,
+                    ),
+                    renderedRange, htmlImage.fullRange,
+                    /*includesMarkup*/ true, /*isAtomic*/ true,
+                );
+                location = maxRange(htmlImage.fullRange);
+                continue;
+            }
+
             // Link: [label](destination) — label is rendered inline, markup hidden.
             const lnkToken = this._linkToken(location, end, /*isImage*/ false);
             if (lnkToken !== null) {
@@ -555,6 +583,17 @@ class Parser {
         }
         this._parsedTokenEnd = maxRange(fullRange);
         return true;
+    }
+
+    /**
+     * `<img …>` — the HTML form, which is the only one that can carry a size.
+     * Delegated to `image-tag.js` so the parse and the write stay together.
+     */
+    _htmlImageToken(location, end) {
+        if (this._source.charCodeAt(location) !== 0x3C) return null;   // <
+        const tag = parseImageTag(this._source, location, end);
+        if (tag === null) return null;
+        return { ...tag, fullRange: makeRange(location, tag.end - location) };
     }
 
     _linkToken(location, end, isImage) {

@@ -447,4 +447,202 @@ struct MarkdownFormattingTests {
 
         #expect(result.text == "before\n***\n\nafter")
     }
+
+    // MARK: - Images
+
+    /// The source range of the only image reference in `text`.
+    private func imageRange(_ text: String) -> NSRange {
+        let source = text as NSString
+        let start = source.range(of: "![").location != NSNotFound
+            ? source.range(of: "![").location
+            : source.range(of: "<img").location
+        let closing = source.substring(from: start).hasPrefix("!") ? ")" : ">"
+        let close = source.range(
+            of: closing,
+            options: [],
+            range: NSRange(location: start, length: source.length - start)
+        ).location
+        return NSRange(location: start, length: close + 1 - start)
+    }
+
+    @Test("An image is inserted at the caret")
+    func imageIsInsertedAtTheCaret() {
+        let result = MarkdownFormatting.insertImage(
+            destination: "https://x.com/a.png",
+            altText: "Photo",
+            in: "See: ",
+            selection: NSRange(location: 5, length: 0)
+        )
+
+        #expect(result.text == "See: ![Photo](https://x.com/a.png)")
+    }
+
+    @Test("The alt text is selected so it can be typed over")
+    func altTextIsSelected() {
+        let result = MarkdownFormatting.insertImage(
+            destination: "https://x.com/a.png",
+            altText: "Photo",
+            in: "",
+            selection: NSRange(location: 0, length: 0)
+        )
+
+        #expect(
+            (result.text as NSString).substring(with: result.selection)
+                == "Photo"
+        )
+    }
+
+    @Test("A selection becomes the alt text when none is supplied")
+    func selectionBecomesTheAltText() {
+        // Selecting a caption and inserting an image should keep the words the
+        // author already wrote rather than silently discard them.
+        let result = MarkdownFormatting.insertImage(
+            destination: "a.png",
+            in: "A red door",
+            selection: NSRange(location: 0, length: 10)
+        )
+
+        #expect(result.text == "![A red door](a.png)")
+    }
+
+    @Test("A space or bracket in a URL cannot break the reference")
+    func urlCharactersAreEncoded() {
+        let result = MarkdownFormatting.insertImage(
+            destination: "a b (c).png",
+            altText: "x",
+            in: "",
+            selection: NSRange(location: 0, length: 0)
+        )
+
+        #expect(result.text == "![x](a%20b%20%28c%29.png)")
+    }
+
+    @Test("Sizing a Markdown image rewrites it as HTML")
+    func sizingConvertsToHTML() {
+        // Markdown has no syntax for dimensions, so this is the one place a
+        // reference has to change form. See Contract/README.md.
+        let text = "A ![Photo](a.png) here"
+        let result = MarkdownFormatting.setImageSize(
+            in: text,
+            range: imageRange(text),
+            size: .init(width: 300, height: 200)
+        )
+
+        #expect(
+            result.text
+                == "A <img src=\"a.png\" alt=\"Photo\" width=\"300\" height=\"200\"> here"
+        )
+    }
+
+    @Test("Clearing the size returns it to Markdown")
+    func clearingSizeReturnsToMarkdown() {
+        let text = "<img src=\"a.png\" alt=\"Photo\" width=\"300\" height=\"200\">"
+        let result = MarkdownFormatting.setImageSize(
+            in: text,
+            range: imageRange(text),
+            size: .none
+        )
+
+        #expect(result.text == "![Photo](a.png)")
+    }
+
+    @Test("Resizing an already sized image keeps it as one tag")
+    func resizingKeepsOneTag() {
+        let text = "<img src=\"a.png\" alt=\"\" width=\"300\" height=\"200\">"
+        let result = MarkdownFormatting.setImageSize(
+            in: text,
+            range: imageRange(text),
+            size: .init(width: 60, height: 40)
+        )
+
+        #expect(
+            result.text == "<img src=\"a.png\" alt=\"\" width=\"60\" height=\"40\">"
+        )
+    }
+
+    @Test("The resized image stays selected")
+    func resizedImageStaysSelected() {
+        // The size fields are driven by the selected image, so losing the
+        // selection on every keystroke would make the fields unusable.
+        let text = "A ![Photo](a.png) here"
+        let result = MarkdownFormatting.setImageSize(
+            in: text,
+            range: imageRange(text),
+            size: .init(width: 300, height: 200)
+        )
+
+        #expect(
+            (result.text as NSString).substring(with: result.selection)
+                == "<img src=\"a.png\" alt=\"Photo\" width=\"300\" height=\"200\">"
+        )
+    }
+
+    @Test("Text that is not an image is left exactly as it was")
+    func staleRangeLeavesTextAlone() {
+        // A stale range must never corrupt the document.
+        let text = "Just words here"
+        let range = NSRange(location: 5, length: 5)
+        let result = MarkdownFormatting.setImageSize(
+            in: text,
+            range: range,
+            size: .init(width: 300, height: 200)
+        )
+
+        #expect(result.text == text)
+        #expect(result.selection == range)
+    }
+
+    @Test("A space in the path is encoded on the way back to Markdown")
+    func spaceIsEncodedOnConversion() {
+        // An HTML attribute holds `my file.png` happily; the same text in
+        // Markdown is not an image at all — GitHub renders it as literal text
+        // and the picture is lost.
+        let text = "<img src=\"my file.png\" alt=\"P\" width=\"9\">"
+        let result = MarkdownFormatting.setImageSize(
+            in: text,
+            range: imageRange(text),
+            size: .none
+        )
+
+        #expect(result.text == "![P](my%20file.png)")
+    }
+
+    @Test("A percent-encoded destination survives a round trip")
+    func encodedDestinationRoundTrips() {
+        let text = "![P](my%20file.png)"
+        let sized = MarkdownFormatting.setImageSize(
+            in: text,
+            range: imageRange(text),
+            size: .init(width: 10, height: 10)
+        )
+        #expect(
+            sized.text
+                == "<img src=\"my%20file.png\" alt=\"P\" width=\"10\" height=\"10\">"
+        )
+
+        let cleared = MarkdownFormatting.setImageSize(
+            in: sized.text,
+            range: imageRange(sized.text),
+            size: .none
+        )
+        #expect(cleared.text == text)
+    }
+
+    @Test("An emoji before an image does not shift the reference")
+    func offsetsAreUTF16CodeUnits() {
+        // An emoji is two UTF-16 code units and one Character. A port that
+        // measures Characters puts the range in the wrong place and silently
+        // corrupts the document, and only a case like this catches it.
+        let text = "🌱 ![Photo](a.png)"
+        let result = MarkdownFormatting.setImageSize(
+            in: text,
+            range: imageRange(text),
+            size: .init(width: 8, height: 8)
+        )
+
+        #expect(
+            result.text
+                == "🌱 <img src=\"a.png\" alt=\"Photo\" width=\"8\" height=\"8\">"
+        )
+    }
 }

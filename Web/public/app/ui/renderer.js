@@ -187,12 +187,26 @@ function buildImage(span, placeholderText, resolveImage) {
   wrapper.className = 'me-image';
   wrapper.contentEditable = 'false';
   wrapper.dataset.destination = span.style.destination;
+  // Where this image is written in the document. Selecting it to change its
+  // size needs the exact span of text to replace, and the rendered text has
+  // only one character standing in for the whole reference.
+  wrapper.dataset.sourceLocation = String(span.sourceRange.location);
+  wrapper.dataset.sourceLength = String(span.sourceRange.length);
 
   const url = resolveImage(span.style.destination);
   if (url) {
     const img = document.createElement('img');
     img.src = url;
     img.alt = span.style.altText;
+    // The size the document asked for. Set as attributes rather than style so
+    // an image with only one dimension keeps its shape from the file itself,
+    // which is more accurate than any number the document could carry.
+    if (span.style.width !== null && span.style.width !== undefined) {
+      img.setAttribute('width', String(span.style.width));
+    }
+    if (span.style.height !== null && span.style.height !== undefined) {
+      img.setAttribute('height', String(span.style.height));
+    }
     img.addEventListener('error', () => {
       img.replaceWith(brokenImageLabel(span.style));
     });

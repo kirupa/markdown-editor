@@ -1,4 +1,4 @@
-{"about":"Every formatting command applied at every interesting selection in every corpus document. Apply `with` over the `replace` range of the named document; the result must equal what the command produced, and the selection must equal `selectionAfter`.","caseCount":8180,"documents":[{"id":"empty","text":""},{"id":"plain","text":"One plain paragraph with no markup at all.\n"},{"id":"headings","text":"# Title\nBody under the title.\n\n## Subheading\n### Third level\n####### Seven hashes is not a heading\n   # Three spaces still is\n#NoSpace is not a heading"},{"id":"emphasis","text":"Some **bold** and *italic* and ***both***.\nsnake_case_stays_plain but _this is italic_.\nA~~strike~~through, and __underscored bold__.\nintra*word*emphasis with asterisks."},{"id":"code","text":"Inline `code` and ``a `tick` inside`` and ` padded `.\n\n```swift\nlet x = 1\n```\n\nTrailing text."},{"id":"lists","text":"- first\n- second\n  - nested\n* star bullet\n+ plus bullet\n\n1. one\n2. two\n7. seven starts here"},{"id":"tasks","text":"- [ ] unchecked\n- [x] checked\n- [X] capital\n- [] not a task"},{"id":"quotes","text":"> quoted line\n> second quoted line\nlazy continuation\n>> nested quote\n\nNot quoted."},{"id":"links","text":"A [link](https://example.com) and an ![image](Trip.assets/a%20shot.png).\nA [link with **bold**](https://example.com/x) inside.\nBare https://example.com is not a link."},{"id":"rules-and-escapes","text":"Above.\n\n---\n\nBelow \\*not italic\\* and \\# not a heading.\nA backslash at the end \\\\"},{"id":"astral","text":"Emoji 😀 then **bold 🇬🇧 flag** and *ligature ﬁ*.\nA family 👨‍👩‍👧‍👦 spans several code units."},{"id":"line-endings","text":"First line\r\nSecond line\r\n\r\n- bullet after a blank\r\n\tTabbed line\n"},{"id":"mixed","text":"# Trip notes\n\nSome **bold** text, a [link](https://example.com), and:\n\n- [ ] pack\n- [x] book train\n\n> A quote with `code` in it.\n\n![shot](Trip.assets/shot.png)\n\n1. first\n2. second"}],"offsets":"UTF-16 code units","source":"Shared/Sources/MarkdownEditorCore/MarkdownFormatting.swift","version":1}
+{"about":"Every formatting command applied at every interesting selection in every corpus document. Apply `with` over the `replace` range of the named document; the result must equal what the command produced, and the selection must equal `selectionAfter`.","caseCount":9020,"documents":[{"id":"empty","text":""},{"id":"plain","text":"One plain paragraph with no markup at all.\n"},{"id":"headings","text":"# Title\nBody under the title.\n\n## Subheading\n### Third level\n####### Seven hashes is not a heading\n   # Three spaces still is\n#NoSpace is not a heading"},{"id":"emphasis","text":"Some **bold** and *italic* and ***both***.\nsnake_case_stays_plain but _this is italic_.\nA~~strike~~through, and __underscored bold__.\nintra*word*emphasis with asterisks."},{"id":"code","text":"Inline `code` and ``a `tick` inside`` and ` padded `.\n\n```swift\nlet x = 1\n```\n\nTrailing text."},{"id":"lists","text":"- first\n- second\n  - nested\n* star bullet\n+ plus bullet\n\n1. one\n2. two\n7. seven starts here"},{"id":"tasks","text":"- [ ] unchecked\n- [x] checked\n- [X] capital\n- [] not a task"},{"id":"quotes","text":"> quoted line\n> second quoted line\nlazy continuation\n>> nested quote\n\nNot quoted."},{"id":"links","text":"A [link](https://example.com) and an ![image](Trip.assets/a%20shot.png).\nA [link with **bold**](https://example.com/x) inside.\nBare https://example.com is not a link."},{"id":"sized-images","text":"<img src=\"Trip.assets/a%20shot.png\" alt=\"sized\" width=\"300\" height=\"200\">\nOne dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.\nRead liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.\nEntities: <img src=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.\nNot images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.\nUnterminated <img src=\"g.png\" keeps the rest of this line.\nNot a size: <img src=\"h.png\" width=\"50%\" height=\"0\">."},{"id":"rules-and-escapes","text":"Above.\n\n---\n\nBelow \\*not italic\\* and \\# not a heading.\nA backslash at the end \\\\"},{"id":"astral","text":"Emoji 😀 then **bold 🇬🇧 flag** and *ligature ﬁ*.\nA family 👨‍👩‍👧‍👦 spans several code units."},{"id":"line-endings","text":"First line\r\nSecond line\r\n\r\n- bullet after a blank\r\n\tTabbed line\n"},{"id":"mixed","text":"# Trip notes\n\nSome **bold** text, a [link](https://example.com), and:\n\n- [ ] pack\n- [x] book train\n\n> A quote with `code` in it.\n\n![shot](Trip.assets/shot.png)\n\n1. first\n2. second"}],"offsets":"UTF-16 code units","source":"Shared/Sources/MarkdownEditorCore/MarkdownFormatting.swift","version":1}
 {"argument":"bold","command":"toggleInline","document":"empty","replace":[0,0],"selection":[0,0],"selectionAfter":[2,9],"with":"**bold text**"}
 {"argument":"italic","command":"toggleInline","document":"empty","replace":[0,0],"selection":[0,0],"selectionAfter":[1,11],"with":"*italic text*"}
 {"argument":"underline","command":"toggleInline","document":"empty","replace":[0,0],"selection":[0,0],"selectionAfter":[3,15],"with":"<u>underlined text</u>"}
@@ -5239,6 +5239,846 @@
 {"command":"insertNewline","document":"links","replace":[127,39],"selection":[127,39],"selectionAfter":[128,0],"with":"\n"}
 {"argument":"https://example.com","command":"insertLink","document":"links","replace":[127,39],"selection":[127,39],"selectionAfter":[128,39],"with":"[Bare https://example.com is not a link.](https://example.com)"}
 {"command":"insertHorizontalRule","document":"links","replace":[127,39],"selection":[127,39],"selectionAfter":[131,0],"with":"***\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[0,0],"selection":[0,0],"selectionAfter":[2,9],"with":"**bold text**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[0,0],"selection":[0,0],"selectionAfter":[1,11],"with":"*italic text*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[1,0],"selection":[0,0],"selectionAfter":[3,15],"with":"u>underlined text</u><"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[0,0],"selection":[0,0],"selectionAfter":[2,11],"with":"~~struck text~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[0,0],"selection":[0,0],"selectionAfter":[1,4],"with":"`code`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[0,0],"selectionAfter":[0,0],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[0,0],"selection":[0,0],"selectionAfter":[2,0],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[0,0],"selection":[0,0],"selectionAfter":[3,0],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[0,0],"selection":[0,0],"selectionAfter":[4,0],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[0,0],"selection":[0,0],"selectionAfter":[5,0],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[0,0],"selection":[0,0],"selectionAfter":[6,0],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[0,0],"selection":[0,0],"selectionAfter":[7,0],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[0,0],"selection":[0,0],"selectionAfter":[2,0],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[0,0],"selection":[0,0],"selectionAfter":[3,0],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[0,0],"selection":[0,0],"selectionAfter":[6,0],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[0,0],"selection":[0,0],"selectionAfter":[2,0],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[0,0],"selection":[0,0],"selectionAfter":[4,0],"with":"```\n\n```\n"}
+{"command":"insertNewline","document":"sized-images","replace":[0,0],"selection":[0,0],"selectionAfter":[1,0],"with":"\n"}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[0,0],"selection":[0,0],"selectionAfter":[1,9],"with":"[link text](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[0,0],"selection":[0,0],"selectionAfter":[5,0],"with":"***\n\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[73,0],"selection":[73,0],"selectionAfter":[75,9],"with":"**bold text**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[73,0],"selection":[73,0],"selectionAfter":[74,11],"with":"*italic text*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[73,0],"selection":[73,0],"selectionAfter":[76,15],"with":"<u>underlined text</u>"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[73,0],"selection":[73,0],"selectionAfter":[75,11],"with":"~~struck text~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[73,0],"selection":[73,0],"selectionAfter":[74,4],"with":"`code`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[73,0],"selectionAfter":[73,0],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[0,0],"selection":[73,0],"selectionAfter":[75,0],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[0,0],"selection":[73,0],"selectionAfter":[76,0],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[0,0],"selection":[73,0],"selectionAfter":[77,0],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[0,0],"selection":[73,0],"selectionAfter":[78,0],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[0,0],"selection":[73,0],"selectionAfter":[79,0],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[0,0],"selection":[73,0],"selectionAfter":[80,0],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[0,0],"selection":[73,0],"selectionAfter":[75,0],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[0,0],"selection":[73,0],"selectionAfter":[76,0],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[0,0],"selection":[73,0],"selectionAfter":[79,0],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[0,0],"selection":[73,0],"selectionAfter":[75,0],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[74,0],"selection":[73,0],"selectionAfter":[78,0],"with":"```\n\n```\n\n"}
+{"command":"insertNewline","document":"sized-images","replace":[74,0],"selection":[73,0],"selectionAfter":[74,0],"with":"\n"}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[73,0],"selection":[73,0],"selectionAfter":[74,9],"with":"[link text](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[74,0],"selection":[73,0],"selectionAfter":[78,0],"with":"***\n\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[74,0],"selection":[74,0],"selectionAfter":[76,9],"with":"**bold text**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[74,0],"selection":[74,0],"selectionAfter":[75,11],"with":"*italic text*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[74,0],"selection":[74,0],"selectionAfter":[77,15],"with":"<u>underlined text</u>"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[74,0],"selection":[74,0],"selectionAfter":[76,11],"with":"~~struck text~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[74,0],"selection":[74,0],"selectionAfter":[75,4],"with":"`code`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[74,0],"selectionAfter":[74,0],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[74,0],"selection":[74,0],"selectionAfter":[76,0],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[74,0],"selection":[74,0],"selectionAfter":[77,0],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[74,0],"selection":[74,0],"selectionAfter":[78,0],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[74,0],"selection":[74,0],"selectionAfter":[79,0],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[74,0],"selection":[74,0],"selectionAfter":[80,0],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[74,0],"selection":[74,0],"selectionAfter":[81,0],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[74,0],"selection":[74,0],"selectionAfter":[76,0],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[74,0],"selection":[74,0],"selectionAfter":[77,0],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[74,0],"selection":[74,0],"selectionAfter":[80,0],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[74,0],"selection":[74,0],"selectionAfter":[76,0],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[74,0],"selection":[74,0],"selectionAfter":[78,0],"with":"```\n\n```\n"}
+{"command":"insertNewline","document":"sized-images","replace":[74,0],"selection":[74,0],"selectionAfter":[75,0],"with":"\n"}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[74,0],"selection":[74,0],"selectionAfter":[75,9],"with":"[link text](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[74,0],"selection":[74,0],"selectionAfter":[79,0],"with":"***\n\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[150,0],"selection":[150,0],"selectionAfter":[152,9],"with":"**bold text**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[150,0],"selection":[150,0],"selectionAfter":[151,11],"with":"*italic text*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[150,0],"selection":[150,0],"selectionAfter":[153,15],"with":"<u>underlined text</u>"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[150,0],"selection":[150,0],"selectionAfter":[152,11],"with":"~~struck text~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[150,0],"selection":[150,0],"selectionAfter":[151,4],"with":"`code`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[150,0],"selectionAfter":[150,0],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[74,0],"selection":[150,0],"selectionAfter":[152,0],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[74,0],"selection":[150,0],"selectionAfter":[153,0],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[74,0],"selection":[150,0],"selectionAfter":[154,0],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[74,0],"selection":[150,0],"selectionAfter":[155,0],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[74,0],"selection":[150,0],"selectionAfter":[156,0],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[74,0],"selection":[150,0],"selectionAfter":[157,0],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[74,0],"selection":[150,0],"selectionAfter":[152,0],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[74,0],"selection":[150,0],"selectionAfter":[153,0],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[74,0],"selection":[150,0],"selectionAfter":[156,0],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[74,0],"selection":[150,0],"selectionAfter":[152,0],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[151,0],"selection":[150,0],"selectionAfter":[155,0],"with":"```\n\n```\n\n"}
+{"command":"insertNewline","document":"sized-images","replace":[151,0],"selection":[150,0],"selectionAfter":[151,0],"with":"\n"}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[150,0],"selection":[150,0],"selectionAfter":[151,9],"with":"[link text](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[151,0],"selection":[150,0],"selectionAfter":[155,0],"with":"***\n\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[151,0],"selection":[151,0],"selectionAfter":[153,9],"with":"**bold text**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[151,0],"selection":[151,0],"selectionAfter":[152,11],"with":"*italic text*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[151,0],"selection":[151,0],"selectionAfter":[154,15],"with":"<u>underlined text</u>"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[151,0],"selection":[151,0],"selectionAfter":[153,11],"with":"~~struck text~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[151,0],"selection":[151,0],"selectionAfter":[152,4],"with":"`code`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[151,0],"selectionAfter":[151,0],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[151,0],"selection":[151,0],"selectionAfter":[153,0],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[151,0],"selection":[151,0],"selectionAfter":[154,0],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[151,0],"selection":[151,0],"selectionAfter":[155,0],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[151,0],"selection":[151,0],"selectionAfter":[156,0],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[151,0],"selection":[151,0],"selectionAfter":[157,0],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[151,0],"selection":[151,0],"selectionAfter":[158,0],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[151,0],"selection":[151,0],"selectionAfter":[153,0],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[151,0],"selection":[151,0],"selectionAfter":[154,0],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[151,0],"selection":[151,0],"selectionAfter":[157,0],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[151,0],"selection":[151,0],"selectionAfter":[153,0],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[151,0],"selection":[151,0],"selectionAfter":[155,0],"with":"```\n\n```\n"}
+{"command":"insertNewline","document":"sized-images","replace":[151,0],"selection":[151,0],"selectionAfter":[152,0],"with":"\n"}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[151,0],"selection":[151,0],"selectionAfter":[152,9],"with":"[link text](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[151,0],"selection":[151,0],"selectionAfter":[156,0],"with":"***\n\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[208,0],"selection":[208,0],"selectionAfter":[210,9],"with":"**bold text**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[208,0],"selection":[208,0],"selectionAfter":[209,11],"with":"*italic text*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[208,0],"selection":[208,0],"selectionAfter":[211,15],"with":"<u>underlined text</u>"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[208,0],"selection":[208,0],"selectionAfter":[210,11],"with":"~~struck text~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[208,0],"selection":[208,0],"selectionAfter":[209,4],"with":"`code`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[208,0],"selectionAfter":[208,0],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[151,0],"selection":[208,0],"selectionAfter":[210,0],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[151,0],"selection":[208,0],"selectionAfter":[211,0],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[151,0],"selection":[208,0],"selectionAfter":[212,0],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[151,0],"selection":[208,0],"selectionAfter":[213,0],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[151,0],"selection":[208,0],"selectionAfter":[214,0],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[151,0],"selection":[208,0],"selectionAfter":[215,0],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[151,0],"selection":[208,0],"selectionAfter":[210,0],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[151,0],"selection":[208,0],"selectionAfter":[211,0],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[151,0],"selection":[208,0],"selectionAfter":[214,0],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[151,0],"selection":[208,0],"selectionAfter":[210,0],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[209,0],"selection":[208,0],"selectionAfter":[213,0],"with":"```\n\n```\n\n"}
+{"command":"insertNewline","document":"sized-images","replace":[209,0],"selection":[208,0],"selectionAfter":[209,0],"with":"\n"}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[208,0],"selection":[208,0],"selectionAfter":[209,9],"with":"[link text](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[209,0],"selection":[208,0],"selectionAfter":[213,0],"with":"***\n\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[209,0],"selection":[209,0],"selectionAfter":[211,9],"with":"**bold text**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[209,0],"selection":[209,0],"selectionAfter":[210,11],"with":"*italic text*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[209,0],"selection":[209,0],"selectionAfter":[212,15],"with":"<u>underlined text</u>"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[209,0],"selection":[209,0],"selectionAfter":[211,11],"with":"~~struck text~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[209,0],"selection":[209,0],"selectionAfter":[210,4],"with":"`code`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[209,0],"selectionAfter":[209,0],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[209,0],"selectionAfter":[211,0],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[209,0],"selectionAfter":[212,0],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[209,0],"selectionAfter":[213,0],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[209,0],"selectionAfter":[214,0],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[209,0],"selectionAfter":[215,0],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[209,0],"selectionAfter":[216,0],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[209,0],"selection":[209,0],"selectionAfter":[211,0],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[209,0],"selection":[209,0],"selectionAfter":[212,0],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[209,0],"selection":[209,0],"selectionAfter":[215,0],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[209,0],"selection":[209,0],"selectionAfter":[211,0],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[209,0],"selection":[209,0],"selectionAfter":[213,0],"with":"```\n\n```\n"}
+{"command":"insertNewline","document":"sized-images","replace":[209,0],"selection":[209,0],"selectionAfter":[210,0],"with":"\n"}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[209,0],"selection":[209,0],"selectionAfter":[210,9],"with":"[link text](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[209,0],"selection":[209,0],"selectionAfter":[214,0],"with":"***\n\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[226,0],"selection":[226,0],"selectionAfter":[228,9],"with":"**bold text**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[226,0],"selection":[226,0],"selectionAfter":[227,11],"with":"*italic text*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[226,0],"selection":[226,0],"selectionAfter":[229,15],"with":"<u>underlined text</u>"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[226,0],"selection":[226,0],"selectionAfter":[228,11],"with":"~~struck text~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[226,0],"selection":[226,0],"selectionAfter":[227,4],"with":"`code`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[226,0],"selectionAfter":[226,0],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[226,0],"selectionAfter":[228,0],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[226,0],"selectionAfter":[229,0],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[226,0],"selectionAfter":[230,0],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[226,0],"selectionAfter":[231,0],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[226,0],"selectionAfter":[232,0],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[226,0],"selectionAfter":[233,0],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[209,0],"selection":[226,0],"selectionAfter":[228,0],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[209,0],"selection":[226,0],"selectionAfter":[229,0],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[209,0],"selection":[226,0],"selectionAfter":[232,0],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[209,0],"selection":[226,0],"selectionAfter":[228,0],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[226,0],"selection":[226,0],"selectionAfter":[231,0],"with":"\n```\n\n```\n"}
+{"command":"insertNewline","document":"sized-images","replace":[226,0],"selection":[226,0],"selectionAfter":[227,0],"with":"\n"}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[226,0],"selection":[226,0],"selectionAfter":[227,9],"with":"[link text](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[226,0],"selection":[226,0],"selectionAfter":[232,0],"with":"\n***\n\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[269,0],"selection":[269,0],"selectionAfter":[271,9],"with":"**bold text**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[269,0],"selection":[269,0],"selectionAfter":[270,11],"with":"*italic text*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[269,0],"selection":[269,0],"selectionAfter":[272,15],"with":"<u>underlined text</u>"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[269,0],"selection":[269,0],"selectionAfter":[271,11],"with":"~~struck text~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[269,0],"selection":[269,0],"selectionAfter":[270,4],"with":"`code`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[269,0],"selectionAfter":[269,0],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[269,0],"selectionAfter":[271,0],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[269,0],"selectionAfter":[272,0],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[269,0],"selectionAfter":[273,0],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[269,0],"selectionAfter":[274,0],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[269,0],"selectionAfter":[275,0],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[269,0],"selectionAfter":[276,0],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[209,0],"selection":[269,0],"selectionAfter":[271,0],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[209,0],"selection":[269,0],"selectionAfter":[272,0],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[209,0],"selection":[269,0],"selectionAfter":[275,0],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[209,0],"selection":[269,0],"selectionAfter":[271,0],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[270,0],"selection":[269,0],"selectionAfter":[274,0],"with":"```\n\n```\n\n"}
+{"command":"insertNewline","document":"sized-images","replace":[270,0],"selection":[269,0],"selectionAfter":[270,0],"with":"\n"}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[269,0],"selection":[269,0],"selectionAfter":[270,9],"with":"[link text](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[270,0],"selection":[269,0],"selectionAfter":[274,0],"with":"***\n\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[270,0],"selection":[270,0],"selectionAfter":[272,9],"with":"**bold text**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[270,0],"selection":[270,0],"selectionAfter":[271,11],"with":"*italic text*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[270,0],"selection":[270,0],"selectionAfter":[273,15],"with":"<u>underlined text</u>"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[270,0],"selection":[270,0],"selectionAfter":[272,11],"with":"~~struck text~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[270,0],"selection":[270,0],"selectionAfter":[271,4],"with":"`code`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[270,0],"selectionAfter":[270,0],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[270,0],"selection":[270,0],"selectionAfter":[272,0],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[270,0],"selection":[270,0],"selectionAfter":[273,0],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[270,0],"selection":[270,0],"selectionAfter":[274,0],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[270,0],"selection":[270,0],"selectionAfter":[275,0],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[270,0],"selection":[270,0],"selectionAfter":[276,0],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[270,0],"selection":[270,0],"selectionAfter":[277,0],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[270,0],"selection":[270,0],"selectionAfter":[272,0],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[270,0],"selection":[270,0],"selectionAfter":[273,0],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[270,0],"selection":[270,0],"selectionAfter":[276,0],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[270,0],"selection":[270,0],"selectionAfter":[272,0],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[270,0],"selection":[270,0],"selectionAfter":[274,0],"with":"```\n\n```\n"}
+{"command":"insertNewline","document":"sized-images","replace":[270,0],"selection":[270,0],"selectionAfter":[271,0],"with":"\n"}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[270,0],"selection":[270,0],"selectionAfter":[271,9],"with":"[link text](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[270,0],"selection":[270,0],"selectionAfter":[275,0],"with":"***\n\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[340,0],"selection":[340,0],"selectionAfter":[342,9],"with":"**bold text**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[340,0],"selection":[340,0],"selectionAfter":[341,11],"with":"*italic text*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[340,0],"selection":[340,0],"selectionAfter":[343,15],"with":"<u>underlined text</u>"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[340,0],"selection":[340,0],"selectionAfter":[342,11],"with":"~~struck text~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[340,0],"selection":[340,0],"selectionAfter":[341,4],"with":"`code`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[340,0],"selectionAfter":[340,0],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[270,0],"selection":[340,0],"selectionAfter":[342,0],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[270,0],"selection":[340,0],"selectionAfter":[343,0],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[270,0],"selection":[340,0],"selectionAfter":[344,0],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[270,0],"selection":[340,0],"selectionAfter":[345,0],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[270,0],"selection":[340,0],"selectionAfter":[346,0],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[270,0],"selection":[340,0],"selectionAfter":[347,0],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[270,0],"selection":[340,0],"selectionAfter":[342,0],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[270,0],"selection":[340,0],"selectionAfter":[343,0],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[270,0],"selection":[340,0],"selectionAfter":[346,0],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[270,0],"selection":[340,0],"selectionAfter":[342,0],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[341,0],"selection":[340,0],"selectionAfter":[345,0],"with":"```\n\n```\n\n"}
+{"command":"insertNewline","document":"sized-images","replace":[341,0],"selection":[340,0],"selectionAfter":[341,0],"with":"\n"}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[340,0],"selection":[340,0],"selectionAfter":[341,9],"with":"[link text](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[341,0],"selection":[340,0],"selectionAfter":[345,0],"with":"***\n\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[341,0],"selection":[341,0],"selectionAfter":[343,9],"with":"**bold text**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[341,0],"selection":[341,0],"selectionAfter":[342,11],"with":"*italic text*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[341,0],"selection":[341,0],"selectionAfter":[344,15],"with":"<u>underlined text</u>"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[341,0],"selection":[341,0],"selectionAfter":[343,11],"with":"~~struck text~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[341,0],"selection":[341,0],"selectionAfter":[342,4],"with":"`code`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[341,0],"selectionAfter":[341,0],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[341,0],"selection":[341,0],"selectionAfter":[343,0],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[341,0],"selection":[341,0],"selectionAfter":[344,0],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[341,0],"selection":[341,0],"selectionAfter":[345,0],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[341,0],"selection":[341,0],"selectionAfter":[346,0],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[341,0],"selection":[341,0],"selectionAfter":[347,0],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[341,0],"selection":[341,0],"selectionAfter":[348,0],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[341,0],"selection":[341,0],"selectionAfter":[343,0],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[341,0],"selection":[341,0],"selectionAfter":[344,0],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[341,0],"selection":[341,0],"selectionAfter":[347,0],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[341,0],"selection":[341,0],"selectionAfter":[343,0],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[341,0],"selection":[341,0],"selectionAfter":[345,0],"with":"```\n\n```\n"}
+{"command":"insertNewline","document":"sized-images","replace":[341,0],"selection":[341,0],"selectionAfter":[342,0],"with":"\n"}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[341,0],"selection":[341,0],"selectionAfter":[342,9],"with":"[link text](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[341,0],"selection":[341,0],"selectionAfter":[346,0],"with":"***\n\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[399,0],"selection":[399,0],"selectionAfter":[401,9],"with":"**bold text**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[399,0],"selection":[399,0],"selectionAfter":[400,11],"with":"*italic text*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[399,0],"selection":[399,0],"selectionAfter":[402,15],"with":"<u>underlined text</u>"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[399,0],"selection":[399,0],"selectionAfter":[401,11],"with":"~~struck text~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[399,0],"selection":[399,0],"selectionAfter":[400,4],"with":"`code`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[399,0],"selectionAfter":[399,0],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[341,0],"selection":[399,0],"selectionAfter":[401,0],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[341,0],"selection":[399,0],"selectionAfter":[402,0],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[341,0],"selection":[399,0],"selectionAfter":[403,0],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[341,0],"selection":[399,0],"selectionAfter":[404,0],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[341,0],"selection":[399,0],"selectionAfter":[405,0],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[341,0],"selection":[399,0],"selectionAfter":[406,0],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[341,0],"selection":[399,0],"selectionAfter":[401,0],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[341,0],"selection":[399,0],"selectionAfter":[402,0],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[341,0],"selection":[399,0],"selectionAfter":[405,0],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[341,0],"selection":[399,0],"selectionAfter":[401,0],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[400,0],"selection":[399,0],"selectionAfter":[404,0],"with":"```\n\n```\n\n"}
+{"command":"insertNewline","document":"sized-images","replace":[400,0],"selection":[399,0],"selectionAfter":[400,0],"with":"\n"}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[399,0],"selection":[399,0],"selectionAfter":[400,9],"with":"[link text](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[400,0],"selection":[399,0],"selectionAfter":[404,0],"with":"***\n\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[400,0],"selection":[400,0],"selectionAfter":[402,9],"with":"**bold text**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[400,0],"selection":[400,0],"selectionAfter":[401,11],"with":"*italic text*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[400,0],"selection":[400,0],"selectionAfter":[403,15],"with":"<u>underlined text</u>"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[400,0],"selection":[400,0],"selectionAfter":[402,11],"with":"~~struck text~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[400,0],"selection":[400,0],"selectionAfter":[401,4],"with":"`code`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[400,0],"selectionAfter":[400,0],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[400,0],"selection":[400,0],"selectionAfter":[402,0],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[400,0],"selection":[400,0],"selectionAfter":[403,0],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[400,0],"selection":[400,0],"selectionAfter":[404,0],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[400,0],"selection":[400,0],"selectionAfter":[405,0],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[400,0],"selection":[400,0],"selectionAfter":[406,0],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[400,0],"selection":[400,0],"selectionAfter":[407,0],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[400,0],"selection":[400,0],"selectionAfter":[402,0],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[400,0],"selection":[400,0],"selectionAfter":[403,0],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[400,0],"selection":[400,0],"selectionAfter":[406,0],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[400,0],"selection":[400,0],"selectionAfter":[402,0],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[400,0],"selection":[400,0],"selectionAfter":[404,0],"with":"```\n\n```\n"}
+{"command":"insertNewline","document":"sized-images","replace":[400,0],"selection":[400,0],"selectionAfter":[401,0],"with":"\n"}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[400,0],"selection":[400,0],"selectionAfter":[401,9],"with":"[link text](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[400,0],"selection":[400,0],"selectionAfter":[405,0],"with":"***\n\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[453,0],"selection":[453,0],"selectionAfter":[455,9],"with":"**bold text**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[453,0],"selection":[453,0],"selectionAfter":[454,11],"with":"*italic text*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[453,0],"selection":[453,0],"selectionAfter":[456,15],"with":"<u>underlined text</u>"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[453,0],"selection":[453,0],"selectionAfter":[455,11],"with":"~~struck text~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[453,0],"selection":[453,0],"selectionAfter":[454,4],"with":"`code`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[453,0],"selectionAfter":[453,0],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[400,0],"selection":[453,0],"selectionAfter":[455,0],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[400,0],"selection":[453,0],"selectionAfter":[456,0],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[400,0],"selection":[453,0],"selectionAfter":[457,0],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[400,0],"selection":[453,0],"selectionAfter":[458,0],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[400,0],"selection":[453,0],"selectionAfter":[459,0],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[400,0],"selection":[453,0],"selectionAfter":[460,0],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[400,0],"selection":[453,0],"selectionAfter":[455,0],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[400,0],"selection":[453,0],"selectionAfter":[456,0],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[400,0],"selection":[453,0],"selectionAfter":[459,0],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[400,0],"selection":[453,0],"selectionAfter":[455,0],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[453,0],"selection":[453,0],"selectionAfter":[458,0],"with":"\n```\n\n```"}
+{"command":"insertNewline","document":"sized-images","replace":[453,0],"selection":[453,0],"selectionAfter":[454,0],"with":"\n"}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[453,0],"selection":[453,0],"selectionAfter":[454,9],"with":"[link text](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[453,0],"selection":[453,0],"selectionAfter":[458,0],"with":"\n***\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[0,73],"selection":[0,73],"selectionAfter":[2,73],"with":"**<img src=\"Trip.assets/a%20shot.png\" alt=\"sized\" width=\"300\" height=\"200\">**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[0,73],"selection":[0,73],"selectionAfter":[1,73],"with":"*<img src=\"Trip.assets/a%20shot.png\" alt=\"sized\" width=\"300\" height=\"200\">*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[1,71],"selection":[0,73],"selectionAfter":[3,73],"with":"u><img src=\"Trip.assets/a%20shot.png\" alt=\"sized\" width=\"300\" height=\"200\"></u"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[0,73],"selection":[0,73],"selectionAfter":[2,73],"with":"~~<img src=\"Trip.assets/a%20shot.png\" alt=\"sized\" width=\"300\" height=\"200\">~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[0,73],"selection":[0,73],"selectionAfter":[1,73],"with":"`<img src=\"Trip.assets/a%20shot.png\" alt=\"sized\" width=\"300\" height=\"200\">`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[0,73],"selectionAfter":[0,73],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[0,0],"selection":[0,73],"selectionAfter":[2,73],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[0,0],"selection":[0,73],"selectionAfter":[3,73],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[0,0],"selection":[0,73],"selectionAfter":[4,73],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[0,0],"selection":[0,73],"selectionAfter":[5,73],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[0,0],"selection":[0,73],"selectionAfter":[6,73],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[0,0],"selection":[0,73],"selectionAfter":[7,73],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[0,0],"selection":[0,73],"selectionAfter":[2,73],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[0,0],"selection":[0,73],"selectionAfter":[3,73],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[0,0],"selection":[0,73],"selectionAfter":[6,73],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[0,0],"selection":[0,73],"selectionAfter":[2,73],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[0,73],"selection":[0,73],"selectionAfter":[4,73],"with":"```\n<img src=\"Trip.assets/a%20shot.png\" alt=\"sized\" width=\"300\" height=\"200\">\n```"}
+{"command":"insertNewline","document":"sized-images","replace":[0,73],"selection":[0,73],"selectionAfter":[1,0],"with":"\n"}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[0,73],"selection":[0,73],"selectionAfter":[1,73],"with":"[<img src=\"Trip.assets/a%20shot.png\" alt=\"sized\" width=\"300\" height=\"200\">](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[0,73],"selection":[0,73],"selectionAfter":[4,0],"with":"***\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[0,73],"selection":[0,74],"selectionAfter":[2,73],"with":"**<img src=\"Trip.assets/a%20shot.png\" alt=\"sized\" width=\"300\" height=\"200\">**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[0,73],"selection":[0,74],"selectionAfter":[1,73],"with":"*<img src=\"Trip.assets/a%20shot.png\" alt=\"sized\" width=\"300\" height=\"200\">*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[1,71],"selection":[0,74],"selectionAfter":[3,73],"with":"u><img src=\"Trip.assets/a%20shot.png\" alt=\"sized\" width=\"300\" height=\"200\"></u"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[0,73],"selection":[0,74],"selectionAfter":[2,73],"with":"~~<img src=\"Trip.assets/a%20shot.png\" alt=\"sized\" width=\"300\" height=\"200\">~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[0,74],"selection":[0,74],"selectionAfter":[1,74],"with":"`<img src=\"Trip.assets/a%20shot.png\" alt=\"sized\" width=\"300\" height=\"200\">\n`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[0,74],"selectionAfter":[0,74],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[0,0],"selection":[0,74],"selectionAfter":[2,74],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[0,0],"selection":[0,74],"selectionAfter":[3,74],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[0,0],"selection":[0,74],"selectionAfter":[4,74],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[0,0],"selection":[0,74],"selectionAfter":[5,74],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[0,0],"selection":[0,74],"selectionAfter":[6,74],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[0,0],"selection":[0,74],"selectionAfter":[7,74],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[0,0],"selection":[0,74],"selectionAfter":[2,74],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[0,0],"selection":[0,74],"selectionAfter":[3,74],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[0,0],"selection":[0,74],"selectionAfter":[6,74],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[0,0],"selection":[0,74],"selectionAfter":[2,74],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[0,73],"selection":[0,74],"selectionAfter":[4,74],"with":"```\n<img src=\"Trip.assets/a%20shot.png\" alt=\"sized\" width=\"300\" height=\"200\">\n```"}
+{"command":"insertNewline","document":"sized-images","replace":[0,73],"selection":[0,74],"selectionAfter":[1,0],"with":""}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[0,74],"selection":[0,74],"selectionAfter":[1,74],"with":"[<img src=\"Trip.assets/a%20shot.png\" alt=\"sized\" width=\"300\" height=\"200\">\n](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[0,73],"selection":[0,74],"selectionAfter":[5,0],"with":"***\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[453,0],"selection":[73,1],"selectionAfter":[73,1],"with":""}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[453,0],"selection":[73,1],"selectionAfter":[73,1],"with":""}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[453,0],"selection":[73,1],"selectionAfter":[73,1],"with":""}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[453,0],"selection":[73,1],"selectionAfter":[73,1],"with":""}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[73,1],"selection":[73,1],"selectionAfter":[74,1],"with":"`\n`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[73,1],"selectionAfter":[73,1],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[0,0],"selection":[73,1],"selectionAfter":[75,1],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[0,0],"selection":[73,1],"selectionAfter":[76,1],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[0,0],"selection":[73,1],"selectionAfter":[77,1],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[0,0],"selection":[73,1],"selectionAfter":[78,1],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[0,0],"selection":[73,1],"selectionAfter":[79,1],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[0,0],"selection":[73,1],"selectionAfter":[80,1],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[0,0],"selection":[73,1],"selectionAfter":[75,1],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[0,0],"selection":[73,1],"selectionAfter":[76,1],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[0,0],"selection":[73,1],"selectionAfter":[79,1],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[0,0],"selection":[73,1],"selectionAfter":[75,1],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[0,73],"selection":[73,1],"selectionAfter":[77,1],"with":"```\n<img src=\"Trip.assets/a%20shot.png\" alt=\"sized\" width=\"300\" height=\"200\">\n```"}
+{"command":"insertNewline","document":"sized-images","replace":[453,0],"selection":[73,1],"selectionAfter":[74,0],"with":""}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[73,1],"selection":[73,1],"selectionAfter":[74,1],"with":"[\n](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[74,0],"selection":[73,1],"selectionAfter":[79,0],"with":"***\n\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[74,76],"selection":[73,77],"selectionAfter":[76,76],"with":"**One dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[74,76],"selection":[73,77],"selectionAfter":[75,76],"with":"*One dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[74,76],"selection":[73,77],"selectionAfter":[77,76],"with":"<u>One dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.</u>"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[74,76],"selection":[73,77],"selectionAfter":[76,76],"with":"~~One dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[73,77],"selection":[73,77],"selectionAfter":[74,77],"with":"`\nOne dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[73,77],"selectionAfter":[73,77],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[0,74],"selection":[73,77],"selectionAfter":[75,79],"with":"# <img src=\"Trip.assets/a%20shot.png\" alt=\"sized\" width=\"300\" height=\"200\">\n# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[0,74],"selection":[73,77],"selectionAfter":[76,80],"with":"## <img src=\"Trip.assets/a%20shot.png\" alt=\"sized\" width=\"300\" height=\"200\">\n## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[0,74],"selection":[73,77],"selectionAfter":[77,81],"with":"### <img src=\"Trip.assets/a%20shot.png\" alt=\"sized\" width=\"300\" height=\"200\">\n### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[0,74],"selection":[73,77],"selectionAfter":[78,82],"with":"#### <img src=\"Trip.assets/a%20shot.png\" alt=\"sized\" width=\"300\" height=\"200\">\n#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[0,74],"selection":[73,77],"selectionAfter":[79,83],"with":"##### <img src=\"Trip.assets/a%20shot.png\" alt=\"sized\" width=\"300\" height=\"200\">\n##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[0,74],"selection":[73,77],"selectionAfter":[80,84],"with":"###### <img src=\"Trip.assets/a%20shot.png\" alt=\"sized\" width=\"300\" height=\"200\">\n###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[0,74],"selection":[73,77],"selectionAfter":[75,79],"with":"- <img src=\"Trip.assets/a%20shot.png\" alt=\"sized\" width=\"300\" height=\"200\">\n- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[0,74],"selection":[73,77],"selectionAfter":[76,80],"with":"1. <img src=\"Trip.assets/a%20shot.png\" alt=\"sized\" width=\"300\" height=\"200\">\n2. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[0,74],"selection":[73,77],"selectionAfter":[79,83],"with":"- [ ] <img src=\"Trip.assets/a%20shot.png\" alt=\"sized\" width=\"300\" height=\"200\">\n- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[0,74],"selection":[73,77],"selectionAfter":[75,79],"with":"> <img src=\"Trip.assets/a%20shot.png\" alt=\"sized\" width=\"300\" height=\"200\">\n> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[0,150],"selection":[73,77],"selectionAfter":[77,77],"with":"```\n<img src=\"Trip.assets/a%20shot.png\" alt=\"sized\" width=\"300\" height=\"200\">\nOne dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.\n```"}
+{"command":"insertNewline","document":"sized-images","replace":[74,76],"selection":[73,77],"selectionAfter":[74,0],"with":""}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[73,77],"selection":[73,77],"selectionAfter":[74,77],"with":"[\nOne dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[74,76],"selection":[73,77],"selectionAfter":[78,0],"with":"***\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[74,76],"selection":[74,76],"selectionAfter":[76,76],"with":"**One dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[74,76],"selection":[74,76],"selectionAfter":[75,76],"with":"*One dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[74,76],"selection":[74,76],"selectionAfter":[77,76],"with":"<u>One dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.</u>"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[74,76],"selection":[74,76],"selectionAfter":[76,76],"with":"~~One dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[74,76],"selection":[74,76],"selectionAfter":[75,76],"with":"`One dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[74,76],"selectionAfter":[74,76],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[74,0],"selection":[74,76],"selectionAfter":[76,76],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[74,0],"selection":[74,76],"selectionAfter":[77,76],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[74,0],"selection":[74,76],"selectionAfter":[78,76],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[74,0],"selection":[74,76],"selectionAfter":[79,76],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[74,0],"selection":[74,76],"selectionAfter":[80,76],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[74,0],"selection":[74,76],"selectionAfter":[81,76],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[74,0],"selection":[74,76],"selectionAfter":[76,76],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[74,0],"selection":[74,76],"selectionAfter":[77,76],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[74,0],"selection":[74,76],"selectionAfter":[80,76],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[74,0],"selection":[74,76],"selectionAfter":[76,76],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[74,76],"selection":[74,76],"selectionAfter":[78,76],"with":"```\nOne dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.\n```"}
+{"command":"insertNewline","document":"sized-images","replace":[74,76],"selection":[74,76],"selectionAfter":[75,0],"with":"\n"}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[74,76],"selection":[74,76],"selectionAfter":[75,76],"with":"[One dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[74,76],"selection":[74,76],"selectionAfter":[78,0],"with":"***\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[74,76],"selection":[74,77],"selectionAfter":[76,76],"with":"**One dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[74,76],"selection":[74,77],"selectionAfter":[75,76],"with":"*One dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[74,76],"selection":[74,77],"selectionAfter":[77,76],"with":"<u>One dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.</u>"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[74,76],"selection":[74,77],"selectionAfter":[76,76],"with":"~~One dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[74,77],"selection":[74,77],"selectionAfter":[75,77],"with":"`One dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.\n`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[74,77],"selectionAfter":[74,77],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[74,0],"selection":[74,77],"selectionAfter":[76,77],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[74,0],"selection":[74,77],"selectionAfter":[77,77],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[74,0],"selection":[74,77],"selectionAfter":[78,77],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[74,0],"selection":[74,77],"selectionAfter":[79,77],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[74,0],"selection":[74,77],"selectionAfter":[80,77],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[74,0],"selection":[74,77],"selectionAfter":[81,77],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[74,0],"selection":[74,77],"selectionAfter":[76,77],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[74,0],"selection":[74,77],"selectionAfter":[77,77],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[74,0],"selection":[74,77],"selectionAfter":[80,77],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[74,0],"selection":[74,77],"selectionAfter":[76,77],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[74,76],"selection":[74,77],"selectionAfter":[78,77],"with":"```\nOne dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.\n```"}
+{"command":"insertNewline","document":"sized-images","replace":[74,76],"selection":[74,77],"selectionAfter":[75,0],"with":""}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[74,77],"selection":[74,77],"selectionAfter":[75,77],"with":"[One dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.\n](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[74,76],"selection":[74,77],"selectionAfter":[79,0],"with":"***\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[453,0],"selection":[150,1],"selectionAfter":[150,1],"with":""}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[453,0],"selection":[150,1],"selectionAfter":[150,1],"with":""}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[453,0],"selection":[150,1],"selectionAfter":[150,1],"with":""}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[453,0],"selection":[150,1],"selectionAfter":[150,1],"with":""}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[150,1],"selection":[150,1],"selectionAfter":[151,1],"with":"`\n`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[150,1],"selectionAfter":[150,1],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[74,0],"selection":[150,1],"selectionAfter":[152,1],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[74,0],"selection":[150,1],"selectionAfter":[153,1],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[74,0],"selection":[150,1],"selectionAfter":[154,1],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[74,0],"selection":[150,1],"selectionAfter":[155,1],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[74,0],"selection":[150,1],"selectionAfter":[156,1],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[74,0],"selection":[150,1],"selectionAfter":[157,1],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[74,0],"selection":[150,1],"selectionAfter":[152,1],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[74,0],"selection":[150,1],"selectionAfter":[153,1],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[74,0],"selection":[150,1],"selectionAfter":[156,1],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[74,0],"selection":[150,1],"selectionAfter":[152,1],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[74,76],"selection":[150,1],"selectionAfter":[154,1],"with":"```\nOne dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.\n```"}
+{"command":"insertNewline","document":"sized-images","replace":[453,0],"selection":[150,1],"selectionAfter":[151,0],"with":""}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[150,1],"selection":[150,1],"selectionAfter":[151,1],"with":"[\n](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[151,0],"selection":[150,1],"selectionAfter":[156,0],"with":"***\n\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[151,57],"selection":[150,58],"selectionAfter":[153,57],"with":"**Read liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[151,57],"selection":[150,58],"selectionAfter":[152,57],"with":"*Read liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[151,57],"selection":[150,58],"selectionAfter":[154,57],"with":"<u>Read liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.</u>"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[151,57],"selection":[150,58],"selectionAfter":[153,57],"with":"~~Read liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[150,58],"selection":[150,58],"selectionAfter":[151,58],"with":"`\nRead liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[150,58],"selectionAfter":[150,58],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[74,77],"selection":[150,58],"selectionAfter":[152,60],"with":"# One dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.\n# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[74,77],"selection":[150,58],"selectionAfter":[153,61],"with":"## One dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.\n## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[74,77],"selection":[150,58],"selectionAfter":[154,62],"with":"### One dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.\n### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[74,77],"selection":[150,58],"selectionAfter":[155,63],"with":"#### One dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.\n#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[74,77],"selection":[150,58],"selectionAfter":[156,64],"with":"##### One dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.\n##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[74,77],"selection":[150,58],"selectionAfter":[157,65],"with":"###### One dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.\n###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[74,77],"selection":[150,58],"selectionAfter":[152,60],"with":"- One dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.\n- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[74,77],"selection":[150,58],"selectionAfter":[153,61],"with":"1. One dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.\n2. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[74,77],"selection":[150,58],"selectionAfter":[156,64],"with":"- [ ] One dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.\n- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[74,77],"selection":[150,58],"selectionAfter":[152,60],"with":"> One dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.\n> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[74,134],"selection":[150,58],"selectionAfter":[154,58],"with":"```\nOne dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.\nRead liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.\n```"}
+{"command":"insertNewline","document":"sized-images","replace":[151,57],"selection":[150,58],"selectionAfter":[151,0],"with":""}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[150,58],"selection":[150,58],"selectionAfter":[151,58],"with":"[\nRead liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[151,57],"selection":[150,58],"selectionAfter":[155,0],"with":"***\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[151,57],"selection":[151,57],"selectionAfter":[153,57],"with":"**Read liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[151,57],"selection":[151,57],"selectionAfter":[152,57],"with":"*Read liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[151,57],"selection":[151,57],"selectionAfter":[154,57],"with":"<u>Read liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.</u>"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[151,57],"selection":[151,57],"selectionAfter":[153,57],"with":"~~Read liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[151,57],"selection":[151,57],"selectionAfter":[152,57],"with":"`Read liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[151,57],"selectionAfter":[151,57],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[151,0],"selection":[151,57],"selectionAfter":[153,57],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[151,0],"selection":[151,57],"selectionAfter":[154,57],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[151,0],"selection":[151,57],"selectionAfter":[155,57],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[151,0],"selection":[151,57],"selectionAfter":[156,57],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[151,0],"selection":[151,57],"selectionAfter":[157,57],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[151,0],"selection":[151,57],"selectionAfter":[158,57],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[151,0],"selection":[151,57],"selectionAfter":[153,57],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[151,0],"selection":[151,57],"selectionAfter":[154,57],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[151,0],"selection":[151,57],"selectionAfter":[157,57],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[151,0],"selection":[151,57],"selectionAfter":[153,57],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[151,57],"selection":[151,57],"selectionAfter":[155,57],"with":"```\nRead liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.\n```"}
+{"command":"insertNewline","document":"sized-images","replace":[151,57],"selection":[151,57],"selectionAfter":[152,0],"with":"\n"}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[151,57],"selection":[151,57],"selectionAfter":[152,57],"with":"[Read liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[151,57],"selection":[151,57],"selectionAfter":[155,0],"with":"***\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[151,57],"selection":[151,58],"selectionAfter":[153,57],"with":"**Read liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[151,57],"selection":[151,58],"selectionAfter":[152,57],"with":"*Read liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[151,57],"selection":[151,58],"selectionAfter":[154,57],"with":"<u>Read liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.</u>"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[151,57],"selection":[151,58],"selectionAfter":[153,57],"with":"~~Read liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[151,58],"selection":[151,58],"selectionAfter":[152,58],"with":"`Read liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.\n`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[151,58],"selectionAfter":[151,58],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[151,0],"selection":[151,58],"selectionAfter":[153,58],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[151,0],"selection":[151,58],"selectionAfter":[154,58],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[151,0],"selection":[151,58],"selectionAfter":[155,58],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[151,0],"selection":[151,58],"selectionAfter":[156,58],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[151,0],"selection":[151,58],"selectionAfter":[157,58],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[151,0],"selection":[151,58],"selectionAfter":[158,58],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[151,0],"selection":[151,58],"selectionAfter":[153,58],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[151,0],"selection":[151,58],"selectionAfter":[154,58],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[151,0],"selection":[151,58],"selectionAfter":[157,58],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[151,0],"selection":[151,58],"selectionAfter":[153,58],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[151,57],"selection":[151,58],"selectionAfter":[155,58],"with":"```\nRead liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.\n```"}
+{"command":"insertNewline","document":"sized-images","replace":[151,57],"selection":[151,58],"selectionAfter":[152,0],"with":""}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[151,58],"selection":[151,58],"selectionAfter":[152,58],"with":"[Read liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.\n](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[151,57],"selection":[151,58],"selectionAfter":[156,0],"with":"***\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[453,0],"selection":[208,1],"selectionAfter":[208,1],"with":""}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[453,0],"selection":[208,1],"selectionAfter":[208,1],"with":""}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[453,0],"selection":[208,1],"selectionAfter":[208,1],"with":""}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[453,0],"selection":[208,1],"selectionAfter":[208,1],"with":""}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[208,1],"selection":[208,1],"selectionAfter":[209,1],"with":"`\n`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[208,1],"selectionAfter":[208,1],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[151,0],"selection":[208,1],"selectionAfter":[210,1],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[151,0],"selection":[208,1],"selectionAfter":[211,1],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[151,0],"selection":[208,1],"selectionAfter":[212,1],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[151,0],"selection":[208,1],"selectionAfter":[213,1],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[151,0],"selection":[208,1],"selectionAfter":[214,1],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[151,0],"selection":[208,1],"selectionAfter":[215,1],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[151,0],"selection":[208,1],"selectionAfter":[210,1],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[151,0],"selection":[208,1],"selectionAfter":[211,1],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[151,0],"selection":[208,1],"selectionAfter":[214,1],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[151,0],"selection":[208,1],"selectionAfter":[210,1],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[151,57],"selection":[208,1],"selectionAfter":[212,1],"with":"```\nRead liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.\n```"}
+{"command":"insertNewline","document":"sized-images","replace":[453,0],"selection":[208,1],"selectionAfter":[209,0],"with":""}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[208,1],"selection":[208,1],"selectionAfter":[209,1],"with":"[\n](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[209,0],"selection":[208,1],"selectionAfter":[214,0],"with":"***\n\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[209,17],"selection":[208,18],"selectionAfter":[211,17],"with":"**Entities: <img sr**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[209,17],"selection":[208,18],"selectionAfter":[210,17],"with":"*Entities: <img sr*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[209,17],"selection":[208,18],"selectionAfter":[212,17],"with":"<u>Entities: <img sr</u>"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[209,17],"selection":[208,18],"selectionAfter":[211,17],"with":"~~Entities: <img sr~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[208,18],"selection":[208,18],"selectionAfter":[209,18],"with":"`\nEntities: <img sr`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[208,18],"selectionAfter":[208,18],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[151,58],"selection":[208,18],"selectionAfter":[210,20],"with":"# Read liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.\n# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[151,58],"selection":[208,18],"selectionAfter":[211,21],"with":"## Read liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.\n## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[151,58],"selection":[208,18],"selectionAfter":[212,22],"with":"### Read liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.\n### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[151,58],"selection":[208,18],"selectionAfter":[213,23],"with":"#### Read liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.\n#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[151,58],"selection":[208,18],"selectionAfter":[214,24],"with":"##### Read liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.\n##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[151,58],"selection":[208,18],"selectionAfter":[215,25],"with":"###### Read liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.\n###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[151,58],"selection":[208,18],"selectionAfter":[210,20],"with":"- Read liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.\n- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[151,58],"selection":[208,18],"selectionAfter":[211,21],"with":"1. Read liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.\n2. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[151,58],"selection":[208,18],"selectionAfter":[214,24],"with":"- [ ] Read liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.\n- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[151,58],"selection":[208,18],"selectionAfter":[210,20],"with":"> Read liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.\n> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[151,118],"selection":[208,18],"selectionAfter":[212,18],"with":"```\nRead liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.\nEntities: <img src=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.\n```"}
+{"command":"insertNewline","document":"sized-images","replace":[209,17],"selection":[208,18],"selectionAfter":[209,0],"with":""}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[208,18],"selection":[208,18],"selectionAfter":[209,18],"with":"[\nEntities: <img sr](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[209,17],"selection":[208,18],"selectionAfter":[214,0],"with":"***\n\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[209,17],"selection":[209,17],"selectionAfter":[211,17],"with":"**Entities: <img sr**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[209,17],"selection":[209,17],"selectionAfter":[210,17],"with":"*Entities: <img sr*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[209,17],"selection":[209,17],"selectionAfter":[212,17],"with":"<u>Entities: <img sr</u>"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[209,17],"selection":[209,17],"selectionAfter":[211,17],"with":"~~Entities: <img sr~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[209,17],"selection":[209,17],"selectionAfter":[210,17],"with":"`Entities: <img sr`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[209,17],"selectionAfter":[209,17],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[209,17],"selectionAfter":[211,17],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[209,17],"selectionAfter":[212,17],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[209,17],"selectionAfter":[213,17],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[209,17],"selectionAfter":[214,17],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[209,17],"selectionAfter":[215,17],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[209,17],"selectionAfter":[216,17],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[209,0],"selection":[209,17],"selectionAfter":[211,17],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[209,0],"selection":[209,17],"selectionAfter":[212,17],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[209,0],"selection":[209,17],"selectionAfter":[215,17],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[209,0],"selection":[209,17],"selectionAfter":[211,17],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[209,60],"selection":[209,17],"selectionAfter":[213,17],"with":"```\nEntities: <img src=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.\n```"}
+{"command":"insertNewline","document":"sized-images","replace":[209,17],"selection":[209,17],"selectionAfter":[210,0],"with":"\n"}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[209,17],"selection":[209,17],"selectionAfter":[210,17],"with":"[Entities: <img sr](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[209,17],"selection":[209,17],"selectionAfter":[214,0],"with":"***\n\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[209,60],"selection":[209,60],"selectionAfter":[211,60],"with":"**Entities: <img src=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[209,60],"selection":[209,60],"selectionAfter":[210,60],"with":"*Entities: <img src=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[209,60],"selection":[209,60],"selectionAfter":[212,60],"with":"<u>Entities: <img src=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.</u>"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[209,60],"selection":[209,60],"selectionAfter":[211,60],"with":"~~Entities: <img src=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[209,60],"selection":[209,60],"selectionAfter":[210,60],"with":"`Entities: <img src=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[209,60],"selectionAfter":[209,60],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[209,60],"selectionAfter":[211,60],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[209,60],"selectionAfter":[212,60],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[209,60],"selectionAfter":[213,60],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[209,60],"selectionAfter":[214,60],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[209,60],"selectionAfter":[215,60],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[209,60],"selectionAfter":[216,60],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[209,0],"selection":[209,60],"selectionAfter":[211,60],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[209,0],"selection":[209,60],"selectionAfter":[212,60],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[209,0],"selection":[209,60],"selectionAfter":[215,60],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[209,0],"selection":[209,60],"selectionAfter":[211,60],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[209,60],"selection":[209,60],"selectionAfter":[213,60],"with":"```\nEntities: <img src=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.\n```"}
+{"command":"insertNewline","document":"sized-images","replace":[209,60],"selection":[209,60],"selectionAfter":[210,0],"with":"\n"}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[209,60],"selection":[209,60],"selectionAfter":[210,60],"with":"[Entities: <img src=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[209,60],"selection":[209,60],"selectionAfter":[213,0],"with":"***\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[226,43],"selection":[226,43],"selectionAfter":[228,43],"with":"**c=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[226,43],"selection":[226,43],"selectionAfter":[227,43],"with":"*c=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[226,43],"selection":[226,43],"selectionAfter":[229,43],"with":"<u>c=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.</u>"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[226,43],"selection":[226,43],"selectionAfter":[228,43],"with":"~~c=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[226,43],"selection":[226,43],"selectionAfter":[227,43],"with":"`c=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[226,43],"selectionAfter":[226,43],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[226,43],"selectionAfter":[228,43],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[226,43],"selectionAfter":[229,43],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[226,43],"selectionAfter":[230,43],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[226,43],"selectionAfter":[231,43],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[226,43],"selectionAfter":[232,43],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[226,43],"selectionAfter":[233,43],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[209,0],"selection":[226,43],"selectionAfter":[228,43],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[209,0],"selection":[226,43],"selectionAfter":[229,43],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[209,0],"selection":[226,43],"selectionAfter":[232,43],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[209,0],"selection":[226,43],"selectionAfter":[228,43],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[209,60],"selection":[226,43],"selectionAfter":[230,43],"with":"```\nEntities: <img src=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.\n```"}
+{"command":"insertNewline","document":"sized-images","replace":[226,43],"selection":[226,43],"selectionAfter":[227,0],"with":"\n"}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[226,43],"selection":[226,43],"selectionAfter":[227,43],"with":"[c=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[226,43],"selection":[226,43],"selectionAfter":[231,0],"with":"\n***\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[226,43],"selection":[226,44],"selectionAfter":[228,43],"with":"**c=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[226,43],"selection":[226,44],"selectionAfter":[227,43],"with":"*c=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[226,43],"selection":[226,44],"selectionAfter":[229,43],"with":"<u>c=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.</u>"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[226,43],"selection":[226,44],"selectionAfter":[228,43],"with":"~~c=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[226,44],"selection":[226,44],"selectionAfter":[227,44],"with":"`c=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.\n`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[226,44],"selectionAfter":[226,44],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[226,44],"selectionAfter":[228,44],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[226,44],"selectionAfter":[229,44],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[226,44],"selectionAfter":[230,44],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[226,44],"selectionAfter":[231,44],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[226,44],"selectionAfter":[232,44],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[226,44],"selectionAfter":[233,44],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[209,0],"selection":[226,44],"selectionAfter":[228,44],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[209,0],"selection":[226,44],"selectionAfter":[229,44],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[209,0],"selection":[226,44],"selectionAfter":[232,44],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[209,0],"selection":[226,44],"selectionAfter":[228,44],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[209,60],"selection":[226,44],"selectionAfter":[230,44],"with":"```\nEntities: <img src=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.\n```"}
+{"command":"insertNewline","document":"sized-images","replace":[226,43],"selection":[226,44],"selectionAfter":[227,0],"with":""}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[226,44],"selection":[226,44],"selectionAfter":[227,44],"with":"[c=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.\n](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[226,43],"selection":[226,44],"selectionAfter":[232,0],"with":"\n***\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[453,0],"selection":[269,1],"selectionAfter":[269,1],"with":""}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[453,0],"selection":[269,1],"selectionAfter":[269,1],"with":""}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[453,0],"selection":[269,1],"selectionAfter":[269,1],"with":""}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[453,0],"selection":[269,1],"selectionAfter":[269,1],"with":""}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[269,1],"selection":[269,1],"selectionAfter":[270,1],"with":"`\n`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[269,1],"selectionAfter":[269,1],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[269,1],"selectionAfter":[271,1],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[269,1],"selectionAfter":[272,1],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[269,1],"selectionAfter":[273,1],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[269,1],"selectionAfter":[274,1],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[269,1],"selectionAfter":[275,1],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[209,0],"selection":[269,1],"selectionAfter":[276,1],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[209,0],"selection":[269,1],"selectionAfter":[271,1],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[209,0],"selection":[269,1],"selectionAfter":[272,1],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[209,0],"selection":[269,1],"selectionAfter":[275,1],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[209,0],"selection":[269,1],"selectionAfter":[271,1],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[209,60],"selection":[269,1],"selectionAfter":[273,1],"with":"```\nEntities: <img src=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.\n```"}
+{"command":"insertNewline","document":"sized-images","replace":[453,0],"selection":[269,1],"selectionAfter":[270,0],"with":""}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[269,1],"selection":[269,1],"selectionAfter":[270,1],"with":"[\n](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[270,0],"selection":[269,1],"selectionAfter":[275,0],"with":"***\n\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[270,70],"selection":[269,71],"selectionAfter":[272,70],"with":"**Not images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[270,70],"selection":[269,71],"selectionAfter":[271,70],"with":"*Not images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[270,70],"selection":[269,71],"selectionAfter":[273,70],"with":"<u>Not images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.</u>"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[270,70],"selection":[269,71],"selectionAfter":[272,70],"with":"~~Not images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[269,71],"selection":[269,71],"selectionAfter":[270,71],"with":"`\nNot images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[269,71],"selectionAfter":[269,71],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[209,61],"selection":[269,71],"selectionAfter":[271,73],"with":"# Entities: <img src=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.\n# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[209,61],"selection":[269,71],"selectionAfter":[272,74],"with":"## Entities: <img src=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.\n## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[209,61],"selection":[269,71],"selectionAfter":[273,75],"with":"### Entities: <img src=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.\n### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[209,61],"selection":[269,71],"selectionAfter":[274,76],"with":"#### Entities: <img src=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.\n#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[209,61],"selection":[269,71],"selectionAfter":[275,77],"with":"##### Entities: <img src=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.\n##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[209,61],"selection":[269,71],"selectionAfter":[276,78],"with":"###### Entities: <img src=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.\n###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[209,61],"selection":[269,71],"selectionAfter":[271,73],"with":"- Entities: <img src=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.\n- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[209,61],"selection":[269,71],"selectionAfter":[272,74],"with":"1. Entities: <img src=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.\n2. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[209,61],"selection":[269,71],"selectionAfter":[275,77],"with":"- [ ] Entities: <img src=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.\n- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[209,61],"selection":[269,71],"selectionAfter":[271,73],"with":"> Entities: <img src=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.\n> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[209,131],"selection":[269,71],"selectionAfter":[273,71],"with":"```\nEntities: <img src=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.\nNot images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.\n```"}
+{"command":"insertNewline","document":"sized-images","replace":[270,70],"selection":[269,71],"selectionAfter":[270,0],"with":""}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[269,71],"selection":[269,71],"selectionAfter":[270,71],"with":"[\nNot images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[270,70],"selection":[269,71],"selectionAfter":[274,0],"with":"***\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[270,70],"selection":[270,70],"selectionAfter":[272,70],"with":"**Not images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[270,70],"selection":[270,70],"selectionAfter":[271,70],"with":"*Not images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[270,70],"selection":[270,70],"selectionAfter":[273,70],"with":"<u>Not images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.</u>"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[270,70],"selection":[270,70],"selectionAfter":[272,70],"with":"~~Not images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[270,70],"selection":[270,70],"selectionAfter":[271,70],"with":"`Not images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[270,70],"selectionAfter":[270,70],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[270,0],"selection":[270,70],"selectionAfter":[272,70],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[270,0],"selection":[270,70],"selectionAfter":[273,70],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[270,0],"selection":[270,70],"selectionAfter":[274,70],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[270,0],"selection":[270,70],"selectionAfter":[275,70],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[270,0],"selection":[270,70],"selectionAfter":[276,70],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[270,0],"selection":[270,70],"selectionAfter":[277,70],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[270,0],"selection":[270,70],"selectionAfter":[272,70],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[270,0],"selection":[270,70],"selectionAfter":[273,70],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[270,0],"selection":[270,70],"selectionAfter":[276,70],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[270,0],"selection":[270,70],"selectionAfter":[272,70],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[270,70],"selection":[270,70],"selectionAfter":[274,70],"with":"```\nNot images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.\n```"}
+{"command":"insertNewline","document":"sized-images","replace":[270,70],"selection":[270,70],"selectionAfter":[271,0],"with":"\n"}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[270,70],"selection":[270,70],"selectionAfter":[271,70],"with":"[Not images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[270,70],"selection":[270,70],"selectionAfter":[274,0],"with":"***\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[270,70],"selection":[270,71],"selectionAfter":[272,70],"with":"**Not images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[270,70],"selection":[270,71],"selectionAfter":[271,70],"with":"*Not images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[270,70],"selection":[270,71],"selectionAfter":[273,70],"with":"<u>Not images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.</u>"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[270,70],"selection":[270,71],"selectionAfter":[272,70],"with":"~~Not images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[270,71],"selection":[270,71],"selectionAfter":[271,71],"with":"`Not images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.\n`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[270,71],"selectionAfter":[270,71],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[270,0],"selection":[270,71],"selectionAfter":[272,71],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[270,0],"selection":[270,71],"selectionAfter":[273,71],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[270,0],"selection":[270,71],"selectionAfter":[274,71],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[270,0],"selection":[270,71],"selectionAfter":[275,71],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[270,0],"selection":[270,71],"selectionAfter":[276,71],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[270,0],"selection":[270,71],"selectionAfter":[277,71],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[270,0],"selection":[270,71],"selectionAfter":[272,71],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[270,0],"selection":[270,71],"selectionAfter":[273,71],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[270,0],"selection":[270,71],"selectionAfter":[276,71],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[270,0],"selection":[270,71],"selectionAfter":[272,71],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[270,70],"selection":[270,71],"selectionAfter":[274,71],"with":"```\nNot images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.\n```"}
+{"command":"insertNewline","document":"sized-images","replace":[270,70],"selection":[270,71],"selectionAfter":[271,0],"with":""}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[270,71],"selection":[270,71],"selectionAfter":[271,71],"with":"[Not images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.\n](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[270,70],"selection":[270,71],"selectionAfter":[275,0],"with":"***\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[453,0],"selection":[340,1],"selectionAfter":[340,1],"with":""}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[453,0],"selection":[340,1],"selectionAfter":[340,1],"with":""}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[453,0],"selection":[340,1],"selectionAfter":[340,1],"with":""}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[453,0],"selection":[340,1],"selectionAfter":[340,1],"with":""}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[340,1],"selection":[340,1],"selectionAfter":[341,1],"with":"`\n`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[340,1],"selectionAfter":[340,1],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[270,0],"selection":[340,1],"selectionAfter":[342,1],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[270,0],"selection":[340,1],"selectionAfter":[343,1],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[270,0],"selection":[340,1],"selectionAfter":[344,1],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[270,0],"selection":[340,1],"selectionAfter":[345,1],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[270,0],"selection":[340,1],"selectionAfter":[346,1],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[270,0],"selection":[340,1],"selectionAfter":[347,1],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[270,0],"selection":[340,1],"selectionAfter":[342,1],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[270,0],"selection":[340,1],"selectionAfter":[343,1],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[270,0],"selection":[340,1],"selectionAfter":[346,1],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[270,0],"selection":[340,1],"selectionAfter":[342,1],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[270,70],"selection":[340,1],"selectionAfter":[344,1],"with":"```\nNot images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.\n```"}
+{"command":"insertNewline","document":"sized-images","replace":[453,0],"selection":[340,1],"selectionAfter":[341,0],"with":""}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[340,1],"selection":[340,1],"selectionAfter":[341,1],"with":"[\n](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[341,0],"selection":[340,1],"selectionAfter":[346,0],"with":"***\n\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[341,58],"selection":[340,59],"selectionAfter":[343,58],"with":"**Unterminated <img src=\"g.png\" keeps the rest of this line.**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[341,58],"selection":[340,59],"selectionAfter":[342,58],"with":"*Unterminated <img src=\"g.png\" keeps the rest of this line.*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[341,58],"selection":[340,59],"selectionAfter":[344,58],"with":"<u>Unterminated <img src=\"g.png\" keeps the rest of this line.</u>"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[341,58],"selection":[340,59],"selectionAfter":[343,58],"with":"~~Unterminated <img src=\"g.png\" keeps the rest of this line.~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[340,59],"selection":[340,59],"selectionAfter":[341,59],"with":"`\nUnterminated <img src=\"g.png\" keeps the rest of this line.`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[340,59],"selectionAfter":[340,59],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[270,71],"selection":[340,59],"selectionAfter":[342,61],"with":"# Not images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.\n# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[270,71],"selection":[340,59],"selectionAfter":[343,62],"with":"## Not images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.\n## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[270,71],"selection":[340,59],"selectionAfter":[344,63],"with":"### Not images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.\n### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[270,71],"selection":[340,59],"selectionAfter":[345,64],"with":"#### Not images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.\n#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[270,71],"selection":[340,59],"selectionAfter":[346,65],"with":"##### Not images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.\n##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[270,71],"selection":[340,59],"selectionAfter":[347,66],"with":"###### Not images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.\n###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[270,71],"selection":[340,59],"selectionAfter":[342,61],"with":"- Not images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.\n- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[270,71],"selection":[340,59],"selectionAfter":[343,62],"with":"1. Not images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.\n2. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[270,71],"selection":[340,59],"selectionAfter":[346,65],"with":"- [ ] Not images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.\n- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[270,71],"selection":[340,59],"selectionAfter":[342,61],"with":"> Not images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.\n> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[270,129],"selection":[340,59],"selectionAfter":[344,59],"with":"```\nNot images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.\nUnterminated <img src=\"g.png\" keeps the rest of this line.\n```"}
+{"command":"insertNewline","document":"sized-images","replace":[341,58],"selection":[340,59],"selectionAfter":[341,0],"with":""}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[340,59],"selection":[340,59],"selectionAfter":[341,59],"with":"[\nUnterminated <img src=\"g.png\" keeps the rest of this line.](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[341,58],"selection":[340,59],"selectionAfter":[345,0],"with":"***\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[341,58],"selection":[341,58],"selectionAfter":[343,58],"with":"**Unterminated <img src=\"g.png\" keeps the rest of this line.**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[341,58],"selection":[341,58],"selectionAfter":[342,58],"with":"*Unterminated <img src=\"g.png\" keeps the rest of this line.*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[341,58],"selection":[341,58],"selectionAfter":[344,58],"with":"<u>Unterminated <img src=\"g.png\" keeps the rest of this line.</u>"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[341,58],"selection":[341,58],"selectionAfter":[343,58],"with":"~~Unterminated <img src=\"g.png\" keeps the rest of this line.~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[341,58],"selection":[341,58],"selectionAfter":[342,58],"with":"`Unterminated <img src=\"g.png\" keeps the rest of this line.`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[341,58],"selectionAfter":[341,58],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[341,0],"selection":[341,58],"selectionAfter":[343,58],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[341,0],"selection":[341,58],"selectionAfter":[344,58],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[341,0],"selection":[341,58],"selectionAfter":[345,58],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[341,0],"selection":[341,58],"selectionAfter":[346,58],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[341,0],"selection":[341,58],"selectionAfter":[347,58],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[341,0],"selection":[341,58],"selectionAfter":[348,58],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[341,0],"selection":[341,58],"selectionAfter":[343,58],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[341,0],"selection":[341,58],"selectionAfter":[344,58],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[341,0],"selection":[341,58],"selectionAfter":[347,58],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[341,0],"selection":[341,58],"selectionAfter":[343,58],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[341,58],"selection":[341,58],"selectionAfter":[345,58],"with":"```\nUnterminated <img src=\"g.png\" keeps the rest of this line.\n```"}
+{"command":"insertNewline","document":"sized-images","replace":[341,58],"selection":[341,58],"selectionAfter":[342,0],"with":"\n"}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[341,58],"selection":[341,58],"selectionAfter":[342,58],"with":"[Unterminated <img src=\"g.png\" keeps the rest of this line.](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[341,58],"selection":[341,58],"selectionAfter":[345,0],"with":"***\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[341,58],"selection":[341,59],"selectionAfter":[343,58],"with":"**Unterminated <img src=\"g.png\" keeps the rest of this line.**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[341,58],"selection":[341,59],"selectionAfter":[342,58],"with":"*Unterminated <img src=\"g.png\" keeps the rest of this line.*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[341,58],"selection":[341,59],"selectionAfter":[344,58],"with":"<u>Unterminated <img src=\"g.png\" keeps the rest of this line.</u>"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[341,58],"selection":[341,59],"selectionAfter":[343,58],"with":"~~Unterminated <img src=\"g.png\" keeps the rest of this line.~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[341,59],"selection":[341,59],"selectionAfter":[342,59],"with":"`Unterminated <img src=\"g.png\" keeps the rest of this line.\n`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[341,59],"selectionAfter":[341,59],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[341,0],"selection":[341,59],"selectionAfter":[343,59],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[341,0],"selection":[341,59],"selectionAfter":[344,59],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[341,0],"selection":[341,59],"selectionAfter":[345,59],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[341,0],"selection":[341,59],"selectionAfter":[346,59],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[341,0],"selection":[341,59],"selectionAfter":[347,59],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[341,0],"selection":[341,59],"selectionAfter":[348,59],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[341,0],"selection":[341,59],"selectionAfter":[343,59],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[341,0],"selection":[341,59],"selectionAfter":[344,59],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[341,0],"selection":[341,59],"selectionAfter":[347,59],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[341,0],"selection":[341,59],"selectionAfter":[343,59],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[341,58],"selection":[341,59],"selectionAfter":[345,59],"with":"```\nUnterminated <img src=\"g.png\" keeps the rest of this line.\n```"}
+{"command":"insertNewline","document":"sized-images","replace":[341,58],"selection":[341,59],"selectionAfter":[342,0],"with":""}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[341,59],"selection":[341,59],"selectionAfter":[342,59],"with":"[Unterminated <img src=\"g.png\" keeps the rest of this line.\n](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[341,58],"selection":[341,59],"selectionAfter":[346,0],"with":"***\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[453,0],"selection":[399,1],"selectionAfter":[399,1],"with":""}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[453,0],"selection":[399,1],"selectionAfter":[399,1],"with":""}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[453,0],"selection":[399,1],"selectionAfter":[399,1],"with":""}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[453,0],"selection":[399,1],"selectionAfter":[399,1],"with":""}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[399,1],"selection":[399,1],"selectionAfter":[400,1],"with":"`\n`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[399,1],"selectionAfter":[399,1],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[341,0],"selection":[399,1],"selectionAfter":[401,1],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[341,0],"selection":[399,1],"selectionAfter":[402,1],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[341,0],"selection":[399,1],"selectionAfter":[403,1],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[341,0],"selection":[399,1],"selectionAfter":[404,1],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[341,0],"selection":[399,1],"selectionAfter":[405,1],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[341,0],"selection":[399,1],"selectionAfter":[406,1],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[341,0],"selection":[399,1],"selectionAfter":[401,1],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[341,0],"selection":[399,1],"selectionAfter":[402,1],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[341,0],"selection":[399,1],"selectionAfter":[405,1],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[341,0],"selection":[399,1],"selectionAfter":[401,1],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[341,58],"selection":[399,1],"selectionAfter":[403,1],"with":"```\nUnterminated <img src=\"g.png\" keeps the rest of this line.\n```"}
+{"command":"insertNewline","document":"sized-images","replace":[453,0],"selection":[399,1],"selectionAfter":[400,0],"with":""}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[399,1],"selection":[399,1],"selectionAfter":[400,1],"with":"[\n](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[400,0],"selection":[399,1],"selectionAfter":[405,0],"with":"***\n\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[400,53],"selection":[399,54],"selectionAfter":[402,53],"with":"**Not a size: <img src=\"h.png\" width=\"50%\" height=\"0\">.**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[400,53],"selection":[399,54],"selectionAfter":[401,53],"with":"*Not a size: <img src=\"h.png\" width=\"50%\" height=\"0\">.*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[400,53],"selection":[399,54],"selectionAfter":[403,53],"with":"<u>Not a size: <img src=\"h.png\" width=\"50%\" height=\"0\">.</u>"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[400,53],"selection":[399,54],"selectionAfter":[402,53],"with":"~~Not a size: <img src=\"h.png\" width=\"50%\" height=\"0\">.~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[399,54],"selection":[399,54],"selectionAfter":[400,54],"with":"`\nNot a size: <img src=\"h.png\" width=\"50%\" height=\"0\">.`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[399,54],"selectionAfter":[399,54],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[341,59],"selection":[399,54],"selectionAfter":[401,56],"with":"# Unterminated <img src=\"g.png\" keeps the rest of this line.\n# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[341,59],"selection":[399,54],"selectionAfter":[402,57],"with":"## Unterminated <img src=\"g.png\" keeps the rest of this line.\n## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[341,59],"selection":[399,54],"selectionAfter":[403,58],"with":"### Unterminated <img src=\"g.png\" keeps the rest of this line.\n### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[341,59],"selection":[399,54],"selectionAfter":[404,59],"with":"#### Unterminated <img src=\"g.png\" keeps the rest of this line.\n#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[341,59],"selection":[399,54],"selectionAfter":[405,60],"with":"##### Unterminated <img src=\"g.png\" keeps the rest of this line.\n##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[341,59],"selection":[399,54],"selectionAfter":[406,61],"with":"###### Unterminated <img src=\"g.png\" keeps the rest of this line.\n###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[341,59],"selection":[399,54],"selectionAfter":[401,56],"with":"- Unterminated <img src=\"g.png\" keeps the rest of this line.\n- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[341,59],"selection":[399,54],"selectionAfter":[402,57],"with":"1. Unterminated <img src=\"g.png\" keeps the rest of this line.\n2. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[341,59],"selection":[399,54],"selectionAfter":[405,60],"with":"- [ ] Unterminated <img src=\"g.png\" keeps the rest of this line.\n- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[341,59],"selection":[399,54],"selectionAfter":[401,56],"with":"> Unterminated <img src=\"g.png\" keeps the rest of this line.\n> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[341,112],"selection":[399,54],"selectionAfter":[403,54],"with":"```\nUnterminated <img src=\"g.png\" keeps the rest of this line.\nNot a size: <img src=\"h.png\" width=\"50%\" height=\"0\">.\n```"}
+{"command":"insertNewline","document":"sized-images","replace":[400,53],"selection":[399,54],"selectionAfter":[400,0],"with":""}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[399,54],"selection":[399,54],"selectionAfter":[400,54],"with":"[\nNot a size: <img src=\"h.png\" width=\"50%\" height=\"0\">.](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[400,53],"selection":[399,54],"selectionAfter":[404,0],"with":"***\n"}
+{"argument":"bold","command":"toggleInline","document":"sized-images","replace":[400,53],"selection":[400,53],"selectionAfter":[402,53],"with":"**Not a size: <img src=\"h.png\" width=\"50%\" height=\"0\">.**"}
+{"argument":"italic","command":"toggleInline","document":"sized-images","replace":[400,53],"selection":[400,53],"selectionAfter":[401,53],"with":"*Not a size: <img src=\"h.png\" width=\"50%\" height=\"0\">.*"}
+{"argument":"underline","command":"toggleInline","document":"sized-images","replace":[400,53],"selection":[400,53],"selectionAfter":[403,53],"with":"<u>Not a size: <img src=\"h.png\" width=\"50%\" height=\"0\">.</u>"}
+{"argument":"strikethrough","command":"toggleInline","document":"sized-images","replace":[400,53],"selection":[400,53],"selectionAfter":[402,53],"with":"~~Not a size: <img src=\"h.png\" width=\"50%\" height=\"0\">.~~"}
+{"argument":"inlineCode","command":"toggleInline","document":"sized-images","replace":[400,53],"selection":[400,53],"selectionAfter":[401,53],"with":"`Not a size: <img src=\"h.png\" width=\"50%\" height=\"0\">.`"}
+{"argument":"0","command":"applyHeading","document":"sized-images","replace":[453,0],"selection":[400,53],"selectionAfter":[400,53],"with":""}
+{"argument":"1","command":"applyHeading","document":"sized-images","replace":[400,0],"selection":[400,53],"selectionAfter":[402,53],"with":"# "}
+{"argument":"2","command":"applyHeading","document":"sized-images","replace":[400,0],"selection":[400,53],"selectionAfter":[403,53],"with":"## "}
+{"argument":"3","command":"applyHeading","document":"sized-images","replace":[400,0],"selection":[400,53],"selectionAfter":[404,53],"with":"### "}
+{"argument":"4","command":"applyHeading","document":"sized-images","replace":[400,0],"selection":[400,53],"selectionAfter":[405,53],"with":"#### "}
+{"argument":"5","command":"applyHeading","document":"sized-images","replace":[400,0],"selection":[400,53],"selectionAfter":[406,53],"with":"##### "}
+{"argument":"6","command":"applyHeading","document":"sized-images","replace":[400,0],"selection":[400,53],"selectionAfter":[407,53],"with":"###### "}
+{"argument":"bulleted","command":"toggleList","document":"sized-images","replace":[400,0],"selection":[400,53],"selectionAfter":[402,53],"with":"- "}
+{"argument":"numbered","command":"toggleList","document":"sized-images","replace":[400,0],"selection":[400,53],"selectionAfter":[403,53],"with":"1. "}
+{"argument":"task","command":"toggleList","document":"sized-images","replace":[400,0],"selection":[400,53],"selectionAfter":[406,53],"with":"- [ ] "}
+{"command":"toggleQuote","document":"sized-images","replace":[400,0],"selection":[400,53],"selectionAfter":[402,53],"with":"> "}
+{"command":"wrapCodeBlock","document":"sized-images","replace":[400,53],"selection":[400,53],"selectionAfter":[404,53],"with":"```\nNot a size: <img src=\"h.png\" width=\"50%\" height=\"0\">.\n```"}
+{"command":"insertNewline","document":"sized-images","replace":[400,53],"selection":[400,53],"selectionAfter":[401,0],"with":"\n"}
+{"argument":"https://example.com","command":"insertLink","document":"sized-images","replace":[400,53],"selection":[400,53],"selectionAfter":[401,53],"with":"[Not a size: <img src=\"h.png\" width=\"50%\" height=\"0\">.](https://example.com)"}
+{"command":"insertHorizontalRule","document":"sized-images","replace":[400,53],"selection":[400,53],"selectionAfter":[404,0],"with":"***\n"}
 {"argument":"bold","command":"toggleInline","document":"rules-and-escapes","replace":[0,0],"selection":[0,0],"selectionAfter":[2,9],"with":"**bold text**"}
 {"argument":"italic","command":"toggleInline","document":"rules-and-escapes","replace":[0,0],"selection":[0,0],"selectionAfter":[1,11],"with":"*italic text*"}
 {"argument":"underline","command":"toggleInline","document":"rules-and-escapes","replace":[0,0],"selection":[0,0],"selectionAfter":[3,15],"with":"<u>underlined text</u>"}

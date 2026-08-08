@@ -658,6 +658,96 @@
       "text" : "A link and an ￼.\nA link with bold inside.\nBare https://example.com is not a link."
     },
     {
+      "document" : "sized-images",
+      "spans" : [
+        {
+          "argument" : "sized\u001fTrip.assets/a%20shot.png\u001f300x200",
+          "includesMarkup" : true,
+          "isAtomic" : true,
+          "rendered" : [
+            0,
+            1
+          ],
+          "source" : [
+            0,
+            73
+          ],
+          "style" : "image"
+        },
+        {
+          "argument" : "\u001fa.png\u001f300x",
+          "includesMarkup" : true,
+          "isAtomic" : true,
+          "rendered" : [
+            17,
+            1
+          ],
+          "source" : [
+            89,
+            25
+          ],
+          "style" : "image"
+        },
+        {
+          "argument" : "\u001fb.png\u001fx40",
+          "includesMarkup" : true,
+          "isAtomic" : true,
+          "rendered" : [
+            23,
+            1
+          ],
+          "source" : [
+            119,
+            30
+          ],
+          "style" : "image"
+        },
+        {
+          "argument" : "a > b\u001fc.png\u001f12x",
+          "includesMarkup" : true,
+          "isAtomic" : true,
+          "rendered" : [
+            42,
+            1
+          ],
+          "source" : [
+            167,
+            40
+          ],
+          "style" : "image"
+        },
+        {
+          "argument" : "\"q\"\u001fd.png?x=1&y=2",
+          "includesMarkup" : true,
+          "isAtomic" : true,
+          "rendered" : [
+            55,
+            1
+          ],
+          "source" : [
+            219,
+            49
+          ],
+          "style" : "image"
+        },
+        {
+          "argument" : "\u001fh.png",
+          "includesMarkup" : true,
+          "isAtomic" : true,
+          "rendered" : [
+            200,
+            1
+          ],
+          "source" : [
+            412,
+            40
+          ],
+          "style" : "image"
+        }
+      ],
+      "text" : "￼\nOne dimension: ￼ and ￼.\nRead liberally: ￼.\nEntities: ￼.\nNot images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.\nUnterminated <img src=\"g.png\" keeps the rest of this line.\nNot a size: ￼."
+    },
+    {
       "document" : "rules-and-escapes",
       "spans" : [
         {
@@ -998,6 +1088,10 @@
     {
       "id" : "links",
       "text" : "A [link](https://example.com) and an ![image](Trip.assets/a%20shot.png).\nA [link with **bold**](https://example.com/x) inside.\nBare https://example.com is not a link."
+    },
+    {
+      "id" : "sized-images",
+      "text" : "<img src=\"Trip.assets/a%20shot.png\" alt=\"sized\" width=\"300\" height=\"200\">\nOne dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.\nRead liberally: <IMG ALT=\"a > b\" SRC=\"c.png\" WIDTH=\"12\">.\nEntities: <img src=\"d.png?x=1&amp;y=2\" alt=\"&quot;q&quot;\">.\nNot images: <imgx src=\"e.png\"> <image src=\"f.png\"> <img> <img src=\"\">.\nUnterminated <img src=\"g.png\" keeps the rest of this line.\nNot a size: <img src=\"h.png\" width=\"50%\" height=\"0\">."
     },
     {
       "id" : "rules-and-escapes",

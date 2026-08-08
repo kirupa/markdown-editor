@@ -95,6 +95,18 @@ public enum ContractCorpus {
             """
         ),
         Document(
+            id: "sized-images",
+            text: """
+            <img src="Trip.assets/a%20shot.png" alt="sized" width="300" height="200">
+            One dimension: <img src=a.png width=300> and <img src='b.png' height='40'/>.
+            Read liberally: <IMG ALT="a > b" SRC="c.png" WIDTH="12">.
+            Entities: <img src="d.png?x=1&amp;y=2" alt="&quot;q&quot;">.
+            Not images: <imgx src="e.png"> <image src="f.png"> <img> <img src="">.
+            Unterminated <img src="g.png" keeps the rest of this line.
+            Not a size: <img src="h.png" width="50%" height="0">.
+            """
+        ),
+        Document(
             id: "rules-and-escapes",
             text: """
             Above.

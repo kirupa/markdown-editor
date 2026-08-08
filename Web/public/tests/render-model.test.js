@@ -128,6 +128,70 @@ Quote`);
         ));
     });
 
+    // Markdown has no syntax for image dimensions, so a sized image is written
+    // as HTML — the same reason `<u>` is the underline. It has to parse back to
+    // an image span, or sizing one would turn it into a wall of raw text.
+    test('An HTML image tag renders as an image, not as text', () => {
+        const source = 'A <img src="Post.assets/photo.png" alt="Photo" width="300" height="200"> here';
+        const model = renderMarkdown(source);
+        const attachmentRange = findRange(model.text, '\uFFFC');
+
+        expectEqual(model.text, 'A \uFFFC here');
+        expectEqual(
+            model.sourceRange(attachmentRange),
+            findRange(source, '<img src="Post.assets/photo.png" alt="Photo" width="300" height="200">'),
+        );
+        expect(model.spans.some(s =>
+            s.style.kind === 'image' &&
+            s.style.altText === 'Photo' &&
+            s.style.destination === 'Post.assets/photo.png' &&
+            s.style.width === 300 &&
+            s.style.height === 200
+        ), 'the size is carried on the span');
+    });
+
+    test('An image tag parses whatever order and quoting it is written in', () => {
+        const model = renderMarkdown(`<img width=300 alt='A "quoted" name' src="a.png"/>`);
+        const span = model.spans.find(s => s.style.kind === 'image');
+        expectEqual(model.text, '\uFFFC');
+        expectEqual(span.style.destination, 'a.png');
+        expectEqual(span.style.altText, 'A "quoted" name');
+        expectEqual(span.style.width, 300);
+        expectEqual(span.style.height, null, 'a height that was not given stays absent');
+    });
+
+    test('A Markdown image has no size', () => {
+        const model = renderMarkdown('![Photo](a.png)');
+        const span = model.spans.find(s => s.style.kind === 'image');
+        expectEqual(span.style.width, null);
+        expectEqual(span.style.height, null);
+    });
+
+    test('Tags that are not images are still literal text', () => {
+        // Only `<img>` is understood. Everything else stays text, as before.
+        const source = '<div>x</div> and <imgx src="a.png"> and <img>';
+        const model = renderMarkdown(source);
+        expectEqual(model.text, source, 'nothing was swallowed');
+        expect(!model.spans.some(s => s.style.kind === 'image'), 'and no image was invented');
+    });
+
+    test('An image tag with no source is left as text', () => {
+        // Without a `src` there is nothing to draw, and replacing it with an
+        // empty box would lose text the author can still see and fix.
+        const source = '<img alt="nothing" width="10">';
+        const model = renderMarkdown(source);
+        expectEqual(model.text, source);
+    });
+
+    test('Sizes that are not positive whole numbers are ignored', () => {
+        // `width="50%"` is legal HTML this editor cannot represent as a number,
+        // so the image still renders — it just has no size to show in the panel.
+        const model = renderMarkdown('<img src="a.png" width="50%" height="-4">');
+        const span = model.spans.find(s => s.style.kind === 'image');
+        expectEqual(span.style.width, null);
+        expectEqual(span.style.height, null);
+    });
+
     test('Balanced parentheses remain inside link destinations', () => {
         const source = '[Docs](https://example.com/a_(b))';
         const model = renderMarkdown(source);

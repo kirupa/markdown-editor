@@ -135,6 +135,11 @@ struct MarkdownFormattingBar: View {
     let theme: EditorColorTheme
     let onInsertLink: () -> Void
     let onInsertImage: () -> Void
+    let onSizeImage: () -> Void
+    /// Whether the caret is on an image, which is the only time a size can be
+    /// set. Shown disabled rather than hidden so the control does not move
+    /// around under the thumb.
+    var canSizeImage: Bool = false
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -159,6 +164,14 @@ struct MarkdownFormattingBar: View {
                 .buttonStyle(.plain)
                 .frame(width: 40, height: 36)
                 .accessibilityLabel("Insert Image")
+                Button(action: onSizeImage) {
+                    Label("Image Size", systemImage: "aspectratio")
+                        .labelStyle(.iconOnly)
+                }
+                .buttonStyle(.plain)
+                .frame(width: 40, height: 36)
+                .disabled(!canSizeImage)
+                .accessibilityLabel("Image Size")
             }
             .padding(.horizontal, 8)
         }

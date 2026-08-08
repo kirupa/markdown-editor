@@ -267,6 +267,132 @@ final class MarkdownEditorSession: ObservableObject {
         }
     }
 
+    /// The image the selection sits on, if any.
+    ///
+    /// A rendered image is a single atomic character, so "on" means the caret
+    /// is inside or immediately after it — the same span the reading view
+    /// highlights.
+    func imageAtSelection() -> (range: NSRange, tag: MarkdownImageTag.Parsed)? {
+        guard let editor = currentEditor() else { return nil }
+        let text = editor.sourceText as NSString
+        let selection = clamped(editor.selectedSourceRange, to: text.length)
+
+        for span in MarkdownRenderer.render(editor.sourceText).spans {
+            guard case .image = span.style else { continue }
+            let start = span.sourceRange.location
+            let end = NSMaxRange(span.sourceRange)
+            guard selection.location >= start, selection.location <= end else {
+                continue
+            }
+            guard
+                let tag = MarkdownFormatting.readImage(
+                    text,
+                    range: span.sourceRange
+                )
+            else { continue }
+            return (span.sourceRange, tag)
+        }
+        return nil
+    }
+
+    var canResizeImageAtSelection: Bool { imageAtSelection() != nil }
+
+    /// Set the size of the image at the selection.
+    ///
+    /// The two fields drive each other through the image's own proportions, so
+    /// a picture cannot be squashed by accident.
+    func chooseImageSize() {
+        let editor = currentEditor()
+        editor?.commitPendingComposition()
+
+        guard let image = imageAtSelection() else {
+            present(error: MarkdownEditorPresentationError.noImageAtSelection)
+            return
+        }
+
+        let natural = naturalSize(of: image.tag.destination)
+        let controller = MarkdownImageSizeAccessory(
+            width: image.tag.width,
+            height: image.tag.height,
+            natural: natural
+        )
+
+        let alert = NSAlert()
+        alert.messageText = "Image Size"
+        alert.informativeText = natural == nil
+            ? """
+                Set a width or a height in pixels. The image could not be \
+                measured, so the other dimension is left to the renderer.
+                """
+            : """
+                Set a width or a height in pixels. The other follows to keep \
+                the image in proportion.
+                """
+        alert.accessoryView = controller.view
+        alert.addButton(withTitle: "Apply")
+        alert.addButton(withTitle: "Reset")
+        alert.addButton(withTitle: "Cancel")
+
+        let completion: (NSApplication.ModalResponse) -> Void = {
+            [weak self] response in
+            let size: MarkdownImageTag.Size
+            switch response {
+            case .alertFirstButtonReturn:
+                size = controller.size
+            case .alertSecondButtonReturn:
+                size = .none
+            default:
+                return
+            }
+            self?.applyImageSize(size, to: image.range)
+        }
+
+        if let window = editor?.hostingWindow {
+            alert.beginSheetModal(for: window, completionHandler: completion)
+        } else {
+            completion(alert.runModal())
+        }
+    }
+
+    private func applyImageSize(
+        _ size: MarkdownImageTag.Size,
+        to range: NSRange
+    ) {
+        guard let editor = currentEditor() else {
+            present(error: MarkdownEditorPresentationError.editorUnavailable)
+            return
+        }
+        let result = MarkdownFormatting.setImageSize(
+            in: editor.sourceText,
+            range: range,
+            size: size
+        )
+        editor.apply(result, actionName: "Image Size")
+        editor.focus()
+    }
+
+    /// The image's own pixel dimensions, so a resize can keep its shape.
+    private func naturalSize(
+        of destination: String
+    ) -> MarkdownImageTag.Size? {
+        guard let fileURL else { return nil }
+        let decoded = destination.removingPercentEncoding ?? destination
+        guard !decoded.contains("://") else { return nil }
+        let url = URL(
+            fileURLWithPath: decoded,
+            relativeTo: fileURL.deletingLastPathComponent()
+        )
+        guard
+            let image = NSImage(contentsOf: url),
+            image.size.width > 0,
+            image.size.height > 0
+        else { return nil }
+        return MarkdownImageTag.Size(
+            width: Int(image.size.width.rounded()),
+            height: Int(image.size.height.rounded())
+        )
+    }
+
     func insertHorizontalRule() {
         applyFormatting("Horizontal Rule") { text, selection in
             MarkdownFormatting.insertHorizontalRule(
@@ -322,9 +448,88 @@ final class MarkdownEditorSession: ObservableObject {
         }
     }
 
+    /// Ask where the image comes from, then take that route.
+    ///
+    /// A file has to be copied into the assets folder beside the document and a
+    /// URL must not be, so the choice has to be made before either route
+    /// starts — the open panel can no longer just appear.
     func chooseAndInsertImage() {
         let editor = currentEditor()
         editor?.commitPendingComposition()
+
+        let alert = NSAlert()
+        alert.messageText = "Add an image"
+        alert.informativeText = """
+            Choose a file to copy in beside this document, or link to an image \
+            already on the web.
+            """
+        alert.addButton(withTitle: "Choose File…")
+        alert.addButton(withTitle: "Image Address…")
+        alert.addButton(withTitle: "Cancel")
+
+        let completion: (NSApplication.ModalResponse) -> Void = {
+            [weak self] response in
+            switch response {
+            case .alertFirstButtonReturn:
+                self?.chooseImageFile()
+            case .alertSecondButtonReturn:
+                self?.chooseImageAddress()
+            default:
+                break
+            }
+        }
+
+        if let window = editor?.hostingWindow {
+            alert.beginSheetModal(for: window, completionHandler: completion)
+        } else {
+            completion(alert.runModal())
+        }
+    }
+
+    /// Reference an image that is already on the web. Nothing is copied.
+    func chooseImageAddress() {
+        let editor = currentEditor()
+
+        let destinationField = NSTextField(
+            frame: NSRect(x: 0, y: 0, width: 320, height: 24)
+        )
+        destinationField.placeholderString = "https://example.com/photo.png"
+        destinationField.stringValue = "https://"
+
+        let alert = NSAlert()
+        alert.messageText = "Image address"
+        alert.informativeText =
+            "The image stays where it is; this document points at it."
+        alert.accessoryView = destinationField
+        alert.addButton(withTitle: "Insert")
+        alert.addButton(withTitle: "Cancel")
+
+        let completion: (NSApplication.ModalResponse) -> Void = {
+            [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            let destination = destinationField.stringValue
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !destination.isEmpty, destination != "https://" else {
+                return
+            }
+            self?.applyFormatting("Add Image") { text, selection in
+                MarkdownFormatting.insertImage(
+                    destination: destination,
+                    in: text,
+                    selection: selection
+                )
+            }
+        }
+
+        if let window = editor?.hostingWindow {
+            alert.beginSheetModal(for: window, completionHandler: completion)
+        } else {
+            completion(alert.runModal())
+        }
+    }
+
+    private func chooseImageFile() {
+        let editor = currentEditor()
         guard fileURL != nil else {
             present(error: MarkdownImageImportError.documentHasNoFileLocation)
             return
@@ -475,12 +680,23 @@ private final class WeakEditingSurface {
 
 private enum MarkdownEditorPresentationError: Error, LocalizedError {
     case editorUnavailable
+    case noImageAtSelection
 
     var errorDescription: String? {
-        "The requested edit could not be applied."
+        switch self {
+        case .editorUnavailable:
+            "The requested edit could not be applied."
+        case .noImageAtSelection:
+            "There is no image at the insertion point."
+        }
     }
 
     var recoverySuggestion: String? {
-        "Click in the editor and try adding the image again."
+        switch self {
+        case .editorUnavailable:
+            "Click in the editor and try adding the image again."
+        case .noImageAtSelection:
+            "Select an image, or place the insertion point on one, and try again."
+        }
     }
 }

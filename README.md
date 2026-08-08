@@ -231,12 +231,14 @@ features are deliberately left to each platform.
 ## Tests
 
 ```bash
-macOS/Scripts/run-tests.sh      # 171 tests — the shared Swift core, both apps
+macOS/Scripts/run-tests.sh      # 215 tests — the shared Swift core, both apps
 php Web/tests/php/run.php       # 71 tests — the PHP backend
-open http://127.0.0.1:8000/tests/   # 241 tests — the browser client
-node Web/tests/run.mjs          # 236 tests — the same, minus the DOM tests,
+open http://127.0.0.1:8000/tests/   # 281 tests — the browser client
+node Web/tests/run.mjs          # 290 tests — the same, minus the DOM tests,
                                 #   plus 5 that check the code still agrees
-                                #   with the published Firebase rules
+                                #   with the published Firebase rules, and the
+                                #   render model measured against Contract/,
+                                #   which is not served to the browser
 
 swift test --package-path Shared/Firebase   # 5 tests — the Firebase adapter
 ```

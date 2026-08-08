@@ -358,6 +358,7 @@ operation.
 | Bold | `**` … `**` | Also recognizes `__` … `__` when toggling off |
 | Italic | `*` … `*` | Also recognizes `_` … `_` when toggling off |
 | Underline | `<u>` … `</u>` | Markdown has no native underline, so an HTML tag is used |
+| Image size | `<img src alt width height>` | Markdown has no syntax for dimensions, so an HTML tag is used. See [`Contract/README.md`](../Contract/README.md) |
 | Strikethrough | `~~` … `~~` | |
 | Inline code | Backticks | Delimiter length is computed as one more than the longest backtick run inside the content, so code containing backticks is escaped correctly |
 
@@ -697,6 +698,7 @@ the code they cover, so this one command covers the iOS build's engine too.
 
 | Change | Summary |
 | --- | --- |
+| Sized images and insert by address | Insert ▸ Image asks for a file or a web address; Insert ▸ Image Size… (⇧⌥⌘I) sets a proportional width and height on the image at the caret. The size is written as `<img …>`, the one spelling GitHub honours. |
 | Add native Markdown editor app | Document lifecycle, File menu, UTF-8/BOM handling, image import with `.assets` convention, unit tests, app bundling |
 | Add WYSIWYG Markdown formatting | Directly editable rendered view, full inline and block formatting, toolbar and menus |
 | Add Markdown explorer and resizable panes | File explorer sidebar, single-line and multi-line code commands |
@@ -727,7 +729,7 @@ Known gaps, recorded deliberately so they are not mistaken for bugs:
 | Reference-style links (`[a][b]`) | Not parsed. Only inline `[a](b)` is supported. |
 | Indented (4-space) code blocks | Not parsed as code. Use fenced blocks. |
 | Footnotes, definition lists, admonitions | Not supported. |
-| HTML other than `<u>` | Passed through as literal text, not rendered. |
+| HTML other than `<u>` and `<img>` | Passed through as literal text, not rendered. |
 | Hard line breaks via trailing spaces or `<br>` | Not rendered as breaks. |
 | Dragging an image file into the document | Not wired to the import path; use Insert ▸ Image…. |
 | Pasting image data from the clipboard | Not wired to the import path. |

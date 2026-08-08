@@ -13,7 +13,14 @@ public enum MarkdownRenderStyle: Equatable {
     case numberedList
     case taskList(checked: Bool)
     case link(destination: String)
-    case image(altText: String, destination: String)
+    /// `width` and `height` are non-nil only for the HTML form, which is the
+    /// only one that can carry a size. See `MarkdownImageTag`.
+    case image(
+        altText: String,
+        destination: String,
+        width: Int? = nil,
+        height: Int? = nil
+    )
     case horizontalRule
     case escaped
 }
@@ -420,6 +427,38 @@ private final class Parser {
                     isAtomic: true
                 )
                 location += 2
+                continue
+            }
+
+            if source.character(at: location) == 0x3C,               // <
+               let tag = MarkdownImageTag.parse(
+                   source,
+                   at: location,
+                   end: end
+               )
+            {
+                let fullRange = NSRange(
+                    location: location,
+                    length: tag.end - location
+                )
+                builder.advanceSource(to: location)
+                let renderedRange = builder.appendSynthetic(
+                    "\u{FFFC}",
+                    sourceRange: fullRange
+                )
+                builder.addSpan(
+                    .image(
+                        altText: tag.altText,
+                        destination: tag.destination,
+                        width: tag.width,
+                        height: tag.height
+                    ),
+                    renderedRange: renderedRange,
+                    sourceRange: fullRange,
+                    includesMarkup: true,
+                    isAtomic: true
+                )
+                location = tag.end
                 continue
             }
 

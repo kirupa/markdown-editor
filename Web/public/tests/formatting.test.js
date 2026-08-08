@@ -10,6 +10,8 @@ import {
   insertNewline,
   insertLink,
   insertHorizontalRule,
+  insertImage,
+  setImageSize,
 } from '../app/core/formatting.js';
 
 // ── Minimal inline renderer ──────────────────────────────────────────────────
@@ -341,5 +343,94 @@ suite('Markdown formatting', () => {
     const result = insertHorizontalRule('beforeafter', r(6, 0));
 
     expectEqual(result.text, 'before\n***\n\nafter');
+  });
+});
+
+suite('Inserting an image by URL', () => {
+  test('an image is inserted at the caret', () => {
+    const out = insertImage('https://x.com/a.png', 'Photo', 'See: ', r(5, 0));
+    expectEqual(out.text, 'See: ![Photo](https://x.com/a.png)');
+  });
+
+  test('the alt text is selected so it can be typed over', () => {
+    const out = insertImage('https://x.com/a.png', 'Photo', '', r(0, 0));
+    expectEqual(sub(out.text, out.selection), 'Photo');
+  });
+
+  test('a selection becomes the alt text when none is supplied', () => {
+    // Selecting a caption and inserting an image should keep the words the
+    // author already wrote rather than silently discard them.
+    const out = insertImage('a.png', '', 'A red door', r(0, 10));
+    expectEqual(out.text, '![A red door](a.png)');
+  });
+
+  test('a space or bracket in a URL cannot break the reference', () => {
+    const out = insertImage('a b (c).png', 'x', '', r(0, 0));
+    expectEqual(out.text, '![x](a%20b%20%28c%29.png)');
+  });
+});
+
+suite('Resizing an image', () => {
+  /** The source range of the only image reference in `text`. */
+  function imageRange(text) {
+    const at = text.indexOf('![') >= 0 ? text.indexOf('![') : text.indexOf('<img');
+    const close = text[at] === '!' ? text.indexOf(')', at) : text.indexOf('>', at);
+    return r(at, close + 1 - at);
+  }
+
+  test('sizing a Markdown image rewrites it as HTML', () => {
+    // Markdown has no syntax for dimensions, so this is the one place a
+    // reference has to change form. The convention is in Contract/README.md.
+    const text = 'A ![Photo](a.png) here';
+    const out = setImageSize(text, imageRange(text), { width: 300, height: 200 });
+    expectEqual(out.text, 'A <img src="a.png" alt="Photo" width="300" height="200"> here');
+  });
+
+  test('clearing the size returns it to Markdown', () => {
+    const text = '<img src="a.png" alt="Photo" width="300" height="200">';
+    const out = setImageSize(text, imageRange(text), { width: null, height: null });
+    expectEqual(out.text, '![Photo](a.png)');
+  });
+
+  test('resizing an already sized image keeps it as one tag', () => {
+    const text = '<img src="a.png" alt="" width="300" height="200">';
+    const out = setImageSize(text, imageRange(text), { width: 60, height: 40 });
+    expectEqual(out.text, '<img src="a.png" alt="" width="60" height="40">');
+  });
+
+  test('the resized image stays selected', () => {
+    // The size fields are driven by the selected image, so dropping the
+    // selection on every keystroke would make them unusable.
+    const text = 'A ![Photo](a.png) here';
+    const out = setImageSize(text, imageRange(text), { width: 300, height: 200 });
+    expectEqual(
+      sub(out.text, out.selection),
+      '<img src="a.png" alt="Photo" width="300" height="200">'
+    );
+  });
+
+  test('text that is not an image is left exactly as it was', () => {
+    // A stale range must never corrupt the document.
+    const text = 'Just words here';
+    const out = setImageSize(text, r(5, 5), { width: 300, height: 200 });
+    expectEqual(out.text, text);
+    expectEqual(out.selection, r(5, 5), 'and the selection is unchanged');
+  });
+
+  test('a space in the path is encoded on the way back to Markdown', () => {
+    // An HTML attribute holds `my file.png` happily; the same text in Markdown
+    // is not an image at all — GitHub renders it as literal text and the
+    // picture is lost. Verified against GitHub's own renderer.
+    const text = '<img src="my file.png" alt="P" width="9">';
+    const out = setImageSize(text, imageRange(text), { width: null, height: null });
+    expectEqual(out.text, '![P](my%20file.png)');
+  });
+
+  test('a percent-encoded destination survives a round trip', () => {
+    const text = '![P](my%20file.png)';
+    const out = setImageSize(text, imageRange(text), { width: 10, height: 10 });
+    expectEqual(out.text, '<img src="my%20file.png" alt="P" width="10" height="10">');
+    const back = setImageSize(out.text, imageRange(out.text), { width: null, height: null });
+    expectEqual(back.text, text, 'and returns to exactly the original Markdown');
   });
 });

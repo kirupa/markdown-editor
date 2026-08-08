@@ -15,6 +15,8 @@ export const CORE_TEST_MODULES = [
   './cloud-backend.test.js',
   './cloud-offline.test.js',
   './image-cache.test.js',
+  './image-tag.test.js',
+  './contract-render.test.js',
   './storage-mode.test.js',
   './keep-focus.test.js',
   './live.test.js',

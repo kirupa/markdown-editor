@@ -251,6 +251,65 @@ document moves its assets folder with it and rewrites the references inside it;
 deleting a document deliberately leaves the assets behind, because the originals
 may exist nowhere else.
 
+### How an image carries a size
+
+Markdown has no syntax for image dimensions. Every port must therefore agree on
+what to write instead, or a document sized on one platform shows raw HTML on
+another.
+
+The rule is: **an image with no size stays Markdown; an image with a size is an
+HTML `<img>` tag.** Setting a size converts one to the other, and clearing it
+converts back.
+
+```markdown
+![my shot](Trip.assets/my%20shot.png)
+<img src="Trip.assets/my%20shot.png" alt="my shot" width="300" height="200">
+```
+
+This was settled by rendering the candidates through GitHub's own
+`POST /markdown`, not by preference:
+
+| Written as | What GitHub does with it |
+| --- | --- |
+| `<img src="a.png" alt="s" width="300" height="200">` | **Honoured** — both dimensions survive |
+| `![s](a.png =300x200)` | Rendered as literal text; **the image is lost** |
+| `![s\|300x200](a.png)` | Renders, but the size is ignored and the alt text becomes `s\|300x200` |
+
+Only the first keeps both the picture and the size, so it is the one the
+documents use. It is also consistent with the existing use of `<u>` for
+underline: reach for HTML exactly where Markdown has no syntax, and nowhere
+else.
+
+A port must read a tag more liberally than it writes one, because a person may
+have typed it. Attributes come in any order, quoted with `"` or `'` or not at
+all, in any case, with or without a self-closing `/`, and a quoted value may
+contain `>`. HTML entities are decoded. These are **not** images and stay as
+literal text: `<imgx …>` and `<image …>` (a shared prefix is not a match), a tag
+with no `src` or an empty one, and — importantly — **a tag with no closing `>`**,
+which otherwise swallows the rest of the line. A dimension that is not a
+positive whole number, such as `50%`, is reported as absent rather than
+rewritten, so hand-written HTML the editor cannot represent in a number field is
+still displayed and not silently damaged.
+
+Two rules govern the conversion:
+
+1. **Going back to Markdown percent-encodes the destination.** An HTML attribute
+   holds `my file.png` happily; the same text in Markdown is not an image at all.
+   The encoding is idempotent, so an already-encoded path is unharmed.
+2. **A size is only ever set on a range that is exactly one image reference.**
+   If it is not, the text is left untouched. A stale range from a document that
+   has since been edited must never corrupt it.
+
+Resizing preserves the aspect ratio, derived from the image's own pixel
+dimensions rather than from anything in the document. The dimension the person
+edited is kept exactly and the other is derived; the derived one is rounded, but
+never to zero, or a very wide, very short image would vanish. When the image has
+not loaded there is no shape to preserve, so nothing is derived.
+
+An image may also be referenced by URL instead of being copied into the assets
+folder. Nothing is uploaded in that case and the document points at the original
+address.
+
 ### Reading the paths fixture
 
 `paths.json` is a flat list of calls. Each case names a `function`, its

@@ -138,7 +138,7 @@ never a function of the keyboard, which is the property that makes it reliable.
 
 | ID | Requirement |
 | --- | --- |
-| ID-20 | Images can be added from the photo library (`PhotosPicker`) or from Files (`fileImporter`). |
+| ID-20 | Add Image first asks where the image comes from: **Choose Photo…** (`PhotosPicker`), **Choose File…** (`fileImporter`), or **Image Address…**. |
 | ID-21 | Both routes go through the **same shared `MarkdownImageImporter`** the Mac uses, so the `<document-stem>.assets/` convention, collision handling (`photo-2.jpg`), percent-encoding, and alt-text escaping are identical and a folder written on one platform opens correctly on the other. |
 | ID-22 | A photo-library asset is not a file on disk. Its bytes are written to a temporary file first, imported from there, and the temporary file is removed whether or not the import succeeded. |
 | ID-23 | Files chosen through `fileImporter` are accessed inside a security-scoped resource, balanced with `stopAccessingSecurityScopedResource` even on the error path. |
@@ -146,6 +146,12 @@ never a function of the keyboard, which is the property that makes it reliable.
 | ID-25 | Every failure is surfaced in an alert. Nothing fails silently. |
 | ID-26 | The reference is inserted at the caret by the shared, unit-tested `MarkdownTextInsertion`, which clamps a stale selection rather than trapping and places the caret in UTF-16 units. |
 | ID-27 | `NSPhotoLibraryUsageDescription` explains that the photo is copied into a folder beside the document. |
+| ID-41 | **Image Address…** takes a URL and inserts a reference to it. Nothing is copied and no assets folder is created, so it works in a document that has never been saved. An empty address, or the bare `https://` placeholder, inserts nothing. |
+| ID-42 | An **Image Size** button beside Add Image opens a sheet for the image the caret is on. It is disabled — visible but greyed — whenever the caret is not on an image, so the toolbar does not reflow. |
+| ID-43 | The sheet's Width and Height drive each other through the shared `MarkdownImageTag.proportionalSize`, so setting one derives the other from the image's own pixel dimensions and the picture keeps its shape. The number typed is always kept exactly. |
+| ID-44 | The natural size comes from `UIImage` reading the file beside the document. A remote address cannot be measured from here, so both fields stay independent and the sheet says so rather than guessing. |
+| ID-45 | **Use the image's own size** clears both, converting the reference back to plain `![alt](path)` Markdown. |
+| ID-46 | Sizing is a **sheet driven by the caret**, not click-to-select-and-drag as in the browser. A rendered image is one `NSTextAttachment` character; anchoring a floating panel to it is fragile, and a sheet is the platform idiom. The Markdown written is byte-identical across all three builds. |
 
 ---
 
@@ -290,6 +296,7 @@ the iOS build's entire Markdown engine — the iOS layer above it is views.
 | --- | --- |
 | Share the Swift core between platforms | `Shared/` package; AppKit's Generic RGB blending reproduced portably; `themes.css` verified byte-identical |
 | Add a native iOS app | iPhone and iPad `DocumentGroup` app compiling the shared package: three modes, adaptive split, full formatting bar, photo and Files image import, sixteen themes, generated app icon |
+| Insert by address and resize | Add Image now offers Photo / File / **Image Address…**. A new **Image Size** sheet sets width and height proportionally, writing the same `<img …>` the Mac and the browser write. Verified on a booted iPhone 17 Pro simulator with real taps. |
 | Run it on a simulator | Fixed three bugs only a running app could show: a missing `CFBundleExecutable`, a crash in the source pane from unbalanced undo registration, and a light navigation bar under a dark theme. Mode is now remembered, and the theme uses the shared storage keys. |
 
 ---
@@ -334,10 +341,26 @@ install` reject the bundle; an unbalanced `enableUndoRegistration` that crashed
 the Markdown pane the first time it was shown (see ID-40); and a light
 navigation bar left behind by a dark theme.
 
-**Not verified:** anything needing a real gesture. The simulator can be
-screenshotted but not tapped, so the photo picker, the link prompt, drag to
-resize, and the theme sheet have been seen only in code. Nothing has run on
-real hardware.
+The simulator *can* be tapped, which an earlier version of this file wrongly
+said it could not. `xcrun simctl` has no tap command, but the Simulator is an
+ordinary Mac window, so synthetic `CGEvent` mouse events land on it. Two
+constants make the mapping work: the device screen is inset 74pt from the top of
+the window (title bar plus bezel) and `(windowWidth - 402) / 2` from the left.
+Typing goes through `System Events` keystroke.
+
+Driven that way, the whole image flow was exercised on a booted iPhone 17 Pro:
+Add Image → **Image Address…** → a typed URL → Insert produced an image; the
+**Image Size** button, correctly disabled a moment earlier, became enabled;
+the sheet took a width of 300; and the Markdown pane showed exactly
+`<img src="https://example.com/pic.png" alt="image" width="300">`.
+
+**Still not verified:** the photo picker and Files import (both need a real
+picker), drag to resize, and the theme sheet. Nothing has run on real hardware.
+
+One environment note: a freshly created simulator raised *Unable to Import
+Document (com.apple.DocumentManager error 1)* and showed *Content Unavailable*
+in its file browser. That is the Files daemon not having started, not the app —
+shutting the device down and booting it again cleared it.
 
 ---
 

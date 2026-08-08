@@ -213,10 +213,12 @@ public enum RichMarkdownStyler {
                 ],
                 range: range
             )
-        case .image(let altText, let destination):
+        case .image(let altText, let destination, let width, let height):
             let attachment = imageAttachment(
                 altText: altText,
                 destination: destination,
+                width: width,
+                height: height,
                 documentURL: documentURL
             )
             text.addAttribute(
@@ -320,6 +322,8 @@ public enum RichMarkdownStyler {
     private static func imageAttachment(
         altText: String,
         destination: String,
+        width: Int?,
+        height: Int?,
         documentURL: URL?
     ) -> NSTextAttachment {
         let image = localImage(
@@ -332,8 +336,53 @@ public enum RichMarkdownStyler {
             size: CGSize(width: 48, height: 48)
         )
 
+        let attachment = NSTextAttachment()
+        attachment.image = image
+        attachment.bounds = CGRect(
+            origin: CGPoint(x: 0, y: -4),
+            size: displaySize(
+                of: image.size,
+                width: width,
+                height: height
+            )
+        )
+        return attachment
+    }
+
+    /// How large to draw an image.
+    ///
+    /// A size written into the document is the author's instruction and wins,
+    /// so the default cap must not quietly override it. When only one dimension
+    /// is given the other is derived from the image's own shape, which is more
+    /// accurate than anything the document could carry.
+    static func displaySize(
+        of sourceSize: CGSize,
+        width: Int?,
+        height: Int?
+    ) -> CGSize {
+        let hasSourceSize = sourceSize.width > 0 && sourceSize.height > 0
+        let aspect = hasSourceSize
+            ? sourceSize.height / sourceSize.width
+            : 1
+
+        if let width, width > 0 {
+            let requestedWidth = CGFloat(width)
+            let requestedHeight = height.map(CGFloat.init)
+                ?? (requestedWidth * aspect)
+            return CGSize(
+                width: requestedWidth,
+                height: max(1, requestedHeight)
+            )
+        }
+        if let height, height > 0 {
+            let requestedHeight = CGFloat(height)
+            let derivedWidth = aspect > 0
+                ? requestedHeight / aspect
+                : requestedHeight
+            return CGSize(width: max(1, derivedWidth), height: requestedHeight)
+        }
+
         let maxSize = CGSize(width: 560, height: 380)
-        let sourceSize = image.size
         let widthScale = sourceSize.width > 0
             ? maxSize.width / sourceSize.width
             : 1
@@ -341,16 +390,10 @@ public enum RichMarkdownStyler {
             ? maxSize.height / sourceSize.height
             : 1
         let scale = min(1, widthScale, heightScale)
-
-        let attachment = NSTextAttachment()
-        attachment.image = image
-        attachment.bounds = CGRect(
-            x: 0,
-            y: -4,
+        return CGSize(
             width: max(24, sourceSize.width * scale),
             height: max(24, sourceSize.height * scale)
         )
-        return attachment
     }
 
     private static func localImage(

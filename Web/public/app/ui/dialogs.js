@@ -112,6 +112,36 @@ export function showPrompt({ title, message = '', value = '', confirmLabel = 'OK
 }
 
 /**
+ * Where an image should come from (PRD WI-15).
+ *
+ * A file has to be copied into the assets folder beside the document, and a
+ * URL must not be — so the choice has to be made before either route starts,
+ * and the file picker can no longer just open on its own.
+ *
+ * @returns {Promise<'file'|'url'|null>} null when cancelled.
+ */
+export function chooseImageSource() {
+  return present((alert, close) => {
+    const buttons = document.createElement('div');
+    buttons.className = 'me-alert__buttons';
+    buttons.append(
+      button('Cancel', '', () => close(null)),
+      button('Image Address…', '', () => close('url')),
+      button('Choose File…', 'me-button--default', () => close('file'))
+    );
+
+    alert.append(
+      heading('Add an image'),
+      paragraph(
+        'Choose a file to copy in beside this document, or link to an image already on the web.',
+        'me-alert__message'
+      ),
+      buttons
+    );
+  });
+}
+
+/**
  * The unsaved-changes prompt (PRD D-6).
  *
  * @returns {Promise<'save'|'discard'|null>} null when cancelled.

@@ -24,6 +24,10 @@ struct DocumentEditorView: View {
     @State private var isShowingFileImporter = false
     @State private var linkDestination = ""
     @State private var isAskingForLink = false
+    @State private var isChoosingImageSource = false
+    @State private var imageAddress = ""
+    @State private var isAskingForImageAddress = false
+    @State private var isSizingImage = false
 
     private var theme: EditorColorTheme {
         themeStore.theme
@@ -55,13 +59,67 @@ struct DocumentEditorView: View {
     }
 
     var body: some View {
+        editorBody
+        .confirmationDialog(
+            "Add an image",
+            isPresented: $isChoosingImageSource,
+            titleVisibility: .visible
+        ) {
+            Button("Choose Photo…") { isShowingPhotoPicker = true }
+            Button("Choose File…") { isShowingFileImporter = true }
+            Button("Image Address…") { isAskingForImageAddress = true }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(
+                """
+                Copy an image in beside this document, or link to one already \
+                on the web.
+                """
+            )
+        }
+        .alert("Image address", isPresented: $isAskingForImageAddress) {
+            TextField("https://example.com/photo.png", text: $imageAddress)
+                .textInputAutocapitalization(.never)
+                .keyboardType(.URL)
+            Button("Cancel", role: .cancel) { imageAddress = "" }
+            Button("Insert") { insertImageAddress() }
+        } message: {
+            Text("The image stays where it is; this document points at it.")
+        }
+        .sheet(isPresented: $isSizingImage) {
+            if let image = imageAtSelection() {
+                ImageSizeSheet(
+                    width: image.tag.width,
+                    height: image.tag.height,
+                    natural: naturalSize(of: image.tag.destination)
+                ) { size in
+                    controller.apply(
+                        { text, _ in
+                            MarkdownFormatting.setImageSize(
+                                in: text,
+                                range: image.range,
+                                size: size
+                            )
+                        },
+                        to: $document.text
+                    )
+                }
+            }
+        }
+    }
+
+    /// The editor itself. Split from `body` only to keep each
+    /// expression small enough for the type checker to solve.
+    private var editorBody: some View {
         VStack(spacing: 0) {
             MarkdownFormattingBar(
                 text: $document.text,
                 controller: controller,
                 theme: theme,
                 onInsertLink: { isAskingForLink = true },
-                onInsertImage: { isShowingPhotoPicker = true }
+                onInsertImage: { isChoosingImageSource = true },
+                onSizeImage: { isSizingImage = true },
+                canSizeImage: imageAtSelection() != nil
             )
             Divider()
             editors
@@ -190,6 +248,76 @@ struct DocumentEditorView: View {
                 Label("Theme", systemImage: "paintpalette")
             }
         }
+    }
+
+    /// Reference an image that is already on the web. Nothing is copied.
+    private func insertImageAddress() {
+        let destination = imageAddress.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        imageAddress = ""
+        guard !destination.isEmpty, destination != "https://" else { return }
+        controller.apply(
+            { text, selection in
+                MarkdownFormatting.insertImage(
+                    destination: destination,
+                    in: text,
+                    selection: selection
+                )
+            },
+            to: $document.text
+        )
+    }
+
+    /// The image the selection sits on, if any.
+    ///
+    /// A rendered image is a single atomic character, so "on" means the caret
+    /// is inside or immediately after it.
+    private func imageAtSelection()
+        -> (range: NSRange, tag: MarkdownImageTag.Parsed)?
+    {
+        let text = document.text as NSString
+        let selection = controller.selection
+        guard selection.location <= text.length else { return nil }
+
+        for span in MarkdownRenderer.render(document.text).spans {
+            guard case .image = span.style else { continue }
+            guard
+                selection.location >= span.sourceRange.location,
+                selection.location <= NSMaxRange(span.sourceRange)
+            else { continue }
+            guard
+                let tag = MarkdownFormatting.readImage(
+                    text,
+                    range: span.sourceRange
+                )
+            else { continue }
+            return (span.sourceRange, tag)
+        }
+        return nil
+    }
+
+    /// The image's own pixel dimensions, so a resize can keep its shape.
+    private func naturalSize(
+        of destination: String
+    ) -> MarkdownImageTag.Size? {
+        guard let documentURL else { return nil }
+        let decoded = destination.removingPercentEncoding ?? destination
+        guard !decoded.contains("://") else { return nil }
+        let url = URL(
+            fileURLWithPath: decoded,
+            relativeTo: documentURL.deletingLastPathComponent()
+        )
+        guard
+            let data = try? Data(contentsOf: url),
+            let image = UIImage(data: data),
+            image.size.width > 0,
+            image.size.height > 0
+        else { return nil }
+        return MarkdownImageTag.Size(
+            width: Int(image.size.width.rounded()),
+            height: Int(image.size.height.rounded())
+        )
     }
 
     private func insertLink() {

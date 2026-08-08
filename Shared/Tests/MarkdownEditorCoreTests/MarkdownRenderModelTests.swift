@@ -331,4 +331,106 @@ struct MarkdownRenderModelTests {
         #expect(model.text == "a*")
         #expect(model.spans.contains { $0.style == .italic })
     }
+
+    // MARK: - Sized images
+
+    @Test("An HTML image tag renders as an image, not as text")
+    func htmlImageTagRendersAsAnImage() {
+        let model = MarkdownRenderer.render("A <img src=\"a.png\" alt=\"Photo\" width=\"300\" height=\"200\"> b"
+        )
+
+        #expect(model.text == "A \u{FFFC} b")
+        let image = model.spans.first { span in
+            if case .image = span.style { return true }
+            return false
+        }
+        #expect(image != nil)
+        if case .image(let altText, let destination, let width, let height) =
+            image?.style
+        {
+            #expect(altText == "Photo")
+            #expect(destination == "a.png")
+            #expect(width == 300)
+            #expect(height == 200)
+        }
+        #expect(image?.isAtomic == true)
+    }
+
+    @Test("A Markdown image has no size")
+    func markdownImageHasNoSize() {
+        let model = MarkdownRenderer.render("![Photo](a.png)")
+
+        let image = model.spans.first { span in
+            if case .image = span.style { return true }
+            return false
+        }
+        if case .image(_, _, let width, let height) = image?.style {
+            #expect(width == nil)
+            #expect(height == nil)
+        } else {
+            Issue.record("expected an image span")
+        }
+    }
+
+    @Test("Tags that are not images are still literal text")
+    func otherTagsStayAsText() {
+        let source = "A <div src=\"a.png\"> and <imgx src=\"b.png\"> b"
+        let model = MarkdownRenderer.render(source)
+
+        #expect(model.text == source)
+    }
+
+    @Test("An unterminated tag does not swallow the rest of the line")
+    func unterminatedTagStaysAsText() {
+        // Otherwise everything after it would disappear from the document.
+        let source = "Check <img src=\"a.png\" in the docs"
+        let model = MarkdownRenderer.render(source)
+
+        #expect(model.text == source)
+    }
+
+    @Test("An image tag with no source is left as text")
+    func tagWithNoSourceStaysAsText() {
+        let source = "<img alt=\"nothing\" width=\"10\">"
+        let model = MarkdownRenderer.render(source)
+
+        #expect(model.text == source)
+    }
+
+    @Test("Sizes that are not positive whole numbers are ignored")
+    func nonPixelSizesAreIgnored() {
+        let model = MarkdownRenderer.render("<img src=\"a.png\" width=\"50%\" height=\"0\">"
+        )
+
+        let image = model.spans.first { span in
+            if case .image = span.style { return true }
+            return false
+        }
+        if case .image(_, let destination, let width, let height) =
+            image?.style
+        {
+            #expect(destination == "a.png")
+            #expect(width == nil)
+            #expect(height == nil)
+        } else {
+            Issue.record("expected an image span")
+        }
+    }
+
+    @Test("A sized image maps back to the exact text that produced it")
+    func sizedImageReportsItsSourceRange() {
+        // The resize panel replaces this range, so an offset that is off by
+        // even one corrupts the document.
+        let source = "🌱 <img src=\"a.png\" width=\"300\"> tail"
+        let model = MarkdownRenderer.render(source)
+
+        let image = model.spans.first { span in
+            if case .image = span.style { return true }
+            return false
+        }
+        #expect(
+            (source as NSString).substring(with: image!.sourceRange)
+                == "<img src=\"a.png\" width=\"300\">"
+        )
+    }
 }

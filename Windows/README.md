@@ -157,7 +157,18 @@ A third, learned by building offline support rather than by publishing rules:
   instead of serving the picture it replaced. A miss must fall back to the
   download URL, never to a missing image.
 
-All three are specified in
+- **A size on an image is HTML, not Markdown.** `![alt](a.png =300x200)` is
+  rendered by GitHub as literal text with the image lost entirely, so an image
+  that carries a width or a height is written as
+  `<img src="…" alt="…" width="300">` and one that does not stays
+  `![alt](a.png)`. Setting a size converts one to the other and clearing it
+  converts back. Parse liberally (any attribute order, any quoting, entities
+  decoded) and write strictly. Two rules cost the Swift and JS ports real time
+  and are both covered by fixtures: the Markdown form must percent-encode its
+  destination, and an unterminated `<img …` is *not* a tag — treat it as text,
+  or `Check <img src="a.png" in the docs` is swallowed to end of line.
+
+All of these are specified in
 [Contract/README.md](../Contract/README.md#the-assets-convention). It is worth
 mirroring the web build's approach of making the test double enforce the rules,
 so a write the server would reject cannot pass the suite.

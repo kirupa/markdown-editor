@@ -283,7 +283,16 @@ public enum ContractFixtures {
         case .numberedList: return ("numberedList", nil)
         case .taskList(let checked): return ("taskList", checked ? "checked" : "unchecked")
         case .link(let destination): return ("link", destination)
-        case .image(let altText, let destination): return ("image", "\(altText)\u{1F}\(destination)")
+        case .image(let altText, let destination, let width, let height):
+            // A size is appended only when there is one, so every unsized
+            // image in the corpus keeps the value it has always had.
+            var detail = "\(altText)\u{1F}\(destination)"
+            if width != nil || height != nil {
+                let w = width.map(String.init) ?? ""
+                let h = height.map(String.init) ?? ""
+                detail += "\u{1F}\(w)x\(h)"
+            }
+            return ("image", detail)
         case .horizontalRule: return ("horizontalRule", nil)
         case .escaped: return ("escaped", nil)
         }

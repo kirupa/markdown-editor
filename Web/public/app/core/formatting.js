@@ -6,6 +6,12 @@ import {
   lineBounds,
   paragraphRange,
 } from './range.js';
+import {
+  parseImageTag,
+  imageReference,
+  escapeLabel,
+  encodeDestination,
+} from './image-tag.js';
 
 // ── Exported constants ───────────────────────────────────────────────────────
 
@@ -338,19 +344,76 @@ export function insertNewline(text, selection) {
 export function insertLink(destination, text, selection) {
   const sel = clampRange(selection, text.length);
   const label = sel.length > 0 ? substringWithRange(text, sel) : 'link text';
-  const escapedLabel = label
-    .replace(/\\/g, '\\\\')
-    .replace(/\[/g, '\\[')
-    .replace(/\]/g, '\\]');
-  const encodedDestination = destination
-    .replace(/\\/g, '%5C')
-    .replace(/ /g, '%20')
-    .replace(/\(/g, '%28')
-    .replace(/\)/g, '%29')
-    .replace(/</g, '%3C')
-    .replace(/>/g, '%3E');
+  const escapedLabel = escapeLabel(label);
+  const encodedDestination = encodeDestination(destination);
   const rep = `[${escapedLabel}](${encodedDestination})`;
   return replacing(text, sel, rep, makeRange(sel.location + 1, escapedLabel.length));
+}
+
+/**
+ * Insert an image reference at the caret.
+ *
+ * Used by both routes into the document — a file copied into the assets folder
+ * and a URL typed by hand — so the two produce identical text.
+ *
+ * @param {string} destination - The raw URL or relative path (not yet encoded).
+ * @param {string} altText - Falls back to the selected text, then to a stub.
+ */
+export function insertImage(destination, altText, text, selection) {
+  const sel = clampRange(selection, text.length);
+  const selected = sel.length > 0 ? substringWithRange(text, sel) : '';
+  const label = altText || selected || 'image';
+  const rep = imageReference({ destination, altText: label });
+  // Select the alt text so it can be typed straight over.
+  return replacing(text, sel, rep, makeRange(sel.location + 2, escapeLabel(label).length));
+}
+
+/**
+ * Set or clear the pixel size of the image written at `range`.
+ *
+ * A sized image cannot be Markdown — there is no syntax for it — so this
+ * converts between the two forms in both directions: adding a size rewrites
+ * `![alt](src)` as `<img …>`, and clearing it turns the tag back into
+ * Markdown. Anything else is left untouched, so a stale range from a document
+ * that has since been edited can never corrupt it.
+ *
+ * @param {{ width: number|null, height: number|null }} size
+ */
+export function setImageSize(text, range, size) {
+  const sel = clampRange(range, text.length);
+  const image = readImage(text, sel);
+  if (image === null) return { text, selection: sel };
+
+  const rep = imageReference({
+    destination: image.destination,
+    altText: image.altText,
+    width: size.width,
+    height: size.height,
+  });
+  // Keep the image selected: the size fields are driven by the selection, so
+  // dropping it on every keystroke would make them unusable.
+  return replacing(text, sel, rep, makeRange(sel.location, rep.length));
+}
+
+/**
+ * Read the image reference occupying exactly `range`, in either form.
+ * Returns null if that text is not one image and nothing else.
+ */
+export function readImage(text, range) {
+  const sel = clampRange(range, text.length);
+  const source = substringWithRange(text, sel);
+  if (source.startsWith('<')) {
+    const tag = parseImageTag(text, sel.location, maxRange(sel));
+    return tag !== null && tag.end === maxRange(sel) ? tag : null;
+  }
+  const markdown = /^!\[((?:[^\[\]\\]|\\[\s\S])*)\]\(([^()\s]*)\)$/.exec(source);
+  if (markdown === null) return null;
+  return {
+    destination: markdown[2],
+    altText: markdown[1].replace(/\\([\s\S])/g, '$1'),
+    width: null,
+    height: null,
+  };
 }
 
 /**

@@ -537,6 +537,169 @@ public enum MarkdownFormatting {
         )
     }
 
+    /// Insert an image reference at the caret.
+    ///
+    /// Used by both routes into a document — a file copied into the assets
+    /// folder and a URL typed by hand — so the two produce identical text.
+    public static func insertImage(
+        destination: String,
+        altText: String = "",
+        in text: String,
+        selection requestedSelection: NSRange
+    ) -> MarkdownEditResult {
+        let source = text as NSString
+        let selection = clamped(requestedSelection, to: source.length)
+        let selected = selection.length > 0
+            ? source.substring(with: selection)
+            : ""
+        let label = !altText.isEmpty
+            ? altText
+            : (!selected.isEmpty ? selected : "image")
+        let replacement = MarkdownImageTag.reference(
+            destination: destination,
+            altText: label
+        )
+        let escapedLabel = MarkdownImageTag.escapeLabel(label) as NSString
+        return replacing(
+            text,
+            range: selection,
+            with: replacement,
+            // Select the alt text so it can be typed straight over.
+            selection: NSRange(
+                location: selection.location + 2,
+                length: escapedLabel.length
+            )
+        )
+    }
+
+    /// Set or clear the pixel size of the image written at `range`.
+    ///
+    /// A sized image cannot be Markdown — there is no syntax for it — so this
+    /// converts between the two forms in both directions: adding a size
+    /// rewrites `![alt](src)` as `<img …>`, and clearing it turns the tag back
+    /// into Markdown. Anything that is not exactly one image reference is left
+    /// untouched, so a stale range from a document that has since been edited
+    /// can never corrupt it.
+    public static func setImageSize(
+        in text: String,
+        range requestedRange: NSRange,
+        size: MarkdownImageTag.Size
+    ) -> MarkdownEditResult {
+        let source = text as NSString
+        let range = clamped(requestedRange, to: source.length)
+        guard let image = readImage(source, range: range) else {
+            return MarkdownEditResult(text: text, selection: range)
+        }
+
+        let replacement = MarkdownImageTag.reference(
+            destination: image.destination,
+            altText: image.altText,
+            size: size
+        )
+        return replacing(
+            text,
+            range: range,
+            with: replacement,
+            // Keep the image selected: the size fields are driven by the
+            // selection, so dropping it on every keystroke would make them
+            // unusable.
+            selection: NSRange(
+                location: range.location,
+                length: (replacement as NSString).length
+            )
+        )
+    }
+
+    /// The image reference occupying exactly `range`, in either form, or nil.
+    public static func readImage(
+        _ source: NSString,
+        range: NSRange
+    ) -> MarkdownImageTag.Parsed? {
+        guard range.length > 0 else { return nil }
+        if source.character(at: range.location) == 0x3C {          // <
+            guard
+                let tag = MarkdownImageTag.parse(
+                    source,
+                    at: range.location,
+                    end: NSMaxRange(range)
+                ),
+                tag.end == NSMaxRange(range)
+            else { return nil }
+            return tag
+        }
+        return markdownImage(source, range: range)
+    }
+
+    /// `![alt](destination)` occupying exactly `range`.
+    private static func markdownImage(
+        _ source: NSString,
+        range: NSRange
+    ) -> MarkdownImageTag.Parsed? {
+        let end = NSMaxRange(range)
+        var scan = range.location
+        guard
+            scan + 1 < end,
+            source.character(at: scan) == 0x21,                    // !
+            source.character(at: scan + 1) == 0x5B                 // [
+        else { return nil }
+        scan += 2
+
+        var label = ""
+        while scan < end {
+            let character = source.character(at: scan)
+            if character == 0x5C, scan + 1 < end {                 // backslash
+                label.append(
+                    Character(
+                        Unicode.Scalar(source.character(at: scan + 1))
+                            ?? Unicode.Scalar(0x20)!
+                    )
+                )
+                scan += 2
+                continue
+            }
+            if character == 0x5D { break }                          // ]
+            if character == 0x5B { return nil }                    // [
+            label.append(
+                Character(Unicode.Scalar(character) ?? Unicode.Scalar(0x20)!)
+            )
+            scan += 1
+        }
+        guard
+            scan < end,
+            source.character(at: scan) == 0x5D,                    // ]
+            scan + 1 < end,
+            source.character(at: scan + 1) == 0x28                 // (
+        else { return nil }
+
+        let destinationStart = scan + 2
+        var destinationEnd = destinationStart
+        while destinationEnd < end {
+            let character = source.character(at: destinationEnd)
+            if character == 0x29 { break }                          // )
+            if character == 0x28 { return nil }                    // (
+            if character == 0x20 || character == 0x0A { return nil }
+            destinationEnd += 1
+        }
+        guard
+            destinationEnd < end,
+            source.character(at: destinationEnd) == 0x29,
+            destinationEnd + 1 == end
+        else { return nil }
+
+        return MarkdownImageTag.Parsed(
+            end: end,
+            destination: source.substring(
+                with: NSRange(
+                    location: destinationStart,
+                    length: destinationEnd - destinationStart
+                )
+            ),
+            altText: label,
+            width: nil,
+            height: nil
+        )
+    }
+
     public static func insertHorizontalRule(
         in text: String,
         selection requestedSelection: NSRange
