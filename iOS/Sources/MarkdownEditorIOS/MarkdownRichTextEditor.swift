@@ -79,6 +79,13 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
             render(applied, theme: theme, documentURL: parent.documentURL)
         }
 
+        /// Re-styles the document in place.
+        ///
+        /// Assigning `attributedText` throws away the text view's layout and
+        /// takes the reader back to the top with it, so the offset has to be
+        /// carried across the assignment by hand. Enough of the document is
+        /// laid out first for the offset to survive being clamped against a
+        /// content size that has not caught up yet.
         func render(
             _ source: String,
             theme: EditorColorTheme,
@@ -88,6 +95,7 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
             isApplyingProgrammatically = true
             defer { isApplyingProgrammatically = false }
 
+            let restoredOffset = textView.contentOffset
             model = MarkdownRenderer.render(source)
             let selected = textView.selectedRange
             textView.attributedText = RichMarkdownStyler.attributedString(
@@ -104,8 +112,26 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
             textView.selectedRange = NSRange(
                 location: min(selected.location, length), length: 0
             )
+            restoreOffset(restoredOffset, in: textView)
             appliedText = source
             appliedTheme = theme
+        }
+
+        private func restoreOffset(
+            _ offset: CGPoint,
+            in textView: UITextView
+        ) {
+            textView.layoutIfNeeded()
+            let geometry = EditorScrollGeometry(
+                documentHeight: textView.contentSize.height,
+                viewportHeight: textView.bounds.height,
+                offset: textView.contentOffset.y
+            )
+            let target = geometry.clampedOffset(offset.y)
+            guard geometry.shouldMove(to: target) else {
+                return
+            }
+            textView.contentOffset = CGPoint(x: offset.x, y: target)
         }
 
         func syncIfNeeded(

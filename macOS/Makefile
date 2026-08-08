@@ -1,7 +1,10 @@
-.PHONY: app clean icons install run test uninstall
+.PHONY: app check-scroll clean icons install run test uninstall
 
 app:
 	@./Scripts/build-app.sh
+
+check-scroll:
+	@swift Scripts/check-scroll.swift
 
 icons:
 	@swift Scripts/make-icons.swift Packaging

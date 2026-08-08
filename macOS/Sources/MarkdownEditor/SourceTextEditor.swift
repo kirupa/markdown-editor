@@ -106,39 +106,38 @@ struct SourceTextEditor: NSViewRepresentable {
             let selection = session.selectionForEditorUpdate(
                 fallback: fallbackSelection
             )
-            let scrollPosition = context.coordinator.normalizedScrollPosition
-            MarkdownSourceStyler.apply(
-                text,
-                to: textView,
-                colorTheme: colorTheme
-            )
-            if isSplit && textChanged {
-                context.coordinator.setSynchronizedSourceSelection(
-                    selection
-                )
-            } else {
-                let textLength = textView.string.utf16.count
-                let selectionLocation = min(
-                    selection.location,
-                    textLength
-                )
-                let selectionLength = min(
-                    selection.length,
-                    textLength - selectionLocation
-                )
-                textView.setSelectedRange(
-                    NSRange(
-                        location: selectionLocation,
-                        length: selectionLength
-                    )
-                )
-                MarkdownSourceStyler.updateTypingAttributes(
-                    in: textView,
+            context.coordinator.preservingScrollPosition {
+                MarkdownSourceStyler.apply(
+                    text,
+                    to: textView,
                     colorTheme: colorTheme
                 )
-                context.coordinator.setNormalizedScrollPosition(
-                    scrollPosition
-                )
+            } thenSelect: {
+                if isSplit && textChanged {
+                    context.coordinator.setSynchronizedSourceSelection(
+                        selection
+                    )
+                } else {
+                    let textLength = textView.string.utf16.count
+                    let selectionLocation = min(
+                        selection.location,
+                        textLength
+                    )
+                    let selectionLength = min(
+                        selection.length,
+                        textLength - selectionLocation
+                    )
+                    textView.setSelectedRange(
+                        NSRange(
+                            location: selectionLocation,
+                            length: selectionLength
+                        )
+                    )
+                    MarkdownSourceStyler.updateTypingAttributes(
+                        in: textView,
+                        colorTheme: colorTheme
+                    )
+                }
             }
         }
 
@@ -212,8 +211,31 @@ struct SourceTextEditor: NSViewRepresentable {
             return textView.window?.firstResponder === textView
         }
 
-        var normalizedScrollPosition: CGFloat {
+        var normalizedScrollPosition: CGFloat? {
             scrollSynchronizer.normalizedPosition
+        }
+
+        /// Runs a re-style while holding the pane still.
+        ///
+        /// Re-styling replaces the text storage and throws away layout, so
+        /// without this the pane reports a half-measured height, publishes a
+        /// position derived from it, and the document jumps.
+        ///
+        /// The selection is updated in a separate step that runs *after* the
+        /// pane has been put back, because revealing the caret has to be the
+        /// last word. Restoring the offset afterwards would undo the reveal
+        /// and leave the caret off screen.
+        func preservingScrollPosition(
+            restyle: () -> Void,
+            thenSelect select: () -> Void = {}
+        ) {
+            let restoredOffset = scrollSynchronizer.documentOffset
+            scrollSynchronizer.withoutPublishingScroll {
+                restyle()
+                scrollSynchronizer.prepareLayout(toRestore: restoredOffset)
+                scrollSynchronizer.setDocumentOffset(restoredOffset)
+                select()
+            }
         }
 
         func observeScrolling(in scrollView: NSScrollView) {
@@ -298,7 +320,9 @@ struct SourceTextEditor: NSViewRepresentable {
                 in: textView,
                 colorTheme: colorTheme
             )
-            if scrollToSelection {
+            if scrollToSelection,
+                !isSelectionVisible(textView.selectedRange(), in: textView)
+            {
                 let revealSelection = {
                     textView.scrollRangeToVisible(
                         textView.selectedRange()
@@ -503,27 +527,24 @@ struct SourceTextEditor: NSViewRepresentable {
         }
 
         private func set(_ result: MarkdownEditResult) {
-            let scrollPosition = normalizedScrollPosition
             isApplyingChange = true
-            text.wrappedValue = result.text
-            if let textView {
-                MarkdownSourceStyler.apply(
-                    result.text,
-                    to: textView,
-                    colorTheme: colorTheme
-                )
-            }
-            if session?.viewMode == .split {
+            preservingScrollPosition {
+                text.wrappedValue = result.text
+                if let textView {
+                    MarkdownSourceStyler.apply(
+                        result.text,
+                        to: textView,
+                        colorTheme: colorTheme
+                    )
+                }
+            } thenSelect: {
+                // The caret has been moved on purpose, so it is followed in
+                // both view modes, but only when the edit has taken it off
+                // screen.
                 setSourceSelection(
                     result.selection,
                     scrollToSelection: true
                 )
-            } else {
-                setSourceSelection(
-                    result.selection,
-                    scrollToSelection: false
-                )
-                setNormalizedScrollPosition(scrollPosition)
             }
             isApplyingChange = false
         }

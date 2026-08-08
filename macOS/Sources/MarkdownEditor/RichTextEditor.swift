@@ -180,8 +180,7 @@ struct RichTextEditor: NSViewRepresentable {
             // image may be far from what the writer is looking at.
             render(
                 sourceSelection: selectedSourceRange,
-                scrollToSelection: false,
-                publishesScroll: false
+                scrollToSelection: false
             )
         }
 
@@ -207,7 +206,7 @@ struct RichTextEditor: NSViewRepresentable {
             return textView.window?.firstResponder === textView
         }
 
-        var normalizedScrollPosition: CGFloat {
+        var normalizedScrollPosition: CGFloat? {
             scrollSynchronizer.normalizedPosition
         }
 
@@ -245,20 +244,15 @@ struct RichTextEditor: NSViewRepresentable {
             let selection = session?.selectionForEditorUpdate(
                 fallback: fallbackSelection
             ) ?? fallbackSelection
-            if contentChanged && session?.viewMode == .split {
-                render(
-                    sourceSelection: selection,
-                    scrollToSelection: true,
-                    publishesScroll: false
-                )
-            } else {
-                let scrollPosition = normalizedScrollPosition
-                render(
-                    sourceSelection: selection,
-                    scrollToSelection: false
-                )
-                setNormalizedScrollPosition(scrollPosition)
-            }
+            // `render` holds the pane still by itself, so neither branch has
+            // to save and restore a position around it. The split branch only
+            // differs in being willing to follow the caret, because the two
+            // panes track each other's selection.
+            render(
+                sourceSelection: selection,
+                scrollToSelection: contentChanged
+                    && session?.viewMode == .split
+            )
         }
 
         func apply(_ result: MarkdownEditResult, actionName: String) {
@@ -318,17 +312,23 @@ struct RichTextEditor: NSViewRepresentable {
                 to: (textView.string as NSString).length
             )
             textView.setSelectedRange(renderedSelection)
-            if scrollToSelection {
-                let revealSelection = {
-                    textView.scrollRangeToVisible(renderedSelection)
-                }
-                if publishesScroll {
-                    revealSelection()
-                } else {
-                    scrollSynchronizer.withoutPublishingScroll(
-                        revealSelection
-                    )
-                }
+            guard scrollToSelection else {
+                return
+            }
+            // Only chase the caret when it has actually gone out of sight.
+            // Revealing a caret that is already on screen is what produced
+            // the second half of the jump, snapping the page back after the
+            // re-style had already moved it.
+            guard !isSelectionVisible(renderedSelection, in: textView) else {
+                return
+            }
+            let revealSelection = {
+                textView.scrollRangeToVisible(renderedSelection)
+            }
+            if publishesScroll {
+                revealSelection()
+            } else {
+                scrollSynchronizer.withoutPublishingScroll(revealSelection)
             }
         }
 
@@ -339,31 +339,49 @@ struct RichTextEditor: NSViewRepresentable {
             textView.window?.makeFirstResponder(textView)
         }
 
+        /// Re-styles the document in place.
+        ///
+        /// Replacing the text storage throws away all layout, so the pane has
+        /// to be held still across the replacement or the reader is thrown
+        /// somewhere else in the document. Three things keep it still:
+        /// nothing is published while the pane is in pieces, layout is forced
+        /// before anything asks how tall the document is, and the pane is put
+        /// back at the exact offset it was at rather than a fraction of a
+        /// height that has changed underneath it.
         func render(
             sourceSelection: NSRange,
-            scrollToSelection: Bool = true,
-            publishesScroll: Bool = true
+            scrollToSelection: Bool = true
         ) {
             guard let textView else {
                 return
             }
 
             isRendering = true
-            model = MarkdownRenderer.render(text.wrappedValue)
-            let attributedText = RichMarkdownStyler.attributedString(
-                for: model,
-                documentURL: documentURL,
-                colorTheme: colorTheme
-            )
-            textView.textStorage?.setAttributedString(attributedText)
-            renderedSource = text.wrappedValue
-            renderedDocumentURL = documentURL
-            renderedColorTheme = colorTheme
-            setSourceSelection(
-                sourceSelection,
-                scrollToSelection: scrollToSelection,
-                publishesScroll: publishesScroll
-            )
+            let restoredOffset = scrollSynchronizer.documentOffset
+            scrollSynchronizer.withoutPublishingScroll {
+                model = MarkdownRenderer.render(text.wrappedValue)
+                let attributedText = RichMarkdownStyler.attributedString(
+                    for: model,
+                    documentURL: documentURL,
+                    colorTheme: colorTheme
+                )
+                textView.textStorage?.setAttributedString(attributedText)
+                // Measure enough of the new document to put the reader back
+                // where they were. Without this the pane reports only the
+                // height it has measured so far and the restore is clamped
+                // towards the top.
+                scrollSynchronizer.prepareLayout(toRestore: restoredOffset)
+                scrollSynchronizer.setDocumentOffset(restoredOffset)
+
+                renderedSource = text.wrappedValue
+                renderedDocumentURL = documentURL
+                renderedColorTheme = colorTheme
+                setSourceSelection(
+                    sourceSelection,
+                    scrollToSelection: scrollToSelection,
+                    publishesScroll: false
+                )
+            }
             isRendering = false
         }
 
@@ -538,19 +556,13 @@ struct RichTextEditor: NSViewRepresentable {
 
         private func set(_ state: MarkdownEditResult) {
             text.wrappedValue = state.text
-            if session?.viewMode == .split {
-                render(
-                    sourceSelection: state.selection,
-                    scrollToSelection: true
-                )
-            } else {
-                let scrollPosition = normalizedScrollPosition
-                render(
-                    sourceSelection: state.selection,
-                    scrollToSelection: false
-                )
-                setNormalizedScrollPosition(scrollPosition)
-            }
+            // The caret has been moved on purpose here, so following it is
+            // wanted. `render` holds the pane still and only chases the caret
+            // when the edit has taken it off screen.
+            render(
+                sourceSelection: state.selection,
+                scrollToSelection: true
+            )
         }
 
         private func replaceSource(

@@ -282,6 +282,11 @@ Open With and lets the association point at a bundle that `make clean` deletes.
 | E-15 | Editing in either pane keeps both panes anchored at the selection and **does not cause the other pane to jump**. |
 | E-16 | Synchronization is guarded against feedback loops in both directions, and scroll adjustments smaller than 0.5 points are ignored to prevent jitter. |
 | E-17 | Synchronization is active only in Split mode. |
+| E-22 | **Typing never moves the page.** Re-styling a pane restores its exact scroll offset — not a fraction of its travel, which shifts whenever the document changes height, which is what typing does. |
+| E-23 | A pane reports a scroll position only when it has been fully laid out. Partial layout describes the part measured so far rather than the document, and publishing that threw the reader thousands of points down the page. A pane that cannot answer stays silent instead of guessing; AppKit finishes measuring in the background and it starts answering again on its own. |
+| E-24 | A pane receiving a position lays itself out fully before converting it. A newly created pane — one that has just joined a Split — has measured only the screenful it shows, so without this a reader 80% through a document lands at the very top. |
+| E-25 | The caret is revealed **after** the scroll offset is restored, never before, or the restore undoes the reveal and leaves the caret off screen. |
+| E-26 | Revealing the caret is skipped when it is already fully visible, so ordinary typing does not move the page. A caret straddling the edge of the viewport counts as hidden, not visible. |
 
 ### 6.4 Representative source typography
 
@@ -679,6 +684,7 @@ make install
 | `make uninstall` | Removes the installed app and its Launch Services registration |
 | `make icons` | Regenerates `Packaging/AppIcon.icns` and `Packaging/MarkdownDocument.icns` |
 | `make test` | Runs the unit test suite |
+| `make check-scroll` | Drives real AppKit text views and asserts the "never jump" scroll rules |
 | `make clean` | Cleans the package build directory and removes `build/` |
 
 `Scripts/build-app.sh` builds the executable, assembles the bundle from
@@ -701,7 +707,7 @@ the code they cover, so this one command covers the iOS build's engine too.
 
 ### 16.1 Test coverage
 
-244 tests across 16 suites, in the shared package:
+262 tests across 17 suites, in the shared package:
 
 | Suite | Tests | Covers |
 | --- | --- | --- |
@@ -710,17 +716,39 @@ the code they cover, so this one command covers the iOS build's engine too.
 | Markdown render model | 31 | Block and inline parsing, boundary rules, escapes, range mapping |
 | Remote images | 29 | Which addresses are fetched, the transfer ceiling enforced against a stubbed server, decoding, failure caching |
 | Image tags | 25 | `<img …>` parsing and writing, liberal attribute forms, proportional sizing |
+| Editor scroll geometry | 18 | When a pane's figures may be trusted, fraction ↔ offset conversion, and the recorded numbers from the typing-jump bug |
 | Cloud paths | 14 | Stems, extensions, parents, descendancy, collision numbering |
-| Recent documents catalog | 10 | Merge order, de-duplication, Markdown filtering, caps, promotion, removal, pruning of missing files, home-relative paths |
 | New document | 10 | Heading 1 seeding |
+| Recent documents catalog | 10 | Merge order, de-duplication, Markdown filtering, caps, promotion, removal, pruning of missing files, home-relative paths |
 | Platform types | 9 | AppKit/UIKit parity; portable colour blending within 1/255 of `NSColor.blended` on every colour the app displays |
 | Markdown text insertion | 8 | Caret placement, clamping stale selections, UTF-16 offsets |
-| Markdown image importer | 6 | Assets folder naming, collisions, symlink rejection, unsaved documents, unsupported types |
 | File tree scanner | 6 | Ordering, hidden files, packages, symlinks |
+| Markdown image importer | 6 | Assets folder naming, collisions, symlink rejection, unsaved documents, unsupported types |
 | Cross-platform contract | 5 | The exported fixtures still describe the compiled Swift |
 | Markdown source styler | 4 | Styling is not undoable, and survives a text view that resets its undo manager mid-edit |
 | Markdown text codec | 3 | UTF-8 round trip, BOM preservation, invalid input |
 | Markdown text difference | 3 | Minimal replacement computation |
+
+### 16.2 Scroll checks
+
+`make check-scroll` is separate from the suite because what it checks is not
+reachable from one. Every scroll bug this app has had lived in AppKit — a clip
+view with no height, a document frame reporting only the part laid out so far,
+a caret reveal undone by a later restore — and every one of them passed the
+unit tests. `Scripts/check-scroll.swift` builds real `NSTextView`s configured
+the way the editor configures them and asserts the behaviour directly: 18
+checks over three document sizes.
+
+The checks are mutation-tested. Removing the targeted layout fails 6, removing
+the receiving pane's layout pass fails 2, revealing the caret before restoring
+the offset fails 1, and treating a partly visible caret as visible fails 1.
+
+One trap is worth stating, because it made an earlier version of these checks
+worthless. `NSTextView` never shrinks its frame — once it has been laid out it
+keeps that height — so re-styling an already-measured pane cannot lose the
+scroll offset and proves nothing. The pane that loses it is one that has not
+been measured yet, which is what a document being opened finds. The checks
+start from that state deliberately.
 
 The remote-image suite talks to a stubbed `URLProtocol` rather than the network,
 because the rules that matter are inside the transfer. An earlier version tested
@@ -743,6 +771,7 @@ check exists; `file://localhost/etc/passwd` is the one that proves it.
 
 | Change | Summary |
 | --- | --- |
+| Stop the editor jumping while typing | Typing near the top of a document no longer throws the page down and back. A pane now restores its exact scroll offset rather than a fraction of its travel, withholds its position until it is fully laid out, measures itself before applying one, and reveals the caret only after the offset is restored — and only when the caret is not already visible. `make check-scroll` asserts the behaviour against real AppKit views. |
 | Draw images held at a web address | An image referenced by `https://…` renders as the real picture instead of a placeholder glyph, in both the rendered and split editors, and can be measured for proportional resizing. The address and link fields no longer wrap a long URL. |
 | Sized images and insert by address | Insert ▸ Image asks for a file or a web address; Insert ▸ Image Size… (⇧⌥⌘I) sets a proportional width and height on the image at the caret. The size is written as `<img …>`, the one spelling GitHub honours. |
 | Add native Markdown editor app | Document lifecycle, File menu, UTF-8/BOM handling, image import with `.assets` convention, unit tests, app bundling |

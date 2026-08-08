@@ -393,6 +393,54 @@ These are product, not platform courtesy, and a build should have them:
 Plus the platform's own document shortcuts — New, Open, Save, Save As, Close —
 using whatever that platform's convention is.
 
+### Keeping the reader's place while re-styling
+
+Every build re-styles by replacing the whole text of a pane, and every build
+has lost the reader's scroll position doing it. This is the one rule here that
+was written from a bug rather than from a design, so it is worth reading before
+a port repeats it.
+
+The failure looks like the document jumping far down the page and snapping back
+on a keystroke. Four rules prevent it, and each corresponds to a defect that
+actually shipped:
+
+1. **Restore an absolute offset, not a fraction of the travel.** A fraction is
+   relative to the document's height, and typing changes the height, so
+   restoring a fraction moves the text on almost every keystroke. Fractions are
+   only meaningful for syncing *two different* documents, which is a different
+   job.
+2. **Never publish a position from a pane that has not finished laying out.**
+   Partial layout describes the part measured so far, not the document. A pane
+   20pt down a 29629pt file reported itself 17% of the way through because only
+   114pt existed yet; applying that to the real height threw the other pane
+   5198pt down. Report "don't know" rather than a number — which means the
+   value must be nullable, since zero is indistinguishable from a reader parked
+   at the top.
+3. **Lay a pane out fully before applying a position to it.** The receiving
+   side needs the same care as the sending side. A pane that has just been
+   created has measured only the screenful it shows, and a document 136,017pt
+   tall reports the 600pt of its viewport, so a reader 80% through lands at the
+   very top.
+4. **Reveal the caret last, and only if it is off screen.** Revealing before
+   restoring the offset means the restore undoes the reveal. Revealing when the
+   caret is already visible moves the page during ordinary typing. A caret
+   straddling the edge of the viewport counts as off screen — testing for
+   intersection rather than containment leaves it permanently half-hidden.
+
+The arithmetic is shared and testable:
+`Shared/Sources/MarkdownEditorUI/EditorScrollGeometry.swift`, with the recorded
+numbers in `EditorScrollGeometryTests.swift`. The parts that are not pure —
+which are the parts that broke — are asserted against real views by
+`macOS/Scripts/check-scroll.swift`.
+
+A trap that made a first version of those checks worthless: `NSTextView` never
+shrinks its frame once grown, so re-styling an already-measured pane cannot
+lose the offset and proves nothing. Whatever the platform equivalent is, the
+state to test from is a pane that has *not* been measured yet. On UIKit the
+shape of the problem is different again — assigning `attributedText` resets
+`contentOffset` outright — so a port should establish what its own toolkit does
+rather than assume this one transfers.
+
 ### What is deliberately per-platform
 
 Not everything is a requirement. These differ between the existing builds on

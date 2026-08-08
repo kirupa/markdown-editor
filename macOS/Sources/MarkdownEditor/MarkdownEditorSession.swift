@@ -77,9 +77,9 @@ final class MarkdownEditorSession: ObservableObject {
             let activeEditor,
             !sameEditor(activeEditor, editor)
         {
-            editor.setNormalizedScrollPosition(
-                activeEditor.normalizedScrollPosition
-            )
+            if let position = activeEditor.normalizedScrollPosition {
+                editor.setNormalizedScrollPosition(position)
+            }
             editor.setSynchronizedSourceSelection(rememberedSelection)
         }
     }

@@ -300,6 +300,7 @@ the iOS build's entire Markdown engine — the iOS layer above it is views.
 
 | Change | Summary |
 | --- | --- |
+| Stop the editor jumping while typing | Re-styling the rendered pane no longer loses the reader's place. Assigning `attributedText` resets `contentOffset`, so the offset is now carried across the assignment, using the same `EditorScrollGeometry` rules the Mac uses. |
 | Draw images held at a web address | An `https://` image renders as the real picture instead of a placeholder glyph, and can now be measured for proportional resizing. Verified on a booted simulator: two remote images drawn, a broken address still a placeholder. |
 | Share the Swift core between platforms | `Shared/` package; AppKit's Generic RGB blending reproduced portably; `themes.css` verified byte-identical |
 | Add a native iOS app | iPhone and iPad `DocumentGroup` app compiling the shared package: three modes, adaptive split, full formatting bar, photo and Files image import, sixteen themes, generated app icon |
