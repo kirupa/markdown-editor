@@ -55,7 +55,10 @@ let package = Package(
         ),
         .testTarget(
             name: "MarkdownEditorUITests",
-            dependencies: ["MarkdownEditorUI"]
+            // The contract corpus is a test-only dependency here: it is the
+            // same set of documents the core is checked against, so the
+            // styler is exercised on exactly the text the renderer is.
+            dependencies: ["MarkdownEditorUI", "MarkdownEditorContract"]
         ),
         .testTarget(
             name: "MarkdownEditorCloudTests",

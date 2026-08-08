@@ -272,8 +272,15 @@ xcrun simctl launch booted com.kirupa.markdown-editor
 macOS/Scripts/run-tests.sh
 ```
 
-244 tests in 16 suites. The suite covers the shared package, so it exercises
+317 tests in 23 suites. The suite covers the shared package, so it exercises
 the iOS build's entire Markdown engine — the iOS layer above it is views.
+
+Around one in six is property-based rather than example-based: they run
+every formatting command over every selection of every document in the shared
+corpus, and render and style every prefix and suffix of it, asserting that
+ranges stay in bounds and never split an emoji rather than asserting specific
+output. See `macOS/README.md` §16.2 for what each kind of test is for and
+§16.3 for the two properties that are deliberately scoped.
 
 | Suite | Tests | Covers |
 | --- | --- | --- |
@@ -282,17 +289,24 @@ the iOS build's entire Markdown engine — the iOS layer above it is views.
 | Markdown render model | 31 | Block and inline parsing, boundaries, escapes, range mapping |
 | Remote images | 29 | Which addresses are fetched, the size ceiling, decoding, failure caching |
 | Image tags | 25 | `<img …>` parsing and writing, proportional sizing, aspect ratio |
+| Editor scroll geometry | 18 | When a pane's figures may be trusted, and fraction ↔ offset conversion |
+| Markdown text codec invariants | 14 | Byte-exact round trips over the corpus, line endings, byte order marks, malformed UTF-8 |
 | Cloud paths | 14 | Stems, extensions, and parents, matched against PHP's real output |
+| Editor color themes | 13 | All sixteen palettes: WCAG contrast for body, secondary, selected and code text; sRGB resolution |
+| Rich Markdown styler | 11 | The styled string matches the model's length, no attribute run escapes it, proportional image sizing |
 | Recent documents catalog | 10 | Ordering, de-duplication, caps, pruning |
 | New document | 10 | Heading 1 seeding |
 | Platform types | 9 | AppKit/UIKit parity, and the colour blending above |
 | Markdown text insertion | 8 | Caret placement, clamping stale selections, UTF-16 offsets |
+| Markdown render model invariants | 8 | Every span addresses real text, both mappings stay in bounds, every prefix and suffix renders |
+| Markdown formatting invariants | 7 | Seventeen commands over every corpus selection: bounds, surrogate pairs, clamping, involution |
 | Markdown image importer | 6 | Assets naming, collisions, symlink rejection, unsaved documents |
 | File tree scanner | 6 | Ordering, hidden files, packages, symlinks |
 | Cross-platform contract | 5 | The exported fixtures still match the compiled Swift |
 | Markdown source styler | 4 | Styling is not undoable, and survives a text view that resets its undo manager mid-edit |
 | Markdown text codec | 3 | UTF-8 round trip, BOM preservation, invalid input |
 | Markdown text difference | 3 | Minimal replacement computation |
+| Editor view mode | 2 | The three layouts round-trip through storage and have distinct icons |
 
 ---
 
@@ -300,6 +314,7 @@ the iOS build's entire Markdown engine — the iOS layer above it is views.
 
 | Change | Summary |
 | --- | --- |
+| Expand the regression net | 317 shared tests across 23 suites, up from 244 across 16. The new suites are property-based: every formatting command over every corpus selection, every prefix and suffix of the corpus through the renderer and the styler, all sixteen palettes held to WCAG contrast, and a byte-exact read/write path. All of it is shared code, so it covers this build's engine as much as the Mac's. |
 | Stop the editor jumping while typing | Re-styling the rendered pane no longer loses the reader's place. Assigning `attributedText` resets `contentOffset`, so the offset is now carried across the assignment, using the same `EditorScrollGeometry` rules the Mac uses. |
 | Draw images held at a web address | An `https://` image renders as the real picture instead of a placeholder glyph, and can now be measured for proportional resizing. Verified on a booted simulator: two remote images drawn, a broken address still a placeholder. |
 | Share the Swift core between platforms | `Shared/` package; AppKit's Generic RGB blending reproduced portably; `themes.css` verified byte-identical |
@@ -323,7 +338,7 @@ Recorded plainly, because "it builds" and "it runs" are different claims.
 - `Scripts/build-app.sh` produces a bundle whose Mach-O load command reports
   `platform IOSSIMULATOR, minos 17.0`, which `codesign --verify --strict`
   accepts.
-- 244 shared tests pass, including the colour parity assertions.
+- 317 shared tests pass, including the colour parity assertions.
 - The macOS app still builds and runs unchanged after the restructure.
 
 **Verified by running**, on an iPhone 17 Pro and an iPad Pro 11-inch simulator

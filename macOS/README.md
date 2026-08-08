@@ -707,7 +707,7 @@ the code they cover, so this one command covers the iOS build's engine too.
 
 ### 16.1 Test coverage
 
-262 tests across 17 suites, in the shared package:
+317 tests across 23 suites, in the shared package:
 
 | Suite | Tests | Covers |
 | --- | --- | --- |
@@ -717,19 +717,74 @@ the code they cover, so this one command covers the iOS build's engine too.
 | Remote images | 29 | Which addresses are fetched, the transfer ceiling enforced against a stubbed server, decoding, failure caching |
 | Image tags | 25 | `<img …>` parsing and writing, liberal attribute forms, proportional sizing |
 | Editor scroll geometry | 18 | When a pane's figures may be trusted, fraction ↔ offset conversion, and the recorded numbers from the typing-jump bug |
+| Markdown text codec invariants | 14 | Byte-exact round trips over the corpus, line endings, byte order marks, nine shapes of malformed UTF-8 |
 | Cloud paths | 14 | Stems, extensions, parents, descendancy, collision numbering |
-| New document | 10 | Heading 1 seeding |
+| Editor color themes | 13 | All sixteen palettes: WCAG contrast for body, secondary, selected and code text; sRGB resolution; storage round trips |
+| Rich Markdown styler | 11 | The styled string matches the model's length, no attribute run escapes it, proportional image sizing |
 | Recent documents catalog | 10 | Merge order, de-duplication, Markdown filtering, caps, promotion, removal, pruning of missing files, home-relative paths |
+| New document | 10 | Heading 1 seeding |
 | Platform types | 9 | AppKit/UIKit parity; portable colour blending within 1/255 of `NSColor.blended` on every colour the app displays |
 | Markdown text insertion | 8 | Caret placement, clamping stale selections, UTF-16 offsets |
-| File tree scanner | 6 | Ordering, hidden files, packages, symlinks |
+| Markdown render model invariants | 8 | Every span addresses real text, both mappings stay in bounds, every prefix and suffix renders safely |
+| Markdown formatting invariants | 7 | Seventeen commands over every corpus selection: bounds, surrogate pairs, clamping, involution |
 | Markdown image importer | 6 | Assets folder naming, collisions, symlink rejection, unsaved documents, unsupported types |
+| File tree scanner | 6 | Ordering, hidden files, packages, symlinks |
 | Cross-platform contract | 5 | The exported fixtures still describe the compiled Swift |
 | Markdown source styler | 4 | Styling is not undoable, and survives a text view that resets its undo manager mid-edit |
 | Markdown text codec | 3 | UTF-8 round trip, BOM preservation, invalid input |
 | Markdown text difference | 3 | Minimal replacement computation |
+| Editor view mode | 2 | The three layouts round-trip through storage and have distinct icons |
 
-### 16.2 Scroll checks
+### 16.2 What the three kinds of test are each for
+
+The suites above are not all the same kind of thing, and the distinction is
+what makes them worth keeping.
+
+**Example tests** say what specific Markdown should do. They are readable, they
+document intent, and they are where a new feature's behaviour is pinned.
+
+**Invariant tests** say what must be true of *everything*. They run every
+command over every selection of every document in the shared corpus — about
+7,667 combinations for formatting alone — and assert properties rather than
+outputs: a returned selection is always inside the text it belongs to, never
+splits an emoji, and never discards the document. They are cheap to run and
+they cover input nobody thought to write down, including every prefix and
+suffix of every corpus document, which is what the renderer actually sees while
+somebody is still typing.
+
+**The contract fixtures** pin exact output for 8,180 formatting cases.
+
+Each covers what the others cannot, and this was measured rather than assumed.
+Shortening strikethrough's closing marker from `~~` to `~` is invisible to the
+involution test — add and remove read the same table, so the text still
+round-trips perfectly — and invisible to the safety invariants, because nothing
+is out of bounds. The fixtures catch it, because the bytes changed. Conversely,
+removing the clamp from `sourceRange(for:)` passes every fixture and crashes
+the invariant run outright.
+
+### 16.3 What the invariants deliberately do not assert
+
+Two properties are scoped rather than universal, and both are recorded here
+rather than being quietly narrowed.
+
+Toggling an inline style twice restores the text — but only where the toggle
+has one obvious answer. Wrapping `and *ligature` in italics does not: the
+selection already contains an unclosed marker. Nor does adding a backtick
+immediately before a ``` fence, where the new delimiter merges into the fence
+and lengthens it. These are ambiguities in Markdown, not defects in this
+implementation, so the check covers selections whose text and immediate
+neighbours are free of marker characters — 645 combinations of the case a
+writer actually hits. The ambiguous selections are still covered by every
+safety invariant; only the question of what the text should settle to is set
+aside.
+
+Text that *begins* with U+FEFF cannot survive a round trip as a character,
+because the bytes a leading zero-width no-break space encodes to are the same
+three bytes as a byte order mark. Every UTF-8 editor resolves that the same
+way. The file still round-trips byte for byte, which is the property that
+matters, and there is a test that says so.
+
+### 16.4 Scroll checks
 
 `make check-scroll` is separate from the suite because what it checks is not
 reachable from one. Every scroll bug this app has had lived in AppKit — a clip
@@ -771,6 +826,7 @@ check exists; `file://localhost/etc/passwd` is the one that proves it.
 
 | Change | Summary |
 | --- | --- |
+| Expand the regression net | 317 tests across 23 suites, up from 262 across 17. Adds property-based suites that run every formatting command over every selection of every corpus document, render and style every prefix and suffix of that corpus, hold all sixteen palettes to WCAG contrast thresholds, and check the read/write path is byte-exact against nine shapes of malformed UTF-8. Every new suite is mutation-tested. |
 | Stop the editor jumping while typing | Typing near the top of a document no longer throws the page down and back. A pane now restores its exact scroll offset rather than a fraction of its travel, withholds its position until it is fully laid out, measures itself before applying one, and reveals the caret only after the offset is restored — and only when the caret is not already visible. `make check-scroll` asserts the behaviour against real AppKit views. |
 | Draw images held at a web address | An image referenced by `https://…` renders as the real picture instead of a placeholder glyph, in both the rendered and split editors, and can be measured for proportional resizing. The address and link fields no longer wrap a long URL. |
 | Sized images and insert by address | Insert ▸ Image asks for a file or a web address; Insert ▸ Image Size… (⇧⌥⌘I) sets a proportional width and height on the image at the caret. The size is written as `<img …>`, the one spelling GitHub honours. |

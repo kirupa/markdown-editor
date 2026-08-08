@@ -453,6 +453,58 @@ purpose, and a new build should decide for itself:
 - Drag-and-drop and paste of images
 - The welcome window and recent documents
 
+## Properties, not just fixtures
+
+The fixtures say what this implementation produces. They cannot say what *any*
+implementation must never do, and a port will hit the second problem first —
+usually by measuring characters instead of UTF-16 code units, or by trusting a
+selection that arrived from the platform's text control.
+
+These properties are checked in Swift by
+`MarkdownFormattingInvariantTests`, `MarkdownRenderModelInvariantTests`,
+`RichMarkdownStylerTests` and `MarkdownTextCodecInvariantTests`, over the same
+corpus that generates the fixtures. They need no fixture file, so a port can
+assert them from day one, before any output matches.
+
+**Formatting.** For every command, over every selection of every corpus
+document:
+
+- The returned selection lies inside the returned text.
+- It never begins or ends in the middle of a surrogate pair.
+- No command returns empty text unless the document was already empty.
+- A selection outside the document is clamped, never trapped or crashed on.
+- Applying a heading level twice is the same as applying it once.
+- Every command works on the empty document.
+- Toggling an inline style twice restores the text, where the selection and its
+  immediate neighbours contain no marker characters. Outside that, Markdown is
+  genuinely ambiguous — see `macOS/README.md` §16.3.
+
+**Render model.** For every corpus document, and for every prefix and every
+suffix of one:
+
+- Every span's rendered range lies inside the rendered text, and its source
+  range inside the source, with neither splitting a surrogate pair.
+- Rendering the same text twice gives the same model.
+- `sourceRange(for:)` and `renderedRange(for:)` return ranges inside their
+  target string for *any* input, including negative locations and lengths.
+- The empty document renders to an empty model with no spans.
+
+Prefixes and suffixes matter more than they look. A finished document has
+balanced markup; a document being typed does not, and unterminated fences,
+half-written links and lone `*` characters only exist in that state. Every
+crash this renderer has had was in one.
+
+**Styling.** The attributed string handed to the text control must be exactly
+as long as the model text it came from. The span table is what maps an edit in
+the rendered view back into the source, so one character of drift means every
+later edit is written to the wrong offset in the file. No attribute run may
+extend past the end of the string.
+
+**Reading and writing.** Bytes in, identical bytes out — for every corpus
+document, with and without a byte order mark. Line endings are preserved, never
+normalised. Malformed UTF-8 is refused rather than repaired: replacing bad
+bytes with U+FFFD and then saving overwrites the original with the damage.
+
 ## Reading order for a new build
 
 1. This file.
