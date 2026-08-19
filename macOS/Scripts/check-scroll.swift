@@ -351,6 +351,87 @@ func isSelectionVisible(_ range: NSRange, in textView: NSTextView) -> Bool {
     return visible.contains(rect)
 }
 
+/// Replacing a text view's storage makes AppKit move the selection before the
+/// intended one is restored, and it announces that intermediate value through
+/// the delegate exactly as it announces a real caret move.
+///
+/// This is the whole reason `RichTextEditor` and `SourceTextEditor` suppress
+/// selection notifications while they re-style. Both panes re-style on every
+/// keystroke and publish selection changes to the other pane, which reveals
+/// them; an intermediate value measured at 19,681 characters from the caret
+/// therefore threw the other pane most of the way down the document and back
+/// again on every character typed.
+///
+/// The check is written as the two halves of the decision: an unguarded
+/// delegate sees a value that is not the caret, and a guarded one does not.
+func checkRestylingAnnouncesAnIntermediateSelection() {
+    print("\nReplacing the text storage announces a selection that is not the caret")
+
+    final class Recorder: NSObject, NSTextViewDelegate {
+        var isRestyling = false
+        var unguarded: [NSRange] = []
+        var guarded: [NSRange] = []
+
+        func textViewDidChangeSelection(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else {
+                return
+            }
+            unguarded.append(textView.selectedRange())
+            guard !isRestyling else {
+                return
+            }
+            guarded.append(textView.selectedRange())
+        }
+    }
+
+    let (scrollView, textView) = makePane()
+    guard let container = textView.textContainer,
+        let layoutManager = textView.layoutManager
+    else { return }
+
+    textView.textStorage?.setAttributedString(document(lines: 2000))
+    layoutManager.ensureLayout(for: container)
+    scrollView.layoutSubtreeIfNeeded()
+
+    // A caret near the top, which is where the jump was reported from.
+    let caret = NSRange(location: 35, length: 0)
+    textView.setSelectedRange(caret)
+
+    let recorder = Recorder()
+    textView.delegate = recorder
+
+    // Exactly what a re-style does: replace the storage, then put the caret
+    // back where it belongs.
+    recorder.isRestyling = true
+    textView.textStorage?.setAttributedString(document(lines: 2000))
+    textView.setSelectedRange(caret)
+    recorder.isRestyling = false
+
+    let strays = recorder.unguarded.filter { $0 != caret }
+    check(
+        "an unguarded delegate is told the caret moved somewhere it did not",
+        !strays.isEmpty,
+        strays.isEmpty
+            ? "no intermediate seen"
+            : "saw \(strays.map(\.location))"
+    )
+    check(
+        "the stray value is far from the caret, not a rounding difference",
+        strays.contains { abs($0.location - caret.location) > 1000 },
+        "caret \(caret.location), strays \(strays.map(\.location))"
+    )
+    check(
+        "a delegate guarded while re-styling publishes nothing",
+        recorder.guarded.isEmpty,
+        "published \(recorder.guarded.map(\.location))"
+    )
+    check(
+        "and the caret really is back where it started afterwards",
+        textView.selectedRange() == caret,
+        "\(textView.selectedRange())"
+    )
+}
+
 // MARK: - Run
 
 print("Editor scroll checks")
@@ -359,6 +440,7 @@ checkReceiverMeasuresBeforeConverting()
 checkCaretRevealHappensAfterRestore()
 checkVisibleCaretDoesNotMoveThePage()
 checkPartiallyVisibleCaretCountsAsHidden()
+checkRestylingAnnouncesAnIntermediateSelection()
 
 print("\n\(checks - failures)/\(checks) checks passed")
 exit(failures == 0 ? 0 : 1)

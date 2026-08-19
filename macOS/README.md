@@ -287,6 +287,7 @@ Open With and lets the association point at a bundle that `make clean` deletes.
 | E-24 | A pane receiving a position lays itself out fully before converting it. A newly created pane — one that has just joined a Split — has measured only the screenful it shows, so without this a reader 80% through a document lands at the very top. |
 | E-25 | The caret is revealed **after** the scroll offset is restored, never before, or the restore undoes the reveal and leaves the caret off screen. |
 | E-26 | Revealing the caret is skipped when it is already fully visible, so ordinary typing does not move the page. A caret straddling the edge of the viewport counts as hidden, not visible. |
+| E-27 | A pane publishes a selection change only when the writer caused it. Both panes replace their whole text storage to re-style, on every keystroke, and AppKit announces an intermediate selection part-way through that — measured 19,681 characters from the real caret. Publishing it made the other pane reveal a caret the writer had not moved, so the split lurched down the document and back on every character. Selection changes during a re-style are suppressed, and the settled selection is published once it finishes. |
 
 ### 6.4 Representative source typography
 
@@ -791,12 +792,23 @@ reachable from one. Every scroll bug this app has had lived in AppKit — a clip
 view with no height, a document frame reporting only the part laid out so far,
 a caret reveal undone by a later restore — and every one of them passed the
 unit tests. `Scripts/check-scroll.swift` builds real `NSTextView`s configured
-the way the editor configures them and asserts the behaviour directly: 18
+the way the editor configures them and asserts the behaviour directly: 22
 checks over three document sizes.
 
 The checks are mutation-tested. Removing the targeted layout fails 6, removing
 the receiving pane's layout pass fails 2, revealing the caret before restoring
-the offset fails 1, and treating a partly visible caret as visible fails 1.
+the offset fails 1, treating a partly visible caret as visible fails 1, and
+publishing selection changes made while the text storage is being replaced
+fails 1.
+
+The last of those pins a platform behaviour rather than a rule of our own.
+Replacing a text view's storage makes AppKit move the selection before the
+intended one is put back, and it announces that intermediate value through the
+delegate exactly as it announces a real caret move — measured at character
+102,890 while the caret sat at 35. Both panes re-style on every keystroke and
+publish selection changes to the other pane, which reveals them, so an
+unguarded delegate threw the other pane most of the way down the document and
+back on every character typed.
 
 One trap is worth stating, because it made an earlier version of these checks
 worthless. `NSTextView` never shrinks its frame — once it has been laid out it
@@ -826,6 +838,7 @@ check exists; `file://localhost/etc/passwd` is the one that proves it.
 
 | Change | Summary |
 | --- | --- |
+| Stop the panes jumping while typing in the preview | Typing in the rendered pane no longer makes the split jump. Re-styling replaces the whole text storage on every keystroke, and AppKit announces an intermediate selection while it does — measured 19,681 characters from the real caret. Both panes published that as though the writer had moved the caret, so the other pane scrolled most of the way down the document and back on every character. Selection changes made during a re-style are now suppressed, and the settled selection is published once the re-style finishes. iOS already guarded this; only the macOS panes did not. |
 | Expand the regression net | 317 tests across 23 suites, up from 262 across 17. Adds property-based suites that run every formatting command over every selection of every corpus document, render and style every prefix and suffix of that corpus, hold all sixteen palettes to WCAG contrast thresholds, and check the read/write path is byte-exact against nine shapes of malformed UTF-8. Every new suite is mutation-tested. |
 | Stop the editor jumping while typing | Typing near the top of a document no longer throws the page down and back. A pane now restores its exact scroll offset rather than a fraction of its travel, withholds its position until it is fully laid out, measures itself before applying one, and reveals the caret only after the offset is restored — and only when the caret is not already visible. `make check-scroll` asserts the behaviour against real AppKit views. |
 | Draw images held at a web address | An image referenced by `https://…` renders as the real picture instead of a placeholder glyph, in both the rendered and split editors, and can be measured for proportional resizing. The address and link fields no longer wrap a long URL. |

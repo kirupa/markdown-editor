@@ -427,6 +427,19 @@ actually shipped:
    straddling the edge of the viewport counts as off screen — testing for
    intersection rather than containment leaves it permanently half-hidden.
 
+5. **Publish a selection change only when the writer caused it.** Both panes
+   replace their whole text storage to re-style, on every keystroke, and the
+   toolkit moves the selection part-way through that before the intended one is
+   put back. AppKit announces that intermediate value through the same delegate
+   callback it uses for a real caret move, and it is not near the caret: 19,681
+   characters away in the case that was measured. Publishing it made the other
+   pane reveal a caret the writer had not moved, so a split editor lurched down
+   the document and back on every character typed. Suppress selection
+   notifications while re-styling and publish the settled selection afterwards.
+   UIKit does the same thing on `attributedText` assignment — the iOS build
+   guards it — so a port should assume its toolkit does too until it has
+   checked.
+
 The arithmetic is shared and testable:
 `Shared/Sources/MarkdownEditorUI/EditorScrollGeometry.swift`, with the recorded
 numbers in `EditorScrollGeometryTests.swift`. The parts that are not pure —

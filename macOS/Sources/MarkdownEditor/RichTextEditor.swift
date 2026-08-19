@@ -383,6 +383,16 @@ struct RichTextEditor: NSViewRepresentable {
                 )
             }
             isRendering = false
+            // The selection changes AppKit made while the storage was being
+            // replaced were suppressed as intermediate. Publish the settled
+            // one now, so the two panes still track each other's caret and
+            // the session's remembered selection is the real one.
+            if hasFocus {
+                session?.synchronizeSelection(
+                    from: self,
+                    selection: selectedSourceRange
+                )
+            }
         }
 
         func textDidBeginEditing(_ notification: Notification) {
@@ -390,6 +400,15 @@ struct RichTextEditor: NSViewRepresentable {
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
+            // Replacing the text storage makes AppKit move the selection
+            // before the intended one is put back, and that intermediate
+            // value is not the writer moving the caret. Publishing it sent
+            // the other pane thousands of characters away and straight back
+            // on every keystroke, which is the jumping this guard removes.
+            // `render` publishes the settled selection once it is done.
+            guard !isRendering else {
+                return
+            }
             if hasFocus {
                 session?.activate(self)
                 session?.synchronizeSelection(

@@ -178,6 +178,10 @@ struct SourceTextEditor: NSViewRepresentable {
         private var isApplyingChange = false
         private var compositionState: SourceCompositionState?
         private let scrollSynchronizer = EditorScrollSynchronizer()
+        /// True while the text storage is being replaced to re-apply source
+        /// styling. Selection changes AppKit makes during that are not the
+        /// writer moving the caret.
+        private var isRestyling = false
 
         init(
             text: Binding<String>,
@@ -230,11 +234,22 @@ struct SourceTextEditor: NSViewRepresentable {
             thenSelect select: () -> Void = {}
         ) {
             let restoredOffset = scrollSynchronizer.documentOffset
+            isRestyling = true
             scrollSynchronizer.withoutPublishingScroll {
                 restyle()
                 scrollSynchronizer.prepareLayout(toRestore: restoredOffset)
                 scrollSynchronizer.setDocumentOffset(restoredOffset)
                 select()
+            }
+            isRestyling = false
+            // Same reason as the rendered pane: the selection changes AppKit
+            // makes while the storage is being replaced are intermediate and
+            // must not be published. Publish the settled one instead.
+            if hasFocus {
+                session?.synchronizeSelection(
+                    from: self,
+                    selection: selectedSourceRange
+                )
             }
         }
 
@@ -355,6 +370,9 @@ struct SourceTextEditor: NSViewRepresentable {
                     in: textView,
                     colorTheme: colorTheme
                 )
+            }
+            guard !isRestyling else {
+                return
             }
             if hasFocus {
                 session?.activate(self)
