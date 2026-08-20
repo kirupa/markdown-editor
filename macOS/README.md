@@ -288,6 +288,7 @@ Open With and lets the association point at a bundle that `make clean` deletes.
 | E-25 | The caret is revealed **after** the scroll offset is restored, never before, or the restore undoes the reveal and leaves the caret off screen. |
 | E-26 | Revealing the caret is skipped when it is already fully visible, so ordinary typing does not move the page. A caret straddling the edge of the viewport counts as hidden, not visible. |
 | E-27 | A pane publishes a selection change only when the writer caused it. Both panes replace their whole text storage to re-style, on every keystroke, and AppKit announces an intermediate selection part-way through that — measured 19,681 characters from the real caret. Publishing it made the other pane reveal a caret the writer had not moved, so the split lurched down the document and back on every character. Selection changes during a re-style are suppressed, and the settled selection is published once it finishes. |
+| E-28 | Catching a pane up with its neighbour happens when the pane **joins** the split, not on every update. SwiftUI calls `updateNSView` for both panes on every keystroke, and the catch-up applied the active pane's normalized *fraction* to a pane showing the same text at a different height — so 20 keystrokes moved the idle pane 40 times, dragging it a little further out of step with each character. The session now distinguishes a pane joining the split from the same pane being updated again, and owes the catch-up afresh only when the view mode changes or a pane leaves and returns. |
 
 ### 6.4 Representative source typography
 
@@ -686,6 +687,7 @@ make install
 | `make icons` | Regenerates `Packaging/AppIcon.icns` and `Packaging/MarkdownDocument.icns` |
 | `make test` | Runs the unit test suite |
 | `make check-scroll` | Drives real AppKit text views and asserts the "never jump" scroll rules |
+| `make check-session` | Compiles the real split-pane session against recording panes and asserts which pane may move which |
 | `make clean` | Cleans the package build directory and removes `build/` |
 
 `Scripts/build-app.sh` builds the executable, assembles the bundle from
@@ -832,12 +834,50 @@ of its own instead. And `file:///etc/passwd` is refused by the *host* check, not
 the scheme check, so a test using only that form cannot tell whether the scheme
 check exists; `file://localhost/etc/passwd` is the one that proves it.
 
+### 16.5 Split-pane coordination checks
+
+`make check-session` covers `MarkdownEditorSession` — the object that decides
+when one pane is allowed to move the other. It lives in the app's executable
+target, which no test target can import, so it went untested for a long time.
+That is how E-28 got in. `Scripts/run-session-checks.sh` compiles the real app
+sources, minus the `@main` entry point, together with
+`Scripts/check-session.swift`, linking against the object files SPM has already
+built for the shared package. 15 checks.
+
+What the checks pin down is the distinction the bug turned on: `attach` is
+called from SwiftUI's `updateNSView`, which runs for **both** panes on **every
+keystroke**, and it was re-running the catch-up meant for a pane joining the
+split. So the checks assert both halves — typing moves neither pane, and a pane
+that genuinely joins a split is still aligned exactly once. They also assert
+that suppressing the redundant work did not reach real scrolling and real caret
+moves, which are how the panes track each other at all.
+
+Mutation-tested: restoring the original per-update alignment fails 4, dropping
+the reset when the view mode changes fails 1, dropping it when a pane detaches
+fails 1, and never pruning the identities of panes that were freed fails 1.
+
+That last one is not hypothetical. Telling panes apart means holding their
+identity, the session holds panes *weakly* because they are deallocated without
+`detach`, and an address that has been freed gets reused — so a pane allocated
+where a dead one used to be is taken for one that has already caught up, and
+opens out of step. The check allocates a pane, drops it without detaching, and
+allocates another; with the pruning removed the replacement lands on the dead
+pane's address and is never aligned. Identities are pruned to the live panes
+wherever the weak list is already being compacted.
+
+Worth knowing if you extend this: the catch-up applies a normalized *fraction*,
+and the two panes render the same text at different heights, so re-applying it
+is not idempotent — each repetition drags the idle pane further out of step.
+That is why "it runs more often than needed" was a correctness bug rather than
+a performance one.
+
 ---
 
 ## 17. Release history
 
 | Change | Summary |
 | --- | --- |
+| Stop the idle pane drifting on every keystroke | The split no longer nudges the pane you are not typing in. Catching a pane up with its neighbour is meant to happen when it joins the split, but it ran on every SwiftUI update — twice per keystroke — and it applies a normalized fraction between panes of different heights, so it is not idempotent. Measured at 40 unwanted moves over 20 keystrokes, now 0. `make check-session` compiles the real session against recording panes and asserts which pane may move which. |
 | Stop the panes jumping while typing in the preview | Typing in the rendered pane no longer makes the split jump. Re-styling replaces the whole text storage on every keystroke, and AppKit announces an intermediate selection while it does — measured 19,681 characters from the real caret. Both panes published that as though the writer had moved the caret, so the other pane scrolled most of the way down the document and back on every character. Selection changes made during a re-style are now suppressed, and the settled selection is published once the re-style finishes. iOS already guarded this; only the macOS panes did not. |
 | Expand the regression net | 317 tests across 23 suites, up from 262 across 17. Adds property-based suites that run every formatting command over every selection of every corpus document, render and style every prefix and suffix of that corpus, hold all sixteen palettes to WCAG contrast thresholds, and check the read/write path is byte-exact against nine shapes of malformed UTF-8. Every new suite is mutation-tested. |
 | Stop the editor jumping while typing | Typing near the top of a document no longer throws the page down and back. A pane now restores its exact scroll offset rather than a fraction of its travel, withholds its position until it is fully laid out, measures itself before applying one, and reveals the caret only after the offset is restored — and only when the caret is not already visible. `make check-scroll` asserts the behaviour against real AppKit views. |

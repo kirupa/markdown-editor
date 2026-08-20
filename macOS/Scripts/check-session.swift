@@ -1,0 +1,345 @@
+// Runtime checks for the split-pane coordination contract.
+//
+// `MarkdownEditorSession` decides when one pane is allowed to move the other.
+// It lives in the app's executable target, so the shared test suite cannot
+// import it and it went untested for a long time — which is how E-28 got in:
+// `attach` is called from SwiftUI's `updateNSView`, on every keystroke, and it
+// was re-running the catch-up meant for a pane *joining* the split.
+//
+// So this harness compiles the real session against a recording surface and
+// asserts what it does. Run with `make check-session`. Exits non-zero on the
+// first failure.
+//
+// It is built by Scripts/run-session-checks.sh, which links it against the
+// real app sources.
+
+import AppKit
+import MarkdownEditorCore
+import MarkdownEditorUI
+
+// MARK: - Harness
+
+@MainActor
+private var failures = 0
+@MainActor
+private var checks = 0
+
+@MainActor
+func check(_ label: String, _ passed: Bool, _ detail: String = "") {
+    checks += 1
+    if passed {
+        print("  ok    \(label)\(detail.isEmpty ? "" : "  — \(detail)")")
+    } else {
+        failures += 1
+        print("  FAIL  \(label)\(detail.isEmpty ? "" : "  — \(detail)")")
+    }
+}
+
+/// A pane that records every move the session asks it to make.
+@MainActor
+final class RecordingSurface: NSObject, MarkdownEditingSurface {
+    let name: String
+    var sourceText: String
+    var selectedSourceRange = NSRange(location: 0, length: 0)
+    var hostingWindow: NSWindow? { nil }
+    var hasFocus = false
+    var normalizedScrollPosition: CGFloat?
+
+    private(set) var scrollWrites: [CGFloat] = []
+    private(set) var syncedSelections: [NSRange] = []
+    private(set) var directSelections: [NSRange] = []
+
+    init(_ name: String, text: String = "", scroll: CGFloat? = 0.5) {
+        self.name = name
+        self.sourceText = text
+        self.normalizedScrollPosition = scroll
+    }
+
+    func forgetMoves() {
+        scrollWrites.removeAll()
+        syncedSelections.removeAll()
+        directSelections.removeAll()
+    }
+
+    var moveCount: Int { scrollWrites.count + syncedSelections.count }
+
+    func apply(_ result: MarkdownEditResult, actionName: String) {}
+    func restore(_ result: MarkdownEditResult) {}
+    func commitPendingComposition() {}
+    func setSourceSelection(_ selection: NSRange) {
+        directSelections.append(selection)
+        selectedSourceRange = selection
+    }
+    func setSynchronizedSourceSelection(_ selection: NSRange) {
+        syncedSelections.append(selection)
+        selectedSourceRange = selection
+    }
+    func setNormalizedScrollPosition(_ position: CGFloat) {
+        scrollWrites.append(position)
+        normalizedScrollPosition = position
+    }
+    func focus() {}
+}
+
+@MainActor
+private func splitSession() -> (MarkdownEditorSession, RecordingSurface, RecordingSurface) {
+    let session = MarkdownEditorSession(
+        fileURL: nil,
+        initialText: String(repeating: "paragraph\n", count: 400)
+    )
+    session.setViewMode(.split)
+    let rich = RecordingSurface("RICH", scroll: 0.25)
+    let source = RecordingSurface("SOURCE", scroll: 0.75)
+    rich.hasFocus = true
+    session.attach(rich)
+    session.attach(source)
+    return (session, rich, source)
+}
+
+/// SwiftUI re-runs `updateNSView` for every pane on every keystroke.
+@MainActor
+private func simulateTyping(
+    _ session: MarkdownEditorSession,
+    _ panes: [RecordingSurface],
+    keystrokes: Int
+) {
+    for _ in 0..<keystrokes {
+        for pane in panes {
+            session.attach(pane)
+        }
+    }
+}
+
+// MARK: - Checks
+
+/// E-28. The defect: 20 keystrokes moved the idle pane 40 times.
+@MainActor
+func checkTypingDoesNotMoveTheIdlePane() {
+    print("\ntyping in one pane leaves the other alone")
+    let (session, rich, source) = splitSession()
+    rich.forgetMoves()
+    source.forgetMoves()
+
+    simulateTyping(session, [rich, source], keystrokes: 20)
+
+    check(
+        "the idle pane is not scrolled while the other is typed in",
+        source.scrollWrites.isEmpty,
+        "\(source.scrollWrites.count) scroll writes"
+    )
+    check(
+        "the idle pane's selection is not re-revealed per keystroke",
+        source.syncedSelections.isEmpty,
+        "\(source.syncedSelections.count) selection writes"
+    )
+    check(
+        "the typed pane is not moved either",
+        rich.moveCount == 0,
+        "\(rich.moveCount) moves"
+    )
+}
+
+/// The behaviour the per-keystroke work was there to provide. It has to
+/// survive, or a pane joining a split opens at the wrong place.
+@MainActor
+func checkAPaneJoiningASplitStillCatchesUp() {
+    print("\na pane joining a split still catches up, once")
+    let session = MarkdownEditorSession(
+        fileURL: nil,
+        initialText: String(repeating: "paragraph\n", count: 400)
+    )
+    session.setViewMode(.split)
+
+    let rich = RecordingSurface("RICH", scroll: 0.4)
+    rich.hasFocus = true
+    session.attach(rich)
+    rich.selectedSourceRange = NSRange(location: 120, length: 0)
+    session.activate(rich)
+
+    let source = RecordingSurface("SOURCE", scroll: 0.0)
+    session.attach(source)
+
+    check(
+        "the joining pane is aligned to the active pane",
+        source.scrollWrites == [0.4],
+        "scroll writes \(source.scrollWrites)"
+    )
+    check(
+        "the joining pane is shown the remembered selection",
+        source.syncedSelections.map(\.location) == [120],
+        "selections \(source.syncedSelections.map(\.location))"
+    )
+
+    source.forgetMoves()
+    simulateTyping(session, [rich, source], keystrokes: 10)
+    check(
+        "and it is not aligned again on later updates",
+        source.moveCount == 0,
+        "\(source.moveCount) later moves"
+    )
+}
+
+/// Leaving and re-entering split is a fresh layout, so the catch-up is owed
+/// again — otherwise the panes open out of step.
+@MainActor
+func checkChangingViewModeAllowsCatchUpAgain() {
+    print("\nchanging view mode owes the catch-up again")
+    let (session, rich, source) = splitSession()
+    simulateTyping(session, [rich, source], keystrokes: 5)
+    source.forgetMoves()
+
+    session.setViewMode(.rich)
+    session.setViewMode(.split)
+    session.attach(rich)
+    session.attach(source)
+
+    check(
+        "the pane is aligned once after returning to split",
+        source.scrollWrites.count == 1,
+        "\(source.scrollWrites.count) scroll writes"
+    )
+
+    source.forgetMoves()
+    simulateTyping(session, [rich, source], keystrokes: 10)
+    check(
+        "and then goes quiet again",
+        source.moveCount == 0,
+        "\(source.moveCount) later moves"
+    )
+}
+
+/// A pane that goes away and comes back is joining afresh.
+@MainActor
+func checkDetachedPaneIsAlignedWhenItReturns() {
+    print("\na pane that leaves and returns is aligned again")
+    let (session, rich, source) = splitSession()
+    simulateTyping(session, [rich, source], keystrokes: 5)
+
+    session.detach(source)
+    source.forgetMoves()
+    session.attach(source)
+
+    check(
+        "the returning pane is aligned",
+        source.scrollWrites.count == 1,
+        "\(source.scrollWrites.count) scroll writes"
+    )
+}
+
+/// The suppression must not reach real scrolling and real caret moves — those
+/// are how the panes track each other at all.
+@MainActor
+func checkDeliberateSynchronizationStillWorks() {
+    print("\ndeliberate synchronization still gets through")
+    let (session, rich, source) = splitSession()
+    simulateTyping(session, [rich, source], keystrokes: 5)
+    source.forgetMoves()
+
+    session.synchronizeScroll(from: rich, position: 0.62)
+    check(
+        "scrolling one pane scrolls the other",
+        source.scrollWrites == [0.62],
+        "scroll writes \(source.scrollWrites)"
+    )
+
+    session.synchronizeSelection(from: rich, selection: NSRange(location: 77, length: 3))
+    check(
+        "moving the caret in one pane moves it in the other",
+        source.syncedSelections.map(\.location) == [77],
+        "selections \(source.syncedSelections.map(\.location))"
+    )
+
+    check(
+        "and the pane that started it is never echoed back to",
+        rich.moveCount == 0,
+        "\(rich.moveCount) moves"
+    )
+}
+
+/// Outside split there is no neighbour to catch up with, so no pane should be
+/// moved by attaching at all.
+@MainActor
+func checkSinglePaneModesNeverAlign() {
+    print("\nsingle-pane modes never align")
+    for mode in [EditorViewMode.rich, .source] {
+        let session = MarkdownEditorSession(fileURL: nil, initialText: "hello")
+        session.setViewMode(mode)
+        let first = RecordingSurface("FIRST")
+        first.hasFocus = true
+        session.attach(first)
+        let second = RecordingSurface("SECOND")
+        session.attach(second)
+        simulateTyping(session, [first, second], keystrokes: 5)
+
+        check(
+            "no pane is aligned in \(mode) mode",
+            first.moveCount == 0 && second.moveCount == 0,
+            "\(first.moveCount + second.moveCount) moves"
+        )
+    }
+}
+
+/// A pane can be deallocated without `detach` — the session holds panes weakly
+/// precisely because that happens. If its identity outlived it, a later pane
+/// allocated at the same address would be taken for one that had already
+/// caught up.
+@MainActor
+func checkADeadPaneDoesNotLeaveItsIdentityBehind() {
+    print("\na deallocated pane does not leave its identity behind")
+    let session = MarkdownEditorSession(
+        fileURL: nil,
+        initialText: String(repeating: "paragraph\n", count: 400)
+    )
+    session.setViewMode(.split)
+
+    let rich = RecordingSurface("RICH", scroll: 0.4)
+    rich.hasFocus = true
+    session.attach(rich)
+
+    // A pane that comes and goes without ever being detached.
+    do {
+        let doomed = RecordingSurface("DOOMED", scroll: 0.0)
+        session.attach(doomed)
+    }
+
+    // Anything the session was holding weakly is gone now. A fresh pane must
+    // be treated as joining, whatever address it happens to land on.
+    let replacement = RecordingSurface("REPLACEMENT", scroll: 0.0)
+    session.attach(replacement)
+
+    check(
+        "a pane arriving after one was freed is still aligned",
+        replacement.scrollWrites == [0.4],
+        "scroll writes \(replacement.scrollWrites)"
+    )
+}
+
+// MARK: - Run
+
+@MainActor
+func runChecks() -> Int32 {
+    print("split-pane coordination checks")
+    checkTypingDoesNotMoveTheIdlePane()
+    checkAPaneJoiningASplitStillCatchesUp()
+    checkChangingViewModeAllowsCatchUpAgain()
+    checkDetachedPaneIsAlignedWhenItReturns()
+    checkADeadPaneDoesNotLeaveItsIdentityBehind()
+    checkDeliberateSynchronizationStillWorks()
+    checkSinglePaneModesNeverAlign()
+
+    print("")
+    if failures == 0 {
+        print("\(checks)/\(checks) checks passed")
+        return 0
+    }
+    print("\(failures) of \(checks) checks FAILED")
+    return 1
+}
+
+@main
+struct CheckSession {
+    static func main() {
+        let status = MainActor.assumeIsolated { runChecks() }
+        exit(status)
+    }
+}

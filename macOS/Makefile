@@ -1,10 +1,13 @@
-.PHONY: app check-scroll clean icons install run test uninstall
+.PHONY: app check-scroll check-session clean icons install run test uninstall
 
 app:
 	@./Scripts/build-app.sh
 
 check-scroll:
 	@swift Scripts/check-scroll.swift
+
+check-session:
+	@./Scripts/run-session-checks.sh
 
 icons:
 	@swift Scripts/make-icons.swift Packaging

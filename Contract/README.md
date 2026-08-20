@@ -440,11 +440,31 @@ actually shipped:
    guards it — so a port should assume its toolkit does too until it has
    checked.
 
+6. **Catch a pane up when it joins the split, not on every update.** Aligning
+   one pane to the other applies a normalized *fraction*, and the two panes
+   render the same text at different heights, so the operation is **not
+   idempotent** — repeating it drags the idle pane further out of step each
+   time. Declarative UI layers make this easy to get wrong: SwiftUI calls
+   `updateNSView` for both panes on every keystroke, and the alignment sat in
+   the function that call lands in, so 20 keystrokes produced 40 unwanted
+   moves. Separate "register this pane" from "this pane is joining the split",
+   and owe the catch-up again only when the layout genuinely changes — the view
+   mode switches, or a pane leaves and comes back.
+
+   Telling "joining" from "updating again" means holding pane identity, which
+   carries its own trap: panes are held weakly because they are deallocated
+   without a teardown call, and a freed address gets reused, so a new pane can
+   inherit a dead one's identity and be mistaken for one that has already
+   caught up. Prune identities to the live panes wherever the weak list is
+   compacted. This was measured, not imagined — removing the pruning makes a
+   replacement pane land on the dead pane's address and never align.
+
 The arithmetic is shared and testable:
 `Shared/Sources/MarkdownEditorUI/EditorScrollGeometry.swift`, with the recorded
 numbers in `EditorScrollGeometryTests.swift`. The parts that are not pure —
 which are the parts that broke — are asserted against real views by
-`macOS/Scripts/check-scroll.swift`.
+`macOS/Scripts/check-scroll.swift`, and the coordination between panes by
+`macOS/Scripts/check-session.swift`.
 
 A trap that made a first version of those checks worthless: `NSTextView` never
 shrinks its frame once grown, so re-styling an already-measured pane cannot

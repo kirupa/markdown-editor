@@ -21,6 +21,9 @@ final class MarkdownEditorSession: ObservableObject {
     private var rememberedSelection: NSRange
     private var isSynchronizingScroll = false
     private var isSynchronizingSelection = false
+    /// Panes already caught up with their neighbour, so `attach` can tell a
+    /// pane joining the split from the same pane being updated again.
+    private var alignedEditors: Set<ObjectIdentifier> = []
 
     init(
         fileURL: URL?,
@@ -47,6 +50,8 @@ final class MarkdownEditorSession: ObservableObject {
             rememberedSelection = editor.selectedSourceRange
         }
         viewMode = mode
+        // Panes appearing in the new layout have to catch up once more.
+        alignedEditors.removeAll()
     }
 
     func cycleViewMode() {
@@ -60,6 +65,12 @@ final class MarkdownEditorSession: ObservableObject {
         }
     }
 
+    /// SwiftUI calls this from `updateNSView`, which runs on every keystroke —
+    /// so it must only *register* the pane. Catching a pane up with its
+    /// neighbour is a one-off for a pane that is joining the split: it applies
+    /// the other pane's normalized *fraction*, and the two panes render the
+    /// same text at different heights, so re-running it per keystroke drags
+    /// the idle pane a little further off every time. See E-28.
     func attach(_ editor: any MarkdownEditingSurface) {
         let editors = liveEditors()
         if !editors.contains(where: { sameEditor($0, editor) }) {
@@ -71,6 +82,11 @@ final class MarkdownEditorSession: ObservableObject {
             editor.setSourceSelection(rememberedSelection)
         } else if editor.hasFocus {
             activeEditor = editor
+        }
+
+        let isJoining = alignedEditors.insert(identifier(of: editor)).inserted
+        guard isJoining else {
+            return
         }
 
         if viewMode == .split,
@@ -142,6 +158,7 @@ final class MarkdownEditorSession: ObservableObject {
             }
             return sameEditor(attachedEditor, editor)
         }
+        alignedEditors.remove(identifier(of: editor))
 
         guard wasActive else {
             return
@@ -672,7 +689,18 @@ final class MarkdownEditorSession: ObservableObject {
 
     private func liveEditors() -> [any MarkdownEditingSurface] {
         attachedEditors.removeAll { $0.value == nil }
-        return attachedEditors.compactMap { $0.value }
+        let editors = attachedEditors.compactMap { $0.value }
+        // A pane can be deallocated without `detach` — the references here are
+        // weak precisely because that happens. Its identity must not outlive
+        // it: the address can be reused, and a new pane inheriting a dead
+        // one's identity would be taken for one that had already caught up,
+        // and would open out of step with its neighbour.
+        alignedEditors.formIntersection(Set(editors.map(identifier(of:))))
+        return editors
+    }
+
+    private func identifier(of editor: any MarkdownEditingSurface) -> ObjectIdentifier {
+        ObjectIdentifier(editor as AnyObject)
     }
 
     private func sameEditor(
