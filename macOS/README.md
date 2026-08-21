@@ -462,6 +462,23 @@ the lookup must be instant and the download must not be.
 | I-28 | A cached remote image supplies the natural size for **Insert ▸ Image Size…**, so an address can be resized proportionally like a local file. Before it has loaded, the size cannot be measured and the app says so. |
 | I-29 | The cache is not evicted; entries live for the lifetime of the process. A text editor references few enough images for this to be the simpler correct choice. |
 
+### 9.6 Keeping typing responsive on an illustrated document
+
+Styling re-runs on **every keystroke** and rebuilds every attachment in the
+document, so without a cache each character typed re-read and re-decoded every
+picture on the page. Measured on forty photo-sized references: **65.7 ms per
+keystroke, of which 64.6 ms was the images** — about 15 fps, which is felt as
+lag rather than seen as a glitch. With the cache the same document styles in
+**4.0 ms**.
+
+| ID | Requirement |
+| --- | --- |
+| I-30 | A local image is decoded once and held in memory, so styling an illustrated document costs about what styling its prose costs. |
+| I-31 | The cache is keyed on the file's **modification date and size**, not its path alone. A picture edited in another app is read again rather than drawn from its old self. Size is part of the key because a timestamp is coarse enough that a generated or scripted image can be rewritten within the same second. |
+| I-32 | Entries are costed by **pixel area**, not bytes on disk, since an image is far larger decoded than compressed — a 34 MB photo is roughly 48 MB of pixels. The ceiling is **192 MB**. |
+| I-33 | Unlike the remote cache (I-29) this one **evicts**, and releases everything under system memory pressure. A long illustrated document could otherwise hold more memory than the rest of the app together. Eviction only costs a re-read; the cache is an optimisation with a correct fallback. |
+| I-34 | A file that is missing, unreadable, or not decodable as an image yields nothing and is not remembered as anything, so a broken reference draws the placeholder and starts working the moment a real picture replaces it. |
+
 ---
 
 ## 10. Links
@@ -710,7 +727,7 @@ the code they cover, so this one command covers the iOS build's engine too.
 
 ### 16.1 Test coverage
 
-317 tests across 23 suites, in the shared package:
+329 tests across 24 suites, in the shared package:
 
 | Suite | Tests | Covers |
 | --- | --- | --- |
@@ -719,6 +736,7 @@ the code they cover, so this one command covers the iOS build's engine too.
 | Markdown render model | 31 | Block and inline parsing, boundary rules, escapes, range mapping |
 | Remote images | 29 | Which addresses are fetched, the transfer ceiling enforced against a stubbed server, decoding, failure caching |
 | Image tags | 25 | `<img …>` parsing and writing, liberal attribute forms, proportional sizing |
+| Local image cache | 12 | Serving unchanged files from memory, re-reading a picture edited underneath us, the pixel-cost budget, and unreadable files |
 | Editor scroll geometry | 18 | When a pane's figures may be trusted, fraction ↔ offset conversion, and the recorded numbers from the typing-jump bug |
 | Markdown text codec invariants | 14 | Byte-exact round trips over the corpus, line endings, byte order marks, nine shapes of malformed UTF-8 |
 | Cloud paths | 14 | Stems, extensions, parents, descendancy, collision numbering |
@@ -834,6 +852,22 @@ of its own instead. And `file:///etc/passwd` is refused by the *host* check, not
 the scheme check, so a test using only that form cannot tell whether the scheme
 check exists; `file://localhost/etc/passwd` is the one that proves it.
 
+The local image cache is mutation-tested the same way, and two of the four runs
+are worth recording because the first version of the tests did not kill them.
+
+Keying the cache on the path alone — the stale-image bug the whole design exists
+to avoid — fails 3. Costing every entry the same, which would turn the 192 MB
+ceiling into "192 million pictures", fails 1, but only after a test was added
+that puts two images into a cache sized for one; asserting on the cost function
+alone never checked that its answer reached the cache. Dropping the size from
+the key fails 1, and that one took two attempts: the first version read the
+file's modification date and set it back, which does **not** round-trip — the
+filesystem keeps nanoseconds `Date` does not reproduce, so the key changed for a
+reason unrelated to size and the test passed no matter what the key contained.
+Pinning both writes to an explicit whole second makes the timestamps genuinely
+identical, so only size can tell the two files apart. Never reading from the
+cache at all fails 2.
+
 ### 16.5 Split-pane coordination checks
 
 `make check-session` covers `MarkdownEditorSession` — the object that decides
@@ -877,6 +911,7 @@ a performance one.
 
 | Change | Summary |
 | --- | --- |
+| Keep typing responsive on an illustrated document | Local images are decoded once and kept in memory instead of being re-read from disk on every keystroke. A document of forty photo-sized references styled in 65.7 ms per character, about 15 fps; it now styles in 4.0 ms. The cache is keyed on modification date and size, so a picture edited in another app is read again rather than drawn stale, and it is costed by pixel area against a 192 MB ceiling so an illustrated document cannot outgrow the rest of the app. |
 | Stop the idle pane drifting on every keystroke | The split no longer nudges the pane you are not typing in. Catching a pane up with its neighbour is meant to happen when it joins the split, but it ran on every SwiftUI update — twice per keystroke — and it applies a normalized fraction between panes of different heights, so it is not idempotent. Measured at 40 unwanted moves over 20 keystrokes, now 0. `make check-session` compiles the real session against recording panes and asserts which pane may move which. |
 | Stop the panes jumping while typing in the preview | Typing in the rendered pane no longer makes the split jump. Re-styling replaces the whole text storage on every keystroke, and AppKit announces an intermediate selection while it does — measured 19,681 characters from the real caret. Both panes published that as though the writer had moved the caret, so the other pane scrolled most of the way down the document and back on every character. Selection changes made during a re-style are now suppressed, and the settled selection is published once the re-style finishes. iOS already guarded this; only the macOS panes did not. |
 | Expand the regression net | 317 tests across 23 suites, up from 262 across 17. Adds property-based suites that run every formatting command over every selection of every corpus document, render and style every prefix and suffix of that corpus, hold all sixteen palettes to WCAG contrast thresholds, and check the read/write path is byte-exact against nine shapes of malformed UTF-8. Every new suite is mutation-tested. |

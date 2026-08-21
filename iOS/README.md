@@ -272,7 +272,7 @@ xcrun simctl launch booted com.kirupa.markdown-editor
 macOS/Scripts/run-tests.sh
 ```
 
-317 tests in 23 suites. The suite covers the shared package, so it exercises
+329 tests in 24 suites. The suite covers the shared package, so it exercises
 the iOS build's entire Markdown engine — the iOS layer above it is views.
 
 Around one in six is property-based rather than example-based: they run
@@ -314,7 +314,8 @@ output. See `macOS/README.md` §16.2 for what each kind of test is for and
 
 | Change | Summary |
 | --- | --- |
-| Expand the regression net | 317 shared tests across 23 suites, up from 244 across 16. The new suites are property-based: every formatting command over every corpus selection, every prefix and suffix of the corpus through the renderer and the styler, all sixteen palettes held to WCAG contrast, and a byte-exact read/write path. All of it is shared code, so it covers this build's engine as much as the Mac's. |
+| Keep typing responsive on an illustrated document | Local images are decoded once and kept in memory rather than re-read on every keystroke. The cache is in the shared package, so this build gets it too: a document of forty photo-sized references styled in 65.7 ms per character on the Mac and now styles in 4.0 ms. Keyed on modification date and size, so a picture edited elsewhere is never drawn stale, and it releases everything under memory pressure — which matters more here than on the Mac. |
+| Expand the regression net | 329 shared tests across 24 suites, up from 244 across 16. The new suites are property-based: every formatting command over every corpus selection, every prefix and suffix of the corpus through the renderer and the styler, all sixteen palettes held to WCAG contrast, and a byte-exact read/write path. All of it is shared code, so it covers this build's engine as much as the Mac's. |
 | Stop the editor jumping while typing | Re-styling the rendered pane no longer loses the reader's place. Assigning `attributedText` resets `contentOffset`, so the offset is now carried across the assignment, using the same `EditorScrollGeometry` rules the Mac uses. |
 | Draw images held at a web address | An `https://` image renders as the real picture instead of a placeholder glyph, and can now be measured for proportional resizing. Verified on a booted simulator: two remote images drawn, a broken address still a placeholder. |
 | Share the Swift core between platforms | `Shared/` package; AppKit's Generic RGB blending reproduced portably; `themes.css` verified byte-identical |

@@ -334,6 +334,33 @@ image also supplies the natural size, so an address can be resized
 proportionally like a local file; before it loads there is no shape to preserve,
 which is the same "not loaded" case the sizing rules above already describe.
 
+### Drawing an image kept beside the document
+
+A browser gets this free: `<img src="notes.assets/photo.png">` is decoded once
+by the engine and redrawn from its own cache. A native build that rebuilds the
+document's attachments on every keystroke does not, and re-reads and re-decodes
+every picture on the page per character. Measured on macOS with forty
+photo-sized references: 65.7 ms per keystroke against 1.1 ms for the same text
+without images — about 15 fps, felt as lag rather than seen as a glitch.
+
+Shared between macOS and iOS in `LocalImageStore`. A port needs four rules:
+
+| Rule | Why |
+| --- | --- |
+| Decode once and keep it | The whole point. Styling an illustrated document should cost about what styling its prose costs. |
+| Key on modification date **and size**, not the path | A picture edited in another app must not go on drawing its old self. Size is in the key because a timestamp is coarse enough that a generated or scripted image can be rewritten inside the same second. A `stat` costs a microsecond against a decode's millisecond, so checking every lookup is worth it. |
+| Cost entries by pixel area, and evict | An image is far larger decoded than compressed — a 34 MB photo is roughly 48 MB of pixels — so a count-based limit budgets nothing. This cache evicts, unlike the remote one, because a long illustrated document could otherwise hold more memory than the rest of the app. Eviction only costs a re-read. |
+| Give the memory back under pressure | A text editor should hand a hundred megabytes of decoded pictures back to the OS long before the machine swaps. `NSCache` does this by itself; a port hand-rolling a dictionary has to do it deliberately. |
+
+Two traps worth inheriting, both of which produced tests that passed against a
+broken cache. Reading a file's modification date and setting it back does **not**
+round-trip — the filesystem keeps nanoseconds a `Date` does not reproduce — so a
+test that tries to hold the timestamp still while changing the content proves
+nothing about the size half of the key; pin both writes to an explicit whole
+second instead. And asserting that a cost function returns the right number says
+nothing about whether that number ever reaches the cache: size a cache for one
+image and add two.
+
 ### Reading the paths fixture
 
 `paths.json` is a flat list of calls. Each case names a `function`, its

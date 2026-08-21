@@ -429,7 +429,7 @@ public enum RichMarkdownStyler {
         guard imageURL.path.hasPrefix(directoryPrefix) else {
             return nil
         }
-        return PlatformImage.markdownImage(contentsOf: imageURL)
+        return LocalImageStore.shared.image(at: imageURL)
     }
 
     private static func paragraphStyle(
