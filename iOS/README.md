@@ -252,6 +252,13 @@ installs — so on a machine where those are missing the asset catalog is skippe
 and the script says so explicitly rather than producing a silently icon-less
 app. Building through Xcode always compiles it.
 
+It also copies any `<Package>_<Target>.bundle` the shared package emitted into
+the bundle root, which is where `Bundle.module` looks on iOS — an app bundle
+there is flat, with no `Contents/Resources`. Nothing declares `resources:`
+today, so this copies nothing; see `macOS/README.md` §16 for why it is worth
+having in advance. The Xcode project handles this itself, so this only matters
+on the no-Xcode path.
+
 | Variable | Default | Effect |
 | --- | --- | --- |
 | `MDE_XCODE` | `/Applications/Xcode.app/Contents/Developer` | Where to find the iOS SDK |
@@ -314,6 +321,7 @@ output. See `macOS/README.md` §16.2 for what each kind of test is for and
 
 | Change | Summary |
 | --- | --- |
+| Ship resources if a target ever declares one | Both no-Xcode build scripts now copy the `<Package>_<Target>.bundle` SwiftPM emits for a target with `resources:` — into `Contents/Resources` on the Mac, the bundle root on iOS, which is where `Bundle.module` looks on each. Nothing declares a resource today, so both copy nothing; a target that gained one would previously have built and signed cleanly and trapped on launch. Verified by temporarily giving `MarkdownEditorUI` a resource and confirming it reached both apps. |
 | Keep typing responsive on an illustrated document | Local images are decoded once and kept in memory rather than re-read on every keystroke. The cache is in the shared package, so this build gets it too: a document of forty photo-sized references styled in 65.7 ms per character on the Mac and now styles in 4.0 ms. Keyed on modification date and size, so a picture edited elsewhere is never drawn stale, and it releases everything under memory pressure — which matters more here than on the Mac. |
 | Expand the regression net | 329 shared tests across 24 suites, up from 244 across 16. The new suites are property-based: every formatting command over every corpus selection, every prefix and suffix of the corpus through the renderer and the styler, all sixteen palettes held to WCAG contrast, and a byte-exact read/write path. All of it is shared code, so it covers this build's engine as much as the Mac's. |
 | Stop the editor jumping while typing | Re-styling the rendered pane no longer loses the reader's place. Assigning `attributedText` resets `contentOffset`, so the offset is now carried across the assignment, using the same `EditorScrollGeometry` rules the Mac uses. |

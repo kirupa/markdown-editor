@@ -711,6 +711,16 @@ make install
 `Packaging/Info.plist` and the two `.icns` files, lints the plist, code-signs ad
 hoc, and verifies the signature with `codesign --verify --deep --strict`.
 
+It also copies any `<Package>_<Target>.bundle` SwiftPM left beside the
+executable into `Contents/Resources`, which is where `Bundle.module` looks. No
+shared target declares `resources:` today, so this copies nothing — that is the
+point of it. The first target to gain a resource, or the first dependency that
+ships one, would otherwise build and sign cleanly and then trap on launch
+inside the generated `Bundle.module`, with nothing in the build output naming
+the cause. `iOS/Scripts/build-app.sh` does the same, into the bundle root,
+because an iOS app bundle is flat. Both were checked by temporarily giving
+`MarkdownEditorUI` a resource and confirming it arrived in each app.
+
 `Scripts/install-app.sh` replaces any existing `/Applications/Markdown
 Editor.app`, unregisters the `build/` copy, and registers the installed one with
 `lsregister`. Set `INSTALL_DIR` to install somewhere else. Use `make run` for
@@ -911,6 +921,7 @@ a performance one.
 
 | Change | Summary |
 | --- | --- |
+| Ship resources if a target ever declares one | Both no-Xcode build scripts now copy the `<Package>_<Target>.bundle` SwiftPM emits for a target with `resources:` — into `Contents/Resources` on the Mac, the bundle root on iOS, which is where `Bundle.module` looks on each. Nothing declares a resource today, so both copy nothing; a target that gained one would previously have built and signed cleanly and trapped on launch. Verified by temporarily giving `MarkdownEditorUI` a resource and confirming it reached both apps. |
 | Keep typing responsive on an illustrated document | Local images are decoded once and kept in memory instead of being re-read from disk on every keystroke. A document of forty photo-sized references styled in 65.7 ms per character, about 15 fps; it now styles in 4.0 ms. The cache is keyed on modification date and size, so a picture edited in another app is read again rather than drawn stale, and it is costed by pixel area against a 192 MB ceiling so an illustrated document cannot outgrow the rest of the app. |
 | Stop the idle pane drifting on every keystroke | The split no longer nudges the pane you are not typing in. Catching a pane up with its neighbour is meant to happen when it joins the split, but it ran on every SwiftUI update — twice per keystroke — and it applies a normalized fraction between panes of different heights, so it is not idempotent. Measured at 40 unwanted moves over 20 keystrokes, now 0. `make check-session` compiles the real session against recording panes and asserts which pane may move which. |
 | Stop the panes jumping while typing in the preview | Typing in the rendered pane no longer makes the split jump. Re-styling replaces the whole text storage on every keystroke, and AppKit announces an intermediate selection while it does — measured 19,681 characters from the real caret. Both panes published that as though the writer had moved the caret, so the other pane scrolled most of the way down the document and back on every character. Selection changes made during a re-style are now suppressed, and the settled selection is published once the re-style finishes. iOS already guarded this; only the macOS panes did not. |

@@ -93,6 +93,15 @@ DEVELOPER_DIR="$TOOLCHAIN" "$TOOLCHAIN/usr/bin/swiftc" \
 
 # 3. The bundle.
 cp "$ROOT/Resources/Info.plist" "$APP_DIR/Info.plist"
+
+# Any resource bundle the shared package emitted. An iOS app bundle is flat,
+# so `Bundle.module` looks for these beside the executable rather than in a
+# Resources folder. No shared target declares `resources:` today, so this
+# copies nothing — see the same loop in ../macOS/Scripts/build-app.sh for why
+# it is worth having anyway.
+while IFS= read -r bundle; do
+  cp -R "$bundle" "$APP_DIR/"
+done < <(find "$SHARED_BIN" -maxdepth 1 -type d -name '*.bundle')
 plutil -replace CFBundleExecutable -string "$EXECUTABLE_NAME" \
   "$APP_DIR/Info.plist"
 plutil -replace MinimumOSVersion -string "$DEPLOYMENT_TARGET" \
