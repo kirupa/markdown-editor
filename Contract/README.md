@@ -160,6 +160,24 @@ Defined in `Shared/Sources/MarkdownEditorCloud/CloudNode.swift` and
 `Web/public/app/cloud/`. A document is refused above 900,000 bytes, below
 Firestore's 1 MiB per-document cap.
 
+**Count those 900,000 in UTF-8 bytes, not characters, and enforce it in the
+client.** Every port has to, because neither of the two server-side limits
+substitutes for it:
+
+- The rule in `firestore.rules` reads `text.size() < 900000`, and the rules
+  language has no byte-length function — `size()` on a string counts
+  *characters*. Measured against the real engine: 500,000 accented characters
+  (1,000,000 UTF-8 bytes) are accepted by the rules.
+- Firestore's own limit is a hard 1,048,487 bytes per property, and a write past
+  it fails with `400 INVALID_ARGUMENT` — **not** the `403 PERMISSION_DENIED` a
+  client can read as "you are signed out". 600,000 accented characters land
+  exactly there: inside the character limit, outside the byte cap.
+
+So a client counting characters has a band of documents that pass its own check,
+pass the rules, and then fail with an error meaning something else entirely.
+Counting UTF-8 bytes at 900,000 is strictly stricter than both and closes it.
+Verified by `Web/firebase/run-rules-checks.sh`.
+
 ### Where image bytes live
 
 Not in Firestore. A Firestore document is capped at 1 MiB and base64 inflates a
@@ -597,6 +615,17 @@ real project**, because only Google sign-in is enabled and a token for it cannot
 be minted headlessly. Every cloud test on every build runs against an in-memory
 double. A port should treat the cloud path as written-and-conformant rather than
 proven, and the first real sign-in is the moment to watch for.
+
+**The rules themselves are now an exception to that**, and a port should use the
+same escape hatch. `Web/firebase/run-rules-checks.sh` puts 29 checks through
+Firebase's own rules engine in the emulators, including both deny-by-default
+catch-alls and all three limits from either side of their edge, with thirteen
+mutants killed. The Auth emulator issues ID tokens to anybody, so the
+Google-only constraint above does not apply there — it never applied to the
+emulators, which is worth stating plainly because this document previously
+described the rules as unverifiable on the strength of it. They are language-
+neutral HTTP checks against a `demo-` project, so a Windows port can run the
+same script against the same two files and needs no .NET equivalent.
 
 Re-checked on 6 August 2026, with the commands to repeat the checks, in
 [Web/README.md § 11b](../Web/README.md#setup-steps-that-cannot-be-done-from-this-repository).

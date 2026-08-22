@@ -1,0 +1,33 @@
+{
+  "_comment": [
+    "Lets the Firebase CLI find the rules beside it, so the deploy commands in",
+    "the comments at the top of each .rules file work from this directory:",
+    "",
+    "  firebase deploy --only firestore:rules",
+    "  firebase deploy --only storage",
+    "",
+    "and so `Scripts/run-rules-checks.sh` can start the emulators and evaluate",
+    "the rules with Firebase's own engine rather than a transcription of them.",
+    "",
+    "The emulators need no project of their own: the checks run under a project",
+    "id beginning with `demo-`, which the CLI treats as offline-only and never",
+    "reaches the network for.",
+    "",
+    "Ports are deliberately not the defaults. The defaults collide with the PHP",
+    "preview server and the CDP port the browser harnesses use, and a check",
+    "that fails because something else answered is worse than no check."
+  ],
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "storage": {
+    "rules": "storage.rules"
+  },
+  "emulators": {
+    "auth": { "port": 9481, "host": "127.0.0.1" },
+    "firestore": { "port": 8481, "host": "127.0.0.1" },
+    "storage": { "port": 9581, "host": "127.0.0.1" },
+    "ui": { "enabled": false },
+    "singleProjectMode": true
+  }
+}

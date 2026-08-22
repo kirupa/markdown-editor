@@ -497,7 +497,15 @@ Honest limits on the testing behind this section:
   SDK is actually exported by it ([WY-14](#tests)) — a real check now, run by
   `Web/tools/check-firebase-sdk.mjs`, rather than the one-off inspection this
   previously described.
-- What *is* verified: the pinned SDK loads and initialises against this project,
+- What *is* verified: the rules themselves, by Firebase's own engine in the
+  emulators ([WY-17](#tests)) — 29 checks, thirteen mutants killed. That closes
+  the gap this section described for several revisions as unclosable. It was
+  recorded as blocked on the live project having only Google sign-in enabled,
+  which is true and is beside the point: the emulators run the same engine on
+  the same files and hand out tokens freely. The block was never tested, only
+  assumed.
+- What *is* verified besides: the pinned SDK loads and initialises against this
+  project,
   the store adapter builds against a real Firestore handle, the backend answers
   `config()` identically to the local one, and the cloud backend passes 30 tests
   against an in-memory Firestore that enforces the same query semantics —
@@ -749,6 +757,7 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 | Open `/tests/` in a browser | The full client suite, including the DOM tests. Needs only PHP. |
 | `node Web/tests/run.mjs` | The same client suites minus the DOM ones, plus the rules-conformance suite, which reads the `.rules` files and so cannot run in the browser. Node is optional and used only for a fast terminal loop. |
 | `php Web/tests/php/run.php` | Workspace path safety, document read/write, file tree, file management, image import and its content validation, and how settings are read from the environment. |
+| `Web/firebase/run-rules-checks.sh` | The security rules, evaluated by Firebase's own engine in the emulators ([WY-17](#tests)). Needs a JDK and the Firebase CLI, so it is not part of the suite. |
 | `node Web/tools/check-firebase-sdk.mjs` | Every symbol the app imports from the pinned Firebase build is actually exported by it. Needs the network, so it is not part of the suite; run it after changing `FIREBASE_VERSION`. |
 
 | ID | Requirement |
@@ -769,6 +778,8 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 | WY-14 | The pinned Firebase build is checked against the symbols the app imports from it, by `Web/tools/check-firebase-sdk.mjs`. This is the one failure the suite structurally cannot reach: every cloud test runs against an in-memory double, deliberately, so the real SDK is never loaded and a symbol it stopped exporting would pass everything and break only in a browser after signing in. The symbol list is read out of `app/cloud/` rather than written down, so it cannot drift from what the app does — 23 symbols across auth, Firestore, and Storage at the time of writing. Mutation tested: adding an import the SDK does not export makes it fail. |
 | WY-15 | **The in-memory Firestore refuses what the published rules refuse**, so every write in every test is checked against them rather than only against what the client needs. Before the rules were published any write passed, which meant a write the server would reject could pass the entire suite — and the rules were published against code that was already written and already tested. Mutation tested: dropping `parent` from a folder write turns 10 tests red, and renaming the `asset` type to one the rules do not list turns 7 red. |
 | WY-16 | **The transcription of the rules is checked against the rules files themselves**, because a transcription that drifts from its source reports conformance that is no longer being checked. The type list, the required fields, both size limits, the image-size *comparison operator*, and the deny-by-default catch-all are all read out of `Web/firebase/*.rules` at test time. Mutation tested: changing the text limit, loosening the image comparison to `<=`, or opening the catch-all each turns the suite red. |
+| WY-17 | **The rules are also evaluated, not only transcribed.** [WY-16](#tests) checks that the numbers in `Web/firebase/*.rules` still match the client's; it cannot check whether a rule does what it says. `Web/firebase/run-rules-checks.sh` starts the Firestore, Storage and Auth emulators and puts 29 checks through Firebase's own rules engine over plain HTTP — no test library and no Firebase SDK, so the no-dependencies rule ([WY-3](#tests)) still holds. It covers ownership in both directions, every required field, every accepted and rejected node type, both deny-by-default catch-alls, and each of the three limits *from both sides of its edge*, which is the class of defect a transcription cannot reach. Mutation tested: thirteen mutants — loosening a `<` to `<=` in any of the three limits, dropping an ownership clause, removing the type allow-list, narrowing `create, update` to `create`, and opening either catch-all — are each killed, against a green control. |
+| WY-18 | The rule checks sign in through the **Auth emulator**, which issues ID tokens to anyone that asks. This is the whole reason they exist: the live project has only the Google provider enabled ([WR-20](#setup-steps-that-cannot-be-done-from-this-repository)), so a script cannot obtain a token for it, and for several revisions that was recorded here as making the rules unverifiable. It made them unverifiable *against the live project*. The emulators run the same engine on the same files under a `demo-` project id, which the CLI never takes to the network. |
 
 ---
 
@@ -776,6 +787,7 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 
 | Change | What shipped |
 | --- | --- |
+| Rules evaluated, not just transcribed | The security rules are now checked by Firebase's own engine in the emulators — 29 checks, thirteen mutants killed ([WY-17](#tests), `Web/firebase/run-rules-checks.sh`). This had been recorded for several revisions as impossible because the live project allows only Google sign-in; the Auth emulator hands out tokens freely, and the constraint had never actually been tested. It found one thing no transcription could: past Firestore's 1,048,487-byte property cap a write fails `400 INVALID_ARGUMENT` rather than `403`, and because the rules count *characters* it is the client's UTF-8 **byte** check that keeps documents out of that band ([Contract/README.md](../Contract/README.md#the-firestore-data-model)). |
 | Remote images on the native builds | An image referenced by web address drew as a placeholder glyph on macOS and iOS, because only local files were ever loaded. Both now download and draw it. **The web build was never affected** — a browser loads `<img src>` itself — so nothing here changed, but the rules the native builds now follow are written down in [Contract/README.md](../Contract/README.md#drawing-an-image-held-at-a-web-address) so a fourth port does not repeat the bug. |
 | Sized images and insert by address | Add Image now asks first: browse for a file, or paste a web address. A selected image can be given a width and a height that stay in proportion. A size is written as `<img …>` because GitHub renders `![alt](a.png =300x200)` as literal text — see [Contract/README.md](../Contract/README.md#how-an-image-carries-a-size) for the evidence. Shipped on all three builds in the same change; the shared core is byte-identical, so a document sized on a phone opens sized in a browser. |
 | Rules published | The Firestore and Storage rules are live, so the database is no longer readable by anyone with the API key ([WR-19](#setup-steps-that-cannot-be-done-from-this-repository)). Publishing them made one latent disagreement reachable: the web build accepted an image of exactly 10 MB that the rule refuses ([WR-31](#11b-cloud-storage-and-accounts)). The in-memory Firestore now enforces the rules on every write, and the transcription is checked against the rules files themselves ([WY-15](#tests), [WY-16](#tests)). |

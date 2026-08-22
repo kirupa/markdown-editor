@@ -15,3 +15,7 @@ xcuserdata/
 # checkout; these cover the in-tree fallback and the older sample folder.
 /Web/kirupaMarkdown/**
 /Web/workspace/**
+
+# Firebase emulator logs, written beside firebase.json whenever the rules
+# checks run.
+/Web/firebase/*-debug.log
