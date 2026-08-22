@@ -724,7 +724,7 @@ make install
 | `make icons` | Regenerates `Packaging/AppIcon.icns` and `Packaging/MarkdownDocument.icns` |
 | `make test` | Runs the unit test suite |
 | `make check-scroll` | Drives real AppKit text views and asserts the "never jump" scroll rules |
-| `make check-session` | Compiles the real split-pane session against recording panes and asserts which pane may move which |
+| `make check-session` | Compiles the real session against recording panes: which pane may move which, and what happens when another app rewrites the open file |
 | `make clean` | Cleans the package build directory and removes `build/` |
 
 `Scripts/build-app.sh` builds the executable, assembles the bundle from
@@ -906,7 +906,18 @@ target, which no test target can import, so it went untested for a long time.
 That is how E-28 got in. `Scripts/run-session-checks.sh` compiles the real app
 sources, minus the `@main` entry point, together with
 `Scripts/check-session.swift`, linking against the object files SPM has already
-built for the shared package. 15 checks.
+built for the shared package. 30 checks.
+
+Fifteen of those cover the split panes. The other fifteen cover [§5.6](#56-changes-made-by-another-app),
+against real files in a temporary directory rather than a double: the harness
+writes to them the way a real editor saves — a temporary file renamed over the
+target — because that is the case a naive watcher gets wrong. Two suites, one
+for changes made by another app (noticed, applied, named and undoable, the
+banner's state, a *second* write still noticed, a clash not applied silently,
+autosave held, Keep Mine resuming it, Reload from Disk) and one for the inverse,
+that the app's own saves are never mistaken for somebody else's (an announced
+save, an unannounced save that matches the screen, an event arriving late, and
+a genuine change still reported afterwards).
 
 What the checks pin down is the distinction the bug turned on: `attach` is
 called from SwiftUI's `updateNSView`, which runs for **both** panes on **every
@@ -934,6 +945,19 @@ and the two panes render the same text at different heights, so re-applying it
 is not idempotent — each repetition drags the idle pane further out of step.
 That is why "it runs more often than needed" was a correctness bug rather than
 a performance one.
+
+The external-change half is mutation-tested too: neutering the branch that
+recognises an unannounced save by its matching the screen fails 2, and making
+`isSavingSuspended` always `false` fails 1. Each kills exactly the checks it
+should, and the control passes 30/30 restored.
+
+One limit, stated plainly because the harness is easy to mistake for more than
+it is: **§5.6 has never been watched working in the running app.** These checks
+drive the real session object against real files, which is the strongest thing
+available without a screen, but they do not draw the banner, and nothing has
+confirmed that AppKit delivers the events to a window the way it does to a test
+process. What is verified is the decision, the monitor, the wiring from the
+session, and the effect on the document's text and undo stack.
 
 ---
 

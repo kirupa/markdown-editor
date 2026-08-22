@@ -400,7 +400,17 @@ deliberately broken address kept the placeholder glyph. That is the whole of the
 bug: before this change all three looked like the third one.
 
 **Still not verified:** the photo picker and Files import (both need a real
-picker), drag to resize, and the theme sheet. Nothing has run on real hardware.
+picker), drag to resize, the theme sheet, and noticing a change made by another
+app (ID-48 – ID-53). Nothing has run on real hardware.
+
+On that last one, plainly: the shared decision, the watcher, and the banner are
+covered by the shared suite, and this build compiles and bundles with them
+wired in — but no one has watched a file change underneath a running iOS app.
+The foreground re-check (ID-49) is the part most worth exercising on a device,
+because it depends on `scenePhase` arriving the way the simulator suggests it
+does. The macOS build of the same feature *is* exercised end to end against
+real files, by `macOS/Scripts/check-session.swift`; that harness covers the
+shared logic both builds use, but not this build's wiring to it.
 
 One environment note: a freshly created simulator raised *Unable to Import
 Document (com.apple.DocumentManager error 1)* and showed *Content Unavailable*
