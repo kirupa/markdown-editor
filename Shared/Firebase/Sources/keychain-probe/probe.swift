@@ -59,6 +59,28 @@ enum Probe {
             exit(0)
         } catch {
             print("FAIL \(error)")
+
+            // The throw happens while *persisting* the session, so it does not
+            // by itself say the sign-in never happened. If the network half
+            // completed and only the keychain write failed, `currentUser`
+            // would still be usable for this launch — which would mean cloud
+            // support is reachable with a "sign in every launch" limitation
+            // rather than being blocked outright. Very different products, so
+            // ask rather than assume.
+            if let current = Auth.auth().currentUser {
+                print("NOTE a user survived the failure, uid=\(current.uid)")
+                do {
+                    let token = try await current.getIDToken()
+                    print("NOTE and it still issues a token, \(token.count) characters")
+                    print("=> sign-in works; only persistence across launches does not.")
+                } catch {
+                    print("NOTE but it cannot issue a token: \(error)")
+                    print("=> the session is not usable.")
+                }
+            } else {
+                print("NOTE no user survived the failure.")
+                print("=> the sign-in is lost entirely, not merely unpersisted.")
+            }
             exit(1)
         }
     }

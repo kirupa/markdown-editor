@@ -1037,6 +1037,20 @@ parameter, and no environment variable. Those two lines are the entire surface,
 and they are not configurable. Worth writing down so the next person does not
 spend an afternoon looking for a flag that does not exist.
 
+And one more hope, since the failure happens while *persisting* the session
+rather than while authenticating: if the network half of sign-in completed and
+only the keychain write failed, `currentUser` would still be usable for the
+current launch. That would be a very different product — cloud support with a
+"sign in every launch" limitation, rather than no cloud support — so it is
+worth asking rather than assuming. The probe checks `currentUser` after the
+throw, and:
+
+    NOTE no user survived the failure.
+    => the sign-in is lost entirely, not merely unpersisted.
+
+FirebaseAuth treats the keychain write as part of the sign-in transaction and
+unwinds the whole thing. There is no degraded mode to fall back to.
+
 #### What would actually settle it
 
 What it needs is a **real signing identity** — one whose provisioning profile
@@ -1080,7 +1094,7 @@ async `@main` instead.
 
 | Change | Summary |
 | --- | --- |
-| Narrow the keychain blocker to the keychain, not the signature | The three `-34018` failures said something was missing but not what, so a second Firebase-free probe (`keychain-kind`) writes the same item to both macOS keychains from one process. The ad-hoc-signed bundle writes to the **file-based keychain** perfectly well and is refused only by the **data-protection** one — so the signature was never the problem. Adding `com.apple.security.app-sandbox`, the one relevant *unrestricted* entitlement, does not help either, which rules out the only fix that would have needed no Apple account. FirebaseAuth cannot be redirected: it sets `kSecUseDataProtectionKeychain` unconditionally at both of the two places it builds a query. Sharpens the open question in [§16.7](#167-firebaseauth-cannot-sign-in-from-a-build-this-repository-can-produce) from "does signing help" to "does a Personal Team profile grant a keychain access group". |
+| Narrow the keychain blocker to the keychain, not the signature | The three `-34018` failures said something was missing but not what, so a second Firebase-free probe (`keychain-kind`) writes the same item to both macOS keychains from one process. The ad-hoc-signed bundle writes to the **file-based keychain** perfectly well and is refused only by the **data-protection** one — so the signature was never the problem. Adding `com.apple.security.app-sandbox`, the one relevant *unrestricted* entitlement, does not help either, which rules out the only fix that would have needed no Apple account. FirebaseAuth cannot be redirected: it sets `kSecUseDataProtectionKeychain` unconditionally at both of the two places it builds a query. And there is no degraded "sign in every launch" mode to fall back on — no `currentUser` survives the throw, so the sign-in is lost rather than merely unpersisted. Sharpens the open question in [§16.7](#167-firebaseauth-cannot-sign-in-from-a-build-this-repository-can-produce) from "does signing help" to "does a Personal Team profile grant a keychain access group". |
 | Establish why native cloud sign-in is blocked | FirebaseAuth cannot sign in from any build this repository can produce: it needs the macOS data-protection keychain, whose entitlement is restricted and must be authorized by a provisioning profile. Measured three ways — bare executable, ad-hoc-signed `.app`, and an `.app` claiming the entitlement, which is SIGKILLed at exec. Corrects [NG-3](#22-non-goals) and the root README, both of which named the Firebase console step as the only thing outstanding. See [§16.7](#167-firebaseauth-cannot-sign-in-from-a-build-this-repository-can-produce). |
 | Verify the native Firestore adapter against a real Firestore | `Shared/Firebase/run-emulator-checks.sh` runs `FirestoreNodeStore` against an emulated Firestore — 31 checks over field names, the subtree filter, batch atomicity, listener delivery, and per-account isolation. Closes the half of NG-3 that said the cloud path had never been exercised on any native build; the sign-in UI and the Firebase console step remain. See [§16.6](#166-the-native-firestore-adapter-is-verified-against-a-real-firestore). |
 | Ship resources if a target ever declares one | Both no-Xcode build scripts now copy the `<Package>_<Target>.bundle` SwiftPM emits for a target with `resources:` — into `Contents/Resources` on the Mac, the bundle root on iOS, which is where `Bundle.module` looks on each. Nothing declares a resource today, so both copy nothing; a target that gained one would previously have built and signed cleanly and trapped on launch. Verified by temporarily giving `MarkdownEditorUI` a resource and confirming it reached both apps. |
