@@ -77,7 +77,7 @@ welcome window offers recent documents at launch.
 | --- | --- |
 | NG-1 | Being a general-purpose CommonMark or GitHub Flavored Markdown reference implementation. |
 | NG-2 | Exporting to HTML, PDF, or other formats. |
-| NG-3 | ~~Cloud sync, collaboration, or multi-user editing.~~ **No longer a non-goal, and blocked rather than merely unbuilt.** The stated direction for the product is cloud-first with local copies for offline use, which the web build already implements. A Firebase adapter lives in `Shared/Firebase/`, compiles for macOS, and is verified against a real Firestore ([§16.6](#166-the-native-firestore-adapter-is-verified-against-a-real-firestore)) — but **nothing in this app reaches it**, and a sign-in screen would not work if it did. FirebaseAuth cannot sign in from any build this repository can produce: it needs the macOS data-protection keychain, whose entitlement is restricted and has to be authorized by a provisioning profile, which ad-hoc signing cannot supply ([§16.7](#167-firebaseauth-cannot-sign-in-from-a-build-this-repository-can-produce)). So the order is: a real signing identity, then registering an Apple app in the Firebase console (see the root README), then the UI. Multi-user editing of one document remains a non-goal. |
+| NG-3 | ~~Cloud sync, collaboration, or multi-user editing.~~ **No longer a non-goal, and blocked rather than merely unbuilt.** The stated direction for the product is cloud-first with local copies for offline use, which the web build already implements. A Firebase adapter lives in `Shared/Firebase/`, compiles for macOS, and is verified against a real Firestore ([§16.6](#166-the-native-firestore-adapter-is-verified-against-a-real-firestore)) — but **nothing in this app reaches it**, and a sign-in screen would not work if it did. FirebaseAuth cannot sign in from any build this repository can produce: it needs the macOS data-protection keychain, whose entitlement is restricted and has to be authorized by a provisioning profile, which ad-hoc signing cannot supply ([§16.7](#167-firebaseauth-cannot-sign-in-from-a-build-this-repository-can-produce)). The blocker is that *keychain* and not the signature — the same ad-hoc bundle writes to the file-based keychain without complaint — and FirebaseAuth asks for the data-protection one unconditionally, so it cannot be redirected. So the order is: a real signing identity, then registering an Apple app in the Firebase console (see the root README), then the UI. Multi-user editing of one document remains a non-goal. |
 | NG-4 | Plugin or extension support. |
 | NG-5 | ~~iOS, iPadOS, or cross-platform support.~~ **Superseded.** This row described the app when it was the only one. There is now an iOS app (`iOS/`), a browser build (`Web/`), a brief for a Windows one (`Windows/`), and a language-neutral fixture set (`Contract/`) that holds them to the same behaviour. What survives of the intent is narrower and still true: this target is native macOS, and nothing here is compromised to make it portable. |
 
@@ -999,23 +999,64 @@ So there is no arrangement of bundle, identifier, and ad-hoc signature that
 works, and presenting the entitlement the error asks for makes it worse rather
 than better — the process does not reach `main`.
 
-This is the real gate on native cloud support, and it is a larger one than the
-Firebase console step that was previously recorded as the only blocker.
+#### What exactly is refusing us
+
+This is the real gate on native cloud support, and a larger one than the
+Firebase console step previously recorded as the only blocker. Three identical failures say something is missing, but not *what*, and the two
+candidate causes have very different fixes: if an ad-hoc signature cannot reach
+the keychain **at all**, only an Apple account will do; if only the
+data-protection keychain refuses, the fix might be to ask for the other one and
+need no account at all. macOS has two — the legacy file-based keychain, which
+has no entitlement requirement, and the data-protection keychain, opted into
+per query with `kSecUseDataProtectionKeychain`.
+
+`keychain-kind` writes the same item to both, from one process, so the only
+difference between the two calls is that flag. It is Security-framework only —
+no Firebase, no emulator, no network — so it re-runs against any signature in a
+second:
+
+| Signature | Data-protection | File-based |
+| --- | --- | --- |
+| Ad-hoc-signed `.app` | `-34018` | **writes and reads back** |
+| Ad-hoc + `com.apple.security.app-sandbox` | `-34018` | **writes and reads back** |
+
+**The signature is not the problem.** The same bundle that FirebaseAuth cannot
+use is perfectly able to persist a keychain item; it is the data-protection
+keychain specifically that is closed. The sandbox row is there because
+`app-sandbox` is the one relevant entitlement that is *not* restricted — ad-hoc
+signing can grant it, and a sandboxed app gets an implicit keychain access
+group. If that group were sufficient, native sign-in would need no Apple account
+whatsoever. It is not sufficient.
+
+That leaves the obvious question: if the file-based keychain works, can
+FirebaseAuth be pointed at it? **No.** It sets
+`kSecUseDataProtectionKeychain = true` unconditionally, at both of the two
+places it builds a query — `AuthKeychainServices.genericPasswordQuery` and
+`AuthStoredUserManager.keychainQuery` — with no option, no initializer
+parameter, and no environment variable. Those two lines are the entire surface,
+and they are not configurable. Worth writing down so the next person does not
+spend an afternoon looking for a flag that does not exist.
+
+#### What would actually settle it
 
 What it needs is a **real signing identity** — one whose provisioning profile
-can authorize the entitlement. Precisely how much of an Apple account that
-takes is **not measured here**, and the difference matters enough not to
-guess: Xcode's automatic signing issues a development certificate from a
-*Personal Team* for a free Apple ID, which may well be enough for a local
-build, and a paid Apple Developer Program membership certainly is. This
-machine has neither — `security find-identity -v -p codesigning` reports zero
-identities and there are no provisioning profiles — so the signed case could
+can authorize the entitlement. The probes above narrow what such a test has to
+grant: not a signature as such, but a **keychain access group** for the
+data-protection keychain.
+
+Precisely how much of an Apple account that takes is **not measured here**, and
+the difference matters enough not to guess: Xcode's automatic signing issues a
+development certificate from a *Personal Team* for a free Apple ID, which may
+well be enough for a local build, and a paid Apple Developer Program membership
+certainly is. This machine has neither — `security find-identity -v -p
+codesigning` reports zero identities and there are no provisioning profiles —
+so the signed case could
 not be tried, and this section will not claim an answer it does not have.
 
 What *is* measured is that no amount of ad-hoc signing works, which is what
-[P-4](#3-platform-and-technical-requirements) currently specifies. Somebody
-with a signing identity should re-run the script before any of this is built
-on.
+[P-4](#3-platform-and-technical-requirements) currently specifies, and that the
+blocker is the keychain kind rather than the signature. Somebody with a signing
+identity should re-run the script before any of this is built on.
 
 What is *not* affected: `FirestoreNodeStore` itself, which needs no keychain
 and is verified in [§16.6](#166-the-native-firestore-adapter-is-verified-against-a-real-firestore).
@@ -1039,6 +1080,7 @@ async `@main` instead.
 
 | Change | Summary |
 | --- | --- |
+| Narrow the keychain blocker to the keychain, not the signature | The three `-34018` failures said something was missing but not what, so a second Firebase-free probe (`keychain-kind`) writes the same item to both macOS keychains from one process. The ad-hoc-signed bundle writes to the **file-based keychain** perfectly well and is refused only by the **data-protection** one — so the signature was never the problem. Adding `com.apple.security.app-sandbox`, the one relevant *unrestricted* entitlement, does not help either, which rules out the only fix that would have needed no Apple account. FirebaseAuth cannot be redirected: it sets `kSecUseDataProtectionKeychain` unconditionally at both of the two places it builds a query. Sharpens the open question in [§16.7](#167-firebaseauth-cannot-sign-in-from-a-build-this-repository-can-produce) from "does signing help" to "does a Personal Team profile grant a keychain access group". |
 | Establish why native cloud sign-in is blocked | FirebaseAuth cannot sign in from any build this repository can produce: it needs the macOS data-protection keychain, whose entitlement is restricted and must be authorized by a provisioning profile. Measured three ways — bare executable, ad-hoc-signed `.app`, and an `.app` claiming the entitlement, which is SIGKILLed at exec. Corrects [NG-3](#22-non-goals) and the root README, both of which named the Firebase console step as the only thing outstanding. See [§16.7](#167-firebaseauth-cannot-sign-in-from-a-build-this-repository-can-produce). |
 | Verify the native Firestore adapter against a real Firestore | `Shared/Firebase/run-emulator-checks.sh` runs `FirestoreNodeStore` against an emulated Firestore — 31 checks over field names, the subtree filter, batch atomicity, listener delivery, and per-account isolation. Closes the half of NG-3 that said the cloud path had never been exercised on any native build; the sign-in UI and the Firebase console step remain. See [§16.6](#166-the-native-firestore-adapter-is-verified-against-a-real-firestore). |
 | Ship resources if a target ever declares one | Both no-Xcode build scripts now copy the `<Package>_<Target>.bundle` SwiftPM emits for a target with `resources:` — into `Contents/Resources` on the Mac, the bundle root on iOS, which is where `Bundle.module` looks on each. Nothing declares a resource today, so both copy nothing; a target that gained one would previously have built and signed cleanly and trapped on launch. Verified by temporarily giving `MarkdownEditorUI` a resource and confirming it reached both apps. |

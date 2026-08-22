@@ -23,7 +23,8 @@ let package = Package(
     products: [
         .library(name: "MarkdownEditorFirebase", targets: ["MarkdownEditorFirebase"]),
         .executable(name: "firebase-emulator-check", targets: ["firebase-emulator-check"]),
-        .executable(name: "keychain-probe", targets: ["keychain-probe"])
+        .executable(name: "keychain-probe", targets: ["keychain-probe"]),
+        .executable(name: "keychain-kind", targets: ["keychain-kind"])
     ],
     dependencies: [
         .package(path: ".."),
@@ -75,6 +76,11 @@ let package = Package(
                 "MarkdownEditorFirebase",
                 .product(name: "FirebaseAuth", package: "firebase-ios-sdk")
             ]
-        )
+        ),
+        // Narrows what `keychain-probe` finds: whether the refusal is the
+        // signature or the *keychain kind*. Security framework only — no
+        // Firebase, no emulator, no network — so it can be re-run against any
+        // signature in a second. Also run by Scripts/check-keychain.sh.
+        .executableTarget(name: "keychain-kind")
     ]
 )

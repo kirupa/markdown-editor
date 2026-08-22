@@ -13,9 +13,11 @@
 # work on a build that anyone can produce from this repository, so it is worth
 # an answer rather than an assumption.
 #
-# Runs the same sign-in twice: once as the bare executable, once from inside a
-# bundle signed the way build-app.sh signs the app. The comparison is the
-# point, so both are always run and both results are printed.
+# Runs the same sign-in three ways — bare, ad-hoc-signed bundle, and a bundle
+# claiming the entitlement — and then narrows *what* is refusing us with a
+# fourth, Firebase-free probe that writes to each of the two macOS keychains,
+# under both an ad-hoc and an ad-hoc-plus-sandbox signature. The comparisons
+# are the point, so everything is always run and every result is printed.
 #
 #     Shared/Firebase/Scripts/check-keychain.sh
 #
@@ -45,9 +47,11 @@ c = json.loads(pathlib.Path('$REPO/Web/firebase/firebase.json').read_text())
 print(c['emulators']['auth']['port'])
 ")"
 
-printf 'Building the probe…\n'
+printf 'Building the probes…\n'
 swift build --package-path "$ROOT" --product keychain-probe >/dev/null || exit 1
+swift build --package-path "$ROOT" --product keychain-kind >/dev/null || exit 1
 BIN="$(swift build --package-path "$ROOT" --show-bin-path)/keychain-probe"
+KIND_BIN="$(swift build --package-path "$ROOT" --show-bin-path)/keychain-kind"
 
 # The bundle is assembled here rather than by build-app.sh because it needs to
 # hold *this* probe, not the app. Everything that could plausibly matter to the
@@ -110,6 +114,41 @@ firebase emulators:exec --project demo-kirupa-markdown --only auth "
   echo \"exit \$? (137 is SIGKILL)\"
 " 2>&1 | grep -vE '^(i  |✔  |⚠  )'
 
+# Which keychain, and is the signature even the problem? The three runs above
+# all fail the same way, which says something is missing but not what. This
+# writes to both macOS keychains from one process, under two signatures — plain
+# ad-hoc, and ad-hoc plus `app-sandbox`. The sandbox case is worth its own run
+# because, unlike `keychain-access-groups`, the sandbox entitlement is *not*
+# restricted: ad-hoc signing can grant it, and a sandboxed app gets an implicit
+# keychain access group. If that group were enough, native sign-in would need
+# no Apple account at all.
+kind_bundle() { # <dir> <entitlements-or-empty>
+  mkdir -p "$1/Contents/MacOS"
+  cp "$KIND_BIN" "$1/Contents/MacOS/Probe"
+  cp "$APP/Contents/Info.plist" "$1/Contents/Info.plist"
+  if [ -n "$2" ]; then
+    codesign --force --deep --sign - --timestamp=none --entitlements "$2" "$1" 2>/dev/null
+  else
+    codesign --force --deep --sign - --timestamp=none "$1" 2>/dev/null
+  fi
+}
+cat > "$WORK/sandbox.entitlements" <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.app-sandbox</key><true/>
+</dict>
+</plist>
+XML
+kind_bundle "$WORK/Kind.app" ""
+kind_bundle "$WORK/KindSandboxed.app" "$WORK/sandbox.entitlements"
+
+printf '\n--- which keychain, from an ad-hoc-signed .app ---\n'
+"$WORK/Kind.app/Contents/MacOS/Probe"
+printf '\n--- which keychain, ad-hoc + app-sandbox ---\n'
+"$WORK/KindSandboxed.app/Contents/MacOS/Probe"
+
 # The case that is not covered above, and the one that would actually settle
 # whether native cloud sign-in is reachable. Signing it properly needs an
 # identity *and* a provisioning profile authorizing the entitlement for this
@@ -119,6 +158,9 @@ printf '\n--- properly signed ---\n'
 IDENTITIES="$(security find-identity -v -p codesigning 2>/dev/null | grep -c '^ *[0-9]*)')"
 if [ "${IDENTITIES:-0}" -eq 0 ]; then
   printf 'not tested: this machine has no code-signing identity.\n'
+  printf 'The probes above narrow what such a test would have to grant: not a\n'
+  printf 'signature as such, but a keychain access group for the\n'
+  printf 'data-protection keychain, which comes from a provisioning profile.\n'
   printf 'If you have signed into Xcode with an Apple ID, a Personal Team\n'
   printf 'certificate may be enough. Build the app through Xcode with\n'
   printf 'automatic signing and Keychain Sharing enabled, and see whether\n'
