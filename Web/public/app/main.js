@@ -964,10 +964,16 @@ async function start() {
   restartLiveUpdates();
 
   // W-1: honor an explicit ?path= first, then the launch preference.
+  //
+  // A visitor who has never chosen where documents are saved is shown the
+  // welcome screen even if the launch preference is off, because the fallback
+  // they would otherwise land in silently is a workspace anyone reaching this
+  // page can edit. Turning the preference off says "don't show me this again",
+  // which is not the same as "decide for me".
   const requested = new URLSearchParams(window.location.search).get('path');
   if (requested) {
     await openDocument(requested);
-  } else if (recentDocuments.showAtLaunch) {
+  } else if (recentDocuments.showAtLaunch || !storage.chosen) {
     welcome.show();
   } else {
     richSurface.focus();

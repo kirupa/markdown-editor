@@ -16,6 +16,7 @@ import {
   offsetForPosition,
   positionForOffset,
 } from '../app/dom-text.js';
+import { rememberedMode, preferredMode, LOCAL, CLOUD } from '../app/storage.js';
 
 function host() {
   const element = document.createElement('div');
@@ -169,5 +170,48 @@ suite('Source DOM', () => {
     expectEqual(element.querySelectorAll('.me-src-code').length, 3);
     expectEqual(element.querySelectorAll('[class*="me-src-quote"]').length, 0);
     element.remove();
+  });
+});
+
+/**
+ * Where a first-time visitor's documents go (WR-1).
+ *
+ * `rememberedMode()` reads `window.localStorage`, so it is only testable where
+ * there is a real one — under node the key is unreadable and every assertion
+ * about it passes trivially. It is tested here because the distinction it
+ * draws carries the whole fallback rule: collapse "has not chosen" onto
+ * "chose the server" and the editor stops asking, and quietly starts everyone
+ * in a workspace anyone reaching the page can edit.
+ */
+suite('Remembered storage mode', () => {
+  const KEY = 'markdown-editor.storageMode';
+  const withStored = (value, body) => {
+    const previous = localStorage.getItem(KEY);
+    try {
+      if (value === null) localStorage.removeItem(KEY);
+      else localStorage.setItem(KEY, value);
+      body();
+    } finally {
+      if (previous === null) localStorage.removeItem(KEY);
+      else localStorage.setItem(KEY, previous);
+    }
+  };
+
+  test('a visitor who has never chosen is distinguishable from one who chose local', () => {
+    withStored(null, () => expectEqual(rememberedMode(), null));
+    withStored(LOCAL, () => expectEqual(rememberedMode(), LOCAL));
+    withStored(CLOUD, () => expectEqual(rememberedMode(), CLOUD));
+  });
+
+  test('an unrecognised value counts as never having chosen', () => {
+    withStored('something-else', () => expectEqual(rememberedMode(), null));
+    withStored('', () => expectEqual(rememberedMode(), null));
+  });
+
+  test('preferredMode still answers local for a visitor who has not chosen', () => {
+    withStored(null, () => expectEqual(preferredMode(), LOCAL));
+    withStored(CLOUD, () => expectEqual(preferredMode(), CLOUD));
+    expect(rememberedMode() !== preferredMode() || localStorage.getItem(KEY) !== null,
+      'the two only agree once a choice exists');
   });
 });

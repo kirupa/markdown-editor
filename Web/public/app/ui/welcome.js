@@ -10,7 +10,7 @@ import * as saved from '../core/saved-documents.js';
 import { showError } from './dialogs.js';
 import {
   scopedKey, storageMode, isCloud, useLocal, useCloud, signOutAndUseLocal,
-  currentAccount, CLOUD,
+  storageChoices, CLOUD,
 } from '../storage.js';
 
 // Read through `scopedKey`, never directly: the same path names a different
@@ -149,37 +149,22 @@ export class WelcomeScreen {
     heading.textContent = 'Where documents are saved';
     section.append(heading);
 
-    const account = currentAccount();
     const cloudActive = isCloud();
 
     const options = document.createElement('div');
     options.className = 'me-storage';
 
-    options.append(
-      this.buildStorageOption({
-        active: cloudActive,
-        recommended: true,
-        title: account && cloudActive ? `Cloud — ${account.email || account.name}` : 'Your Google account',
-        detail: cloudActive
-          ? 'Synced to every device you sign in on.'
-          : 'Sign in to reach the same documents on every device.',
-        label: cloudActive ? 'Sign out' : 'Connect Google account',
-        action: async () => {
-          if (cloudActive) await signOutAndUseLocal();
-          else await useCloud();
-        },
-      }),
-      this.buildStorageOption({
-        active: !cloudActive,
-        recommended: false,
-        title: `On this server — ${this.workspaceName}`,
-        detail: cloudActive
-          ? 'Shared by everyone who visits this address.'
-          : 'Kept on the machine serving this page.',
-        label: cloudActive ? 'Use local files' : null,
-        action: async () => { useLocal(); },
-      })
-    );
+    for (const choice of storageChoices({ workspaceName: this.workspaceName })) {
+      options.append(this.buildStorageOption({
+        ...choice,
+        action: choice.id === CLOUD
+          ? async () => {
+            if (cloudActive) await signOutAndUseLocal();
+            else await useCloud();
+          }
+          : async () => { useLocal(); },
+      }));
+    }
 
     section.append(options);
     return section;
