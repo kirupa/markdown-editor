@@ -22,7 +22,8 @@ let package = Package(
     ],
     products: [
         .library(name: "MarkdownEditorFirebase", targets: ["MarkdownEditorFirebase"]),
-        .executable(name: "firebase-emulator-check", targets: ["firebase-emulator-check"])
+        .executable(name: "firebase-emulator-check", targets: ["firebase-emulator-check"]),
+        .executable(name: "keychain-probe", targets: ["keychain-probe"])
     ],
     dependencies: [
         .package(path: ".."),
@@ -61,6 +62,18 @@ let package = Package(
                 "MarkdownEditorFirebase",
                 .product(name: "MarkdownEditorCloud", package: "Shared"),
                 .product(name: "FirebaseFirestore", package: "firebase-ios-sdk")
+            ]
+        ),
+        // Whether an ad-hoc-signed .app can sign in with FirebaseAuth at all.
+        // A one-off answer to a one-off question, kept because the answer is
+        // load-bearing: it cannot, and that gates native cloud support more
+        // tightly than the Firebase console step does. Run by
+        // Scripts/check-keychain.sh; see macOS/README.md §16.7.
+        .executableTarget(
+            name: "keychain-probe",
+            dependencies: [
+                "MarkdownEditorFirebase",
+                .product(name: "FirebaseAuth", package: "firebase-ios-sdk")
             ]
         )
     ]

@@ -77,7 +77,7 @@ welcome window offers recent documents at launch.
 | --- | --- |
 | NG-1 | Being a general-purpose CommonMark or GitHub Flavored Markdown reference implementation. |
 | NG-2 | Exporting to HTML, PDF, or other formats. |
-| NG-3 | ~~Cloud sync, collaboration, or multi-user editing.~~ **No longer a non-goal, and not yet built.** The stated direction for the product is now cloud-first with local copies for offline use, which the web build already implements. A Firebase adapter for the native builds lives in `Shared/Firebase/` and compiles for macOS, but **nothing in this app reaches it** — there is no sign-in, no cloud document list, and no cloud open or save, so the app on disk today is exactly as local as this row used to promise. The adapter itself is now verified against a real Firestore (see [§16.6](#166-the-native-firestore-adapter-is-verified-against-a-real-firestore)), so what remains is the user-facing half plus one console step: an Apple app has to be registered in the Firebase console before sign-in can succeed at all (see the root README). Multi-user editing of one document remains a non-goal. |
+| NG-3 | ~~Cloud sync, collaboration, or multi-user editing.~~ **No longer a non-goal, and blocked rather than merely unbuilt.** The stated direction for the product is cloud-first with local copies for offline use, which the web build already implements. A Firebase adapter lives in `Shared/Firebase/`, compiles for macOS, and is verified against a real Firestore ([§16.6](#166-the-native-firestore-adapter-is-verified-against-a-real-firestore)) — but **nothing in this app reaches it**, and a sign-in screen would not work if it did. FirebaseAuth cannot sign in from any build this repository can produce: it needs the macOS data-protection keychain, which needs a restricted entitlement, which needs a provisioning profile and an Apple Developer Program team ([§16.7](#167-firebaseauth-cannot-sign-in-from-a-build-this-repository-can-produce)). So the order is: an Apple Developer signing identity, then registering an Apple app in the Firebase console (see the root README), then the UI. Multi-user editing of one document remains a non-goal. |
 | NG-4 | Plugin or extension support. |
 | NG-5 | ~~iOS, iPadOS, or cross-platform support.~~ **Superseded.** This row described the app when it was the only one. There is now an iOS app (`iOS/`), a browser build (`Web/`), a brief for a Windows one (`Windows/`), and a language-neutral fixture set (`Contract/`) that holds them to the same behaviour. What survives of the intent is narrower and still true: this target is native macOS, and nothing here is compromised to make it portable. |
 
@@ -971,10 +971,63 @@ exits 2 with a hint if either is missing.
 
 ---
 
+### 16.7 FirebaseAuth cannot sign in from a build this repository can produce
+
+`Shared/Firebase/Scripts/check-keychain.sh` answers one question, and the
+answer decides whether a cloud sign-in screen is worth building at all.
+
+FirebaseAuth persists its session to the macOS **data-protection keychain**,
+which requires the `keychain-access-groups` entitlement. That entitlement is
+*restricted*: it has to be authorized by a provisioning profile, and a
+provisioning profile requires an Apple Developer Program team. Ad-hoc signing
+— which is what [P-4](#3-platform-and-technical-requirements) specifies and
+what `Scripts/build-app.sh` does — cannot grant one.
+
+The obvious hope was that this was a property of an unbundled binary rather
+than of the app, since `firebase-emulator-check` is a bare SwiftPM executable
+and the shipping app is a signed bundle with an identifier. It is not. The
+script runs the same `signInAnonymously()` three ways against the Auth
+emulator, and prints all three because the comparison is the point:
+
+| Form | Result |
+| --- | --- |
+| Bare executable | `SecItemAdd (-34018)`, "a required entitlement isn't present" |
+| Ad-hoc-signed `.app`, exactly as `build-app.sh` signs it | the same `-34018` |
+| `.app` claiming `keychain-access-groups`, ad-hoc signed | **SIGKILL at exec**, exit 137 |
+
+So there is no arrangement of bundle, identifier, and ad-hoc signature that
+works, and presenting the entitlement the error asks for makes it worse rather
+than better — the process does not reach `main`.
+
+This is the real gate on native cloud support, and it is a larger one than the
+Firebase console step that was previously recorded as the only blocker. The
+console step is a few minutes of clicking; this one requires a paid Apple
+Developer Program membership, and until there is one, a sign-in screen would
+fail for everyone who builds this app from source, including its author.
+
+What is *not* affected: `FirestoreNodeStore` itself, which needs no keychain
+and is verified in [§16.6](#166-the-native-firestore-adapter-is-verified-against-a-real-firestore).
+The plumbing is sound; it is the front door that cannot open. Nor is the web
+build affected, which does not use the Apple SDK.
+
+The probe is kept rather than deleted because the finding is load-bearing and
+re-deriving it is slow. It is not part of `make test` — it needs a JDK and the
+Firebase CLI, and it is a one-off answer to a one-off question.
+
+One trap worth recording, since it cost an hour: the first version of the probe
+blocked the main thread on a semaphore while waiting for FirebaseAuth's
+completion handler, which is delivered **on the main queue**. That deadlocks,
+and a deadlock presents as a hung network call — the stack shows a live
+`NSURLConnectionLoader` thread and nothing about keychains. The probe uses an
+async `@main` instead.
+
+---
+
 ## 17. Release history
 
 | Change | Summary |
 | --- | --- |
+| Establish why native cloud sign-in is blocked | FirebaseAuth cannot sign in from any build this repository can produce: it needs the macOS data-protection keychain, whose entitlement is restricted to holders of an Apple Developer Program provisioning profile. Measured three ways — bare executable, ad-hoc-signed `.app`, and an `.app` claiming the entitlement, which is SIGKILLed at exec. Corrects [NG-3](#22-non-goals) and the root README, both of which named the Firebase console step as the only thing outstanding. See [§16.7](#167-firebaseauth-cannot-sign-in-from-a-build-this-repository-can-produce). |
 | Verify the native Firestore adapter against a real Firestore | `Shared/Firebase/run-emulator-checks.sh` runs `FirestoreNodeStore` against an emulated Firestore — 31 checks over field names, the subtree filter, batch atomicity, listener delivery, and per-account isolation. Closes the half of NG-3 that said the cloud path had never been exercised on any native build; the sign-in UI and the Firebase console step remain. See [§16.6](#166-the-native-firestore-adapter-is-verified-against-a-real-firestore). |
 | Ship resources if a target ever declares one | Both no-Xcode build scripts now copy the `<Package>_<Target>.bundle` SwiftPM emits for a target with `resources:` — into `Contents/Resources` on the Mac, the bundle root on iOS, which is where `Bundle.module` looks on each. Nothing declares a resource today, so both copy nothing; a target that gained one would previously have built and signed cleanly and trapped on launch. Verified by temporarily giving `MarkdownEditorUI` a resource and confirming it reached both apps. |
 | Keep typing responsive on an illustrated document | Local images are decoded once and kept in memory instead of being re-read from disk on every keystroke. A document of forty photo-sized references styled in 65.7 ms per character, about 15 fps; it now styles in 4.0 ms. The cache is keyed on modification date and size, so a picture edited in another app is read again rather than drawn stale, and it is costed by pixel area against a 192 MB ceiling so an illustrated document cannot outgrow the rest of the app. |
