@@ -21,7 +21,8 @@ let package = Package(
         .iOS(.v17)
     ],
     products: [
-        .library(name: "MarkdownEditorFirebase", targets: ["MarkdownEditorFirebase"])
+        .library(name: "MarkdownEditorFirebase", targets: ["MarkdownEditorFirebase"]),
+        .executable(name: "firebase-emulator-check", targets: ["firebase-emulator-check"])
     ],
     dependencies: [
         .package(path: ".."),
@@ -45,6 +46,22 @@ let package = Package(
         .testTarget(
             name: "MarkdownEditorFirebaseTests",
             dependencies: ["MarkdownEditorFirebase"]
+        ),
+        // The adapter itself, against an emulated Firestore. Not a test target
+        // because it needs an emulator running and would otherwise fail
+        // `swift test` on a machine without one; `run-emulator-checks.sh`
+        // starts one and runs this.
+        //
+        // No FirebaseAuth: it cannot sign in from a plain executable on macOS,
+        // and the checks do not need it. See the comment at the top of
+        // Sources/firebase-emulator-check/main.swift.
+        .executableTarget(
+            name: "firebase-emulator-check",
+            dependencies: [
+                "MarkdownEditorFirebase",
+                .product(name: "MarkdownEditorCloud", package: "Shared"),
+                .product(name: "FirebaseFirestore", package: "firebase-ios-sdk")
+            ]
         )
     ]
 )

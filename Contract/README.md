@@ -650,6 +650,20 @@ Firestore's 500-write batch limit — it accepted 613 in one batch — so a
 functional test cannot catch a chunk size that production would refuse. Assert
 the constant directly.
 
+Every point above has since been reproduced by a **second, independent SDK** —
+the Swift one, in `Shared/Firebase/run-emulator-checks.sh`. That matters for a
+port: these were previously observations about how the JavaScript client
+behaves, and two clients agreeing makes them observations about Firestore. The
+one place the two builds deliberately differ is the name in the source, not the
+name on the wire — Swift's `CloudNode.kind` is stored as `type`, because `type`
+is what the rules validate and what the web build writes. A port should expect
+to make the same split.
+
+A practical note for a native check: the listener case cannot be tested with
+one client. A client is not delivered its own write at all, so the write has to
+come from a genuinely separate client instance, not merely a separate store
+object sharing one connection.
+
 Re-checked on 6 August 2026, with the commands to repeat the checks, in
 [Web/README.md § 11b](../Web/README.md#setup-steps-that-cannot-be-done-from-this-repository).
 The console work itself is done.

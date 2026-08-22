@@ -19,6 +19,7 @@ xcuserdata/
 # Firebase emulator logs, written beside firebase.json whenever the rules
 # checks run.
 /Web/firebase/*-debug.log
+/Shared/Firebase/emulator/*-debug.log
 
 # The Firebase SDK, fetched from the CDN so the emulator checks can import it
 # from node. Re-fetched on demand and keyed by the pinned version.

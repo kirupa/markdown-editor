@@ -77,7 +77,7 @@ welcome window offers recent documents at launch.
 | --- | --- |
 | NG-1 | Being a general-purpose CommonMark or GitHub Flavored Markdown reference implementation. |
 | NG-2 | Exporting to HTML, PDF, or other formats. |
-| NG-3 | ~~Cloud sync, collaboration, or multi-user editing.~~ **No longer a non-goal, and not yet built.** The stated direction for the product is now cloud-first with local copies for offline use, which the web build already implements. A Firebase adapter for the native builds lives in `Shared/Firebase/` and compiles for macOS, but **nothing in this app reaches it** — there is no sign-in, no cloud document list, and no cloud open or save, so the app on disk today is exactly as local as this row used to promise. Two things gate the work, in order: an Apple app has to be registered in the Firebase console before sign-in can succeed at all (see the root README), and the cloud path has never been exercised against the real project on any build. Multi-user editing of one document remains a non-goal. |
+| NG-3 | ~~Cloud sync, collaboration, or multi-user editing.~~ **No longer a non-goal, and not yet built.** The stated direction for the product is now cloud-first with local copies for offline use, which the web build already implements. A Firebase adapter for the native builds lives in `Shared/Firebase/` and compiles for macOS, but **nothing in this app reaches it** — there is no sign-in, no cloud document list, and no cloud open or save, so the app on disk today is exactly as local as this row used to promise. The adapter itself is now verified against a real Firestore (see [§16.6](#166-the-native-firestore-adapter-is-verified-against-a-real-firestore)), so what remains is the user-facing half plus one console step: an Apple app has to be registered in the Firebase console before sign-in can succeed at all (see the root README). Multi-user editing of one document remains a non-goal. |
 | NG-4 | Plugin or extension support. |
 | NG-5 | ~~iOS, iPadOS, or cross-platform support.~~ **Superseded.** This row described the app when it was the only one. There is now an iOS app (`iOS/`), a browser build (`Web/`), a brief for a Windows one (`Windows/`), and a language-neutral fixture set (`Contract/`) that holds them to the same behaviour. What survives of the intent is narrower and still true: this target is native macOS, and nothing here is compromised to make it portable. |
 
@@ -917,10 +917,65 @@ a performance one.
 
 ---
 
+### 16.6 The native Firestore adapter is verified against a real Firestore
+
+`Shared/Firebase/run-emulator-checks.sh` runs `FirestoreNodeStore` against an
+emulated Firestore. 31 checks.
+
+The Swift suite covers the cloud *decisions* — path arithmetic, subtree moves,
+collisions — against an in-memory double, which is what keeps it fast and
+offline. What a double cannot answer is whether the adapter speaks Firestore
+correctly, and that is what these cover: the field names it writes (`type`, not
+`kind` — the Swift property and the stored field deliberately differ, because
+the field name is what `firestore.rules` validates and what the web build
+writes), whether the range query in `subtree` needs its separator filter,
+whether a batch is atomic, and whether a listener fires.
+
+It runs **unauthenticated**, against permissive rules in
+`Shared/Firebase/emulator/`, for two reasons.
+
+The first is forced. FirebaseAuth persists its session to the macOS
+data-protection keychain, which requires the `keychain-access-groups`
+entitlement. That entitlement is restricted — it needs a provisioning profile,
+so ad-hoc signing cannot grant it, and a binary that claims it anyway is
+SIGKILLed at exec. A SwiftPM executable therefore cannot sign in at all;
+`signInAnonymously()` fails with `SecItemAdd (-34018)`.
+
+The second is that it should have been this way regardless. The rules are one
+artifact shared by every client and are already verified by
+`Web/firebase/check-rules.mjs` against the real rules engine, cross-account
+refusals included. Asserting them here too would test Google's rules evaluator
+twice and this adapter zero times. `FirestoreNodeStore` takes a uid as a plain
+string and puts it in the document path, so the collection paths exercised are
+the shipped ones with no one signed in — and one check covers the adapter's own
+half of that separation, that a second uid cannot name the first one's
+documents.
+
+Two findings came out of writing it. The listener check needs a **second
+Firebase client**, not just a second store: `watchNode` drops any snapshot with
+`hasPendingWrites`, and a listener without `includeMetadataChanges` gets no
+further snapshot when the server acknowledges a write whose data has not
+changed, so a client cannot observe its own write at all. A check that wrote
+through the same store would have been testing nothing. That behaviour is what
+the sync policy rests on, so it is now asserted in both directions rather than
+assumed. And the batch check forces its refusal with Firestore's own
+1,048,487-byte property limit rather than a rules violation, so it keeps
+working whatever the rules say.
+
+Mutation-tested: dropping the separator filter fails 2, renaming the `parent`
+field fails 1, renaming `type` fails 1, dropping the uid from the document path
+fails 1, and removing the local-echo guard fails 1. A reworded comment survives.
+
+Needs a JDK and the Firebase CLI, so it is not part of `make test`; the script
+exits 2 with a hint if either is missing.
+
+---
+
 ## 17. Release history
 
 | Change | Summary |
 | --- | --- |
+| Verify the native Firestore adapter against a real Firestore | `Shared/Firebase/run-emulator-checks.sh` runs `FirestoreNodeStore` against an emulated Firestore — 31 checks over field names, the subtree filter, batch atomicity, listener delivery, and per-account isolation. Closes the half of NG-3 that said the cloud path had never been exercised on any native build; the sign-in UI and the Firebase console step remain. See [§16.6](#166-the-native-firestore-adapter-is-verified-against-a-real-firestore). |
 | Ship resources if a target ever declares one | Both no-Xcode build scripts now copy the `<Package>_<Target>.bundle` SwiftPM emits for a target with `resources:` — into `Contents/Resources` on the Mac, the bundle root on iOS, which is where `Bundle.module` looks on each. Nothing declares a resource today, so both copy nothing; a target that gained one would previously have built and signed cleanly and trapped on launch. Verified by temporarily giving `MarkdownEditorUI` a resource and confirming it reached both apps. |
 | Keep typing responsive on an illustrated document | Local images are decoded once and kept in memory instead of being re-read from disk on every keystroke. A document of forty photo-sized references styled in 65.7 ms per character, about 15 fps; it now styles in 4.0 ms. The cache is keyed on modification date and size, so a picture edited in another app is read again rather than drawn stale, and it is costed by pixel area against a 192 MB ceiling so an illustrated document cannot outgrow the rest of the app. |
 | Stop the idle pane drifting on every keystroke | The split no longer nudges the pane you are not typing in. Catching a pane up with its neighbour is meant to happen when it joins the split, but it ran on every SwiftUI update — twice per keystroke — and it applies a normalized fraction between panes of different heights, so it is not idempotent. Measured at 40 unwanted moves over 20 keystrokes, now 0. `make check-session` compiles the real session against recording panes and asserts which pane may move which. |
