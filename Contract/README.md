@@ -627,6 +627,29 @@ described the rules as unverifiable on the strength of it. They are language-
 neutral HTTP checks against a `demo-` project, so a Windows port can run the
 same script against the same two files and needs no .NET equivalent.
 
+**So is the data path.** `Web/firebase/run-cloud-checks.sh` runs the web
+build's real store against an emulated Firestore. Three results a port should
+take as given rather than rediscover:
+
+- The range query in `subtreeOf` **does** over-match. `path >= 'Notes'` and
+  `path < 'Notes\uf8ff'` returns `Notes 2/Out.md` and `Notes.md` as well.
+  Confirmed by issuing the bare range and looking. Filter on a separator
+  afterwards or renaming a folder will drag its similarly named siblings along.
+- A batch is **atomic**: one write that breaks the rules refuses the whole
+  batch, including the valid writes beside it. The create-before-delete
+  ordering depends on that, and it holds.
+- A local write reaches its own listener **not at all**, provided the snapshot
+  carrying `hasPendingWrites` is skipped. There is no second, confirmed
+  snapshot to wait for — a listener without `includeMetadataChanges` is not
+  woken merely because a write was acknowledged, since the data did not
+  change. A port that skips the pending snapshot and then expects a confirmed
+  one will hang waiting for it.
+
+One caveat for whoever runs these: the emulator does **not** enforce
+Firestore's 500-write batch limit — it accepted 613 in one batch — so a
+functional test cannot catch a chunk size that production would refuse. Assert
+the constant directly.
+
 Re-checked on 6 August 2026, with the commands to repeat the checks, in
 [Web/README.md § 11b](../Web/README.md#setup-steps-that-cannot-be-done-from-this-repository).
 The console work itself is done.

@@ -76,9 +76,13 @@ export async function createFirestoreNodeStore(uid) {
    * a local write the server has not confirmed", so it is the precise signal
    * to skip, and it costs nothing to check.
    *
-   * The server's own echo of the same write arrives later with the flag
-   * cleared. That one is not skipped here — it is indistinguishable from
-   * another device sending identical text, so it is compared by content
+   * The server's acknowledgement of that write does *not* arrive as a second
+   * snapshot: a listener without `includeMetadataChanges` is not woken merely
+   * because a write was confirmed, since the document's data did not change.
+   * Measured against a real Firestore in `Web/firebase/check-cloud.mjs`, a
+   * local write reaches the listener not at all. What does arrive later is a
+   * genuine change from another device, which is indistinguishable from
+   * another device sending identical text and so is compared by content
    * upstream, where the current text is known.
    */
   const isLocalEcho = (snapshot) => snapshot.metadata.hasPendingWrites;
