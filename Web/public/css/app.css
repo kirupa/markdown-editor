@@ -451,10 +451,67 @@ body {
 
 .me-editor {
   display: flex;
+  flex-direction: column;
   flex: 1;
   min-width: 0;
   min-height: 0;
   background: var(--me-page-background);
+}
+
+/* The panes are a row inside the editor's column so that a notice can sit
+   above both of them and push them down rather than cover them. */
+.me-editor__panes {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* WC-10. Says the document was changed by something else. A bar rather than a
+   dialog: it is very often not urgent, and a dialog would have to be dismissed
+   before the document it is talking about could be looked at. */
+.me-notice {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--me-border);
+  background: color-mix(in srgb, var(--me-accent) 12%, var(--me-page-background));
+  font-size: 13px;
+  color: var(--me-text);
+}
+
+.me-notice[hidden] { display: none; }
+
+.me-notice[data-kind="conflict"] {
+  background: color-mix(in srgb, #d97706 16%, var(--me-page-background));
+}
+
+.me-notice__text { flex: 1; min-width: 0; }
+
+.me-notice__actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.me-notice__button {
+  padding: 4px 10px;
+  border: 1px solid var(--me-border);
+  border-radius: 6px;
+  background: var(--me-page-background);
+  color: var(--me-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.me-notice__button:hover { border-color: var(--me-accent); }
+
+.me-notice__button--primary {
+  border-color: var(--me-accent);
+  color: var(--me-accent);
+  font-weight: 600;
 }
 
 .me-pane {

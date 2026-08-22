@@ -17,7 +17,9 @@ struct DocumentEditorView: View {
 
     @EnvironmentObject private var themeStore: EditorThemeStore
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var controller = EditorController()
+    @StateObject private var externalChange = ExternalChangeWatcher()
 
     @State private var photoItem: PhotosPickerItem?
     @State private var isShowingPhotoPicker = false
@@ -122,6 +124,12 @@ struct DocumentEditorView: View {
                 canSizeImage: imageAtSelection() != nil
             )
             Divider()
+            ExternalChangeBanner(
+                state: externalChange.state,
+                colorTheme: theme,
+                onReload: { reloadFromDisk() },
+                onKeepMine: { externalChange.resolveByKeepingMine() }
+            )
             editors
         }
         .background(Color(platformColor: theme.canvasBackgroundColor))
@@ -174,6 +182,43 @@ struct DocumentEditorView: View {
         } message: {
             Text(controller.errorMessage ?? "")
         }
+        .onAppear { externalChange.start(url: documentURL, text: document.text) }
+        .onDisappear { externalChange.stop() }
+        .onChange(of: documentURL) { _, newURL in
+            externalChange.start(url: newURL, text: document.text)
+        }
+        .onChange(of: document.text) { _, newText in
+            externalChange.noteEditorText(newText)
+        }
+        .onChange(of: externalChange.state) { _, state in
+            guard case .reloadPending(let text) = state else { return }
+            adopt(text)
+            externalChange.acknowledgeReload()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // The event that matters most on iOS. The app is suspended in the
+            // background, so a change made in Files or on another device while
+            // it was away produced no event anybody was listening for.
+            guard phase == .active else { return }
+            externalChange.recheck()
+        }
+    }
+
+    /// Replaces the document with a revision from elsewhere, keeping the caret
+    /// somewhere sensible rather than at the top.
+    private func adopt(_ text: String) {
+        let selection = MarkdownTextDifference.mappedSelection(
+            controller.selection,
+            from: document.text,
+            to: text
+        )
+        document.text = text
+        controller.selection = selection
+    }
+
+    private func reloadFromDisk() {
+        guard let text = externalChange.resolveByReloading() else { return }
+        adopt(text)
     }
 
     @ViewBuilder

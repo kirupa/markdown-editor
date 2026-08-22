@@ -92,7 +92,7 @@ export const localBackend = {
   },
 
   /**
-   * WC-4: no live updates here, by design.
+   * WC-7: no live updates here, by design.
    *
    * A change channel needs the server to push, and this backend is a PHP
    * script that only answers requests. The alternative — polling `api.php` on

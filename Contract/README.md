@@ -519,6 +519,55 @@ shape of the problem is different again — assigning `attributedText` resets
 `contentOffset` outright — so a port should establish what its own toolkit does
 rather than assume this one transfers.
 
+### Noticing that the file changed underneath the editor
+
+Any build that saves on a timer needs this, and the naive version is worse than
+not having it. The decision is a pure function of three strings and belongs in
+the portable core:
+
+```
+detect(editorText, lastKnownDiskText, diskText):
+    if diskText == lastKnownDiskText:  none        # our own write
+    if diskText == editorText:         none        # our own write, unannounced
+    if editorText == lastKnownDiskText: reloadable # nothing here is at stake
+    otherwise:                          conflict   # both hold work
+```
+
+`lastKnownDiskText` is whatever this app last read out of the file or wrote
+into it. Comparing the file against **that** rather than against the text on
+screen is the whole trick, and each branch rules out one specific way of
+crying wolf:
+
+1. Autosave writes *A*, somebody types on to *AB*, and only then does the write
+   event arrive. At read time the file genuinely differs from the screen with
+   nobody else involved. Branch 1 catches it; comparing against the screen
+   would report every autosave as somebody else's change.
+2. A save that goes through the platform's own document machinery never gets to
+   announce itself. The only evidence those bytes are ours is that they match
+   the screen — that is branch 2, and without it every manual save raises a
+   false alarm.
+
+Two things about the watcher, both learned the hard way:
+
+- **Atomic replacement.** Nearly everything — other editors, `git`, `mv` —
+  writes a temporary file and renames it over the target. That unlinks the
+  inode a file descriptor is holding, so a watcher registered on the descriptor
+  reports the first external save and is **deaf forever after**. That is worse
+  than having no watcher, because it looks like it works. Watch for
+  rename/delete as well as write, and re-arm on the *path*, tolerating the
+  window where nothing is there yet. Test it with two consecutive replacements:
+  the bug only shows on the second.
+- **Suspend saving while a conflict is unanswered.** Otherwise the notice is
+  pointless — the timer overwrites the other app's version seconds after
+  pointing it out. If the platform's document system cannot be held off (iOS
+  cannot), keep the incoming text in memory so it stays reachable, and say so.
+
+Reference: `Shared/Sources/MarkdownEditorCore/ExternalDocumentChange.swift` and
+`Shared/Sources/MarkdownEditorUI/FileChangeMonitor.swift`, with the wiring
+asserted end to end by `macOS/Scripts/check-session.swift`. The web build
+reaches the same outcome from a different direction — it has no file to watch,
+so it re-reads the document whenever the tab comes back to the front.
+
 ### What is deliberately per-platform
 
 Not everything is a requirement. These differ between the existing builds on

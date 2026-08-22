@@ -9,6 +9,10 @@ final class DocumentAutosaveController: ObservableObject {
     private var generation = 0
     private var hasPendingSave = false
 
+    /// Called just before each write, so whatever watches the file can tell
+    /// this app's saves from another app's.
+    var onSave: (() -> Void)?
+
     func scheduleSave(for fileURL: URL?) {
         generation += 1
         let scheduledGeneration = generation
@@ -57,6 +61,10 @@ final class DocumentAutosaveController: ObservableObject {
             return
         }
 
+        // Recorded before the write rather than after it: `NSDocument` takes
+        // its snapshot of the text synchronously here, while the completion
+        // handler runs later, by which time somebody may have typed on.
+        onSave?()
         document.save(
             to: standardizedURL,
             ofType: document.fileType ?? UTType.markdownDocument.identifier,

@@ -559,11 +559,13 @@ suite('Keeping the watchers pointed at what is on screen', () => {
     setBackend(backend);
     const model = new MarkdownDocumentModel();
     const messages = [];
+    const conflicts = [];
 
     const stop = startLiveUpdates({
       model,
       explorer: stubExplorer([]),
       notify: (message) => messages.push(message),
+      onConflict: (revision) => conflicts.push(revision),
       onDocumentChanged: () => {},
     });
 
@@ -573,7 +575,11 @@ suite('Keeping the watchers pointed at what is on screen', () => {
     model.isDirty = true;
     model.notify();
 
-    expectEqual(messages, ['Changed elsewhere — your edits are kept']);
+    // Handed over rather than announced and dropped (WC-10): this is the only
+    // copy of what the other device wrote, and a notice nobody can act on is
+    // worse than none.
+    expectEqual(conflicts.length, 1, 'the clash is reported');
+    expectEqual(conflicts[0].text, 'what they wrote', 'with the text they wrote');
     expectEqual(model.source, 'my unsaved sentence', 'and still nothing is lost');
     stop();
   });
@@ -679,6 +685,214 @@ suite('What a save records as saved', () => {
 
     expectEqual(model.savedSource, 'hello world');
     expectEqual(model.isDirty, false);
+    setBackend(null);
+  });
+});
+
+// WC-9 / WC-10. Watchers only hear what happens while somebody is listening,
+// and there are two ways to have not been: a backend that pushes nothing (the
+// local one, WC-7), and a tab the browser suspended while it was in the
+// background. Coming back is when the file is most likely to have moved on.
+suite('Catching up on returning to the tab', () => {
+  /** Stands in for the browser's visibility and focus events. */
+  function returnTrigger() {
+    let handler = null;
+    const observe = (fn) => {
+      handler = fn;
+      return () => {
+        handler = null;
+      };
+    };
+    observe.returnToTab = () => handler?.();
+    observe.isListening = () => handler !== null;
+    return observe;
+  }
+
+  async function settle() {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  test('a change made while the tab was away is found on returning to it', async () => {
+    const { nodes, backend } = build([fileNode('Notes.md', 'as I left it')]);
+    setBackend(backend);
+    const model = new MarkdownDocumentModel();
+    await model.open('Notes.md');
+
+    const messages = [];
+    const observe = returnTrigger();
+    const stop = startLiveUpdates({
+      model,
+      explorer: stubExplorer([]),
+      notify: (message) => messages.push(message),
+      onDocumentChanged: () => {},
+      observeReturn: observe,
+    });
+
+    // Somebody else writes while this tab is in the background. No listener
+    // fires: this stands for the local backend, which pushes nothing at all.
+    nodes.silentWrite(fileNode('Notes.md', 'changed while I was away'));
+
+    observe.returnToTab();
+    await settle();
+
+    expectEqual(model.source, 'changed while I was away', 'the newest text is shown');
+    expectEqual(messages.length, 1, 'and it is said out loud');
+    stop();
+    setBackend(null);
+  });
+
+  test('returning to a tab that is already up to date says nothing', async () => {
+    const { backend } = build([fileNode('Notes.md', 'as I left it')]);
+    setBackend(backend);
+    const model = new MarkdownDocumentModel();
+    await model.open('Notes.md');
+
+    const messages = [];
+    const observe = returnTrigger();
+    const stop = startLiveUpdates({
+      model,
+      explorer: stubExplorer([]),
+      notify: (message) => messages.push(message),
+      onDocumentChanged: () => {},
+      observeReturn: observe,
+    });
+
+    observe.returnToTab();
+    await settle();
+
+    expectEqual(messages, [], 'switching tabs is not an event in itself');
+    stop();
+    setBackend(null);
+  });
+
+  test('unsaved edits are handed the newer version rather than losing it', async () => {
+    const { nodes, backend } = build([fileNode('Notes.md', 'as I left it')]);
+    setBackend(backend);
+    const model = new MarkdownDocumentModel();
+    await model.open('Notes.md');
+
+    const conflicts = [];
+    const observe = returnTrigger();
+    const stop = startLiveUpdates({
+      model,
+      explorer: stubExplorer([]),
+      notify: () => {},
+      onConflict: (revision) => conflicts.push(revision),
+      onDocumentChanged: () => {},
+      observeReturn: observe,
+    });
+
+    model.source = 'what I was typing';
+    model.isDirty = true;
+    nodes.silentWrite(fileNode('Notes.md', 'what they wrote'));
+
+    observe.returnToTab();
+    await settle();
+
+    expectEqual(model.source, 'what I was typing', 'nothing on screen is touched');
+    expectEqual(conflicts.length, 1, 'and the other version is handed over');
+    expectEqual(conflicts[0].text, 'what they wrote', 'intact, so it can be shown');
+    stop();
+    setBackend(null);
+  });
+
+  test('a document opened since the request went out is not overwritten', async () => {
+    const { backend } = build([
+      fileNode('Notes.md', 'notes as they are on the server'),
+      fileNode('Other.md', 'a different document'),
+    ]);
+    setBackend(backend);
+    const model = new MarkdownDocumentModel();
+    await model.open('Notes.md');
+
+    const observe = returnTrigger();
+    const stop = startLiveUpdates({
+      model,
+      explorer: stubExplorer([]),
+      notify: () => {},
+      onDocumentChanged: () => {},
+      observeReturn: observe,
+    });
+
+    // The read is in flight for Notes.md when something else is opened.
+    const revalidating = stop.revalidate();
+    await model.open('Other.md');
+    await revalidating;
+    await settle();
+
+    expectEqual(model.source, 'a different document', 'the open document stands');
+    stop();
+    setBackend(null);
+  });
+
+  test('a backend that cannot answer is not an interruption', async () => {
+    setBackend({
+      watchFolder: () => () => {},
+      watchAssets: () => () => {},
+      watchDocument: () => () => {},
+      read: async () => {
+        throw new Error('offline');
+      },
+    });
+    const model = new MarkdownDocumentModel();
+    model.path = 'Notes.md';
+    model.source = 'mine';
+    model.savedSource = 'mine';
+
+    const messages = [];
+    const observe = returnTrigger();
+    const stop = startLiveUpdates({
+      model,
+      explorer: stubExplorer([]),
+      notify: (message) => messages.push(message),
+      onDocumentChanged: () => {},
+      observeReturn: observe,
+    });
+
+    expectEqual(await stop.revalidate(), 'ignored', 'the failure is swallowed');
+    expectEqual(messages, [], 'and nobody is interrupted over it');
+    expectEqual(model.source, 'mine', 'the document is left alone');
+    stop();
+    setBackend(null);
+  });
+
+  test('stopping unsubscribes from the return events', () => {
+    setBackend(build().backend);
+    const model = new MarkdownDocumentModel();
+    const observe = returnTrigger();
+    const stop = startLiveUpdates({
+      model,
+      explorer: stubExplorer([]),
+      notify: () => {},
+      onDocumentChanged: () => {},
+      observeReturn: observe,
+    });
+
+    expect(observe.isListening(), 'it listens while running');
+    stop();
+    expectEqual(observe.isListening(), false, 'and lets go when it stops');
+    setBackend(null);
+  });
+
+  test('a revalidation after stopping does nothing', async () => {
+    const { nodes, backend } = build([fileNode('Notes.md', 'as I left it')]);
+    setBackend(backend);
+    const model = new MarkdownDocumentModel();
+    await model.open('Notes.md');
+
+    const stop = startLiveUpdates({
+      model,
+      explorer: stubExplorer([]),
+      notify: () => {},
+      onDocumentChanged: () => {},
+      observeReturn: returnTrigger(),
+    });
+    stop();
+
+    nodes.silentWrite(fileNode('Notes.md', 'changed after we stopped'));
+    expectEqual(await stop.revalidate(), 'ignored');
+    expectEqual(model.source, 'as I left it', 'a stopped coordinator is stopped');
     setBackend(null);
   });
 });

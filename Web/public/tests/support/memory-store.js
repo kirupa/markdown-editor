@@ -64,6 +64,19 @@ export function createMemoryNodeStore(seed = []) {
       announce([path]);
     },
 
+    /**
+     * A change nobody is told about.
+     *
+     * Stands for the two cases a push channel does not cover: a backend that
+     * has none at all (the local one, WC-7), and a tab the browser suspended
+     * while it was in the background. Both leave the store ahead of the screen
+     * with no event to say so, which is the only reason revalidating on return
+     * exists — so a test for it has to be able to produce that state.
+     */
+    silentWrite(node) {
+      rows.set(node.path, { ...node });
+    },
+
     async read(path) {
       const row = rows.get(path);
       return row ? { ...row } : null;

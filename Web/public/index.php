@@ -107,15 +107,27 @@ $asset = static fn (string $path): string => $assetBase === '' ? $path : "$asset
          aria-orientation="vertical" aria-label="Sidebar width" tabindex="0"></div>
 
     <main class="me-editor" id="editor">
-      <div class="me-pane me-pane--rich" id="richPane">
-        <div class="me-surface" id="richSurface" role="textbox"
-             aria-multiline="true" aria-label="Rendered Markdown" spellcheck="true"></div>
+      <div class="me-notice" id="externalNotice" hidden role="status">
+        <span class="me-notice__text" id="externalNoticeText"></span>
+        <span class="me-notice__actions">
+          <button type="button" class="me-notice__button" id="externalNoticeKeep"
+                  title="Keep what is on screen; the next save writes it over the other version">Keep Mine</button>
+          <button type="button" class="me-notice__button me-notice__button--primary"
+                  id="externalNoticeReload"
+                  title="Discard the unsaved edits here and show the newest version">Show Newest</button>
+        </span>
       </div>
-      <div class="me-divider me-divider--pane" id="paneDivider" role="separator"
-           aria-orientation="vertical" aria-label="Preview width" tabindex="0"></div>
-      <div class="me-pane me-pane--source" id="sourcePane">
-        <div class="me-surface me-surface--source" id="sourceSurface" role="textbox"
-             aria-multiline="true" aria-label="Markdown source" spellcheck="false"></div>
+      <div class="me-editor__panes" id="editorPanes">
+        <div class="me-pane me-pane--rich" id="richPane">
+          <div class="me-surface" id="richSurface" role="textbox"
+               aria-multiline="true" aria-label="Rendered Markdown" spellcheck="true"></div>
+        </div>
+        <div class="me-divider me-divider--pane" id="paneDivider" role="separator"
+             aria-orientation="vertical" aria-label="Preview width" tabindex="0"></div>
+        <div class="me-pane me-pane--source" id="sourcePane">
+          <div class="me-surface me-surface--source" id="sourceSurface" role="textbox"
+               aria-multiline="true" aria-label="Markdown source" spellcheck="false"></div>
+        </div>
       </div>
     </main>
   </div>

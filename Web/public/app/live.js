@@ -28,8 +28,7 @@ import { api } from './api.js';
  * @returns {'ignored'|'applied'|'deferred'|'detached'} what was decided, which
  *   is also what the tests assert on.
  */
-export function receiveDocumentRevision({ model, revision, onConflict, onDetached }) {
-  // The document was deleted, or moved, on another device.
+export function receiveDocumentRevision({ model, revision, onConflict, onDetached }) {  // The document was deleted, or moved, on another device.
   if (revision === null) {
     // Already detached — a second notification about the same deletion, or
     // this browser is the one that deleted it.
@@ -55,11 +54,42 @@ export function receiveDocumentRevision({ model, revision, onConflict, onDetache
   // next save writes this browser's version — last write wins, and the person
   // who is actually typing is the one who wins it.
   if (model.isDirty) {
-    onConflict();
+    onConflict(revision);
     return 'deferred';
   }
 
   return model.applyRemote(revision) ? 'applied' : 'ignored';
+}
+
+/**
+ * Calls `handler` whenever this tab comes back to the front.
+ *
+ * Separated from ``startLiveUpdates`` and injectable so that the coordinator
+ * stays free of the DOM — it is tested under node, which has no `document` —
+ * and so that a test can trigger a return without a browser.
+ *
+ * Both events are needed and neither is redundant. `visibilitychange` covers
+ * switching tabs and unlocking a phone; `focus` covers moving between windows,
+ * which does not change visibility. Firing twice is harmless: the second pass
+ * reads the same bytes and recognises them as its own.
+ *
+ * @param {() => void} handler
+ * @returns {() => void} a function that stops listening
+ */
+export function observeReturnToTab(handler) {
+  if (typeof document === 'undefined' || typeof window === 'undefined') {
+    return () => {};
+  }
+  const onVisibility = () => {
+    if (document.visibilityState === 'hidden') return;
+    handler();
+  };
+  document.addEventListener('visibilitychange', onVisibility);
+  window.addEventListener('focus', onVisibility);
+  return () => {
+    document.removeEventListener('visibilitychange', onVisibility);
+    window.removeEventListener('focus', onVisibility);
+  };
 }
 
 /**
@@ -69,9 +99,21 @@ export function receiveDocumentRevision({ model, revision, onConflict, onDetache
  * @param {import('./document.js').MarkdownDocumentModel} options.model
  * @param {object} options.explorer
  * @param {(message: string) => void} options.notify a transient status message
+ * @param {(revision: object) => void} options.onConflict an incoming revision
+ *   that was not applied because there are unsaved edits on screen. It is
+ *   handed over rather than dropped: it is the only copy this browser has of
+ *   what the other device wrote, and dropping it makes the notice useless.
  * @param {() => void} options.onDocumentChanged re-render after text arrived
+ * @param {(handler: () => void) => () => void} [options.observeReturn]
  */
-export function startLiveUpdates({ model, explorer, notify, onDocumentChanged }) {
+export function startLiveUpdates({
+  model,
+  explorer,
+  notify,
+  onConflict = () => {},
+  onDocumentChanged,
+  observeReturn = observeReturnToTab,
+}) {
   /** folder path -> unsubscribe */
   const folderWatchers = new Map();
   let documentWatchers = [];
@@ -150,7 +192,7 @@ export function startLiveUpdates({ model, explorer, notify, onDocumentChanged })
         const outcome = receiveDocumentRevision({
           model,
           revision,
-          onConflict: () => notify('Changed elsewhere — your edits are kept'),
+          onConflict,
           onDetached: () => notify('Deleted on another device'),
         });
         if (outcome === 'applied') {
@@ -164,19 +206,74 @@ export function startLiveUpdates({ model, explorer, notify, onDocumentChanged })
     ];
   }
 
+  /**
+   * WC-9: re-reads the open document on returning to the tab.
+   *
+   * Watchers only hear about writes made while somebody was listening, and
+   * there are two ways to have not been. A backend may push nothing at all —
+   * the local one is a PHP script and says so (WC-7) — and even a backend that
+   * does push is talking to a tab the browser may have thrown off the CPU
+   * while it was in the background.
+   *
+   * Coming back is the moment worth spending a read on: it is when the file is
+   * most likely to have moved on, and it is one request per return rather than
+   * a request every few seconds forever, which is what WC-7 rejected. The
+   * answer goes through the same policy as a pushed revision, so there is one
+   * set of rules about whose text wins, not two.
+   */
+  async function revalidate() {
+    if (stopped) return 'ignored';
+    const path = model.path;
+    if (path === null) return 'ignored';
+
+    let revision = null;
+    try {
+      revision = await api.read(path);
+    } catch {
+      // Offline, signed out, or the document is gone. None of those are worth
+      // interrupting somebody who has just come back to their work; the next
+      // save reports the real problem, in context.
+      return 'ignored';
+    }
+
+    // Somebody opened a different document between the request and its answer.
+    if (stopped || model.path !== path) return 'ignored';
+
+    const outcome = receiveDocumentRevision({
+      model,
+      revision,
+      onConflict,
+      onDetached: () => notify('Deleted on another device'),
+    });
+    if (outcome === 'applied') {
+      notify('Updated — changed by something else');
+      onDocumentChanged();
+    }
+    return outcome;
+  }
+
+  function revalidateIfVisible() {
+    revalidate();
+  }
+
   explorer.onFoldersChanged = syncFolders;
   model.addEventListener('change', syncDocument);
   model.addEventListener('open', syncDocument);
+  const stopObservingReturns = observeReturn(revalidateIfVisible);
   syncFolders();
   syncDocument();
 
-  return function stopLiveUpdates() {
+  stopLiveUpdates.revalidate = revalidate;
+  return stopLiveUpdates;
+
+  function stopLiveUpdates() {
     stopped = true;
     explorer.onFoldersChanged = () => {};
     model.removeEventListener('change', syncDocument);
     model.removeEventListener('open', syncDocument);
+    stopObservingReturns();
     for (const unsubscribe of folderWatchers.values()) unsubscribe();
     folderWatchers.clear();
     stopDocumentWatchers();
-  };
+  }
 }

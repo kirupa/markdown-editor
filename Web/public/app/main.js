@@ -162,13 +162,64 @@ async function adoptStorage() {
  * the new backend opens none.
  */
 let stopLiveUpdates = null;
+/** The revision another device wrote that this browser has not applied. */
+let pendingExternalRevision = null;
+
+function showExternalNotice(kind, message) {
+  const notice = element('externalNotice');
+  const text = element('externalNoticeText');
+  if (!notice || !text) return;
+  notice.dataset.kind = kind;
+  text.textContent = message;
+  notice.hidden = false;
+  element('externalNoticeKeep').hidden = kind !== 'conflict';
+  element('externalNoticeReload').hidden = kind !== 'conflict';
+}
+
+function hideExternalNotice() {
+  pendingExternalRevision = null;
+  const notice = element('externalNotice');
+  if (notice) notice.hidden = true;
+}
+
+/**
+ * WC-10. Another device's revision arrived while there are unsaved edits here.
+ *
+ * Held rather than dropped, and said so persistently rather than in a status
+ * flash: this browser is the only place that copy exists, and the whole point
+ * of the notice is to make it reachable. Autosave still writes this browser's
+ * version, so nothing here is at risk while the question goes unanswered.
+ */
+function noteExternalConflict(revision) {
+  pendingExternalRevision = revision;
+  showExternalNotice(
+    'conflict',
+    'Changed by something else. Your unsaved edits are kept.'
+  );
+}
+
+function showNewestVersion() {
+  const revision = pendingExternalRevision;
+  hideExternalNotice();
+  if (!revision) return;
+  model.applyRemote(revision);
+  richSurface.renderedSource = null;
+  sourceSurface.renderedSource = null;
+  refreshSurfaces({ force: true });
+  updateStatus();
+  flashStatus('Showing the newest version');
+}
+
 function restartLiveUpdates() {
   stopLiveUpdates?.();
+  hideExternalNotice();
   stopLiveUpdates = startLiveUpdates({
     model,
     explorer,
     notify: flashStatus,
+    onConflict: noteExternalConflict,
     onDocumentChanged: () => {
+      hideExternalNotice();
       richSurface.renderedSource = null;
       sourceSurface.renderedSource = null;
       refreshSurfaces({ force: true });
@@ -482,6 +533,9 @@ function mirrorSelection(source) {
 richSurface.onSelectionChange = () => mirrorSelection(richSurface);
 sourceSurface.onSelectionChange = () => mirrorSelection(sourceSurface);
 model.addEventListener('open', () => {
+  // A held revision belongs to the document it came from, and this is a
+  // different one now.
+  hideExternalNotice();
   richSurface.renderedSource = null;
   sourceSurface.renderedSource = null;
   refreshSurfaces({ force: true });
@@ -489,6 +543,13 @@ model.addEventListener('open', () => {
 model.addEventListener('autosaved', () => flashStatus('Autosaved'));
 model.addEventListener('saved', () => flashStatus('Saved'));
 model.addEventListener('error', (event) => showError(event.detail));
+
+element('externalNoticeReload')?.addEventListener('click', showNewestVersion);
+element('externalNoticeKeep')?.addEventListener('click', () => {
+  // Autosave already writes this browser's version, so keeping it means
+  // nothing more than putting the question away.
+  hideExternalNotice();
+});
 
 function updateStatus() {
   const folder = model.path?.includes('/')

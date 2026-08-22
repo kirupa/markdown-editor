@@ -39,6 +39,12 @@ struct MarkdownEditorCommands: Commands {
             }
             .keyboardShortcut("o", modifiers: [.command, .option])
             .disabled(session == nil)
+
+            Button("Reload from Disk") {
+                session?.reloadFromDisk()
+            }
+            .keyboardShortcut("r", modifiers: [.command, .shift])
+            .disabled(session?.fileURL == nil)
         }
 
         CommandGroup(before: .windowList) {

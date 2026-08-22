@@ -93,47 +93,59 @@ struct MarkdownEditorView: View {
                     accessibilityLabel: "Editor pane width"
                 )
 
-                Group {
-                    switch session.viewMode {
-                    case .rich:
-                        ResizableRichTextPreview(
-                            text: $document.text,
-                            documentURL: fileURL,
-                            session: session,
-                            colorTheme: colorTheme,
-                            preferredWidth: $previewWidth,
-                            minimumWidth: Layout.minimumPreviewWidth
-                        )
-                    case .source:
-                        SourceTextEditor(
-                            text: $document.text,
-                            session: session,
-                            colorTheme: colorTheme
-                        )
-                    case .split:
-                        HSplitView {
+                VStack(spacing: 0) {
+                    ExternalChangeBanner(
+                        state: session.externalChange.state,
+                        colorTheme: colorTheme,
+                        onReload: { session.reloadFromDisk() },
+                        onKeepMine: {
+                            session.keepMyVersion()
+                            autosaveController.scheduleSave(for: fileURL)
+                        }
+                    )
+
+                    Group {
+                        switch session.viewMode {
+                        case .rich:
                             ResizableRichTextPreview(
                                 text: $document.text,
                                 documentURL: fileURL,
                                 session: session,
                                 colorTheme: colorTheme,
                                 preferredWidth: $previewWidth,
-                                minimumWidth: Layout.minimumSplitPreviewWidth
+                                minimumWidth: Layout.minimumPreviewWidth
                             )
-                            .frame(
-                                minWidth: Layout.minimumSplitPaneWidth,
-                                maxWidth: .infinity
-                            )
-
+                        case .source:
                             SourceTextEditor(
                                 text: $document.text,
                                 session: session,
                                 colorTheme: colorTheme
                             )
-                            .frame(
-                                minWidth: Layout.minimumSplitPaneWidth,
-                                maxWidth: .infinity
-                            )
+                        case .split:
+                            HSplitView {
+                                ResizableRichTextPreview(
+                                    text: $document.text,
+                                    documentURL: fileURL,
+                                    session: session,
+                                    colorTheme: colorTheme,
+                                    preferredWidth: $previewWidth,
+                                    minimumWidth: Layout.minimumSplitPreviewWidth
+                                )
+                                .frame(
+                                    minWidth: Layout.minimumSplitPaneWidth,
+                                    maxWidth: .infinity
+                                )
+
+                                SourceTextEditor(
+                                    text: $document.text,
+                                    session: session,
+                                    colorTheme: colorTheme
+                                )
+                                .frame(
+                                    minWidth: Layout.minimumSplitPaneWidth,
+                                    maxWidth: .infinity
+                                )
+                            }
                         }
                     }
                 }
@@ -162,6 +174,10 @@ struct MarkdownEditorView: View {
             if let fileURL {
                 RecentDocumentsModel.shared.record(fileURL)
             }
+            session.startWatchingFile(text: document.text)
+            autosaveController.onSave = { [session] in
+                session.externalChange.noteSaved()
+            }
         }
         .onChange(of: fileURL) { newFileURL in
             autosaveController.cancelPendingSave()
@@ -169,19 +185,42 @@ struct MarkdownEditorView: View {
             if let newFileURL {
                 RecentDocumentsModel.shared.record(newFileURL)
             }
+            // Save As and Finder renames both land here, and the old file is
+            // no longer the one being edited.
+            session.startWatchingFile(text: document.text)
         }
-        .onChange(of: document.text) { _ in
+        .onChange(of: document.text) { newText in
+            session.externalChange.noteEditorText(newText)
+            // Writing during an unresolved conflict would overwrite the other
+            // app's version seconds after pointing it out.
+            guard !session.isSavingSuspended else {
+                autosaveController.cancelPendingSave()
+                return
+            }
             autosaveController.scheduleSave(for: fileURL)
+        }
+        .onChange(of: session.externalChange.state) { state in
+            guard case .reloadPending(let text) = state else {
+                return
+            }
+            // Nothing of this person's is at stake, so asking would be a
+            // question with one sensible answer. Take it and say so.
+            session.applyExternalText(text, actionName: "Refresh")
+            session.externalChange.acknowledgeReload()
         }
         .onReceive(
             NotificationCenter.default.publisher(
                 for: NSApplication.willResignActiveNotification
             )
         ) { _ in
+            guard !session.isSavingSuspended else {
+                return
+            }
             autosaveController.saveNow(for: fileURL)
         }
         .onDisappear {
             autosaveController.cancelPendingSave()
+            session.stopWatchingFile()
         }
     }
 

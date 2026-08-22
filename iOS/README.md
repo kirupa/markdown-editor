@@ -96,6 +96,12 @@ byte-identical.
 | ID-4 | `.md` and `.markdown` files open in the app from Files, Mail, and any share sheet, via an imported `net.daringfireball.markdown` type declaration. |
 | ID-5 | `LSSupportsOpeningDocumentsInPlace` and `UIFileSharingEnabled` are set, so files are edited where they live rather than copied into the app. |
 | ID-6 | A new document starts as an empty Heading 1, matching the macOS and web builds. |
+| ID-48 | While a document is open the app watches its file and notices when something else on the device writes it — Files, another editor, an iCloud sync from another device. |
+| ID-49 | The check is repeated whenever the app returns to the foreground. This is the case that matters most on iOS: a suspended app is not listening, so a change made while it was in the background produced no event for anybody. |
+| ID-50 | With no unsaved edits the newer text is applied and a bar says so, clearing itself after a few seconds. The caret is carried over rather than reset. |
+| ID-51 | With unsaved edits nothing is applied. A bar offers **Show Newest** and **Keep Mine**, and the text held behind Show Newest is the copy that arrived, so it stays reachable even if the system has since written this device's version over the file. |
+| ID-52 | The same shared banner and the same decision logic as macOS. There is one set of rules about whose text wins, not one per platform. |
+| ID-53 | **Not** supported here, unlike macOS: suspending saves while the question is unanswered. iOS saves through `UIDocument` (ID-2) and a view cannot hold that off, so on this build the system may write this device's version to the file first. Show Newest still works — see ID-51 — but the file may need saving again afterwards. |
 
 ---
 
@@ -321,6 +327,7 @@ output. See `macOS/README.md` §16.2 for what each kind of test is for and
 
 | Change | Summary |
 | --- | --- |
+| Notice when something else changes the open document | The editor watches its file, and re-checks every time the app returns to the foreground — the case that matters here, because a suspended app hears nothing. With nothing unsaved the newer text is applied and a bar says so; with unsaved edits nothing is applied and the bar offers **Show Newest** or **Keep Mine**, holding the incoming copy in memory so it stays reachable. Shares the decision, the watcher, and the banner with macOS. One thing macOS does that this build cannot: hold off saving until the question is answered — iOS saves through `UIDocument` and a view cannot suspend that. Recorded as [ID-53](#3-document-lifecycle). |
 | Ship resources if a target ever declares one | Both no-Xcode build scripts now copy the `<Package>_<Target>.bundle` SwiftPM emits for a target with `resources:` — into `Contents/Resources` on the Mac, the bundle root on iOS, which is where `Bundle.module` looks on each. Nothing declares a resource today, so both copy nothing; a target that gained one would previously have built and signed cleanly and trapped on launch. Verified by temporarily giving `MarkdownEditorUI` a resource and confirming it reached both apps. |
 | Keep typing responsive on an illustrated document | Local images are decoded once and kept in memory rather than re-read on every keystroke. The cache is in the shared package, so this build gets it too: a document of forty photo-sized references styled in 65.7 ms per character on the Mac and now styles in 4.0 ms. Keyed on modification date and size, so a picture edited elsewhere is never drawn stale, and it releases everything under memory pressure — which matters more here than on the Mac. |
 | Expand the regression net | 329 shared tests across 24 suites, up from 244 across 16. The new suites are property-based: every formatting command over every corpus selection, every prefix and suffix of the corpus through the renderer and the styler, all sixteen palettes held to WCAG contrast, and a byte-exact read/write path. All of it is shared code, so it covers this build's engine as much as the Mac's. |

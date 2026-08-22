@@ -247,6 +247,26 @@ Open With and lets the association point at a bundle that `make clean` deletes.
 | D-16 | A pending autosave is cancelled when the editor view disappears. |
 | D-17 | Autosave failures are presented to the user through the document's standard error presentation. Autosave never fails silently. |
 
+### 5.6 Changes made by another app
+
+The document on disk can move underneath the editor at any time — another
+editor, a `git checkout`, Dropbox, a shell script. This section says how that
+is noticed and what happens next.
+
+| ID | Requirement |
+| --- | --- |
+| D-28 | While a document with a file is open, the app watches that file and notices when something else writes it. |
+| D-29 | The watcher survives an **atomic replacement** — a write to a temporary file followed by a rename over the target, which is how most editors and `git` save. It reports the second such write and every one after it, not only the first. |
+| D-30 | The app's own writes are never reported as somebody else's. This holds for autosave (D-12), for **File ▸ Save**, and for a save whose file-system event arrives after further typing. |
+| D-31 | If there are **no unsaved edits**, the newer text is applied straight away and a bar says the document was changed by another app. The bar clears itself after a few seconds. |
+| D-32 | An applied external revision is a single, named entry on the undo stack, so it can be taken back with `⌘Z`. |
+| D-33 | The caret is carried across an applied revision rather than reset to the top, using the same text-difference mapping the split panes use. |
+| D-34 | If there **are** unsaved edits, nothing is applied. A bar stays up offering **Reload** (`⇧⌘R`) and **Keep Mine**, and says the unsaved edits are still there. |
+| D-35 | **Autosave is suspended while that bar is up.** Without this the notice would be pointless: autosave would overwrite the other app's version a second or two after pointing it out. Choosing Keep Mine resumes it and writes this version. |
+| D-36 | **File ▸ Reload from Disk** (`⇧⌘R`) re-reads the file at any time, whether or not anything was reported. It is disabled for a document that has never been saved. |
+| D-37 | A file that is deleted while open raises nothing. The document stays open with its text, which is the only remaining copy. |
+| D-38 | A file that is briefly unreadable — mid-replacement — raises nothing. The rename that follows is reported instead. |
+
 ---
 
 ## 6. Editing modes
@@ -1094,6 +1114,7 @@ async `@main` instead.
 
 | Change | Summary |
 | --- | --- |
+| Notice when another app changes the open document | The editor watches its file and says so when something else writes it. With nothing unsaved it applies the newer text and shows a self-clearing bar; the caret is carried over and it lands on the undo stack as one entry named *Refresh*. With unsaved edits it applies nothing, shows a bar offering **Reload** (`⇧⌘R`) or **Keep Mine**, and **suspends autosave until one is chosen** — otherwise the notice would be pointless, because autosave would overwrite the other app's version a second later. **File ▸ Reload from Disk** (`⇧⌘R`) re-reads on demand. The hard part is the 1.5-second autosave: the app's own writes must never come back as somebody else's, including a write whose event lands after further typing. The monitor also re-arms across atomic replacement — a temp file renamed over the target, which is how most editors and `git` save — because a watcher that misses that reports the first external save and is deaf forever after. See [§5.6](#56-changes-made-by-another-app). |
 | Narrow the keychain blocker to the keychain, not the signature | The three `-34018` failures said something was missing but not what, so a second Firebase-free probe (`keychain-kind`) writes the same item to both macOS keychains from one process. The ad-hoc-signed bundle writes to the **file-based keychain** perfectly well and is refused only by the **data-protection** one — so the signature was never the problem. Adding `com.apple.security.app-sandbox`, the one relevant *unrestricted* entitlement, does not help either, which rules out the only fix that would have needed no Apple account. FirebaseAuth cannot be redirected: it sets `kSecUseDataProtectionKeychain` unconditionally at both of the two places it builds a query. And there is no degraded "sign in every launch" mode to fall back on — no `currentUser` survives the throw, so the sign-in is lost rather than merely unpersisted. Sharpens the open question in [§16.7](#167-firebaseauth-cannot-sign-in-from-a-build-this-repository-can-produce) from "does signing help" to "does a Personal Team profile grant a keychain access group". |
 | Establish why native cloud sign-in is blocked | FirebaseAuth cannot sign in from any build this repository can produce: it needs the macOS data-protection keychain, whose entitlement is restricted and must be authorized by a provisioning profile. Measured three ways — bare executable, ad-hoc-signed `.app`, and an `.app` claiming the entitlement, which is SIGKILLed at exec. Corrects [NG-3](#22-non-goals) and the root README, both of which named the Firebase console step as the only thing outstanding. See [§16.7](#167-firebaseauth-cannot-sign-in-from-a-build-this-repository-can-produce). |
 | Verify the native Firestore adapter against a real Firestore | `Shared/Firebase/run-emulator-checks.sh` runs `FirestoreNodeStore` against an emulated Firestore — 31 checks over field names, the subtree filter, batch atomicity, listener delivery, and per-account isolation. Closes the half of NG-3 that said the cloud path had never been exercised on any native build; the sign-in UI and the Firebase console step remain. See [§16.6](#166-the-native-firestore-adapter-is-verified-against-a-real-firestore). |

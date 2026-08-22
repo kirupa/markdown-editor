@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import MarkdownEditorCore
 import MarkdownEditorUI
 import SwiftUI
@@ -24,6 +25,11 @@ final class MarkdownEditorSession: ObservableObject {
     /// Panes already caught up with their neighbour, so `attach` can tell a
     /// pane joining the split from the same pane being updated again.
     private var alignedEditors: Set<ObjectIdentifier> = []
+    /// Keeps the view redrawing when the watcher speaks. An `ObservableObject`
+    /// held by another one publishes nothing to the outer one's observers, so
+    /// without this the banner would only appear the next time something else
+    /// happened to redraw the window.
+    private var watcherSubscription: AnyCancellable?
 
     init(
         fileURL: URL?,
@@ -39,6 +45,10 @@ final class MarkdownEditorSession: ObservableObject {
             text: initialText,
             isNewDocument: fileURL == nil
         )
+        watcherSubscription = externalChange.objectWillChange.sink {
+            [weak self] _ in
+            self?.objectWillChange.send()
+        }
     }
 
     func setViewMode(_ mode: EditorViewMode) {
@@ -145,6 +155,66 @@ final class MarkdownEditorSession: ObservableObject {
 
     func selectionForEditorUpdate(fallback: NSRange) -> NSRange {
         viewMode == .split ? rememberedSelection : fallback
+    }
+
+    // MARK: - Changes made by other apps
+
+    /// Watches the file underneath the open document. Lives here rather than
+    /// in the view so that the File menu can reach it: commands address the
+    /// focused session, and reloading is a command as much as it is a button.
+    let externalChange = ExternalChangeWatcher()
+
+    /// Points the watcher at the current file. Called when the document
+    /// appears and whenever it becomes a different file — Save As, or a
+    /// rename in the Finder that `DocumentGroup` follows.
+    func startWatchingFile(text: String) {
+        externalChange.start(url: fileURL, text: text)
+    }
+
+    func stopWatchingFile() {
+        externalChange.stop()
+    }
+
+    /// Adopts a revision written by another app.
+    ///
+    /// Routed through the editor rather than the document binding so that it
+    /// arrives the same way every other programmatic edit does: the caret is
+    /// placed deliberately, and the whole thing lands on the undo stack under
+    /// a name, so somebody who did not want it can take it back.
+    func applyExternalText(_ text: String, actionName: String) {
+        guard let editor = currentEditor() else {
+            return
+        }
+        editor.commitPendingComposition()
+        let selection = MarkdownTextDifference.mappedSelection(
+            editor.selectedSourceRange,
+            from: editor.sourceText,
+            to: text
+        )
+        editor.apply(
+            MarkdownEditResult(text: text, selection: selection),
+            actionName: actionName
+        )
+    }
+
+    /// Take the version on disk, discarding unsaved edits if there are any.
+    func reloadFromDisk() {
+        guard let text = externalChange.reloadFromDisk() else {
+            return
+        }
+        applyExternalText(text, actionName: "Reload")
+    }
+
+    /// Keep what is on screen and let it overwrite the file.
+    func keepMyVersion() {
+        externalChange.resolveByKeepingMine()
+    }
+
+    /// Whether saving must wait. While a conflict is unresolved, writing would
+    /// destroy the other app's work before anybody had the chance to look at
+    /// it, so autosave is held until the question is answered.
+    var isSavingSuspended: Bool {
+        externalChange.state.isConflicted
     }
 
     func detach(_ editor: any MarkdownEditingSurface) {
