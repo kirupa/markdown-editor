@@ -110,4 +110,24 @@ firebase emulators:exec --project demo-kirupa-markdown --only auth "
   echo \"exit \$? (137 is SIGKILL)\"
 " 2>&1 | grep -vE '^(i  |✔  |⚠  )'
 
+# The case that is not covered above, and the one that would actually settle
+# whether native cloud sign-in is reachable. Signing it properly needs an
+# identity *and* a provisioning profile authorizing the entitlement for this
+# bundle ID, which cannot be synthesized here — so this reports what the
+# machine has rather than pretending to test it.
+printf '\n--- properly signed ---\n'
+IDENTITIES="$(security find-identity -v -p codesigning 2>/dev/null | grep -c '^ *[0-9]*)')"
+if [ "${IDENTITIES:-0}" -eq 0 ]; then
+  printf 'not tested: this machine has no code-signing identity.\n'
+  printf 'If you have signed into Xcode with an Apple ID, a Personal Team\n'
+  printf 'certificate may be enough. Build the app through Xcode with\n'
+  printf 'automatic signing and Keychain Sharing enabled, and see whether\n'
+  printf 'sign-in succeeds — that is the open question in macOS/README.md 16.7.\n'
+else
+  printf 'not tested, but this machine has %s code-signing identity(ies):\n' "$IDENTITIES"
+  security find-identity -v -p codesigning 2>/dev/null | grep '^ *[0-9]*)' | sed 's/^/  /'
+  printf 'Worth answering 16.7 with: sign the bundle with one of these plus a\n'
+  printf 'profile authorizing keychain-access-groups, and re-run the probe.\n'
+fi
+
 rm -rf "$WORK"
