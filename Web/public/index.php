@@ -103,7 +103,7 @@ $asset = static fn (string $path): string => $assetBase === '' ? $path : "$asset
       <div class="me-sidebar__tree" id="explorerTree" role="tree" tabindex="0"></div>
     </aside>
 
-    <div class="me-divider" id="sidebarDivider" role="separator"
+    <div class="me-divider me-divider--sidebar" id="sidebarDivider" role="separator"
          aria-orientation="vertical" aria-label="Sidebar width" tabindex="0"></div>
 
     <main class="me-editor" id="editor">
@@ -144,7 +144,10 @@ $asset = static fn (string $path): string => $assetBase === '' ? $path : "$asset
 
 <div class="me-welcome-backdrop" id="welcome" hidden></div>
 <div class="me-popover-layer" id="popoverLayer"></div>
-<div class="me-alert-layer" id="alertLayer"></div>
+<!-- `hidden` from the start: this layer carries the dimming behind a dialog, and
+     dialogs.js only ever *unsets* it. Without it the whole app is dimmed 28%
+     until some dialog happens to open and close. -->
+<div class="me-alert-layer" id="alertLayer" hidden></div>
 
 <svg style="display:none" aria-hidden="true">
   <symbol id="icon-target" viewBox="0 0 16 16">

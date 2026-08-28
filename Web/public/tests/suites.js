@@ -31,7 +31,7 @@ export const DOM_TEST_MODULES = ['./dom.test.js'];
  * check the repository rather than the running app -- that the code still
  * agrees with the security rules as published.
  */
-export const NODE_TEST_MODULES = ['./rules-conformance.test.js'];
+export const NODE_TEST_MODULES = ['./rules-conformance.test.js', './stylesheet.test.js'];
 
 export function discoverTestModules({ includeDOM = false, includeNode = false } = {}) {
   return [

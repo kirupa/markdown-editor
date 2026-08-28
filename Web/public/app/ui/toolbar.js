@@ -39,6 +39,8 @@ export const ICONS = {
     '<rect x="1.6" y="2.9" width="12.8" height="10.2" rx="2"/><path d="M8 2.9v10.2"/><path d="M3.6 6.1h2.6M3.6 8.4h2.6M9.8 6.1h2.6M9.8 8.4h2.6M9.8 10.7h1.7"/>',
   markdown:
     '<rect x="1.1" y="3.5" width="13.8" height="9" rx="1.9"/><path d="M3.5 10.2V5.8l2.3 2.8 2.3-2.8v4.4"/><path d="M11.3 5.8v4.4M9.7 8.6l1.6 1.8 1.6-1.8"/>',
+  sidebar:
+    '<rect x="1.1" y="2.9" width="13.8" height="10.2" rx="1.9"/><path d="M6.1 2.9v10.2"/>',
 };
 
 function iconButton(name, title, onClick) {
@@ -149,7 +151,15 @@ export function buildToolbar(root, commands) {
   const spacer = document.createElement('div');
   spacer.className = 'me-toolbar__spacer';
 
+  // WT-13: the explorer starts closed, so there has to be somewhere obvious to
+  // open it again. A menu item alone would make the file list feel gone rather
+  // than put away.
+  const sidebarButton = iconButton('sidebar', 'Show File Explorer (⌃⌘S)', () =>
+    commands.toggleSidebar()
+  );
+
   root.replaceChildren(
+    group(sidebarButton),
     group(segmented),
     separator(),
     group(headings),
@@ -174,6 +184,11 @@ export function buildToolbar(root, commands) {
       for (const [name, button] of modeButtons) {
         button.setAttribute('aria-pressed', String(name === mode));
       }
+    },
+
+    /** WT-13: the toggle shows whether the explorer is open. */
+    setSidebarVisible(visible) {
+      sidebarButton.setAttribute('aria-pressed', String(visible));
     },
 
     /** F-11: reflects what is actually active at the caret. */

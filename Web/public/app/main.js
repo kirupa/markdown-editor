@@ -70,7 +70,12 @@ function modelFor(source) {
   return renderModel;
 }
 let mode = localStorage.getItem(MODE_KEY) ?? 'split';
-let sidebarVisible = localStorage.getItem(SIDEBAR_KEY) !== 'false';
+/**
+ * WT-13: the explorer starts closed. A first visit opens on the document alone;
+ * the nav is one click away and, once opened, is remembered. Only an explicit
+ * `'true'` counts, so the calm state is what an unconfigured browser gets.
+ */
+let sidebarVisible = localStorage.getItem(SIDEBAR_KEY) === 'true';
 
 /**
  * WB-2: the layout is a remembered choice. A first visit guesses from the
@@ -502,6 +507,16 @@ for (const surface of [richSurface, sourceSurface]) {
   surface.element.addEventListener('keydown', () => imageSelection.clear());
 }
 
+// The handles are drawn in the pane's scrolled coordinate space, so they ride
+// along with the content — but a resize of the window reflows the text under
+// them and they have to be measured again.
+element('richSurface').parentElement.addEventListener(
+  'scroll',
+  () => imageSelection.reposition(),
+  { passive: true }
+);
+window.addEventListener('resize', () => imageSelection.reposition());
+
 model.addEventListener('change', () => {
   refreshSurfaces();
   refreshActiveStyles();
@@ -593,6 +608,10 @@ function applySidebarVisibility() {
   element('sidebarDivider').hidden = mobileLayout || !sidebarVisible;
   element('drawerScrim').hidden = !(mobileLayout && drawerOpen);
   element('app').dataset.drawer = mobileLayout && drawerOpen ? 'open' : 'closed';
+  // WT-13: the desktop explorer floats over the document rather than displacing
+  // it, so the document never moves when the nav opens. Styling keys off this.
+  element('app').dataset.nav = visible ? 'open' : 'closed';
+  toolbar.setSidebarVisible(visible);
 }
 
 function closeDrawer() {

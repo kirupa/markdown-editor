@@ -71,10 +71,39 @@ body {
   display: flex;
   flex: 1;
   min-height: 0;
+  /* The explorer is positioned against this on both layouts. */
+  position: relative;
+}
+
+/* WT-13: on desktop the explorer floats over the document instead of displacing
+   it. Two things follow. The document keeps one position on screen whatever
+   the nav is doing — no reflow, no sideways jump, and its centre is the centre
+   of the page rather than the centre of what the nav left over. And a closed
+   nav is the resting state, so the calm case costs nothing to reach. */
+.me-app:not([data-layout="mobile"]) .me-sidebar {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  z-index: 40;
+  flex: 0 0 auto;
+  border-right: 1px solid var(--me-separator);
+  box-shadow: 0 0 24px rgb(0 0 0 / 12%);
+}
+
+/* The width gripper follows the floating panel, so the explorer can still be
+   resized even though it is no longer part of the row. */
+.me-app:not([data-layout="mobile"]) .me-divider--sidebar {
+  position: absolute;
+  inset-block: 0;
+  left: var(--me-sidebar-width);
+  z-index: 41;
 }
 
 /* ------------------------------------------------------------------ menu bar */
 
+/* WT-14: the chrome shares the page's own background. Tinted bands with hard
+   rules under them read as three stacked panels; one continuous field reads as
+   a page with some tools resting on it, which is the calmer of the two. */
 .me-menubar {
   display: flex;
   align-items: center;
@@ -82,8 +111,7 @@ body {
   padding: 0 10px;
   height: 30px;
   flex: 0 0 auto;
-  background: var(--me-sidebar-background);
-  border-bottom: 1px solid var(--me-separator);
+  background: var(--me-page-background);
   user-select: none;
 }
 
@@ -189,13 +217,15 @@ body {
 .me-toolbar {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 11px;
   flex: 0 0 auto;
   padding: 6px 10px;
   min-height: 42px;
   flex-wrap: wrap;
-  background: var(--me-sidebar-background);
-  border-bottom: 1px solid var(--me-separator);
+  background: var(--me-page-background);
+  /* Kept, and only just visible: text scrolling up under the tools needs
+     somewhere to stop, but a full-strength rule draws the eye to the chrome. */
+  border-bottom: 1px solid color-mix(in srgb, var(--me-separator) 45%, transparent);
   user-select: none;
 }
 
@@ -205,12 +235,9 @@ body {
   gap: 2px;
 }
 
-.me-toolbar__separator {
-  width: 1px;
-  align-self: stretch;
-  margin: 3px 5px;
-  background: var(--me-separator);
-}
+/* The gap between groups already separates them. A drawn line for every one of
+   them is six more marks on screen saying what the spacing has said already. */
+.me-toolbar__separator { display: none; }
 
 .me-toolbar__spacer { flex: 1; }
 
@@ -222,7 +249,9 @@ body {
   height: 28px;
   padding: 0;
   font: inherit;
-  color: inherit;
+  /* Secondary until wanted. The document is the thing with something to say;
+     the tools only need to be findable. */
+  color: var(--me-secondary-text);
   background: none;
   border: 1px solid transparent;
   border-radius: 6px;
@@ -230,16 +259,17 @@ body {
 }
 
 .me-tool:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--me-accent) 18%, transparent);
-  border-color: color-mix(in srgb, var(--me-accent) 32%, transparent);
+  background: color-mix(in srgb, var(--me-primary-text) 8%, transparent);
+  color: var(--me-primary-text);
 }
 
 .me-tool:disabled { opacity: 0.35; }
 
+/* A tint and the accent, not a filled block. An active Bold button is a state
+   worth reading, not an alarm. */
 .me-tool[aria-pressed="true"] {
-  background: var(--me-selection-background);
-  color: var(--me-selection-text);
-  border-color: var(--me-selection-background);
+  background: color-mix(in srgb, var(--me-accent) 14%, transparent);
+  color: var(--me-accent);
 }
 
 .me-tool svg {
@@ -260,7 +290,7 @@ body {
   display: inline-flex;
   padding: 2px;
   border-radius: 7px;
-  background: color-mix(in srgb, var(--me-primary-text) 10%, transparent);
+  background: color-mix(in srgb, var(--me-primary-text) 6%, transparent);
 }
 
 .me-segmented__option {
@@ -292,7 +322,7 @@ body {
 
 .me-segmented__option[aria-pressed="true"] {
   background: var(--me-page-background);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.18);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.10);
 }
 
 /* ------------------------------------------------------------------- sidebar */
@@ -476,10 +506,10 @@ body {
   align-items: center;
   flex-wrap: wrap;
   padding: 9px 14px;
-  border-bottom: 1px solid var(--me-border);
+  border-bottom: 1px solid var(--me-separator);
   background: color-mix(in srgb, var(--me-accent) 12%, var(--me-page-background));
   font-size: 13px;
-  color: var(--me-text);
+  color: var(--me-primary-text);
 }
 
 .me-notice[hidden] { display: none; }
@@ -498,10 +528,10 @@ body {
 
 .me-notice__button {
   padding: 4px 10px;
-  border: 1px solid var(--me-border);
+  border: 1px solid var(--me-separator);
   border-radius: 6px;
   background: var(--me-page-background);
-  color: var(--me-text);
+  color: var(--me-primary-text);
   font: inherit;
   cursor: pointer;
 }
@@ -676,21 +706,70 @@ body {
   outline-offset: 2px;
 }
 
+/* WI-22: the resize frame, drawn over the selected image rather than inside it.
+   Nothing may be nested in `.me-image`, whose text content is one placeholder
+   character standing in for the whole reference. */
+.me-image-frame {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.me-image-frame__handle {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  padding: 0;
+  border: 1px solid var(--me-page-background);
+  border-radius: 50%;
+  background: var(--me-accent);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 30%);
+  pointer-events: auto;
+}
+
+.me-image-frame__handle:focus-visible {
+  outline: 2px solid var(--me-accent);
+  outline-offset: 2px;
+}
+
+/* Centred on the corner, so the grab point is the corner itself. */
+.me-image-frame__handle--nw { top: -6px; left: -6px; cursor: nwse-resize; }
+.me-image-frame__handle--ne { top: -6px; right: -6px; cursor: nesw-resize; }
+.me-image-frame__handle--sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
+.me-image-frame__handle--se { bottom: -6px; right: -6px; cursor: nwse-resize; }
+
+/* While dragging, the pointer is captured and may travel anywhere on screen;
+   the cursor has to stay the resize cursor the whole way. */
+.me-image-frame[data-dragging] { pointer-events: auto; }
+.me-image-frame[data-dragging]::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  cursor: nwse-resize;
+}
+
 /* WI-17: the size panel, anchored under the image it describes. */
 .me-image-size {
   position: absolute;
-  z-index: 5;
+  z-index: 6;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 8px;
+  padding: 4px 6px;
   border-radius: 8px;
-  border: 1px solid var(--me-border);
-  background: var(--me-panel-background, var(--me-background));
-  box-shadow: 0 4px 14px rgb(0 0 0 / 18%);
+  border: 1px solid var(--me-separator);
+  background: var(--me-page-background);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 12%);
   font-size: 12px;
   color: var(--me-secondary-text);
   user-select: none;
+}
+
+/* `hidden` is only a UA-stylesheet `display: none`, which the rule above beats.
+   Without this the empty panel sits over every document, permanently. */
+.me-image-size[hidden],
+.me-image-frame[hidden] {
+  display: none;
 }
 
 .me-image-size__label {
@@ -700,12 +779,12 @@ body {
 }
 
 .me-image-size__field {
-  width: 62px;
+  width: 58px;
   padding: 2px 4px;
   border-radius: 4px;
-  border: 1px solid var(--me-border);
-  background: var(--me-background);
-  color: var(--me-text);
+  border: 1px solid var(--me-separator);
+  background: var(--me-page-background);
+  color: var(--me-primary-text);
   font: inherit;
 }
 
@@ -714,12 +793,12 @@ body {
   border-radius: 4px;
   padding: 3px 7px;
   background: var(--me-inline-code-background);
-  color: var(--me-text);
+  color: var(--me-primary-text);
   font: inherit;
   cursor: pointer;
 }
 
-.me-image-size__reset:hover { background: var(--me-border); }
+.me-image-size__reset:hover { background: var(--me-separator); }
 
 .me-image--broken {
   font-family: var(--me-mono-font);
@@ -760,8 +839,8 @@ body {
   padding: 0 12px;
   font-size: 11px;
   color: var(--me-secondary-text);
-  background: var(--me-sidebar-background);
-  border-top: 1px solid var(--me-separator);
+  background: var(--me-page-background);
+  border-top: 1px solid color-mix(in srgb, var(--me-separator) 45%, transparent);
   user-select: none;
 }
 
