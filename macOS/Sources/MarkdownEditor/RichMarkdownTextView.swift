@@ -508,10 +508,13 @@ final class RichMarkdownTextView: NSTextView {
     /// the pointer for as far out as its own handles are drawn.
     private func hoverRange(at point: NSPoint) -> NSRange? {
         if let onPicture = imageRange(at: point) { return onPicture }
-        let reach = EditorImageGeometry.overlayInset + EditorImageGeometry.handleSide
+        // Only the corners reach out, and only as far as their own hit rects.
+        // A uniform halo would light a picture up when the pointer is plainly
+        // beside it rather than on it — the reach exists for the handles, so
+        // it should be exactly the handles.
         for range in visibleImageRanges() {
             guard let rect = imageRect(for: range) else { continue }
-            if rect.insetBy(dx: -reach, dy: -reach).contains(point) { return range }
+            if EditorImageGeometry.corner(at: point, in: rect) != nil { return range }
         }
         return nil
     }

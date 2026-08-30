@@ -365,6 +365,17 @@ struct CheckImageLayout {
             )
             textView.updateHover(at: NSPoint(x: drawn.midX, y: drawn.midY))
         }
+        // The reach is for the handles, so it must not become a halo. Beside
+        // the middle of an edge there is nothing to grab, and lighting the
+        // picture up there would claim the pointer for a picture it is plainly
+        // not on.
+        textView.updateHover(at: NSPoint(x: drawn.midX, y: drawn.midY))
+        textView.updateHover(at: NSPoint(x: drawn.maxX + 14, y: drawn.midY))
+        check(
+            "beside the middle of an edge the picture lets go",
+            textView.imageHandlesForChecking.isHidden,
+            "handles still showing 14pt out from the edge"
+        )
         textView.updateHover(at: nil)
 
         _ = textView.selectImageForChecking(at: CGPoint(x: drawn.midX, y: drawn.midY))
