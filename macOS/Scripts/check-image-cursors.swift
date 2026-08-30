@@ -97,8 +97,20 @@ func move(to point: CGPoint) {
     // A warp alone does not always retrack; a real move event does.
     CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left)?
         .post(tap: .cghidEventTap)
-    Thread.sleep(forTimeInterval: 0.45)
+    Thread.sleep(forTimeInterval: settleAfterMove)
 }
+
+/// How long to let the app react before photographing the pointer.
+///
+/// These checks measure the *shape*, not how promptly it appears. Promptness
+/// cannot be measured here at all: spawning `screencapture` costs more than
+/// the run-loop turnaround that produced the delay, so a pointer corrected on
+/// a later pass is already correct by the time the photograph is taken. That
+/// was confirmed by reverting the fix — every reading here stayed green while
+/// the app visibly lagged. `make check-image-layout` covers it instead, by
+/// asking for the shape with the overlay still hidden, which is the state a
+/// first pass is actually in.
+var settleAfterMove: TimeInterval = 0.45
 
 func click(at point: CGPoint) {
     move(to: point)
