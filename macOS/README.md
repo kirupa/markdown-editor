@@ -841,6 +841,13 @@ Editor.app`, unregisters the `build/` copy, and registers the installed one with
 `lsregister`. Set `INSTALL_DIR` to install somewhere else. Use `make run` for
 development and `make install` for the copy Finder should open files with.
 
+Both `install-app.sh` and `uninstall-app.sh` ask a running copy to quit, then
+**wait up to ten seconds and refuse** if it is still there. Neither forces the
+removal. A quit that does not complete usually means the app is holding an
+unsaved-changes sheet, and deleting the bundle at that moment destroys the app
+the person is being asked about and leaves them answering a dialog belonging to
+something no longer on disk.
+
 `Scripts/make-icons.swift` draws both icons with Core Graphics and packs them
 with `iconutil`, so there is no asset catalog or design tool in the loop. The
 results are committed, so a normal build never runs it.
