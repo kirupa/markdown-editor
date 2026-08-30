@@ -556,6 +556,7 @@ meaningless, and the obvious report is "I cannot select my image".
 | I-52 | A picture is read from wherever the document says it is: beside the document, in a subfolder, **above** the document (`../images/photo.png`), or at an absolute path. Percent-encoded and plainly-written spaces both resolve. |
 | I-53 | Reading is not governed by the assets containment rule. That rule (I-18) is about **writing**: an import must not put a file outside the document's folder. Applying it to reading protected nothing — the app can already open anything its reader can, and a document displayed on its own reader's screen discloses nothing to anybody — while silently replacing legitimate pictures with a placeholder. The `../` layout it rejected is what static site generators and most note-taking folders produce. |
 | I-54 | A destination that resolves to something which is not a decodable image draws the placeholder and nothing else. It is never executed, never fetched, and never reported anywhere. |
+| I-55 | A click on a picture is checked against the **real editor hierarchy**, not a bare text view. The app layers a floating explorer, a centred preview column, a gripper and a toolbar around the text, and any of them covering the picture would swallow the click while every geometry check still passed. `make check-editor-clicks` asserts that a click on the picture reaches the rendered pane, a click on a corner reaches the resize handle, and a click on ordinary text still reaches the text. |
 
 `boundingRect(forGlyphRange:in:)` is not the picture either: it returns the
 glyph's *line box*, as tall as the tallest thing on the line plus line spacing,
@@ -817,6 +818,7 @@ make install
 | `make check-session` | Compiles the real session against recording panes: which pane may move which, and what happens when another app rewrites the open file |
 | `make check-image-handles` | Renders real attachments and finds them by pixel: proves the picture rect is the drawn picture and not its line box, and guards the baseline-offset rule across seven offsets |
 | `make check-image-layout` | The same geometry through the **real** `RichMarkdownStyler`, plus the pointer rects each view registers, the clicks that select a picture, and the four ways a resize used to go wrong: focus, reflow, a refused commit, and a cursor stranded by teardown |
+| `make check-editor-clicks` | Hosts the **real SwiftUI editor**, opens a document off disk, and asks the window which view a click on a picture would actually reach — the one check that can see a floating explorer or gripper covering the preview |
 | `make check-image-cursors` | Opt-in. Drives the real mouse across a real screen and identifies the pointer from screen pixels. Needs `MDE_ALLOW_SCREEN_CONTROL=1` and an idle machine |
 | `make clean` | Cleans the package build directory and removes `build/` |
 
