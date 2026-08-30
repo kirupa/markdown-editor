@@ -283,6 +283,21 @@ print("")
 print("Pointer shapes over a picture")
 assertCandidatesAreVisible(candidates)
 
+// A check that cannot photograph the screen cannot answer anything about the
+// pointer. Behind a lock screen macOS refuses region and window captures while
+// still allowing a full-screen one, so every measurement below comes back as a
+// capture failure worded as though the app were at fault. Say what is wrong
+// once, plainly, and stop.
+if capture(region: CGRect(x: 0, y: 0, width: 40, height: 40),
+           cursor: false,
+           to: "/tmp/mde-cursor-probe.png") == nil {
+    check("the screen can be photographed at all", false,
+          "screencapture refused a 40x40 region — the screen is locked, or Screen Recording is not permitted")
+    restoreMouse()
+    exit(1)
+}
+check("the screen can be photographed at all", true)
+
 // `screencapture -R` reads the screen, not a window, so the app has to be in
 // front or the checks measure whatever is covering it.
 if let app = NSRunningApplication(processIdentifier: pid_t(pid)) {

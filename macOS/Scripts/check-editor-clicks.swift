@@ -311,6 +311,96 @@ enum Harness {
         )
 
         // ── And ordinary text still behaves like text ────────────────────
+        // ── A whole drag, from the mouse to the Markdown ─────────────────
+        //
+        // The gesture and the text transform are checked separately elsewhere.
+        // Nothing until now asserted they compose: that a drag in the real
+        // window, through the real session, produces the right document. This
+        // is the only place the answer is the file's own text.
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        textView.updateImageHandles()
+        textView.updateHover(at: nil)
+
+        func mouse(_ type: NSEvent.EventType, _ point: NSPoint) -> NSEvent? {
+            NSEvent.mouseEvent(
+                with: type,
+                location: textView.convert(point, to: nil),
+                modifierFlags: [],
+                timestamp: 0,
+                windowNumber: window.windowNumber,
+                context: nil,
+                eventNumber: 0,
+                clickCount: 1,
+                pressure: 1
+            )
+        }
+
+        // Aimed at the middle of a word, measured from the layout. Every
+        // guessed offset lands in a blank line or past the end of a short one,
+        // where even a mid-word implementation returns a line boundary.
+        let bodyText = storage.string as NSString
+        let wordRange = bodyText.range(of: "before")
+        var dropPoint = NSPoint(x: picture.midX, y: picture.minY - 24)
+        if wordRange.location != NSNotFound {
+            let glyphs = layoutManager.glyphRange(
+                forCharacterRange: wordRange,
+                actualCharacterRange: nil
+            )
+            let wordRect = layoutManager
+                .boundingRect(forGlyphRange: glyphs, in: container)
+                .offsetBy(dx: textView.textContainerOrigin.x,
+                          dy: textView.textContainerOrigin.y)
+            dropPoint = NSPoint(x: wordRect.midX, y: wordRect.midY)
+        }
+
+        let grab = NSPoint(x: picture.midX, y: picture.midY)
+        if let d = mouse(.leftMouseDown, grab) { textView.mouseDown(with: d) }
+        if let m = mouse(.leftMouseDragged, dropPoint) { textView.mouseDragged(with: m) }
+        check("the drag is under way", textView.isMovingImage)
+        check(
+            "a gap is held open where it would land",
+            (textView.dropGap?.height ?? 0) > 1
+        )
+        if let u = mouse(.leftMouseUp, dropPoint) { textView.mouseUp(with: u) }
+        settle(for: 0.8)
+
+        let moved = document.text
+        check(
+            "the drag rewrote the document",
+            moved != source,
+            "document is unchanged"
+        )
+        // Assert the words survived rather than that some substring is absent.
+        // A picture is inserted with a blank line either side, so splicing it
+        // into a word still passes a check for "be![photo]" while the word is
+        // destroyed — a weaker version of this let a broken build through.
+        check(
+            "every word of the document survived the drag",
+            moved.contains("# Existing document")
+                && moved.contains("Text before the picture.")
+                && moved.contains("Text after."),
+            moved.debugDescription
+        )
+        check(
+            "the picture landed above the paragraph it was dropped on",
+            moved.range(of: "![photo](../images/photo.png)").map { image in
+                moved.range(of: "Text before the picture.").map { text in
+                    image.lowerBound < text.lowerBound
+                } ?? false
+            } ?? false,
+            moved.debugDescription
+        )
+        check(
+            "it is a block of its own, blank line either side",
+            moved.contains("\n\n![photo](../images/photo.png)\n\n"),
+            moved.debugDescription
+        )
+        check(
+            "it did not leave an empty paragraph behind",
+            !moved.contains("\n\n\n"),
+            moved.debugDescription
+        )
+
         let belowPicture = textView.convert(
             NSPoint(x: picture.midX, y: picture.maxY + 40),
             to: nil

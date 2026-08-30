@@ -32,6 +32,23 @@ WHY
     exit 0
 fi
 
+# A locked screen is not a failing check, it is an unavailable one, and the
+# difference matters: `screencapture -R` and `-l` both refuse behind the lock
+# screen while full-screen capture keeps working, so the pointer checks come
+# back as "could not capture the document window" and read exactly like a bug
+# in the app. Say what is actually wrong instead.
+if ioreg -n Root -d1 -a 2>/dev/null | grep -A1 CGSSessionScreenIsLocked | grep -q "<true/>"; then
+    cat <<'WHY'
+The screen is locked, so the pointer cannot be photographed. macOS refuses
+region and window captures behind the lock screen while still allowing a
+full-screen one, so this check would report a capture failure that looks like
+an app bug.
+
+Unlock the screen and run it again.
+WHY
+    exit 0
+fi
+
 fixture="$(mktemp -d)"
 app="build/Markdown Editor.app"
 pid=""

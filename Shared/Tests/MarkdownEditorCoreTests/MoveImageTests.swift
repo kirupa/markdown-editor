@@ -29,9 +29,33 @@ struct MoveImageTests {
         // Aimed at the middle of "Omega", which is what the pointer was over.
         let inside = (text as NSString).range(of: "Omega").location + 3
         let result = MarkdownFormatting.moveImage(in: text, range: imageRange, to: inside)
-        #expect(!result.text.contains("Ome\(image)"))
-        #expect(!result.text.contains("\(image)ga"))
-        #expect(result.text.contains("\n\(image)\n"))
+        // Assert the words survived, not that some substring is absent. The
+        // picture is inserted with a blank line either side, so splicing it
+        // into "Omega" yields "Ome\n\n![photo](a.png)\n\nga" — which passes a
+        // check for "Ome![photo]" while the word is still destroyed. That
+        // weaker assertion let a deliberately broken build through.
+        #expect(result.text.contains("Omega paragraph."))
+        #expect(result.text.contains("Alpha paragraph."))
+        #expect(result.text.contains("# Drag"))
+    }
+
+    @Test("no word is ever broken, wherever it is dropped")
+    func everyWordSurvivesEveryDrop() {
+        let text = document
+        let words = ["# Drag", "Alpha paragraph.", "Omega paragraph."]
+        for target in 0...(text as NSString).length {
+            let result = MarkdownFormatting.moveImage(
+                in: text,
+                range: imageRange,
+                to: target
+            )
+            for word in words {
+                #expect(
+                    result.text.contains(word),
+                    "dropping at \(target) broke \(word.debugDescription): \(result.text.debugDescription)"
+                )
+            }
+        }
     }
 
     @Test("moving below the last paragraph puts it at the end as its own block")

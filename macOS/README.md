@@ -563,6 +563,8 @@ meaningless, and the obvious report is "I cannot select my image".
 | I-59 | A picture can be **dragged between lines**. A press stays a click until it has travelled 4pt, so selecting with an unsteady hand cannot rewrite the document. Past that a **horizontal rule** marks the boundary it would land on, a **gap opens** to show it fitting there, and a translucent copy follows the pointer. The gap is an `NSTextContainer` exclusion path, not an edit: previewing a move must not touch the document. Releasing moves the Markdown as one undoable edit named *Move Image*. |
 | I-60 | A picture always lands as a **block of its own**, separated by a blank line either side, and never spliced into a word. Inserting at the nearest character is what the first version did, and a real drag aimed at the gap above a paragraph produced `Ome![photo](a.png)ga paragraph.` The drop point is snapped to a line boundary in the view *and* in `MarkdownFormatting.moveImage`, so neither half can reintroduce it alone. |
 | I-61 | Anywhere on the picture's **own line** is not a destination: both edges of that line are the place it already occupies, so a drop a pixel below it is a no-op rather than a rewrite. Lifting a picture out takes its line with it when the line held nothing else, and collapses the blank lines left behind — no blank line at the start, one newline at the end, one blank line in the body — so moving a picture does not add a paragraph break each time. The destination is measured before the removal, so offsets after it shift by what was taken; the insertion offset is clamped, because an uncorrected offset is an out-of-bounds insert and therefore a crash rather than a misplaced picture. |
+| I-62 | A drag is checked **end to end**, from the synthesised mouse events to the Markdown the document ends up holding, in the real hosted editor. The gesture and the text transform were checked separately and nothing asserted they compose. It asserts on the words surviving, not on a substring being absent: a picture is inserted with a blank line either side, so splicing it into a word yields `Ome\n\n![photo](a.png)\n\nga`, which passes a check for `Ome![photo]` while the word is still destroyed — that weaker assertion let a deliberately broken build through twice. |
+| I-63 | The pointer check **refuses to run behind a lock screen** rather than failing. macOS declines region and window captures when the screen is locked while still allowing a full-screen one, so every measurement came back as `could not capture the document window`, which reads as a bug in the app. The runner detects the lock before building anything, and the check itself photographs a 40×40 region first and stops with the real reason if it cannot. |
 
 `boundingRect(forGlyphRange:in:)` is not the picture either: it returns the
 glyph's *line box*, as tall as the tallest thing on the line plus line spacing,
@@ -865,7 +867,7 @@ the code they cover, so this one command covers the iOS build's engine too.
 
 ### 16.1 Test coverage
 
-417 tests across 31 suites, in the shared package:
+418 tests across 31 suites, in the shared package:
 
 | Suite | Tests | Covers |
 | --- | --- | --- |
@@ -874,7 +876,7 @@ the code they cover, so this one command covers the iOS build's engine too.
 | Markdown render model | 31 | Block and inline parsing, boundary rules, escapes, range mapping |
 | Remote images | 29 | Which addresses are fetched, the transfer ceiling enforced against a stubbed server, decoding, failure caching |
 | Image tags | 25 | `<img …>` parsing and writing, liberal attribute forms, proportional sizing |
-| Moving an image | 14 | Moving a picture's Markdown, the offset correction a forward move needs, dropping on itself, HTML tags, sizes surviving the move, and a move that undoes itself |
+| Moving an image | 15 | Moving a picture's Markdown, the offset correction a forward move needs, dropping on itself, HTML tags, sizes surviving the move, and a move that undoes itself |
 | Local image cache | 12 | Serving unchanged files from memory, re-reading a picture edited underneath us, the pixel-cost budget, and unreadable files |
 | Editor scroll geometry | 18 | When a pane's figures may be trusted, fraction ↔ offset conversion, and the recorded numbers from the typing-jump bug |
 | Markdown text codec invariants | 14 | Byte-exact round trips over the corpus, line endings, byte order marks, nine shapes of malformed UTF-8 |
