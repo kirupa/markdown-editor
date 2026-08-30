@@ -610,20 +610,18 @@ public enum MarkdownFormatting {
         )
     }
 
-    /// Move the image occupying `range` so that it sits at `destination`.
+    /// Move the image occupying `range` so that it becomes its own block at
+    /// `destination`.
     ///
-    /// `destination` is an offset into the *original* text, which is what a
-    /// caller dragging a picture around a rendered document naturally has: the
-    /// place the pointer is pointing at, measured before anything moved.
-    /// Removing the image first shifts every later offset left by its length,
-    /// so a destination past the image has to be corrected for that — getting
-    /// this wrong lands the picture a whole image reference away from the
-    /// insertion point, and only when dragging forwards.
+    /// `destination` is an offset into the *original* text and is snapped to a
+    /// line boundary, because a picture dropped between two lines belongs
+    /// between them rather than inside one. Splicing it at an arbitrary
+    /// character is what the first version did, and it produced documents like
+    /// `Ome![photo](a.png)ga paragraph.` from a drop aimed at the gap above.
     ///
-    /// Dropping an image back inside its own text is not a move, and neither is
-    /// dropping it exactly where it already begins or ends. Those return the
-    /// text unchanged rather than rebuilding it identically, so an accidental
-    /// nudge does not become an undo step.
+    /// The picture takes its line with it when the line held nothing else, so
+    /// moving a picture does not leave an empty paragraph behind and does not
+    /// add a paragraph break every time it is moved.
     public static func moveImage(
         in text: String,
         range requestedRange: NSRange,
@@ -643,21 +641,130 @@ public enum MarkdownFormatting {
         }
 
         let markdown = source.substring(with: range)
+        let removal = imageBlockRange(source, imageRange: range)
         let mutable = NSMutableString(string: text)
-        mutable.deleteCharacters(in: range)
-        // Clamped, not trusted: an offset that is wrong by the image's own
-        // length is an out-of-bounds insert on the shortened string, and that
-        // is a crash rather than a misplaced picture.
-        let shifted = target > NSMaxRange(range) ? target - range.length : target
-        let insertion = min(max(shifted, 0), mutable.length)
-        mutable.insert(markdown, at: insertion)
+        mutable.deleteCharacters(in: removal)
+
+        // The destination was measured against the document as it stood, so
+        // every offset after the removal has shifted left by what was taken.
+        var moved = shifting(target, removing: removal)
+        if let collapsed = collapseNewlineRun(mutable, at: removal.location) {
+            moved = shifting(moved, removing: collapsed)
+        }
+
+        let insertion = lineBoundary(mutable, near: moved)
+        let (before, after) = blockSeparators(mutable, at: insertion)
+        mutable.insert(before + markdown + after, at: insertion)
 
         return MarkdownEditResult(
             text: mutable as String,
             // Keep the picture selected where it landed, so it can be nudged
             // again or resized without hunting for it.
-            selection: NSRange(location: insertion, length: range.length)
+            selection: NSRange(
+                location: insertion + (before as NSString).length,
+                length: (markdown as NSString).length
+            )
         )
+    }
+
+    /// What to remove when lifting a picture out.
+    ///
+    /// A picture alone on its line takes the line with it. A picture sitting in
+    /// the middle of a sentence takes only itself, because removing that line
+    /// would take the sentence too.
+    private static func imageBlockRange(
+        _ source: NSString,
+        imageRange: NSRange
+    ) -> NSRange {
+        let line = source.lineRange(for: imageRange)
+        let leading = source.substring(
+            with: NSRange(
+                location: line.location,
+                length: imageRange.location - line.location
+            )
+        )
+        let trailingStart = NSMaxRange(imageRange)
+        let trailing = source.substring(
+            with: NSRange(
+                location: trailingStart,
+                length: NSMaxRange(line) - trailingStart
+            )
+        )
+        guard
+            leading.trimmingCharacters(in: .whitespaces).isEmpty,
+            trailing.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return imageRange }
+        return line
+    }
+
+    /// Where `offset` ends up once `removed` has been taken out.
+    private static func shifting(_ offset: Int, removing removed: NSRange) -> Int {
+        if offset <= removed.location { return offset }
+        if offset >= NSMaxRange(removed) { return offset - removed.length }
+        return removed.location
+    }
+
+    /// Reduce a run of blank lines at `offset` to a single blank line.
+    ///
+    /// Taking a picture's line out leaves the blank line above it next to the
+    /// blank line below it, which reads as a paragraph break the author never
+    /// typed.
+    @discardableResult
+    private static func collapseNewlineRun(
+        _ text: NSMutableString,
+        at offset: Int
+    ) -> NSRange? {
+        guard offset >= 0, offset <= text.length else { return nil }
+        var start = offset
+        while start > 0, text.character(at: start - 1) == 0x0A { start -= 1 }
+        var end = offset
+        while end < text.length, text.character(at: end) == 0x0A { end += 1 }
+        // A blank line is two newlines in the body of a document, but at the
+        // very end it is trailing whitespace, and at the very start it is a
+        // leading empty line. Taking a picture's block out should not leave
+        // either behind.
+        let keep: Int
+        if start == 0 {
+            keep = 0
+        } else if end >= text.length {
+            keep = 1
+        } else {
+            keep = 2
+        }
+        guard end - start > keep else { return nil }
+        let excess = NSRange(location: start + keep, length: end - start - keep)
+        text.deleteCharacters(in: excess)
+        return excess
+    }
+
+    /// The start of the line `offset` falls in, so an insertion lands between
+    /// lines rather than inside one.
+    private static func lineBoundary(_ text: NSString, near offset: Int) -> Int {
+        guard offset < text.length else { return text.length }
+        return text.lineRange(for: NSRange(location: offset, length: 0)).location
+    }
+
+    /// The newlines needed either side of `offset` for what is inserted there
+    /// to be a block of its own.
+    private static func blockSeparators(
+        _ text: NSString,
+        at offset: Int
+    ) -> (String, String) {
+        let before: String
+        if offset <= 0 {
+            before = ""
+        } else {
+            let prefix = text.substring(to: offset)
+            before = prefix.hasSuffix("\n\n") ? "" : (prefix.hasSuffix("\n") ? "\n" : "\n\n")
+        }
+        let after: String
+        if offset >= text.length {
+            after = ""
+        } else {
+            let suffix = text.substring(from: offset)
+            after = suffix.hasPrefix("\n\n") ? "" : (suffix.hasPrefix("\n") ? "\n" : "\n\n")
+        }
+        return (before, after)
     }
 
     /// The image reference occupying exactly `range`, in either form, or nil.

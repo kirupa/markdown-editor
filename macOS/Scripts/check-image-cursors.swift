@@ -362,7 +362,7 @@ check("the pointer over text is an I-beam", textCursor == "I-beam",
 
 let centre = CGPoint(x: picture.midX, y: picture.midY)
 let (bodyCursor, bodyScore, bodyPixels) = identifyCursor(at: centre)
-check("the pointer over the picture is an arrow", bodyCursor == "arrow",
+check("the pointer over the picture is a pointing hand", bodyCursor == "pointing hand",
       String(format: "saw %@ (%.2f, %d px)", bodyCursor, bodyScore, bodyPixels))
 
 click(at: centre)
@@ -380,7 +380,7 @@ for (name, point, expected) in corners {
 }
 
 let (bodyAgain, bodyAgainScore, _) = identifyCursor(at: centre)
-check("the pointer between the handles is still an arrow", bodyAgain == "arrow",
+check("the pointer between the handles is still a pointing hand", bodyAgain == "pointing hand",
       String(format: "saw %@ (%.2f)", bodyAgain, bodyAgainScore))
 
 restoreMouse()

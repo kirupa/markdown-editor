@@ -1,16 +1,15 @@
 import AppKit
 
-/// The caret shown while a picture is being dragged, marking where it will
-/// land if it is dropped now.
+/// The line shown while a picture is being dragged, marking where it will land.
 ///
-/// This is the same promise the text caret makes — the picture is going to be
-/// inserted *here*, between these two characters — so it is drawn the same way
-/// rather than as a box or a highlight, which would suggest replacing
-/// something instead of moving between.
+/// A picture dropped into a document goes *between* two lines, not between two
+/// characters, so this is drawn as a rule across the column rather than as a
+/// text caret. The first version used a caret, and it invited exactly the drop
+/// it looked like it was promising: into the middle of a word.
 ///
 /// Purely decorative: it never takes a click.
 @MainActor
-final class MarkdownImageDropCaret: NSView {
+final class MarkdownImageDropLine: NSView {
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
 
@@ -27,15 +26,15 @@ final class MarkdownImageDropCaret: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    /// Show the caret filling `rect`, or nothing when it is nil.
-    func show(at rect: NSRect?) {
-        guard let rect, rect.height > 1 else {
+    /// Draw the rule across `width` at `y`, or nothing when `y` is nil.
+    func show(atY y: CGFloat?, from x: CGFloat, width: CGFloat) {
+        guard let y, width > 1 else {
             guard !isHidden else { return }
             isHidden = true
             return
         }
-        let wanted = NSRect(x: rect.minX - Self.width / 2, y: rect.minY,
-                            width: Self.width, height: rect.height)
+        let wanted = NSRect(x: x, y: y - Self.thickness / 2,
+                            width: width, height: Self.thickness)
         if isHidden || wanted != frame {
             frame = wanted
             isHidden = false
@@ -43,13 +42,14 @@ final class MarkdownImageDropCaret: NSView {
         }
     }
 
-    /// Wider than the text caret. This one is being aimed at while the pointer
-    /// is moving, so it has to be findable rather than discreet.
-    private static let width: CGFloat = 2
+    /// Thick enough to read as a deliberate mark at a glance while the pointer
+    /// is moving, which a hairline is not.
+    private static let thickness: CGFloat = 3
 
     override func draw(_ dirtyRect: NSRect) {
         NSColor.controlAccentColor.setFill()
-        NSBezierPath(roundedRect: bounds, xRadius: 1, yRadius: 1).fill()
+        NSBezierPath(roundedRect: bounds, xRadius: Self.thickness / 2,
+                     yRadius: Self.thickness / 2).fill()
     }
 }
 

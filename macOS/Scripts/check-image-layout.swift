@@ -286,16 +286,16 @@ struct CheckImageLayout {
         // both were measured on a real screen still showing an I-beam over a
         // picture at 0.96 confidence.
         check(
-            "the pointer over a picture is an arrow",
-            textView.pointerCursor(at: NSPoint(x: drawn.midX, y: drawn.midY)) === NSCursor.arrow
+            "the pointer over a picture is the hand you pick things up with",
+            textView.pointerCursor(at: NSPoint(x: drawn.midX, y: drawn.midY)) === NSCursor.pointingHand
         )
         check(
             "the pointer over plain text is still an I-beam",
             textView.pointerCursor(at: NSPoint(x: drawn.midX, y: drawn.maxY + 30)) === NSCursor.iBeam
         )
         check(
-            "the pointer just outside a picture is not an arrow",
-            textView.pointerCursor(at: NSPoint(x: drawn.maxX + 20, y: drawn.midY)) !== NSCursor.arrow
+            "the pointer just outside a picture is not the hand",
+            textView.pointerCursor(at: NSPoint(x: drawn.maxX + 20, y: drawn.midY)) !== NSCursor.pointingHand
         )
 
         // Order is load-bearing and invisible. These rects were once added
@@ -444,7 +444,21 @@ struct CheckImageLayout {
         textView.moveImage = { range, destination in moved = (range, destination) }
 
         let grab = NSPoint(x: drawn.midX, y: drawn.midY)
-        let tail = NSPoint(x: drawn.midX, y: drawn.maxY + 40)
+        // Aimed at the exact middle of a word, measured from the layout rather
+        // than guessed at with an offset. Every guess landed in a blank line or
+        // past the end of a short one, where even a mid-word implementation
+        // returns a line boundary and looks correct.
+        let bodyText = (textView.textStorage?.string ?? "") as NSString
+        let wordRange = bodyText.range(of: "pushes")
+        var tail = NSPoint(x: drawn.midX, y: drawn.maxY + 40)
+        if wordRange.location != NSNotFound,
+           let lm = textView.layoutManager,
+           let container = textView.textContainer {
+            let glyphs = lm.glyphRange(forCharacterRange: wordRange, actualCharacterRange: nil)
+            let wordRect = lm.boundingRect(forGlyphRange: glyphs, in: container)
+                .offsetBy(dx: textView.textContainerOrigin.x, dy: textView.textContainerOrigin.y)
+            tail = NSPoint(x: wordRect.midX, y: wordRect.midY)
+        }
 
         // A press that barely moves is a click.
         moved = nil
@@ -475,10 +489,34 @@ struct CheckImageLayout {
                 "drop \(drop) vs image \(imageRange)"
             )
             check(
-                "the caret has somewhere to be drawn",
-                (textView.insertionRect(at: drop)?.height ?? 0) > 1
+                "the drop line has somewhere to be drawn",
+                (textView.dropBoundary(
+                    for: tail,
+                    moving: imageRange
+                )?.y ?? 0) > 0
+            )
+            check(
+                "a gap is held open for the picture",
+                (textView.dropGap?.height ?? 0) > 1,
+                "gap \(String(describing: textView.dropGap))"
             )
         }
+        // The whole point of the change: a drop lands *between* lines. If this
+        // ever reports a character in the middle of a word again, the document
+        // gets `Ome![photo](a.png)ga paragraph.` back.
+        if let drop = textView.imageDropLocation, let storage = textView.textStorage {
+            let text = storage.string as NSString
+            let atStart = drop == 0
+            let atEnd = drop >= text.length
+            let afterNewline = drop > 0 && text.character(at: drop - 1) == 0x0A
+            let beforeNewline = drop < text.length && text.character(at: drop) == 0x0A
+            check(
+                "the drop point is a line boundary, never mid-word",
+                atStart || atEnd || afterNewline || beforeNewline,
+                "drop \(drop) sits inside \(text.substring(with: NSRange(location: max(0, drop - 4), length: min(8, text.length - max(0, drop - 4)))).debugDescription)"
+            )
+        }
+
         let expected = textView.imageDropLocation
         if let u = mouse(.leftMouseUp, tail) { textView.mouseUp(with: u) }
         check("releasing asks for the move", moved != nil)

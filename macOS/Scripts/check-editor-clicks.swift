@@ -218,13 +218,45 @@ enum Harness {
         textView.setSelectedRange(NSRange(location: 0, length: 0))
         textView.updateImageHandles()
         check(
-            "the pointer over an untouched picture is an arrow",
-            textView.pointerCursor(at: NSPoint(x: picture.midX, y: picture.midY)) === NSCursor.arrow,
+            "the pointer over an untouched picture is the hand you pick things up with",
+            textView.pointerCursor(at: NSPoint(x: picture.midX, y: picture.midY)) === NSCursor.pointingHand,
             "got \(textView.pointerCursor(at: NSPoint(x: picture.midX, y: picture.midY)))"
         )
         check(
             "the pointer over text beneath it is an I-beam",
             textView.pointerCursor(at: NSPoint(x: picture.midX, y: picture.maxY + 30)) === NSCursor.iBeam
+        )
+
+        // ── Hovering must reveal the handles, without a click ────────────
+        //
+        // The frame used to appear only once a picture had been clicked, so
+        // the thing telling you a picture can be resized only appeared after
+        // you had already guessed it could.
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        textView.updateImageHandles()
+        textView.updateHover(at: nil)
+        check(
+            "nothing is framed before the pointer arrives",
+            textView.imageHandlesForChecking.isHidden
+        )
+        textView.updateHover(at: NSPoint(x: picture.midX, y: picture.midY))
+        check(
+            "hovering a picture shows the resize frame",
+            textView.imageHandlesForChecking.isShowing
+        )
+        check(
+            "hovering a picture offers all four corners",
+            textView.imageHandlesForChecking.cursorRects().count == 4
+        )
+        check(
+            "the corners are diagonal resize pointers on hover",
+            textView.pointerCursor(at: NSPoint(x: picture.minX, y: picture.minY))
+                !== NSCursor.pointingHand
+        )
+        textView.updateHover(at: NSPoint(x: picture.midX, y: picture.maxY + 40))
+        check(
+            "moving off the picture takes the frame away again",
+            textView.imageHandlesForChecking.isHidden
         )
 
         // ── The click itself, through the real window ────────────────────

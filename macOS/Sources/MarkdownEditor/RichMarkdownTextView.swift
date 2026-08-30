@@ -33,10 +33,10 @@ final class RichMarkdownTextView: NSTextView {
         return overlay
     }()
 
-    private lazy var dropCaret: MarkdownImageDropCaret = {
-        let caret = MarkdownImageDropCaret(frame: .zero)
-        addSubview(caret, positioned: .above, relativeTo: imageHandles)
-        return caret
+    private lazy var dropLine: MarkdownImageDropLine = {
+        let line = MarkdownImageDropLine(frame: .zero)
+        addSubview(line, positioned: .above, relativeTo: imageHandles)
+        return line
     }()
 
     private lazy var dragGhost: MarkdownImageDragGhost = {
@@ -218,11 +218,27 @@ final class RichMarkdownTextView: NSTextView {
 
     /// Put the handles where the selected image is, or take them away.
     func updateImageHandles() {
+        showHandles(around: selectedImageRange() ?? hoveredImageRange)
+    }
+
+    /// The selection, when the selection is a picture.
+    private func selectedImageRange() -> NSRange? {
         let selection = selectedRange()
+        guard selection.length == 1, attachment(in: selection) != nil else { return nil }
+        return selection
+    }
+
+    /// Draw the resize frame around `range`, or hide it when nothing qualifies.
+    ///
+    /// The frame follows the hovered picture as well as the selected one. It
+    /// used to appear only once a picture had been clicked, which meant the
+    /// thing telling you a picture *can* be resized only showed up after you
+    /// had already guessed that it could.
+    private func showHandles(around range: NSRange?) {
         guard
-            selection.length == 1,
-            let attachment = attachment(in: selection),
-            let rect = imageRect(for: selection)
+            let range,
+            let attachment = attachment(in: range),
+            let rect = imageRect(for: range)
         else {
             imageHandles.hide()
             handledImageRange = nil
@@ -231,14 +247,14 @@ final class RichMarkdownTextView: NSTextView {
             refreshImageCursorRects()
             return
         }
-        handledImageRange = selection
+        handledImageRange = range
         // Not while dragging: a live preview rewrites these bounds, and
         // recording the previewed size here would lose the only record of what
         // the document actually says.
         if !imageHandles.isDragging {
             handledImageBounds = attachment.bounds
         }
-        setSelectionHighlightHidden(true)
+        setSelectionHighlightHidden(selectedImageRange() != nil)
         imageHandles.show(
             around: rect,
             naturalSize: naturalSizeForImage?(attachment)
@@ -349,12 +365,12 @@ final class RichMarkdownTextView: NSTextView {
     func refreshImageCursorRects() {
         pointerRects = nil
         installPointerTracking()
-        // Selecting, scrolling or reflowing moves pictures under a pointer that
-        // has not itself moved, so no mouseMoved arrives to correct the
-        // outline. Ask where the pointer is instead of waiting to be told.
-        if let window {
-            updateHover(at: convert(window.mouseLocationOutsideOfEventStream, from: nil))
-        }
+        // Reflow moves a hovered picture under a pointer that has not itself
+        // moved, so the outline has to be re-measured. Only its geometry:
+        // re-deciding *which* picture is hovered from here would call back
+        // into the code that is asking, and the frame would be hidden by the
+        // very act of showing it.
+        refreshHoverGeometry()
         guard let window, window.isVisible else { return }
         window.invalidateCursorRects(for: self)
         if !imageHandles.isHidden {
@@ -429,10 +445,11 @@ final class RichMarkdownTextView: NSTextView {
                 return entry.cursor
             }
         }
-        // A picture is an object to be selected and dragged, not somewhere to
-        // type, so it gets the arrow every other draggable object gets.
+        // A picture is something to pick up, so it gets the hand that every
+        // other grabbable thing gets. The arrow only says "not text", which is
+        // not the same as saying "you can take hold of this".
         if pointerImageRects().contains(where: { $0.contains(point) }) {
-            return .arrow
+            return .pointingHand
         }
         // Taking the cursor over means taking over the cases AppKit used to
         // handle, and a link showing an I-beam would be a regression.
@@ -448,7 +465,7 @@ final class RichMarkdownTextView: NSTextView {
 
     // MARK: - Hover
 
-    /// The picture the pointer is over, in this view's coordinates.
+    /// Where that picture is, in this view's coordinates.
     private(set) var hoveredImageRect: NSRect?
 
     override func mouseMoved(with event: NSEvent) {
@@ -461,17 +478,36 @@ final class RichMarkdownTextView: NSTextView {
         updateHover(at: nil)
     }
 
-    /// Outline the picture under `point`, if any.
+    /// The picture the pointer is over.
+    private(set) var hoveredImageRange: NSRange?
+
+    /// Re-measure the hovered picture without re-deciding which one it is.
+    private func refreshHoverGeometry() {
+        guard let range = hoveredImageRange else { return }
+        hoveredImageRect = imageRect(for: range)
+        imageHover.show(
+            around: selectedImageRange() == range ? nil : hoveredImageRect
+        )
+    }
+
+    /// Outline the picture under `point` and put the resize frame on it.
     ///
-    /// The selected picture is skipped: it already has a frame, and drawing
-    /// both would put two rectangles around one image.
+    /// The outline is suppressed for the selected picture, which already has a
+    /// frame of its own — two rectangles around one picture reads as a bug.
     func updateHover(at point: NSPoint?) {
-        let rect = point.flatMap { p in
-            pointerImageRects().first { $0.contains(p) }
-        }
-        let selected = imageHandles.isHidden ? nil : handledImageRect
-        hoveredImageRect = rect == selected ? nil : rect
-        imageHover.show(around: hoveredImageRect)
+        // Nothing may move while a picture is being carried or resized: the
+        // pointer is a long way from the picture it is acting on.
+        guard !isMovingImage, !imageHandles.isDragging else { return }
+
+        let range = point.flatMap { imageRange(at: $0) }
+        let rect = range.flatMap { imageRect(for: $0) }
+        let changed = range != hoveredImageRange
+        hoveredImageRange = range
+        hoveredImageRect = rect
+
+        let selected = selectedImageRange()
+        imageHover.show(around: range == selected ? nil : rect)
+        if changed { showHandles(around: selected ?? range) }
     }
 
     /// The rect the handles are drawn around, in this view's coordinates.
@@ -575,7 +611,9 @@ final class RichMarkdownTextView: NSTextView {
     @objc private func textLayoutDidChange() {
         // Not while a corner is being dragged: the drag is already moving the
         // picture, and re-deriving the frame underneath it fights the gesture.
-        guard !imageHandles.isDragging else { return }
+        // Nor while a picture is being carried — opening the gap relays out the
+        // document, which would call straight back in here.
+        guard !imageHandles.isDragging, !isMovingImage else { return }
         updateImageHandles()
     }
 
@@ -660,6 +698,10 @@ final class RichMarkdownTextView: NSTextView {
     private(set) var isMovingImage = false
     /// Where the picture would land if it were dropped now.
     private(set) var imageDropLocation: Int?
+    /// The band held open for the picture, in this view's coordinates.
+    private(set) var dropGap: NSRect?
+    /// The size the picture is drawn at, captured before the gap moves it.
+    private var movingImageSize: NSSize?
 
     /// Far enough that a click with an unsteady hand is still a click.
     private static let imageMoveThreshold: CGFloat = 4
@@ -672,6 +714,8 @@ final class RichMarkdownTextView: NSTextView {
             width: point.x - rect.midX,
             height: point.y - rect.midY
         )
+        // Captured now: once the gap opens, the picture's own rect moves.
+        movingImageSize = rect.size
         isMovingImage = false
         imageDropLocation = nil
     }
@@ -712,19 +756,100 @@ final class RichMarkdownTextView: NSTextView {
 
     /// Show where the picture would land, and carry a copy of it there.
     private func updateImageDrop(at point: NSPoint, range: NSRange) {
-        let location = dropLocation(for: point, moving: range)
-        imageDropLocation = location
-        dropCaret.show(at: location.flatMap { insertionRect(at: $0) })
-        if let rect = imageRect(for: range) {
+        if let boundary = dropBoundary(for: point, moving: range) {
+            imageDropLocation = boundary.location
+            openDropGap(atY: boundary.y, height: movingImageSize?.height ?? 0)
+        } else {
+            imageDropLocation = nil
+            closeDropGap()
+        }
+        if let size = movingImageSize {
             dragGhost.show(
                 movingImage(in: range),
-                size: rect.size,
+                size: size,
                 centredOn: NSPoint(
                     x: point.x - imageMoveGrabOffset.width,
                     y: point.y - imageMoveGrabOffset.height
                 )
             )
         }
+    }
+
+    /// Where the picture would be inserted, and the y of the line between.
+    ///
+    /// Always a line boundary. A picture belongs between two lines, so the
+    /// nearest edge of the line under the pointer is the answer, never the
+    /// nearest character.
+    func dropBoundary(for point: NSPoint, moving range: NSRange) -> (location: Int, y: CGFloat)? {
+        guard
+            let layoutManager,
+            let textContainer,
+            let textStorage,
+            textStorage.length > 0
+        else { return nil }
+
+        // While the pointer is inside the gap the answer must not change, or
+        // the gap moves the text that decided where the gap goes.
+        if let gap = dropGap, point.y >= gap.minY, point.y <= gap.maxY,
+           let held = imageDropLocation {
+            return (held, gap.minY)
+        }
+        // Everything below the gap is drawn lower than it really is, so map
+        // the pointer back before asking the layout anything.
+        var probe = point
+        if let gap = dropGap, point.y > gap.maxY { probe.y -= gap.height }
+
+        let origin = textContainerOrigin
+        let inContainer = NSPoint(x: probe.x - origin.x, y: probe.y - origin.y)
+        let glyph = layoutManager.glyphIndex(for: inContainer, in: textContainer)
+        var effective = NSRange()
+        let line = layoutManager
+            .lineFragmentRect(forGlyphAt: glyph, effectiveRange: &effective)
+            .offsetBy(dx: origin.x, dy: origin.y)
+        let characters = layoutManager.characterRange(
+            forGlyphRange: effective,
+            actualGlyphRange: nil
+        )
+        let below = probe.y > line.midY
+        let location = below ? NSMaxRange(characters) : characters.location
+        let y = below ? line.maxY : line.minY
+
+        // Landing anywhere on the picture's own line is not a move: both edges
+        // of that line are the place it already occupies. Guarding only the
+        // picture's characters let a drop one pixel below it count as a move
+        // to where it already was.
+        let own = (string as NSString).lineRange(for: range)
+        guard location < own.location || location > NSMaxRange(own) else { return nil }
+        return (location, y)
+    }
+
+    /// Push everything below `y` down far enough to show the picture fitting.
+    ///
+    /// An exclusion path rather than an edit: the document must not be touched
+    /// to preview a move that has not happened, and text flowing around a
+    /// reserved rectangle is a thing the layout manager already knows how to
+    /// do.
+    private func openDropGap(atY y: CGFloat, height: CGFloat) {
+        guard let textContainer, height > 1 else { return }
+        let gap = NSRect(x: 0, y: y, width: max(textContainer.size.width, 1), height: height)
+        if let current = dropGap, abs(current.minY - gap.minY) < 0.5 { return }
+        dropGap = gap
+        let origin = textContainerOrigin
+        textContainer.exclusionPaths = [
+            NSBezierPath(rect: gap.offsetBy(dx: -origin.x, dy: -origin.y))
+        ]
+        dropLine.show(
+            atY: y,
+            from: origin.x,
+            width: textContainer.size.width
+        )
+    }
+
+    private func closeDropGap() {
+        dropLine.show(atY: nil, from: 0, width: 0)
+        guard dropGap != nil else { return }
+        dropGap = nil
+        textContainer?.exclusionPaths = []
     }
 
     /// The picture being carried, however the attachment happens to hold it.
@@ -734,47 +859,13 @@ final class RichMarkdownTextView: NSTextView {
         return (attachment.attachmentCell as? NSTextAttachmentCell)?.image
     }
 
-    /// The character the picture would be inserted before.
-    ///
-    /// Inside its own text is not a destination — that is a drop back where it
-    /// started — so those points report nothing and the caret disappears,
-    /// which is how a person can tell the gesture will be a no-op.
-    private func dropLocation(for point: NSPoint, moving range: NSRange) -> Int? {
-        let index = characterIndexForInsertion(at: point)
-        guard index < range.location || index > NSMaxRange(range) else { return nil }
-        return index
-    }
-
-    /// A caret-shaped rect at `location`, in this view's coordinates.
-    func insertionRect(at location: Int) -> NSRect? {
-        guard
-            let layoutManager,
-            let textContainer,
-            let textStorage
-        else { return nil }
-        let origin = textContainerOrigin
-        if textStorage.length == 0 {
-            let rect = layoutManager.extraLineFragmentRect
-            return rect.isEmpty ? nil : rect.offsetBy(dx: origin.x, dy: origin.y)
-        }
-        // Past the last character there is no glyph to measure, so measure the
-        // last one and stand at its trailing edge instead.
-        let atEnd = location >= textStorage.length
-        let character = atEnd ? textStorage.length - 1 : location
-        let glyph = layoutManager.glyphIndexForCharacter(at: character)
-        var rect = layoutManager
-            .boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: textContainer)
-            .offsetBy(dx: origin.x, dy: origin.y)
-        if atEnd { rect.origin.x = rect.maxX }
-        return NSRect(x: rect.minX, y: rect.minY, width: 0, height: rect.height)
-    }
-
     private func endImageMove() {
         imageMoveRange = nil
         imageMoveOrigin = nil
         isMovingImage = false
         imageDropLocation = nil
-        dropCaret.show(at: nil)
+        movingImageSize = nil
+        closeDropGap()
         dragGhost.hide()
     }
 
