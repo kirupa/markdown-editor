@@ -16,6 +16,18 @@
 
 import Cocoa
 
+// The system cursors have to be loaded from a real application. Without this,
+// `NSCursor.arrow.image` and `NSCursor.iBeam.image` come back as empty 0x0
+// images while `pointingHand` and `frameResize` load normally — so those two
+// shapes score zero against everything and can never be recognised, and the
+// nearest surviving candidate wins instead. This check silently reported
+// "pointing hand" for every I-beam it ever saw because of that.
+//
+// `.prohibited` keeps this helper out of the Dock and stops it taking the
+// front from the app being measured.
+private let helperApp = NSApplication.shared
+helperApp.setActivationPolicy(.prohibited)
+
 let arguments = CommandLine.arguments
 guard arguments.count >= 2, let pid = Int(arguments[1]) else {
     print("usage: check-image-cursors.swift <pid>")
@@ -202,6 +214,22 @@ func diagonalCursor(topLeftToBottomRight: Bool) -> NSCursor {
 
 struct Candidate { let name: String; let cursor: NSCursor }
 
+/// A candidate whose image will not load matches nothing, scores zero against
+/// every sample, and quietly hands the verdict to whichever candidate did
+/// load. That is not a failing check, it is a blind one, so say so out loud.
+func assertCandidatesAreVisible(_ candidates: [Candidate]) {
+    let blind = candidates.filter {
+        $0.cursor.image.size.width < 1 || $0.cursor.image.representations.isEmpty
+    }
+    check(
+        "every cursor this check can name is one it can actually see",
+        blind.isEmpty,
+        blind.isEmpty
+            ? ""
+            : "no image for: \(blind.map(\.name).joined(separator: ", ")) — results below are meaningless"
+    )
+}
+
 var candidates: [Candidate] = [
     Candidate(name: "arrow", cursor: .arrow),
     Candidate(name: "I-beam", cursor: .iBeam),
@@ -253,6 +281,7 @@ atexit { }
 
 print("")
 print("Pointer shapes over a picture")
+assertCandidatesAreVisible(candidates)
 
 // `screencapture -R` reads the screen, not a window, so the app has to be in
 // front or the checks measure whatever is covering it.
