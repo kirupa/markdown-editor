@@ -280,6 +280,45 @@ struct CheckImageLayout {
             "arrow rect \(unselected.first?.rect.debugDescription ?? "none") vs drawn \(drawn)"
         )
 
+        // The rects above are only a source. What decides the shape on screen
+        // is `pointerCursor`, because neither cursor rects on the text view nor
+        // a view layered over it survive NSTextView re-asserting its I-beam —
+        // both were measured on a real screen still showing an I-beam over a
+        // picture at 0.96 confidence.
+        check(
+            "the pointer over a picture is an arrow",
+            textView.pointerCursor(at: NSPoint(x: drawn.midX, y: drawn.midY)) === NSCursor.arrow
+        )
+        check(
+            "the pointer over plain text is still an I-beam",
+            textView.pointerCursor(at: NSPoint(x: drawn.midX, y: drawn.maxY + 30)) === NSCursor.iBeam
+        )
+        check(
+            "the pointer just outside a picture is not an arrow",
+            textView.pointerCursor(at: NSPoint(x: drawn.maxX + 20, y: drawn.midY)) !== NSCursor.arrow
+        )
+
+        // Order is load-bearing and invisible. These rects were once added
+        // after `super.resetCursorRects()`, which claims the whole surface for
+        // the I-beam, and the I-beam won — measured on a real screen at 0.96
+        // confidence while every in-process check passed. The earlier claim is
+        // the one AppKit keeps, so a picture must claim before the text view
+        // claims everything. Nothing but reading the source catches a reorder.
+        let textViewSource = (try? String(
+            contentsOfFile: "Sources/MarkdownEditor/RichMarkdownTextView.swift",
+            encoding: .utf8
+        )) ?? ""
+        let resetBody = textViewSource
+            .components(separatedBy: "override func resetCursorRects() {")
+            .dropFirst().first ?? ""
+        let addsAt = resetBody.range(of: "addCursorRect")
+        let superAt = resetBody.range(of: "super.resetCursorRects()")
+        check(
+            "a picture claims the pointer before the text view claims everything",
+            addsAt != nil && superAt != nil && addsAt!.lowerBound < superAt!.lowerBound,
+            "addCursorRect must come before super.resetCursorRects() in resetCursorRects"
+        )
+
         _ = textView.selectImageForChecking(at: CGPoint(x: drawn.midX, y: drawn.midY))
         let overlay = textView.imageHandlesForChecking
         let handleRects = overlay.cursorRects()

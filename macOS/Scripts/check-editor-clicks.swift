@@ -208,6 +208,25 @@ enum Harness {
             "it would go to \(hit.map { String(describing: type(of: $0)) } ?? "nothing")"
         )
 
+        // ── The pointer, before anything has been clicked ────────────────
+        //
+        // This is how a picture is actually met: open a document, move the
+        // pointer onto it. No selection, no click, no scroll. Measured on a
+        // real screen the app got this wrong while showing the right pointer
+        // once the picture had been selected, so the unclicked case is the one
+        // worth pinning down.
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        textView.updateImageHandles()
+        check(
+            "the pointer over an untouched picture is an arrow",
+            textView.pointerCursor(at: NSPoint(x: picture.midX, y: picture.midY)) === NSCursor.arrow,
+            "got \(textView.pointerCursor(at: NSPoint(x: picture.midX, y: picture.midY)))"
+        )
+        check(
+            "the pointer over text beneath it is an I-beam",
+            textView.pointerCursor(at: NSPoint(x: picture.midX, y: picture.maxY + 30)) === NSCursor.iBeam
+        )
+
         // ── The click itself, through the real window ────────────────────
         textView.setSelectedRange(NSRange(location: 0, length: 0))
         textView.updateImageHandles()

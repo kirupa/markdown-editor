@@ -20,6 +20,10 @@ final class RichMarkdownTextView: NSTextView {
     var commitImageSize: ((MarkdownImageTag.Size, NSRange) -> Void)?
 
     private(set) var isUpdatingComposition = false
+    /// The pictures the pointer should turn into an arrow over, and the
+    /// visible area they were measured for.
+    private var pointerRects: (visible: NSRect, length: Int, rects: [NSRect])?
+    private var pointerTracking: NSTrackingArea?
     private var compositionIsActive = false
     private weak var compositionUndoManager: UndoManager?
     private lazy var imageHandles: MarkdownImageHandleOverlay = {
@@ -43,6 +47,7 @@ final class RichMarkdownTextView: NSTextView {
         addSubview(overlay)
         return overlay
     }()
+
 
     /// The character range of the image the handles are drawn around.
     private var handledImageRange: NSRange?
@@ -71,6 +76,7 @@ final class RichMarkdownTextView: NSTextView {
     /// its reasoning, or it verifies a copy of the logic instead of the logic.
     /// The handle overlay, for the same harness.
     var imageHandlesForChecking: MarkdownImageHandleOverlay { imageHandles }
+
 
     @discardableResult
     func selectImageForChecking(at point: NSPoint) -> Bool {
@@ -290,24 +296,28 @@ final class RichMarkdownTextView: NSTextView {
         return rects
     }
 
-    /// The rects this view claims for the pointer on top of NSTextView's own.
+    /// The rects a picture claims for the pointer, and the shape shown there.
     ///
-    /// Separate from `resetCursorRects` so it can be read directly; AppKit does
-    /// not hand registered cursor rects back.
+    /// Not something registered on this view — see `resetCursorRects`. Kept
+    /// readable because AppKit does not hand registered cursor rects back.
     func imageCursorRects() -> [(rect: NSRect, cursor: NSCursor)] {
         visibleImageRects().map { ($0, NSCursor.arrow) }
     }
 
     override func resetCursorRects() {
-        super.resetCursorRects()
-        // NSTextView claims its whole surface for the I-beam, which over a
-        // picture reads as "type here". An image is an object to be clicked and
-        // dragged, so it gets the arrow every other draggable object has. This
-        // is added after `super`, and the most recently added rect containing
-        // the pointer is the one AppKit uses.
+        // Order matters, and not in the direction the documentation suggests.
+        // These were once added after `super`, which registers a single I-beam
+        // over the whole surface, and the I-beam won: measured on a real
+        // screen the pointer over a picture was an I-beam at 0.96 confidence.
+        // The earlier claim on a region is the one AppKit keeps, so a picture
+        // has to stake its claim before the text view stakes the general one.
+        //
+        // `super` still runs, so everything NSTextView does for itself —
+        // links included — carries on untouched.
         for entry in imageCursorRects() {
             addCursorRect(entry.rect, cursor: entry.cursor)
         }
+        super.resetCursorRects()
     }
 
     /// Ask the window to re-read the cursor rects.
@@ -316,6 +326,8 @@ final class RichMarkdownTextView: NSTextView {
     /// scrolled into view keeps the cursor of wherever it used to be until the
     /// window is told otherwise.
     func refreshImageCursorRects() {
+        pointerRects = nil
+        installPointerTracking()
         guard let window, window.isVisible else { return }
         window.invalidateCursorRects(for: self)
         if !imageHandles.isHidden {
@@ -323,8 +335,128 @@ final class RichMarkdownTextView: NSTextView {
         }
     }
 
+    /// The pictures currently on screen, measured at most once per visible area.
+    ///
+    /// Deliberately not a value that is only refreshed when the selection or
+    /// the scroll position changes. Opening a document and moving the pointer
+    /// straight onto a picture does neither, and that is the ordinary way to
+    /// meet a picture: the cache was empty and every one of them showed an
+    /// I-beam.
+    private func pointerImageRects() -> [NSRect] {
+        let visible = visibleRect
+        let length = textStorage?.length ?? 0
+        if let cached = pointerRects, cached.visible == visible, cached.length == length {
+            return cached.rects
+        }
+        let rects = visibleImageRects()
+        pointerRects = (visible, length, rects)
+        return rects
+    }
+
+    /// Have AppKit tell this view whenever the pointer needs a shape.
+    ///
+    /// Cursor rects are not enough. NSTextView claims its whole surface for the
+    /// I-beam and re-asserts that claim, and a view layered on top that
+    /// declines hit tests does not get to override it either — both were
+    /// measured on a real screen still showing an I-beam over a picture, at
+    /// 0.96 confidence. A tracking area owned by this view is delivered to
+    /// `cursorUpdate` regardless.
+    ///
+    /// One area over the whole visible rect rather than one per picture: a
+    /// cursor stays set until something replaces it, so if this only fired over
+    /// pictures the arrow would follow the pointer back out onto the text.
+    /// `.inVisibleRect` keeps it the right size through every scroll and
+    /// resize without being rebuilt.
+    private func installPointerTracking() {
+        if let existing = pointerTracking, trackingAreas.contains(existing) { return }
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.cursorUpdate, .activeAlways, .inVisibleRect],
+            owner: self
+        )
+        addTrackingArea(area)
+        pointerTracking = area
+    }
+
+    /// NSTextView rebuilds its own tracking areas, and anything added once at
+    /// setup can be dropped when it does. This is the documented place to put
+    /// them back, and the guard above makes it idempotent.
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        installPointerTracking()
+    }
+
+    /// The shape the pointer should take at `point`, in this view's coordinates.
+    ///
+    /// This view is the only thing deciding, so the answer is whatever it says
+    /// — which is what makes it checkable without a screen.
+    func pointerCursor(at point: NSPoint) -> NSCursor {
+        // A corner of the selected picture resizes it, and that beats the
+        // picture's own shape. The handles own these rects, so ask them.
+        if !imageHandles.isHidden {
+            let local = imageHandles.convert(point, from: self)
+            if let entry = imageHandles.cursorRects().first(where: { $0.rect.contains(local) }) {
+                return entry.cursor
+            }
+        }
+        // A picture is an object to be selected and dragged, not somewhere to
+        // type, so it gets the arrow every other draggable object gets.
+        if pointerImageRects().contains(where: { $0.contains(point) }) {
+            return .arrow
+        }
+        // Taking the cursor over means taking over the cases AppKit used to
+        // handle, and a link showing an I-beam would be a regression.
+        if hasLink(at: point) {
+            return .pointingHand
+        }
+        return .iBeam
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        pointerCursor(at: convert(event.locationInWindow, from: nil)).set()
+    }
+
+    /// Whether `point` lands on linked text.
+    ///
+    /// The glyph nearest a point is not necessarily under it — past the end of
+    /// a line the nearest glyph is the last one on that line — so the point has
+    /// to be inside the glyph's own rect before its attributes mean anything.
+    private func hasLink(at point: NSPoint) -> Bool {
+        guard
+            let layoutManager,
+            let textContainer,
+            let textStorage,
+            layoutManager.numberOfGlyphs > 0
+        else { return false }
+
+        let origin = textContainerOrigin
+        let inContainer = NSPoint(x: point.x - origin.x, y: point.y - origin.y)
+        var fraction: CGFloat = 0
+        let glyph = layoutManager.glyphIndex(
+            for: inContainer,
+            in: textContainer,
+            fractionOfDistanceThroughGlyph: &fraction
+        )
+        guard glyph < layoutManager.numberOfGlyphs else { return false }
+        let glyphRect = layoutManager
+            .boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: textContainer)
+            .offsetBy(dx: origin.x, dy: origin.y)
+        guard glyphRect.contains(point) else { return false }
+
+        let index = layoutManager.characterIndexForGlyph(at: glyph)
+        guard index < textStorage.length else { return false }
+        return textStorage.attribute(.link, at: index, effectiveRange: nil) != nil
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        installPointerTracking()
+        // Tracking areas report through the event stream, and a window that is
+        // not asking for mouse-moved events does not pump it. Without this the
+        // pointer keeps whatever shape it had until the window is clicked, so
+        // a picture met by hovering straight after opening a document — which
+        // is how a picture is usually met — stays an I-beam.
+        window?.acceptsMouseMovedEvents = true
         // Registration is unbalanced otherwise: this runs again every time the
         // view moves to or from a window, including the teardown call where the
         // scroll view is still attached, so observers accumulate on one clip
