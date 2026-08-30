@@ -380,6 +380,21 @@ let (bodyCursor, bodyScore, bodyPixels) = identifyCursor(at: centre)
 check("the pointer over the picture is a pointing hand", bodyCursor == "pointing hand",
       String(format: "saw %@ (%.2f, %d px)", bodyCursor, bodyScore, bodyPixels))
 
+// Before any click: the corners must already answer, because a resize handle
+// is centred on the picture's corner and its outer half is outside the
+// picture. If hover is lost by reaching for a handle, the resize pointer never
+// appears — which is what somebody using the app actually experiences, and it
+// is invisible to a check that clicks first.
+for (name, point) in [
+    ("top-left", CGPoint(x: picture.minX, y: picture.minY)),
+    ("bottom-right", CGPoint(x: picture.maxX, y: picture.maxY)),
+] {
+    let (seen, score, pixels) = identifyCursor(at: point)
+    check("hovering the \(name) corner shows a resize pointer, before any click",
+          seen.hasPrefix("resize"),
+          String(format: "saw %@ (%.2f, %d px)", seen, score, pixels))
+}
+
 click(at: centre)
 
 let corners: [(String, CGPoint, [String])] = [

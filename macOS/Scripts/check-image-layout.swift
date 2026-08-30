@@ -125,6 +125,12 @@ struct CheckImageLayout {
 
         let frame = NSRect(x: 0, y: 0, width: 700, height: 700)
         let textView = RichMarkdownTextView(frame: frame)
+        // The same inset the app gives the rendered pane. Without it this view
+        // has a text container origin of zero, and any bug whose size *is* the
+        // inset simply cannot happen here: a drop-gap band that was shifted
+        // left by the origin looked perfect in this check and wrapped text
+        // down the right-hand side in the real app.
+        textView.textContainerInset = NSSize(width: 24, height: 20)
         textView.textContainer?.containerSize = NSSize(
             width: frame.width,
             height: .greatestFiniteMagnitude
@@ -319,6 +325,48 @@ struct CheckImageLayout {
             "addCursorRect must come before super.resetCursorRects() in resetCursorRects"
         )
 
+        // ── Reaching for a corner must not take the corner away ──────────
+        //
+        // A handle is centred *on* the picture's corner, so its outer half
+        // lies outside the picture. Moving the pointer onto one therefore
+        // leaves the picture, and if hover is defined as "over the picture"
+        // the handles vanish at the very moment they are being reached for —
+        // the resize cursor never appears at all.
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        textView.updateImageHandles()
+        textView.updateHover(at: NSPoint(x: drawn.midX, y: drawn.midY))
+        check(
+            "hovering the picture shows the handles",
+            textView.imageHandlesForChecking.isShowing
+        )
+        for (name, corner) in [
+            ("top-left", NSPoint(x: drawn.minX, y: drawn.minY)),
+            ("top-right", NSPoint(x: drawn.maxX, y: drawn.minY)),
+            ("bottom-left", NSPoint(x: drawn.minX, y: drawn.maxY)),
+            ("bottom-right", NSPoint(x: drawn.maxX, y: drawn.maxY)),
+        ] {
+            // A point just outside the picture, where the outer half of the
+            // handle is drawn and where a hand reaching for it actually goes.
+            let outward = NSPoint(
+                x: corner.x + (corner.x > drawn.midX ? 3 : -3),
+                y: corner.y + (corner.y > drawn.midY ? 3 : -3)
+            )
+            textView.updateHover(at: outward)
+            check(
+                "the handles survive reaching for the \(name) corner",
+                textView.imageHandlesForChecking.isShowing
+            )
+            let cursor = textView.pointerCursor(at: outward)
+            check(
+                "the pointer on the \(name) corner is a resize cursor",
+                cursor !== NSCursor.iBeam && cursor !== NSCursor.pointingHand
+                    && cursor !== NSCursor.arrow,
+                "got \(cursor)"
+            )
+            textView.updateHover(at: NSPoint(x: drawn.midX, y: drawn.midY))
+        }
+        textView.updateHover(at: nil)
+
         _ = textView.selectImageForChecking(at: CGPoint(x: drawn.midX, y: drawn.midY))
         let overlay = textView.imageHandlesForChecking
         let handleRects = overlay.cursorRects()
@@ -501,6 +549,43 @@ struct CheckImageLayout {
                 "gap \(String(describing: textView.dropGap))"
             )
         }
+
+        // The gap must push the text below it down, not part it and flow
+        // alongside. An exclusion band that does not span the full width leaves
+        // a strip the layout manager will happily wrap into, and the picture
+        // then looks like it is being inset into the paragraph rather than
+        // dropped between two lines. Ask the layout where every line actually
+        // is and require the band to be empty.
+        if let gap = textView.dropGap,
+           let lm = textView.layoutManager,
+           let container = textView.textContainer {
+            let origin = textView.textContainerOrigin
+            var intruder: NSRect?
+            var glyph = 0
+            while glyph < lm.numberOfGlyphs {
+                var effective = NSRange()
+                let fragment = lm
+                    .lineFragmentRect(forGlyphAt: glyph, effectiveRange: &effective)
+                    .offsetBy(dx: origin.x, dy: origin.y)
+                if fragment.intersects(gap.insetBy(dx: 0, dy: 1)) {
+                    intruder = fragment
+                    break
+                }
+                glyph = max(NSMaxRange(effective), glyph + 1)
+            }
+            check(
+                "no line of text sits beside the gap",
+                intruder == nil,
+                "line \(intruder.map { NSStringFromRect($0) } ?? "none") overlaps gap \(NSStringFromRect(gap))"
+            )
+            check(
+                "the gap spans the whole text column",
+                container.exclusionPaths.first.map {
+                    $0.bounds.minX <= 0 && $0.bounds.maxX >= container.size.width
+                } ?? false,
+                "band \(container.exclusionPaths.first.map { NSStringFromRect($0.bounds) } ?? "none") vs width \(container.size.width)"
+            )
+        }
         // The whole point of the change: a drop lands *between* lines. If this
         // ever reports a character in the middle of a word again, the document
         // gets `Ome![photo](a.png)ga paragraph.` back.
@@ -547,6 +632,58 @@ struct CheckImageLayout {
             textView.mouseUp(with: u)
         }
         check("dropping a picture on itself does not move it", moved == nil)
+
+        // An indicator is a promise. Anywhere the app draws the rule and holds
+        // the gap open, releasing must actually move the picture — otherwise it
+        // shows a landing place and then declines to use it. The blank line
+        // just below a picture is the case that got this wrong: it is outside
+        // the picture's own line but still exactly where the picture already
+        // sits, so a drop there was advertised and then refused.
+        var promisedButRefused: [CGFloat] = []
+        for step in stride(from: drawn.minY - 60, through: drawn.maxY + 60, by: 6) {
+            let probe = NSPoint(x: drawn.midX, y: step)
+            guard let boundary = textView.dropBoundary(for: probe, moving: imageRange) else {
+                continue
+            }
+            // Worked out here rather than asked of the view, so this measures
+            // the app against the definition instead of against itself.
+            if let text = textView.textStorage?.string as NSString? {
+                var settled = text.lineRange(for: imageRange)
+                while settled.location > 0 {
+                    let previous = text.lineRange(
+                        for: NSRange(location: settled.location - 1, length: 0)
+                    )
+                    guard text.substring(with: previous)
+                        .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    else { break }
+                    settled = NSRange(
+                        location: previous.location,
+                        length: NSMaxRange(settled) - previous.location
+                    )
+                }
+                while NSMaxRange(settled) < text.length {
+                    let next = text.lineRange(
+                        for: NSRange(location: NSMaxRange(settled), length: 0)
+                    )
+                    guard text.substring(with: next)
+                        .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    else { break }
+                    settled = NSRange(
+                        location: settled.location,
+                        length: NSMaxRange(next) - settled.location
+                    )
+                }
+                if boundary.location >= settled.location,
+                   boundary.location <= NSMaxRange(settled) {
+                    promisedButRefused.append(step)
+                }
+            }
+        }
+        check(
+            "every place the app offers a drop is a place it will really move to",
+            promisedButRefused.isEmpty,
+            "offered a no-op drop at y \(promisedButRefused.map { String(format: "%.0f", $0) }.joined(separator: ", "))"
+        )
         textView.moveImage = nil
         textView.setSelectedRange(NSRange(location: 0, length: 0))
         textView.updateImageHandles()

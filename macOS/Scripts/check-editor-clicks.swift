@@ -93,7 +93,11 @@ enum Harness {
         ![photo](../images/photo.png)
 
         Text after.
+
         """
+        // Ends with a newline, as every file written by a text editor does.
+        // Without one the last rendered line is the last paragraph, and a drop
+        // below it maps differently — the case a real drag hit and no check did.
         let documentURL = posts.appendingPathComponent("article.md")
         try? source.write(to: documentURL, atomically: true, encoding: .utf8)
 
@@ -361,6 +365,35 @@ enum Harness {
             "a gap is held open where it would land",
             (textView.dropGap?.height ?? 0) > 1
         )
+        // Checked here as well as in the geometry checks because this view has
+        // the app's real container inset rather than a copy of the constant.
+        // The band must span the whole column: one that stops short by the
+        // inset leaves a strip the layout manager wraps text into, so the
+        // picture appears to be inset into the paragraph instead of dropped
+        // between two lines.
+        check(
+            "the gap spans the whole text column",
+            container.exclusionPaths.first.map {
+                $0.bounds.minX <= 0 && $0.bounds.maxX >= container.size.width
+            } ?? false,
+            "band \(container.exclusionPaths.first.map { NSStringFromRect($0.bounds) } ?? "none") vs width \(container.size.width), inset \(textView.textContainerInset.width)"
+        )
+        check(
+            "no line of text sits beside the gap",
+            textView.dropGap.map { gap -> Bool in
+                var glyph = 0
+                while glyph < layoutManager.numberOfGlyphs {
+                    var effective = NSRange()
+                    let fragment = layoutManager
+                        .lineFragmentRect(forGlyphAt: glyph, effectiveRange: &effective)
+                        .offsetBy(dx: textView.textContainerOrigin.x,
+                                  dy: textView.textContainerOrigin.y)
+                    if fragment.intersects(gap.insetBy(dx: 0, dy: 1)) { return false }
+                    glyph = max(NSMaxRange(effective), glyph + 1)
+                }
+                return true
+            } ?? false
+        )
         if let u = mouse(.leftMouseUp, dropPoint) { textView.mouseUp(with: u) }
         settle(for: 0.8)
 
@@ -400,6 +433,71 @@ enum Harness {
             !moved.contains("\n\n\n"),
             moved.debugDescription
         )
+
+        // ── Dragging to the very end of the document ─────────────────────
+        //
+        // A real drag aimed below the last paragraph drew the rule there and
+        // then did nothing. Everything up to the release looked right, so if
+        // there is a fault it is past the release, in the rendered-to-source
+        // mapping — which no check reached, because they all dropped
+        // mid-document.
+        do {
+            // The earlier drag moved the picture, so its range and rect are
+            // both stale. Find where it is now.
+            var currentRange: NSRange?
+            storage.enumerateAttribute(
+                .attachment,
+                in: NSRange(location: 0, length: storage.length)
+            ) { value, range, stop in
+                if value is NSTextAttachment, range.length == 1 {
+                    currentRange = range
+                    stop.pointee = true
+                }
+            }
+
+            guard
+                let liveRange = currentRange,
+                let livePicture = textView.imageRect(for: liveRange)
+            else {
+                check("the picture can still be found after the first move", false)
+                exit(1)
+            }
+
+            let grab2 = NSPoint(x: livePicture.midX, y: livePicture.midY)
+            // Never call mouseDown unless the point really is on the picture.
+            // Any other point falls through to NSTextView's own mouseDown,
+            // which runs a modal event-tracking loop waiting for a real mouse
+            // up that a synthesised drag never delivers — the check hangs
+            // forever rather than failing.
+            guard textView.imageRangeForChecking(at: grab2) == liveRange else {
+                check("the grab point is on the picture before pressing", false,
+                      "would fall through to NSTextView and hang")
+                exit(1)
+            }
+            check("the grab point is on the picture before pressing", true)
+
+            let before = document.text
+            let end = NSPoint(x: textView.bounds.midX, y: textView.bounds.maxY - 4)
+            if let d = mouse(.leftMouseDown, grab2) { textView.mouseDown(with: d) }
+            if let m = mouse(.leftMouseDragged, end) { textView.mouseDragged(with: m) }
+            check(
+                "a drop below the last paragraph is offered",
+                textView.imageDropLocation != nil
+            )
+            if let u = mouse(.leftMouseUp, end) { textView.mouseUp(with: u) }
+            settle(for: 0.8)
+            check(
+                "dragging to the end of the document really moves the picture",
+                document.text != before,
+                "document unchanged: \(document.text.debugDescription)"
+            )
+            check(
+                "it ends up last",
+                document.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .hasSuffix("![photo](../images/photo.png)"),
+                document.text.debugDescription
+            )
+        }
 
         let belowPicture = textView.convert(
             NSPoint(x: picture.midX, y: picture.maxY + 40),

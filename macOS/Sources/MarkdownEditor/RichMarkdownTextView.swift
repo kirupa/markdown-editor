@@ -98,6 +98,14 @@ final class RichMarkdownTextView: NSTextView {
     /// The handle overlay, for the same harness.
     var imageHandlesForChecking: MarkdownImageHandleOverlay { imageHandles }
 
+    /// The picture at a point, so a check can confirm a press will land on one
+    /// before making it. A press that misses falls through to NSTextView's own
+    /// mouseDown, which runs a modal tracking loop waiting for a real mouse up
+    /// — a synthesised drag never delivers one, and the check hangs.
+    func imageRangeForChecking(at point: NSPoint) -> NSRange? {
+        imageRange(at: point)
+    }
+
 
     @discardableResult
     func selectImageForChecking(at point: NSPoint) -> Bool {
@@ -490,6 +498,50 @@ final class RichMarkdownTextView: NSTextView {
         )
     }
 
+    /// The picture the pointer is interacting with, which is not the same as
+    /// the picture it is on top of.
+    ///
+    /// A resize handle is centred on the picture's corner, so its outer half
+    /// lies outside the picture entirely. Defining hover as "over the picture"
+    /// therefore takes the handles away at the exact moment somebody reaches
+    /// for one, and the resize pointer never appears at all. The picture keeps
+    /// the pointer for as far out as its own handles are drawn.
+    private func hoverRange(at point: NSPoint) -> NSRange? {
+        if let onPicture = imageRange(at: point) { return onPicture }
+        let reach = EditorImageGeometry.overlayInset + EditorImageGeometry.handleSide
+        for range in visibleImageRanges() {
+            guard let rect = imageRect(for: range) else { continue }
+            if rect.insetBy(dx: -reach, dy: -reach).contains(point) { return range }
+        }
+        return nil
+    }
+
+    /// Every picture laid out near the visible area, as ranges.
+    private func visibleImageRanges() -> [NSRange] {
+        guard
+            let textStorage,
+            let layoutManager,
+            let textContainer
+        else { return [] }
+        let glyphs = layoutManager.glyphRange(
+            forBoundingRect: visibleRect,
+            in: textContainer
+        )
+        let characters = layoutManager.characterRange(
+            forGlyphRange: glyphs,
+            actualGlyphRange: nil
+        )
+        guard
+            characters.length > 0,
+            NSMaxRange(characters) <= textStorage.length
+        else { return [] }
+        var ranges: [NSRange] = []
+        textStorage.enumerateAttribute(.attachment, in: characters) { value, range, _ in
+            if value is NSTextAttachment, range.length == 1 { ranges.append(range) }
+        }
+        return ranges
+    }
+
     /// Outline the picture under `point` and put the resize frame on it.
     ///
     /// The outline is suppressed for the selected picture, which already has a
@@ -499,7 +551,7 @@ final class RichMarkdownTextView: NSTextView {
         // pointer is a long way from the picture it is acting on.
         guard !isMovingImage, !imageHandles.isDragging else { return }
 
-        let range = point.flatMap { imageRange(at: $0) }
+        let range = point.flatMap { hoverRange(at: $0) }
         let rect = range.flatMap { imageRect(for: $0) }
         let changed = range != hoveredImageRange
         hoveredImageRange = range
@@ -814,13 +866,50 @@ final class RichMarkdownTextView: NSTextView {
         let location = below ? NSMaxRange(characters) : characters.location
         let y = below ? line.maxY : line.minY
 
-        // Landing anywhere on the picture's own line is not a move: both edges
-        // of that line are the place it already occupies. Guarding only the
-        // picture's characters let a drop one pixel below it count as a move
-        // to where it already was.
-        let own = (string as NSString).lineRange(for: range)
+        // Landing anywhere the picture already effectively is, is not a move.
+        // That is its own line *and* the blank lines that separate it from its
+        // neighbours: dropping into the gap directly above or below a picture
+        // puts it back exactly where it started. Guarding only its own line
+        // still drew a rule and held a gap open at a place where releasing did
+        // nothing, which promises a move the app then declines to make.
+        let own = settledRange(around: range, in: string as NSString)
         guard location < own.location || location > NSMaxRange(own) else { return nil }
         return (location, y)
+    }
+
+    /// Everywhere a picture would land back where it started.
+    ///
+    /// Its own line, plus any run of blank lines either side of it. A picture
+    /// separated from the next paragraph by a blank line is already "above
+    /// that paragraph", so a drop aimed into that blank space is not a move
+    /// however it is measured.
+    private func settledRange(around range: NSRange, in text: NSString) -> NSRange {
+        var settled = text.lineRange(for: range)
+        while settled.location > 0 {
+            let previous = text.lineRange(
+                for: NSRange(location: settled.location - 1, length: 0)
+            )
+            guard text.substring(with: previous)
+                .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else { break }
+            settled = NSRange(
+                location: previous.location,
+                length: NSMaxRange(settled) - previous.location
+            )
+        }
+        while NSMaxRange(settled) < text.length {
+            let next = text.lineRange(
+                for: NSRange(location: NSMaxRange(settled), length: 0)
+            )
+            guard text.substring(with: next)
+                .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else { break }
+            settled = NSRange(
+                location: settled.location,
+                length: NSMaxRange(next) - settled.location
+            )
+        }
+        return settled
     }
 
     /// Push everything below `y` down far enough to show the picture fitting.
@@ -835,9 +924,23 @@ final class RichMarkdownTextView: NSTextView {
         if let current = dropGap, abs(current.minY - gap.minY) < 0.5 { return }
         dropGap = gap
         let origin = textContainerOrigin
-        textContainer.exclusionPaths = [
-            NSBezierPath(rect: gap.offsetBy(dx: -origin.x, dy: -origin.y))
-        ]
+        // Exclusion paths are in the container's own coordinates, where the
+        // text runs from 0 to the container's width. Only the vertical offset
+        // is converted: shifting x by the origin as well moved the band left by
+        // the inset and left an uncovered strip of exactly that width down the
+        // right-hand side, which the layout manager duly wrapped text into. A
+        // band has to span the whole width or it is not a band.
+        //
+        // Widened by a point either side because the edges are compared in
+        // floating point, and a line fragment that begins exactly on the
+        // boundary is not reliably counted as overlapping it.
+        let band = NSRect(
+            x: -1,
+            y: y - origin.y,
+            width: textContainer.size.width + 2,
+            height: height
+        )
+        textContainer.exclusionPaths = [NSBezierPath(rect: band)]
         dropLine.show(
             atY: y,
             from: origin.x,
