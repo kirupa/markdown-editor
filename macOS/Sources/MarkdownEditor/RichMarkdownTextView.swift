@@ -445,13 +445,18 @@ final class RichMarkdownTextView: NSTextView {
     /// This view is the only thing deciding, so the answer is whatever it says
     /// — which is what makes it checkable without a screen.
     func pointerCursor(at point: NSPoint) -> NSCursor {
-        // A corner of the selected picture resizes it, and that beats the
-        // picture's own shape. The handles own these rects, so ask them.
-        if !imageHandles.isHidden {
-            let local = imageHandles.convert(point, from: self)
-            if let entry = imageHandles.cursorRects().first(where: { $0.rect.contains(local) }) {
-                return entry.cursor
-            }
+        // A corner resizes, and that beats the picture's own shape.
+        //
+        // Asked of the geometry, not of the overlay. AppKit delivers
+        // cursorUpdate and mouseMoved as separate events, so a cursorUpdate can
+        // arrive while the overlay is still hidden — the first sight of a
+        // corner then gave the wrong pointer, and nothing corrected it until
+        // the pointer moved again. That was the delay: the shape was waiting
+        // for a view to catch up rather than reading the picture.
+        if let range = selectedImageRange() ?? hoveredImageRange ?? imageRangeNear(point),
+           let rect = imageRect(for: range),
+           let corner = EditorImageGeometry.corner(at: point, in: rect) {
+            return corner.cursor
         }
         // A picture is something to pick up, so it gets the hand that every
         // other grabbable thing gets. The arrow only says "not text", which is
@@ -515,6 +520,19 @@ final class RichMarkdownTextView: NSTextView {
         for range in visibleImageRanges() {
             guard let rect = imageRect(for: range) else { continue }
             if EditorImageGeometry.corner(at: point, in: rect) != nil { return range }
+        }
+        return nil
+    }
+
+    /// The picture whose handles `point` falls on, without needing hover to
+    /// have run first.
+    private func imageRangeNear(_ point: NSPoint) -> NSRange? {
+        for range in visibleImageRanges() {
+            guard let rect = imageRect(for: range) else { continue }
+            if rect.contains(point)
+                || EditorImageGeometry.corner(at: point, in: rect) != nil {
+                return range
+            }
         }
         return nil
     }

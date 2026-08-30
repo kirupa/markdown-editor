@@ -365,6 +365,73 @@ struct CheckImageLayout {
             )
             textView.updateHover(at: NSPoint(x: drawn.midX, y: drawn.midY))
         }
+        // A cursorUpdate can arrive before the mouseMoved that would have
+        // shown the handles — AppKit delivers them as separate events. If the
+        // corner cursor is only computed when the overlay is already visible,
+        // the first sight of a corner gives the wrong pointer and nothing
+        // corrects it until the pointer moves again. That is the delay.
+        textView.updateHover(at: nil)
+        check(
+            "the handles really are hidden for this check",
+            textView.imageHandlesForChecking.isHidden
+        )
+        for (name, corner) in [
+            ("top-left", NSPoint(x: drawn.minX, y: drawn.minY)),
+            ("bottom-right", NSPoint(x: drawn.maxX, y: drawn.maxY)),
+        ] {
+            let cursor = textView.pointerCursor(at: corner)
+            check(
+                "the \(name) corner answers with a resize pointer straight away",
+                cursor !== NSCursor.iBeam && cursor !== NSCursor.pointingHand
+                    && cursor !== NSCursor.arrow,
+                "cold, with the handles hidden, it said \(cursor)"
+            )
+        }
+
+        // The target has to be forgiving. The drawn dot is 9pt — the size of a
+        // full stop — so requiring the pointer to land on it is requiring an
+        // aim nobody has. A point 12pt diagonally out from the corner is a
+        // reasonable miss, and it must still resize; with the old 4pt slop it
+        // did not.
+        for (name, corner) in [
+            ("top-left", NSPoint(x: drawn.minX, y: drawn.minY)),
+            ("bottom-right", NSPoint(x: drawn.maxX, y: drawn.maxY)),
+        ] {
+            let out: CGFloat = 12
+            let missed = NSPoint(
+                x: corner.x + (corner.x > drawn.midX ? out : -out),
+                y: corner.y + (corner.y > drawn.midY ? out : -out)
+            )
+            let cursor = textView.pointerCursor(at: missed)
+            check(
+                "a 12pt miss at the \(name) corner still resizes",
+                cursor !== NSCursor.iBeam && cursor !== NSCursor.pointingHand
+                    && cursor !== NSCursor.arrow,
+                "got \(cursor)"
+            )
+        }
+
+        // …but not so forgiving that a small picture is all corner. Four fixed
+        // targets meet in the middle of anything narrow, and a picture that
+        // cannot be taken hold of in the middle can be resized but never
+        // dragged.
+        for side in [24.0, 32.0, 48.0] as [CGFloat] {
+            let small = NSRect(x: 0, y: 0, width: side, height: side)
+            let middle = NSPoint(x: small.midX, y: small.midY)
+            check(
+                "a \(Int(side))pt picture still has a middle to take hold of",
+                EditorImageGeometry.corner(at: middle, in: small) == nil,
+                "the corners meet in the middle at \(Int(side))pt"
+            )
+            check(
+                "a \(Int(side))pt picture still has reachable corners",
+                EditorImageGeometry.corner(
+                    at: NSPoint(x: small.minX, y: small.minY),
+                    in: small
+                ) != nil
+            )
+        }
+
         // The reach is for the handles, so it must not become a halo. Beside
         // the middle of an edge there is nothing to grab, and lighting the
         // picture up there would claim the pointer for a picture it is plainly

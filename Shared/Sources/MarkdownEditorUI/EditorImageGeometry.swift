@@ -47,14 +47,22 @@ public enum EditorImageGeometry {
     /// How far outside that square a corner still answers.
     ///
     /// A 9pt target is a hard thing to hit, so the region that responds is
-    /// larger than the dot that advertises it — the same trade every resize
-    /// handle on the platform makes.
-    public static let handleSlop: CGFloat = 4
+    /// much larger than the dot that advertises it — the same trade every
+    /// resize handle on the platform makes. This gives a 33pt square at each
+    /// corner, comfortably past the ~28pt that fingertip-sized guidance asks
+    /// for, and it is capped on small pictures by `effectiveSlop`.
+    public static let handleSlop: CGFloat = 12
     /// The narrowest an image may be dragged, in points.
     public static let minimumSide: CGFloat = 24
 
-    /// How much room the overlay needs around the picture to draw its corners.
-    public static var overlayInset: CGFloat { handleSide }
+    /// How much room the overlay needs around the picture.
+    ///
+    /// Sized for the *target*, not the dot. The overlay clips to its own
+    /// bounds, so an inset that only covers the drawn square silently trims
+    /// the widened target back to the dot — the pointer would promise a resize
+    /// at the outer edge and a click there would fall through to the text.
+    /// Half the dot hangs outside the corner, plus the whole slop.
+    public static var overlayInset: CGFloat { handleSide / 2 + handleSlop }
 
     /// Where an image attachment is actually drawn.
     ///
@@ -103,12 +111,31 @@ public enum EditorImageGeometry {
     }
 
     /// The region that `corner` answers to: the drawn square, widened.
+    ///
+    /// Widened generously, because the 9pt dot is an advertisement rather than
+    /// the target — asking somebody to land on it exactly is asking them to
+    /// aim at something the size of a full stop.
+    ///
+    /// The widening is capped on a small picture. Four targets of a fixed size
+    /// would meet in the middle of anything narrow, leaving no body to take
+    /// hold of, and the picture could then be resized but never dragged. The
+    /// cap keeps a third of each side clear whatever the picture's size.
     public static func handleHitRect(
         _ corner: EditorImageCorner,
         in imageFrame: CGRect
     ) -> CGRect {
-        handleRect(corner, in: imageFrame)
-            .insetBy(dx: -handleSlop, dy: -handleSlop)
+        let slop = effectiveSlop(in: imageFrame)
+        return handleRect(corner, in: imageFrame)
+            .insetBy(dx: -slop, dy: -slop)
+    }
+
+    /// How far outside the drawn square this picture can afford to reach.
+    static func effectiveSlop(in imageFrame: CGRect) -> CGFloat {
+        // How far a target reaches inward from an edge: half the dot plus the
+        // slop. Two of those must leave a clear third in the middle.
+        let shortest = min(imageFrame.width, imageFrame.height)
+        let roomInward = max(0, shortest / 3 - handleSide / 2)
+        return max(0, min(handleSlop, roomInward))
     }
 
     /// The corner under `point`, or nil when the point belongs to the text.

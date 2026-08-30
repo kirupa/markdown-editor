@@ -302,6 +302,22 @@ enum Harness {
             "frame \(overlay.frame) vs picture \(picture)"
         )
 
+        // A pointer that says "resize" and a click that lands in the text is a
+        // lie the app tells with the cursor. The overlay clips to its own
+        // bounds, so a target widened past that inset is trimmed back to the
+        // dot and only the pointer knows — verified here at the same 12pt miss
+        // the pointer answers to.
+        let sloppy = textView.convert(
+            NSPoint(x: picture.minX - 12, y: picture.minY - 12),
+            to: nil
+        )
+        let sloppyHit = hosting.hitTest(sloppy)
+        check(
+            "a 12pt miss at a corner still reaches the resize handle",
+            sloppyHit === textView.imageHandlesForChecking,
+            "it would go to \(sloppyHit.map { String(describing: type(of: $0)) } ?? "nothing")"
+        )
+
         // ── A corner must reach the handle, not the text ─────────────────
         let corner = textView.convert(
             NSPoint(x: picture.minX, y: picture.minY),

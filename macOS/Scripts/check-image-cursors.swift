@@ -395,6 +395,18 @@ for (name, point) in [
           String(format: "saw %@ (%.2f, %d px)", seen, score, pixels))
 }
 
+// Aimed badly on purpose. The drawn dot is 9pt across, so nobody lands on it
+// exactly; a 12pt miss is an ordinary human aim and must still resize.
+for (name, point) in [
+    ("top-left", CGPoint(x: picture.minX - 12, y: picture.minY - 12)),
+    ("bottom-right", CGPoint(x: picture.maxX + 12, y: picture.maxY + 12)),
+] {
+    let (seen, score, pixels) = identifyCursor(at: point)
+    check("a 12pt miss at the \(name) corner still resizes",
+          seen.hasPrefix("resize"),
+          String(format: "saw %@ (%.2f, %d px)", seen, score, pixels))
+}
+
 click(at: centre)
 
 let corners: [(String, CGPoint, [String])] = [
