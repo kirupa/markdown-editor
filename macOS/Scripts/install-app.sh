@@ -28,10 +28,22 @@ if [ ! -w "$DESTINATION" ]; then
   exit 1
 fi
 
-# A running copy cannot be replaced safely.
+# A running copy cannot be replaced safely. Deleting the bundle out from under
+# a live process leaves it unable to load its own resources, and if the quit
+# was blocked by an unsaved-changes sheet the person is left answering a dialog
+# belonging to an app that no longer exists on disk. So ask, wait, and give up
+# rather than force it.
 if pgrep -f "$INSTALLED_APP/Contents/MacOS/" >/dev/null 2>&1; then
   osascript -e "tell application \"$APP_NAME\" to quit" >/dev/null 2>&1 || true
-  sleep 1
+  for _ in $(seq 1 20); do
+    pgrep -f "$INSTALLED_APP/Contents/MacOS/" >/dev/null 2>&1 || break
+    sleep 0.5
+  done
+  if pgrep -f "$INSTALLED_APP/Contents/MacOS/" >/dev/null 2>&1; then
+    printf '%s is still running and did not quit.\n' "$APP_NAME" >&2
+    printf 'It may be waiting on an unsaved document. Quit it, then re-run.\n' >&2
+    exit 1
+  fi
 fi
 
 rm -rf -- "$INSTALLED_APP"

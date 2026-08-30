@@ -423,12 +423,16 @@ public enum RichMarkdownStyler {
         )
         .resolvingSymlinksInPath()
         .standardizedFileURL
-        let directoryPrefix = documentDirectory.path.hasSuffix("/")
-            ? documentDirectory.path
-            : documentDirectory.path + "/"
-        guard imageURL.path.hasPrefix(directoryPrefix) else {
-            return nil
-        }
+        // Deliberately no "must be under the document's folder" rule here.
+        //
+        // That rule is real, but it belongs to *importing* — I-18, where this
+        // app writes a file and must not write outside the document's own
+        // folder. Reading is not the same act. A document that says
+        // `../images/photo.png` is describing the reader's own file, in the
+        // layout every static site generator and most note-takers produce, and
+        // the app can already open anything its reader can. Enforcing the write
+        // rule on the read path did not protect anything: it just replaced the
+        // picture with a generic placeholder icon and said nothing about why.
         return LocalImageStore.shared.image(at: imageURL)
     }
 

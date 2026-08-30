@@ -475,7 +475,7 @@ the lookup must be instant and the download must not be.
 | ID | Requirement |
 | --- | --- |
 | I-23 | An `http`/`https` image is drawn from an in-memory cache. On a miss the styler draws the placeholder and starts one download; when it arrives the visible editors re-style in place, preserving selection and scroll position. |
-| I-24 | Only `http` and `https` are fetched. A `file:` address is refused, because fetching one would let a document read any file on disk and bypass the assets containment in I-18. |
+| I-24 | Only `http` and `https` are fetched. A `file:` address is refused, so the fetching path stays purely a network path and never becomes a second, less careful way to read the disk. Local files are the local reader's job (I-52). |
 | I-25 | An address is downloaded at most once per launch. A failure is recorded as a failure, so a broken address costs one request rather than one request per keystroke, and continues to render the placeholder. |
 | I-26 | A download over **25 MB** is abandoned. The limit is enforced while streaming, not from `Content-Length` alone, since a server may omit it. |
 | I-27 | Downloaded bytes must decode as an image. A server answering an error page with HTTP 200 is treated as a failure, not as an image. |
@@ -542,6 +542,20 @@ second time is wrong by exactly the offset — the renderer sets
 `bounds.origin.y = -4`, so every handle sat 4 pt below the corner it was
 holding. `EditorImageGeometry.attachmentRect` therefore takes the attachment's
 **size**, not its bounds, so the origin cannot be passed in at all.
+
+### 9.9 Which pictures actually draw
+
+A picture that does not resolve is not a *broken* picture. The renderer
+substitutes a placeholder symbol, so the line still looks deliberate — but it
+is no longer the reader's picture, and nothing anywhere says so. Everything
+downstream then looks broken for the wrong reason: resizing a placeholder is
+meaningless, and the obvious report is "I cannot select my image".
+
+| ID | Requirement |
+| --- | --- |
+| I-52 | A picture is read from wherever the document says it is: beside the document, in a subfolder, **above** the document (`../images/photo.png`), or at an absolute path. Percent-encoded and plainly-written spaces both resolve. |
+| I-53 | Reading is not governed by the assets containment rule. That rule (I-18) is about **writing**: an import must not put a file outside the document's folder. Applying it to reading protected nothing — the app can already open anything its reader can, and a document displayed on its own reader's screen discloses nothing to anybody — while silently replacing legitimate pictures with a placeholder. The `../` layout it rejected is what static site generators and most note-taking folders produce. |
+| I-54 | A destination that resolves to something which is not a decodable image draws the placeholder and nothing else. It is never executed, never fetched, and never reported anywhere. |
 
 `boundingRect(forGlyphRange:in:)` is not the picture either: it returns the
 glyph's *line box*, as tall as the tallest thing on the line plus line spacing,
@@ -836,7 +850,7 @@ the code they cover, so this one command covers the iOS build's engine too.
 
 ### 16.1 Test coverage
 
-392 tests across 29 suites, in the shared package:
+403 tests across 30 suites, in the shared package:
 
 | Suite | Tests | Covers |
 | --- | --- | --- |
@@ -863,6 +877,7 @@ the code they cover, so this one command covers the iOS build's engine too.
 | Markdown render model invariants | 8 | Every span addresses real text, both mappings stay in bounds, every prefix and suffix renders safely |
 | Markdown formatting invariants | 7 | Seventeen commands over every corpus selection: bounds, surrogate pairs, clamping, involution |
 | Markdown image importer | 6 | Assets folder naming, collisions, symlink rejection, unsaved documents, unsupported types |
+| Local image resolution | 11 | Which paths in a real document actually draw the reader's picture: beside, below, above, absolute, spaced and percent-encoded — and which correctly draw nothing |
 | File tree scanner | 6 | Ordering, hidden files, packages, symlinks |
 | Cross-platform contract | 5 | The exported fixtures still describe the compiled Swift |
 | Markdown source styler | 4 | Styling is not undoable, and survives a text view that resets its undo manager mid-edit |
@@ -1238,6 +1253,7 @@ async `@main` instead.
 
 | Change | Summary |
 | --- | --- |
+| Draw the picture the document points at | A picture kept **above** the document — `../images/photo.png`, the layout every static site generator and most note folders produce — silently did not draw. The renderer applied the *assets containment* rule to reading, but that rule is about writing: an import must not put a file outside the document's folder. Reading was never the same act, and the app can already open anything its reader can, so the check protected nothing and cost the picture. What made it hard to see is that an unresolved picture is not a broken one: a placeholder symbol takes its place, so the line still looks deliberate, and the visible symptom is the unrelated-sounding "I cannot select my image". Every styler test until now passed `documentURL: nil`, so resolution had never been exercised once; there are now 11 tests over the path shapes real documents use, and they distinguish the reader's picture from the placeholder by aspect ratio rather than by the mere presence of an attachment. See [§9.9](#99-which-pictures-actually-draw). |
 | Make a resize land on the picture you dragged | Four faults behind image resizing, all found by review rather than by use. Clicking a picture never focused the pane it was in — the image path returns before `super.mouseDown`, so `NSTextView` never took first responder — and the commit then resolved the target through *whichever pane had focus*, which in Split view is the Markdown pane. A resize could therefore rewrite a **different image** or refuse outright. The commit now carries the source offset the handles were drawn around. The handles also never moved on **reflow**, so a window resize or a width drag left them over blank text while still taking the drag; and a **refused** resize left the picture at the size the drag abandoned it at, because a drag previews by changing the attachment's bounds and only a re-render puts them back. Finally, a drag ended by the view going away stranded a pushed `NSCursor` — a process-wide stack, so the diagonal arrow leaked into every other app. See [§9.7](#97-selecting-and-resizing-a-picture), [§9.8](#98-what-the-pointer-says). |
 | A calmer page, and pictures you can pick up | The explorer is closed by default (`⌃⌘S`) and floats over the document instead of taking a column, so opening it no longer slides the text. The rendered preview is centred in the window and the width gripper appears only on hover. A picture can be **clicked to select and dragged by a corner to resize**, always proportionally, written back as the `<img …>` spelling GitHub honours. See [§9.7](#97-selecting-and-resizing-a-picture), [§11.1](#111-staying-out-of-the-way), [§13.3](#133-a-calm-page). |
 | Make the pointer tell the truth over a picture | The pointer is now the arrow over a picture and a matching diagonal resize over each corner, instead of an I-beam everywhere and one crosshair on all four. Three faults sat underneath: the shape changed over the drawn 9 pt handle while clicks were accepted over a 15 pt one, leaving a 3 pt ring where the pointer promised a resize that did not happen; the rects were never re-registered when a picture moved or scrolled; and the picture's own rectangle was wrong. `location(forGlyphAt:)` already folds in `NSTextAttachment.bounds.origin`, so applying it again put every handle 4 pt below the corner it was holding — `attachmentRect` now takes a size, so the origin cannot be passed at all. Measured against drawn pixels across seven baseline offsets on both axes. See [§9.8](#98-what-the-pointer-says). |
