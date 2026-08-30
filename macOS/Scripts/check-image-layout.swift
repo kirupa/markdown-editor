@@ -679,6 +679,31 @@ struct CheckImageLayout {
                 }
             }
         }
+        // A line fragment is a *visual* line. A wrapped paragraph's fragment
+        // ends mid-sentence, and taking its edge as an insertion point puts the
+        // picture inside the sentence. Every offered boundary must be a real
+        // paragraph edge, which is what a blank line either side of it means.
+        var softWrapOffers: [Int] = []
+        if let text = textView.textStorage?.string as NSString? {
+            for step in stride(from: 4, through: textView.bounds.maxY - 4, by: 7) {
+                let probe = NSPoint(x: drawn.midX, y: step)
+                guard let boundary = textView.dropBoundary(for: probe, moving: imageRange) else {
+                    continue
+                }
+                let at = boundary.location
+                let paragraphStart = at == 0
+                    || (at <= text.length && at > 0 && text.character(at: at - 1) == 0x0A)
+                let paragraphEnd = at >= text.length
+                    || (at < text.length && text.character(at: at) == 0x0A)
+                if !paragraphStart && !paragraphEnd { softWrapOffers.append(at) }
+            }
+        }
+        check(
+            "every offered drop is a paragraph edge, never a wrap point",
+            softWrapOffers.isEmpty,
+            "offered mid-paragraph offsets \(Array(Set(softWrapOffers)).sorted().prefix(6))"
+        )
+
         check(
             "every place the app offers a drop is a place it will really move to",
             promisedButRefused.isEmpty,

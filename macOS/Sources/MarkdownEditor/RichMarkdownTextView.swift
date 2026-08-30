@@ -808,12 +808,16 @@ final class RichMarkdownTextView: NSTextView {
 
     /// Show where the picture would land, and carry a copy of it there.
     private func updateImageDrop(at point: NSPoint, range: NSRange) {
-        if let boundary = dropBoundary(for: point, moving: range) {
-            imageDropLocation = boundary.location
-            openDropGap(atY: boundary.y, height: movingImageSize?.height ?? 0)
-        } else {
-            imageDropLocation = nil
+        let target = dropBoundary(for: point, moving: range)?.location
+        // Rebuilt only when the target paragraph changes. The band is what
+        // moved the text, so re-deriving it every mouse move from a layout it
+        // is already distorting makes the gap chase itself down the page.
+        if target != imageDropLocation {
+            imageDropLocation = target
             closeDropGap()
+            if let target, let y = settledBoundaryY(at: target) {
+                openDropGap(atY: y, height: movingImageSize?.height ?? 0)
+            }
         }
         if let size = movingImageSize {
             dragGhost.show(
@@ -839,6 +843,7 @@ final class RichMarkdownTextView: NSTextView {
             let textStorage,
             textStorage.length > 0
         else { return nil }
+        let string = textStorage.string as NSString
 
         // While the pointer is inside the gap the answer must not change, or
         // the gap moves the text that decided where the gap goes.
@@ -846,25 +851,27 @@ final class RichMarkdownTextView: NSTextView {
            let held = imageDropLocation {
             return (held, gap.minY)
         }
-        // Everything below the gap is drawn lower than it really is, so map
-        // the pointer back before asking the layout anything.
-        var probe = point
-        if let gap = dropGap, point.y > gap.maxY { probe.y -= gap.height }
 
         let origin = textContainerOrigin
-        let inContainer = NSPoint(x: probe.x - origin.x, y: probe.y - origin.y)
+        let inContainer = NSPoint(x: point.x - origin.x, y: point.y - origin.y)
         let glyph = layoutManager.glyphIndex(for: inContainer, in: textContainer)
-        var effective = NSRange()
-        let line = layoutManager
-            .lineFragmentRect(forGlyphAt: glyph, effectiveRange: &effective)
-            .offsetBy(dx: origin.x, dy: origin.y)
-        let characters = layoutManager.characterRange(
-            forGlyphRange: effective,
-            actualGlyphRange: nil
+        let character = min(
+            layoutManager.characterIndexForGlyph(at: glyph),
+            max(0, string.length - 1)
         )
-        let below = probe.y > line.midY
-        let location = below ? NSMaxRange(characters) : characters.location
-        let y = below ? line.maxY : line.minY
+
+        // Whole paragraphs, not line fragments. A fragment is a *visual* line,
+        // so a wrapped paragraph's fragment ends in the middle of a sentence,
+        // and taking its edge as an insertion point puts the picture there. A
+        // real drag aimed below the last paragraph resolved to an offset 51
+        // characters into an earlier one for exactly this reason.
+        let paragraph = string.lineRange(
+            for: NSRange(location: character, length: 0)
+        )
+        let rect = paragraphRect(paragraph) ?? .zero
+        let below = point.y > rect.midY
+        let location = below ? NSMaxRange(paragraph) : paragraph.location
+        let y = below ? rect.maxY : rect.minY
 
         // Landing anywhere the picture already effectively is, is not a move.
         // That is its own line *and* the blank lines that separate it from its
@@ -872,9 +879,47 @@ final class RichMarkdownTextView: NSTextView {
         // puts it back exactly where it started. Guarding only its own line
         // still drew a rule and held a gap open at a place where releasing did
         // nothing, which promises a move the app then declines to make.
-        let own = settledRange(around: range, in: string as NSString)
+        let own = settledRange(around: range, in: string)
         guard location < own.location || location > NSMaxRange(own) else { return nil }
         return (location, y)
+    }
+
+    /// Where a paragraph is drawn, in this view's coordinates.
+    private func paragraphRect(_ paragraph: NSRange) -> NSRect? {
+        guard let layoutManager, let textContainer else { return nil }
+        let glyphs = layoutManager.glyphRange(
+            forCharacterRange: paragraph,
+            actualCharacterRange: nil
+        )
+        guard glyphs.length > 0 else { return nil }
+        let origin = textContainerOrigin
+        return layoutManager
+            .boundingRect(forGlyphRange: glyphs, in: textContainer)
+            .offsetBy(dx: origin.x, dy: origin.y)
+    }
+
+    /// The y a boundary sits at with no gap held open.
+    ///
+    /// Measured with the band removed, because the band is what moved the text
+    /// in the first place: measuring through it and then rebuilding it there
+    /// makes the gap chase its own effect down the page.
+    private func settledBoundaryY(at location: Int) -> CGFloat? {
+        guard let textStorage else { return nil }
+        let string = textStorage.string as NSString
+        let previousPaths = textContainer?.exclusionPaths ?? []
+        if !previousPaths.isEmpty { textContainer?.exclusionPaths = [] }
+        defer {
+            if !previousPaths.isEmpty { textContainer?.exclusionPaths = previousPaths }
+        }
+        if location >= string.length {
+            guard let last = paragraphRect(
+                string.lineRange(for: NSRange(location: max(0, string.length - 1), length: 0))
+            ) else { return nil }
+            return last.maxY
+        }
+        let paragraph = string.lineRange(for: NSRange(location: location, length: 0))
+        guard let rect = paragraphRect(paragraph) else { return nil }
+        return location <= paragraph.location ? rect.minY : rect.maxY
     }
 
     /// Everywhere a picture would land back where it started.
