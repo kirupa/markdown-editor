@@ -40,6 +40,22 @@ done < <(find "$BIN_DIR" -maxdepth 1 -type d -name '*.bundle')
 
 chmod 755 "$APP_DIR/Contents/MacOS/$EXECUTABLE_NAME"
 
+# A development bundle keeps the installed app's identifier by default, which
+# means both share one saved-window-state store. AppKit then restores whatever
+# the installed copy had open into this build, and this build autosaves — so a
+# throwaway test can silently rewrite real documents. MDE_DEV_BUNDLE=1 gives the
+# build its own identifier and name, so its restored state is its own and the
+# two can run side by side.
+if [ "${MDE_DEV_BUNDLE:-0}" = "1" ]; then
+  plutil -replace CFBundleIdentifier -string 'com.kirupa.markdown-editor.dev' \
+    "$APP_DIR/Contents/Info.plist"
+  plutil -replace CFBundleName -string 'Markdown Editor (Dev)' \
+    "$APP_DIR/Contents/Info.plist"
+  # Without this the dev build advertises itself to Launch Services as another
+  # handler for .md, and Finder may hand real documents to it.
+  plutil -remove CFBundleDocumentTypes "$APP_DIR/Contents/Info.plist" 2>/dev/null || true
+fi
+
 plutil -lint "$APP_DIR/Contents/Info.plist" >/dev/null
 codesign --force --deep --sign - --timestamp=none "$APP_DIR" >/dev/null
 codesign --verify --deep --strict "$APP_DIR"

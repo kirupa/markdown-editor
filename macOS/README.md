@@ -77,7 +77,7 @@ welcome window offers recent documents at launch.
 | --- | --- |
 | NG-1 | Being a general-purpose CommonMark or GitHub Flavored Markdown reference implementation. |
 | NG-2 | Exporting to HTML, PDF, or other formats. |
-| NG-3 | ~~Cloud sync, collaboration, or multi-user editing.~~ **No longer a non-goal, and blocked rather than merely unbuilt.** The stated direction for the product is cloud-first with local copies for offline use, which the web build already implements. A Firebase adapter lives in `Shared/Firebase/`, compiles for macOS, and is verified against a real Firestore ([§16.6](#166-the-native-firestore-adapter-is-verified-against-a-real-firestore)) — but **nothing in this app reaches it**, and a sign-in screen would not work if it did. FirebaseAuth cannot sign in from any build this repository can produce: it needs the macOS data-protection keychain, whose entitlement is restricted and has to be authorized by a provisioning profile, which ad-hoc signing cannot supply ([§16.7](#167-firebaseauth-cannot-sign-in-from-a-build-this-repository-can-produce)). The blocker is that *keychain* and not the signature — the same ad-hoc bundle writes to the file-based keychain without complaint — and FirebaseAuth asks for the data-protection one unconditionally, so it cannot be redirected. So the order is: a real signing identity, then registering an Apple app in the Firebase console (see the root README), then the UI. Multi-user editing of one document remains a non-goal. |
+| NG-3 | ~~Cloud sync, collaboration, or multi-user editing.~~ **No longer a non-goal, and blocked rather than merely unbuilt.** The stated direction for the product is cloud-first with local copies for offline use, which the web build already implements. A Firebase adapter lives in `Shared/Firebase/`, compiles for macOS, and is verified against a real Firestore ([§16.7](#167-the-native-firestore-adapter-is-verified-against-a-real-firestore)) — but **nothing in this app reaches it**, and a sign-in screen would not work if it did. FirebaseAuth cannot sign in from any build this repository can produce: it needs the macOS data-protection keychain, whose entitlement is restricted and has to be authorized by a provisioning profile, which ad-hoc signing cannot supply ([§16.8](#168-firebaseauth-cannot-sign-in-from-a-build-this-repository-can-produce)). The blocker is that *keychain* and not the signature — the same ad-hoc bundle writes to the file-based keychain without complaint — and FirebaseAuth asks for the data-protection one unconditionally, so it cannot be redirected. So the order is: a real signing identity, then registering an Apple app in the Firebase console (see the root README), then the UI. Multi-user editing of one document remains a non-goal. |
 | NG-4 | Plugin or extension support. |
 | NG-5 | ~~iOS, iPadOS, or cross-platform support.~~ **Superseded.** This row described the app when it was the only one. There is now an iOS app (`iOS/`), a browser build (`Web/`), a brief for a Windows one (`Windows/`), and a language-neutral fixture set (`Contract/`) that holds them to the same behaviour. What survives of the intent is narrower and still true: this target is native macOS, and nothing here is compromised to make it portable. |
 
@@ -499,6 +499,57 @@ lag rather than seen as a glitch. With the cache the same document styles in
 | I-33 | Unlike the remote cache (I-29) this one **evicts**, and releases everything under system memory pressure. A long illustrated document could otherwise hold more memory than the rest of the app together. Eviction only costs a re-read; the cache is an optimisation with a correct fallback. |
 | I-34 | A file that is missing, unreadable, or not decodable as an image yields nothing and is not remembered as anything, so a broken reference draws the placeholder and starts working the moment a real picture replaces it. |
 
+
+### 9.7 Selecting and resizing a picture
+
+A picture in the rendered editor is an object, not a character to type over. It
+can be clicked to select, and dragged by a corner to resize.
+
+| ID | Requirement |
+| --- | --- |
+| I-35 | Clicking a picture in the rendered editor selects it. The selection is the single attachment character, so every command that acts on a selection acts on the picture. |
+| I-36 | A selected picture is drawn with a thin frame and four corner handles. AppKit's own selection band is suppressed while a picture is selected: it is painted over the whole line fragment, which is taller than the picture, so it showed a coloured strip below the frame that lined up with nothing. |
+| I-37 | Dragging a corner resizes the picture. **The aspect ratio is always preserved** — the corner follows whichever axis the pointer moved further along, and the other is derived. |
+| I-38 | A resize is written into the source as `<img src="…" alt="…" width="W" height="H">`, the one spelling GitHub honours, matching **Insert ▸ Image Size…**. |
+| I-39 | A picture cannot be dragged below **24 pt** on its shorter side, so it can always be grabbed again. |
+| I-40 | Clicking the middle of a picture selects it, but dragging from the middle still selects text. Only the corner handles claim a drag. |
+| I-47 | Clicking a picture **focuses the pane it is in**. The image path deliberately does not call `super.mouseDown`, so `NSTextView` never takes first responder by itself. Without this the resize is resolved against whichever pane already had focus — in Split view, the Markdown pane — and rewrites a *different* image, or reports "no image at the selection". |
+| I-48 | A resize is committed against the source offset **the handles were actually drawn around**, passed through with the size, rather than re-derived from the focused pane's caret. If that offset no longer holds an image — the document was reloaded from disk mid-drag — the commit falls back to the live selection. |
+| I-49 | The handles follow the picture when the document **reflows**. Re-wrapping the text above an image moves it without changing the selection or the document, so a window resize or a width-gripper drag would otherwise leave the frame over blank text and still take the drag. |
+| I-50 | A resize that is **refused** leaves the picture at the size the document says, not the size the drag abandoned it at. A drag previews by changing the attachment's bounds and nothing else, so only a re-render puts it back — and a refused commit is exactly the case that does not re-render. |
+
+### 9.8 What the pointer says
+
+The pointer is the only part of this the user sees before committing to a
+gesture, so it has to be accurate before the mouse goes down.
+
+| ID | Requirement |
+| --- | --- |
+| I-41 | Over a picture the pointer is the **arrow**, not the I-beam. `NSTextView` claims its whole surface for the I-beam, which over a picture reads as "type here"; a picture is an object to click and drag. |
+| I-42 | Over a corner handle the pointer is a **diagonal resize** cursor matching that corner's diagonal. The two corners on one diagonal show the same shape and the two diagonals differ. `NSCursor.frameResize(position:directions:)` is used on macOS 15 and later; earlier systems get an equivalent drawn in `DiagonalResizeCursor.swift`. |
+| I-43 | The shape shown, the click accepted, and the corner dragged are all decided by **one** function, `EditorImageGeometry.handleHitRect`. They previously disagreed: the pointer changed over the drawn 9 pt square while clicks were accepted over a 15 pt one, leaving a 3 pt ring where the pointer promised a resize that did not happen. |
+| I-44 | The pointer target is the drawn handle **widened**, not the drawn handle. A 9 pt square is a small thing to hit; the target is widened by `handleSlop` on each side, and where two widened targets overlap on a small picture the nearer corner wins so neither becomes unreachable. |
+| I-45 | Cursor rects are re-registered when the picture moves, is resized, is scrolled, or the document is re-rendered. They are cached by AppKit, so without this a picture keeps the pointer of wherever it used to be. |
+| I-46 | The matching cursor is held for the whole drag and released when it ends, including when the gesture leaves the handle — which it does immediately. |
+| I-51 | The held cursor is released even when the drag ends by the **view going away** — the window closing with the mouse down, or SwiftUI rebuilding the representable — in which case no `mouseUp` ever arrives. `NSCursor`'s stack is process-wide, so a stranded push leaves the diagonal arrow over every other app. |
+
+#### Where a picture actually is
+
+`NSLayoutManager.location(forGlyphAt:)` does **not** return the text baseline
+for an attachment. It returns the picture's own bottom-left corner, with
+`NSTextAttachment.bounds.origin` already folded in. Applying that offset a
+second time is wrong by exactly the offset — the renderer sets
+`bounds.origin.y = -4`, so every handle sat 4 pt below the corner it was
+holding. `EditorImageGeometry.attachmentRect` therefore takes the attachment's
+**size**, not its bounds, so the origin cannot be passed in at all.
+
+`boundingRect(forGlyphRange:in:)` is not the picture either: it returns the
+glyph's *line box*, as tall as the tallest thing on the line plus line spacing,
+so it claims blank space above and below that a click would wrongly accept.
+
+Both rules are asserted against pixels drawn by a real text view in
+`make check-image-handles`, across seven baseline offsets on both axes.
+
 ---
 
 ## 10. Links
@@ -531,6 +582,16 @@ lag rather than seen as a glitch. With the cache the same document styles in
 | X-13 | Double-clicking the divider resets the sidebar to its default width. |
 | X-14 | The document area is never squeezed below 520 points; the sidebar yields first. |
 | X-15 | Selected rows are drawn with a rounded fill in the active theme's accent color, with the label color chosen automatically for contrast. Non-Markdown files are shown in secondary text color. |
+
+### 11.1 Staying out of the way
+
+The explorer is a tool for finding a document, not part of writing one, so it
+is closed unless it is asked for.
+
+| ID | Requirement |
+| --- | --- |
+| X-18 | The explorer is **closed by default**. A toolbar button in the leading position and **View ▸ Show/Hide File Explorer** (`⌃⌘S`) toggle it. |
+| X-19 | The explorer **floats over** the document rather than taking a column from it, so opening and closing it never moves the text being written. Where a picture and a caret sit on screen does not depend on whether the explorer happens to be open. |
 
 ### 11.1 Preview width
 
@@ -602,6 +663,17 @@ lag rather than seen as a glitch. With the cache the same document styles in
 | Y-6 | Horizontal rules are centered with 8 points of space above and below. |
 | Y-7 | The rendered editor uses 24-point horizontal and 20-point vertical text insets; the source editor uses 18 and 16. |
 
+### 13.3 A calm page
+
+The editor is for writing, so the writing is what should be visible. Everything
+else is either quiet or absent until it is asked for.
+
+| ID | Requirement |
+| --- | --- |
+| Y-8 | The rendered preview is **centred in the window** and its position does not depend on the explorer. The explorer floats above the page (X-19) rather than pushing it, so opening one does not slide the other. |
+| Y-9 | The width gripper is drawn only on hover, and is findable by reaching for the edge whether or not it is drawn. A permanent rule with three dots on it is furniture the document has to compete with. |
+| Y-10 | Chrome is drawn in the quietest weight that still reads: hairline separators, secondary-colour glyphs, and no fill behind a control that is not active. |
+
 ---
 
 ## 14. Keyboard shortcut reference
@@ -617,6 +689,7 @@ lag rather than seen as a glitch. With the cache the same document styles in
 | `⌘⌥I` | Insert Image… |
 | `⌘⌥M` | Cycle Editor View |
 | `⌘⌥O` | Open Folder… |
+| `⌃⌘S` | Show / Hide File Explorer |
 
 ### 14.2 Provided by macOS
 
@@ -681,7 +754,10 @@ Sources/MarkdownEditor/          SwiftUI + AppKit application, macOS only
 ├── RecentDocumentsModel         Persisted recent-document store
 ├── DefaultMarkdownHandler       Reads and sets the default Markdown app
 ├── RichTextEditor               Rendered editing surface
-├── RichMarkdownTextView         NSTextView subclass: pasteboard, code backgrounds
+├── RichMarkdownTextView         NSTextView subclass: pasteboard, code backgrounds,
+│                                where a picture is, and what the pointer says
+├── MarkdownImageHandleOverlay   Selection frame, corner handles, resize drag
+├── DiagonalResizeCursor         Diagonal resize pointers for macOS 13–14
 ├── SourceTextEditor             Raw Markdown editing surface
 ├── EditorColorThemeAppKit       NSAppearance for a theme
 ├── FileExplorer*                Sidebar model, outline view, header
@@ -725,6 +801,9 @@ make install
 | `make test` | Runs the unit test suite |
 | `make check-scroll` | Drives real AppKit text views and asserts the "never jump" scroll rules |
 | `make check-session` | Compiles the real session against recording panes: which pane may move which, and what happens when another app rewrites the open file |
+| `make check-image-handles` | Renders real attachments and finds them by pixel: proves the picture rect is the drawn picture and not its line box, and guards the baseline-offset rule across seven offsets |
+| `make check-image-layout` | The same geometry through the **real** `RichMarkdownStyler`, plus the pointer rects each view registers, the clicks that select a picture, and the four ways a resize used to go wrong: focus, reflow, a refused commit, and a cursor stranded by teardown |
+| `make check-image-cursors` | Opt-in. Drives the real mouse across a real screen and identifies the pointer from screen pixels. Needs `MDE_ALLOW_SCREEN_CONTROL=1` and an idle machine |
 | `make clean` | Cleans the package build directory and removes `build/` |
 
 `Scripts/build-app.sh` builds the executable, assembles the bundle from
@@ -757,7 +836,7 @@ the code they cover, so this one command covers the iOS build's engine too.
 
 ### 16.1 Test coverage
 
-329 tests across 24 suites, in the shared package:
+392 tests across 29 suites, in the shared package:
 
 | Suite | Tests | Covers |
 | --- | --- | --- |
@@ -772,6 +851,11 @@ the code they cover, so this one command covers the iOS build's engine too.
 | Cloud paths | 14 | Stems, extensions, parents, descendancy, collision numbering |
 | Editor color themes | 13 | All sixteen palettes: WCAG contrast for body, secondary, selected and code text; sRGB resolution; storage round trips |
 | Rich Markdown styler | 11 | The styled string matches the model's length, no attribute run escapes it, proportional image sizing |
+| External change watching | 18 | Reporting another app's writes without ever reporting our own, including atomic replacement |
+| External document change | 13 | The decision itself: adopt, hold, or stay quiet, and what autosave may do while a notice is up |
+| Editor image geometry | 11 | Where a picture is, where its handles are, which corner a point belongs to, and the aspect-ratio vote |
+| Editor pane geometry | 11 | Pane widths, centring, and the minimums each layout has to respect |
+| Image handle source guards | 3 | That the pointer, the click, and the drag all still go through one rect function, and that a pushed cursor is popped |
 | Recent documents catalog | 10 | Merge order, de-duplication, Markdown filtering, caps, promotion, removal, pruning of missing files, home-relative paths |
 | New document | 10 | Heading 1 seeding |
 | Platform types | 9 | AppKit/UIKit parity; portable colour blending within 1/255 of `NSColor.blended` on every colour the app displays |
@@ -898,7 +982,23 @@ Pinning both writes to an explicit whole second makes the timestamps genuinely
 identical, so only size can tell the two files apart. Never reading from the
 cache at all fails 2.
 
-### 16.5 Split-pane coordination checks
+### 16.5 Testing a build without touching real documents
+
+`MDE_DEV_BUNDLE=1 ./Scripts/build-app.sh` builds the same app under a different
+identity: `com.kirupa.markdown-editor.dev`, named **Markdown Editor (Dev)**, and
+with `CFBundleDocumentTypes` removed.
+
+This is not cosmetic. The installed copy and the `build/` copy otherwise share
+one `CFBundleIdentifier`, and macOS keys **saved window state** on it, so
+launching a test build restored whichever real documents the installed copy last
+had open — into a build that autosaves. Removing the document types also stops
+Launch Services handing the dev build a real `.md` file, and `open -a "$PWD/build/…"`
+rather than `open -n` keeps a launch from starting a second copy of the
+*installed* app.
+
+Any script here that launches the app uses it. Use it for anything manual too.
+
+### 16.6 Split-pane coordination checks
 
 `make check-session` covers `MarkdownEditorSession` — the object that decides
 when one pane is allowed to move the other. It lives in the app's executable
@@ -961,7 +1061,7 @@ session, and the effect on the document's text and undo stack.
 
 ---
 
-### 16.6 The native Firestore adapter is verified against a real Firestore
+### 16.7 The native Firestore adapter is verified against a real Firestore
 
 `Shared/Firebase/run-emulator-checks.sh` runs `FirestoreNodeStore` against an
 emulated Firestore. 31 checks.
@@ -1015,7 +1115,7 @@ exits 2 with a hint if either is missing.
 
 ---
 
-### 16.7 FirebaseAuth cannot sign in from a build this repository can produce
+### 16.8 FirebaseAuth cannot sign in from a build this repository can produce
 
 `Shared/Firebase/Scripts/check-keychain.sh` answers one question, and the
 answer decides whether a cloud sign-in screen is worth building at all.
@@ -1117,7 +1217,7 @@ blocker is the keychain kind rather than the signature. Somebody with a signing
 identity should re-run the script before any of this is built on.
 
 What is *not* affected: `FirestoreNodeStore` itself, which needs no keychain
-and is verified in [§16.6](#166-the-native-firestore-adapter-is-verified-against-a-real-firestore).
+and is verified in [§16.7](#167-the-native-firestore-adapter-is-verified-against-a-real-firestore).
 The plumbing is sound; it is the front door that cannot open. Nor is the web
 build affected, which does not use the Apple SDK.
 
@@ -1138,10 +1238,13 @@ async `@main` instead.
 
 | Change | Summary |
 | --- | --- |
+| Make a resize land on the picture you dragged | Four faults behind image resizing, all found by review rather than by use. Clicking a picture never focused the pane it was in — the image path returns before `super.mouseDown`, so `NSTextView` never took first responder — and the commit then resolved the target through *whichever pane had focus*, which in Split view is the Markdown pane. A resize could therefore rewrite a **different image** or refuse outright. The commit now carries the source offset the handles were drawn around. The handles also never moved on **reflow**, so a window resize or a width drag left them over blank text while still taking the drag; and a **refused** resize left the picture at the size the drag abandoned it at, because a drag previews by changing the attachment's bounds and only a re-render puts them back. Finally, a drag ended by the view going away stranded a pushed `NSCursor` — a process-wide stack, so the diagonal arrow leaked into every other app. See [§9.7](#97-selecting-and-resizing-a-picture), [§9.8](#98-what-the-pointer-says). |
+| A calmer page, and pictures you can pick up | The explorer is closed by default (`⌃⌘S`) and floats over the document instead of taking a column, so opening it no longer slides the text. The rendered preview is centred in the window and the width gripper appears only on hover. A picture can be **clicked to select and dragged by a corner to resize**, always proportionally, written back as the `<img …>` spelling GitHub honours. See [§9.7](#97-selecting-and-resizing-a-picture), [§11.1](#111-staying-out-of-the-way), [§13.3](#133-a-calm-page). |
+| Make the pointer tell the truth over a picture | The pointer is now the arrow over a picture and a matching diagonal resize over each corner, instead of an I-beam everywhere and one crosshair on all four. Three faults sat underneath: the shape changed over the drawn 9 pt handle while clicks were accepted over a 15 pt one, leaving a 3 pt ring where the pointer promised a resize that did not happen; the rects were never re-registered when a picture moved or scrolled; and the picture's own rectangle was wrong. `location(forGlyphAt:)` already folds in `NSTextAttachment.bounds.origin`, so applying it again put every handle 4 pt below the corner it was holding — `attachmentRect` now takes a size, so the origin cannot be passed at all. Measured against drawn pixels across seven baseline offsets on both axes. See [§9.8](#98-what-the-pointer-says). |
 | Notice when another app changes the open document | The editor watches its file and says so when something else writes it. With nothing unsaved it applies the newer text and shows a self-clearing bar; the caret is carried over and it lands on the undo stack as one entry named *Refresh*. With unsaved edits it applies nothing, shows a bar offering **Reload** (`⇧⌘R`) or **Keep Mine**, and **suspends autosave until one is chosen** — otherwise the notice would be pointless, because autosave would overwrite the other app's version a second later. **File ▸ Reload from Disk** (`⇧⌘R`) re-reads on demand. The hard part is the 1.5-second autosave: the app's own writes must never come back as somebody else's, including a write whose event lands after further typing. The monitor also re-arms across atomic replacement — a temp file renamed over the target, which is how most editors and `git` save — because a watcher that misses that reports the first external save and is deaf forever after. See [§5.6](#56-changes-made-by-another-app). |
-| Narrow the keychain blocker to the keychain, not the signature | The three `-34018` failures said something was missing but not what, so a second Firebase-free probe (`keychain-kind`) writes the same item to both macOS keychains from one process. The ad-hoc-signed bundle writes to the **file-based keychain** perfectly well and is refused only by the **data-protection** one — so the signature was never the problem. Adding `com.apple.security.app-sandbox`, the one relevant *unrestricted* entitlement, does not help either, which rules out the only fix that would have needed no Apple account. FirebaseAuth cannot be redirected: it sets `kSecUseDataProtectionKeychain` unconditionally at both of the two places it builds a query. And there is no degraded "sign in every launch" mode to fall back on — no `currentUser` survives the throw, so the sign-in is lost rather than merely unpersisted. Sharpens the open question in [§16.7](#167-firebaseauth-cannot-sign-in-from-a-build-this-repository-can-produce) from "does signing help" to "does a Personal Team profile grant a keychain access group". |
-| Establish why native cloud sign-in is blocked | FirebaseAuth cannot sign in from any build this repository can produce: it needs the macOS data-protection keychain, whose entitlement is restricted and must be authorized by a provisioning profile. Measured three ways — bare executable, ad-hoc-signed `.app`, and an `.app` claiming the entitlement, which is SIGKILLed at exec. Corrects [NG-3](#22-non-goals) and the root README, both of which named the Firebase console step as the only thing outstanding. See [§16.7](#167-firebaseauth-cannot-sign-in-from-a-build-this-repository-can-produce). |
-| Verify the native Firestore adapter against a real Firestore | `Shared/Firebase/run-emulator-checks.sh` runs `FirestoreNodeStore` against an emulated Firestore — 31 checks over field names, the subtree filter, batch atomicity, listener delivery, and per-account isolation. Closes the half of NG-3 that said the cloud path had never been exercised on any native build; the sign-in UI and the Firebase console step remain. See [§16.6](#166-the-native-firestore-adapter-is-verified-against-a-real-firestore). |
+| Narrow the keychain blocker to the keychain, not the signature | The three `-34018` failures said something was missing but not what, so a second Firebase-free probe (`keychain-kind`) writes the same item to both macOS keychains from one process. The ad-hoc-signed bundle writes to the **file-based keychain** perfectly well and is refused only by the **data-protection** one — so the signature was never the problem. Adding `com.apple.security.app-sandbox`, the one relevant *unrestricted* entitlement, does not help either, which rules out the only fix that would have needed no Apple account. FirebaseAuth cannot be redirected: it sets `kSecUseDataProtectionKeychain` unconditionally at both of the two places it builds a query. And there is no degraded "sign in every launch" mode to fall back on — no `currentUser` survives the throw, so the sign-in is lost rather than merely unpersisted. Sharpens the open question in [§16.8](#168-firebaseauth-cannot-sign-in-from-a-build-this-repository-can-produce) from "does signing help" to "does a Personal Team profile grant a keychain access group". |
+| Establish why native cloud sign-in is blocked | FirebaseAuth cannot sign in from any build this repository can produce: it needs the macOS data-protection keychain, whose entitlement is restricted and must be authorized by a provisioning profile. Measured three ways — bare executable, ad-hoc-signed `.app`, and an `.app` claiming the entitlement, which is SIGKILLed at exec. Corrects [NG-3](#22-non-goals) and the root README, both of which named the Firebase console step as the only thing outstanding. See [§16.8](#168-firebaseauth-cannot-sign-in-from-a-build-this-repository-can-produce). |
+| Verify the native Firestore adapter against a real Firestore | `Shared/Firebase/run-emulator-checks.sh` runs `FirestoreNodeStore` against an emulated Firestore — 31 checks over field names, the subtree filter, batch atomicity, listener delivery, and per-account isolation. Closes the half of NG-3 that said the cloud path had never been exercised on any native build; the sign-in UI and the Firebase console step remain. See [§16.7](#167-the-native-firestore-adapter-is-verified-against-a-real-firestore). |
 | Ship resources if a target ever declares one | Both no-Xcode build scripts now copy the `<Package>_<Target>.bundle` SwiftPM emits for a target with `resources:` — into `Contents/Resources` on the Mac, the bundle root on iOS, which is where `Bundle.module` looks on each. Nothing declares a resource today, so both copy nothing; a target that gained one would previously have built and signed cleanly and trapped on launch. Verified by temporarily giving `MarkdownEditorUI` a resource and confirming it reached both apps. |
 | Keep typing responsive on an illustrated document | Local images are decoded once and kept in memory instead of being re-read from disk on every keystroke. A document of forty photo-sized references styled in 65.7 ms per character, about 15 fps; it now styles in 4.0 ms. The cache is keyed on modification date and size, so a picture edited in another app is read again rather than drawn stale, and it is costed by pixel area against a 192 MB ceiling so an illustrated document cannot outgrow the rest of the app. |
 | Stop the idle pane drifting on every keystroke | The split no longer nudges the pane you are not typing in. Catching a pane up with its neighbour is meant to happen when it joins the split, but it ran on every SwiftUI update — twice per keystroke — and it applies a normalized fraction between panes of different heights, so it is not idempotent. Measured at 40 unwanted moves over 20 keystrokes, now 0. `make check-session` compiles the real session against recording panes and asserts which pane may move which. |
@@ -1187,3 +1290,6 @@ Known gaps, recorded deliberately so they are not mistaken for bugs:
 | Syntax highlighting inside fenced code blocks | The language identifier is parsed and retained but not colorized. |
 | Export to HTML or PDF | Out of scope. |
 | Custom Find and Replace UI | Out of scope. The standard macOS find panel with incremental search is enabled instead. |
+| Resizing a picture by an edge or by keyboard | Only the four corners resize, and only by dragging. There is no side handle (which would not preserve the aspect ratio) and no keyboard equivalent; **Insert ▸ Image Size…** (`⇧⌥⌘I`) covers the exact-numbers case. |
+| Selecting more than one picture | Selection is one attachment character, so pictures cannot be multi-selected or resized together. |
+| Pointer shapes verified on every run | `make check-image-layout` asserts the rects and shapes each view registers, which is deterministic. Whether AppKit then *shows* those shapes is checked by `make check-image-cursors`, which drives the real mouse and so needs an idle machine — it is opt-in and not part of any suite. |

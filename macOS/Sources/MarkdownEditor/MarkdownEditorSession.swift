@@ -9,6 +9,28 @@ import UniformTypeIdentifiers
 final class MarkdownEditorSession: ObservableObject {
     @Published private(set) var viewMode: EditorViewMode = .split
 
+    /// X-18: the explorer starts closed. Opening a document should put the
+    /// document on screen and nothing else; a file tree is for the moments you
+    /// go looking for one, which is what the toolbar button and `⌃⌘S` are for.
+    @Published private(set) var isExplorerVisible: Bool =
+        UserDefaults.standard.bool(
+            forKey: MarkdownEditorSession.explorerVisibleKey
+        )
+
+    static let explorerVisibleKey = "explorerVisible"
+
+    func setExplorerVisible(_ isVisible: Bool) {
+        guard isVisible != isExplorerVisible else {
+            return
+        }
+        isExplorerVisible = isVisible
+        UserDefaults.standard.set(isVisible, forKey: Self.explorerVisibleKey)
+    }
+
+    func toggleExplorer() {
+        setExplorerVisible(!isExplorerVisible)
+    }
+
     @Published var fileURL: URL? {
         didSet {
             fileExplorer.followDocument(fileURL)
@@ -345,6 +367,9 @@ final class MarkdownEditorSession: ObservableObject {
                 return
             }
             self?.fileExplorer.setUserSelectedRoot(folderURL)
+            // Choosing a folder to show in the explorer and then not being
+            // shown it would be a strange answer to the request.
+            self?.setExplorerVisible(true)
         }
 
         if let window = editor?.hostingWindow {
@@ -361,8 +386,19 @@ final class MarkdownEditorSession: ObservableObject {
     /// highlights.
     func imageAtSelection() -> (range: NSRange, tag: MarkdownImageTag.Parsed)? {
         guard let editor = currentEditor() else { return nil }
+        return image(at: editor.selectedSourceRange.location, in: editor)
+    }
+
+    /// The image span covering `location` in `editor`'s source.
+    private func image(
+        at location: Int,
+        in editor: any MarkdownEditingSurface
+    ) -> (range: NSRange, tag: MarkdownImageTag.Parsed)? {
         let text = editor.sourceText as NSString
-        let selection = clamped(editor.selectedSourceRange, to: text.length)
+        let selection = clamped(
+            NSRange(location: location, length: 0),
+            to: text.length
+        )
 
         for span in MarkdownRenderer.render(editor.sourceText).spans {
             guard case .image = span.style else { continue }
@@ -383,6 +419,55 @@ final class MarkdownEditorSession: ObservableObject {
     }
 
     var canResizeImageAtSelection: Bool { imageAtSelection() != nil }
+
+    /// The pixel size of a rendered image, for the drag handles.
+    ///
+    /// The attachment already holds the picture that was loaded, so this needs
+    /// no file access and cannot start a download — which matters, because it
+    /// is asked on every click.
+    func naturalSize(
+        ofRenderedImage attachment: NSTextAttachment
+    ) -> MarkdownImageTag.Size? {
+        guard let image = attachment.image else { return nil }
+        return Self.pixelSize(of: image)
+    }
+
+    /// Write the size a drag finished at into the document.
+    ///
+    /// The selection is re-read rather than remembered: between the drag
+    /// starting and ending the document may have been reloaded from disk by
+    /// the external-change watcher, and writing a stale range would corrupt
+    /// whatever now sits there.
+    func resizeImageAtSelection(to size: MarkdownImageTag.Size) {
+        guard let image = imageAtSelection() else {
+            present(error: MarkdownEditorPresentationError.noImageAtSelection)
+            return
+        }
+        applyImageSize(size, to: image.range)
+    }
+
+    /// Resize the image the drag handles were drawn around.
+    ///
+    /// The caller names both the pane and the source offset rather than letting
+    /// this re-derive them from focus. A drag is a direct manipulation of one
+    /// specific picture: resolving it again through "whichever pane has focus"
+    /// is how a resize in Split view can land on the *other* pane's caret and
+    /// rewrite a different image entirely.
+    func resizeImage(
+        in editor: any MarkdownEditingSurface,
+        atSourceLocation location: Int,
+        to size: MarkdownImageTag.Size
+    ) {
+        guard let image = image(at: location, in: editor) else {
+            // Fall back rather than refuse: the document may have been reloaded
+            // from disk mid-drag, in which case the remembered offset is stale
+            // but the selection is still live.
+            resizeImageAtSelection(to: size)
+            return
+        }
+        activate(editor)
+        applyImageSize(size, to: image.range)
+    }
 
     /// Set the size of the image at the selection.
     ///

@@ -76,6 +76,24 @@ struct RichTextEditor: NSViewRepresentable {
                 actionName: actionName
             )
         }
+        textView.naturalSizeForImage = { [weak session] attachment in
+            session?.naturalSize(ofRenderedImage: attachment)
+        }
+        textView.commitImageSize = {
+            [weak session, weak coordinator = context.coordinator] size, range in
+            guard let session else { return }
+            guard let coordinator else {
+                session.resizeImageAtSelection(to: size)
+                return
+            }
+            // Name the pane and the offset the handles were actually drawn
+            // around. Resolving it again by focus can land on the other pane.
+            session.resizeImage(
+                in: coordinator,
+                atSourceLocation: coordinator.sourceLocation(forRendered: range),
+                to: size
+            )
+        }
         context.coordinator.render(
             sourceSelection: NSRange(location: 0, length: 0)
         )
@@ -186,6 +204,11 @@ struct RichTextEditor: NSViewRepresentable {
 
         var sourceText: String {
             text.wrappedValue
+        }
+
+        /// Where a rendered range starts in the Markdown source.
+        func sourceLocation(forRendered range: NSRange) -> Int {
+            model.sourceRange(for: range).location
         }
 
         var selectedSourceRange: NSRange {
@@ -383,6 +406,10 @@ struct RichTextEditor: NSViewRepresentable {
                 )
             }
             isRendering = false
+            // Replacing the storage discards the layout the handles and the
+            // image cursor rects were measured from, so both are stale until
+            // they are measured against the new one.
+            (textView as? RichMarkdownTextView)?.updateImageHandles()
             // The selection changes AppKit made while the storage was being
             // replaced were suppressed as intermediate. Publish the settled
             // one now, so the two panes still track each other's caret and

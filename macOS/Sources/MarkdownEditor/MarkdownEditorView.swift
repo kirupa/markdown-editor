@@ -57,42 +57,11 @@ struct MarkdownEditorView: View {
                 totalWidth: geometry.size.width
             )
 
-            HStack(spacing: 0) {
-                FileExplorerSidebar(
-                    session: session,
-                    colorTheme: colorTheme
-                )
-                    .frame(width: visibleExplorerWidth)
-
-                WidthGripper(
-                    colorTheme: colorTheme,
-                    displayedWidth: geometry.size.width
-                        - visibleExplorerWidth
-                        - Layout.gripperWidth,
-                    dragGesture: resizeGesture(
-                        totalWidth: geometry.size.width,
-                        visibleExplorerWidth: visibleExplorerWidth
-                    ),
-                    onReset: {
-                        explorerWidth = clampedExplorerWidth(
-                            Layout.defaultExplorerWidth,
-                            totalWidth: geometry.size.width
-                        )
-                    },
-                    onAdjust: { direction in
-                        adjustDocumentWidth(
-                            direction,
-                            totalWidth: geometry.size.width,
-                            visibleExplorerWidth: visibleExplorerWidth
-                        )
-                    },
-                    helpText: """
-                        Drag to resize the editor pane; double-click to reset \
-                        the split
-                        """,
-                    accessibilityLabel: "Editor pane width"
-                )
-
+            // X-18: the explorer floats over the document rather than taking
+            // part in the row. Opening it must not move the text by a pixel,
+            // which also means the reading measure centers on the window
+            // rather than on whatever the explorer leaves over.
+            ZStack(alignment: .topLeading) {
                 VStack(spacing: 0) {
                     ExternalChangeBanner(
                         state: session.externalChange.state,
@@ -149,11 +118,55 @@ struct MarkdownEditorView: View {
                         }
                     }
                 }
-                .frame(
-                    minWidth: Layout.minimumDocumentWidth,
-                    maxWidth: .infinity,
-                    maxHeight: .infinity
-                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                if session.isExplorerVisible {
+                    HStack(spacing: 0) {
+                        FileExplorerSidebar(
+                            session: session,
+                            colorTheme: colorTheme
+                        )
+                            .frame(width: visibleExplorerWidth)
+
+                        WidthGripper(
+                            colorTheme: colorTheme,
+                            displayedWidth: visibleExplorerWidth,
+                            dragGesture: resizeGesture(
+                                totalWidth: geometry.size.width,
+                                visibleExplorerWidth: visibleExplorerWidth
+                            ),
+                            onReset: {
+                                explorerWidth = clampedExplorerWidth(
+                                    Layout.defaultExplorerWidth,
+                                    totalWidth: geometry.size.width
+                                )
+                            },
+                            onAdjust: { direction in
+                                adjustExplorerWidth(
+                                    direction,
+                                    totalWidth: geometry.size.width,
+                                    visibleExplorerWidth: visibleExplorerWidth
+                                )
+                            },
+                            helpText: """
+                                Drag to resize the file explorer; double-click \
+                                to reset its width
+                                """,
+                            accessibilityLabel: "File explorer width"
+                        )
+                    }
+                    .frame(maxHeight: .infinity)
+                    // Opaque, or the document would read through the tree.
+                    .background(colorTheme.sidebarBackground)
+                    .shadow(
+                        color: .black.opacity(0.18),
+                        radius: 12,
+                        x: 2,
+                        y: 0
+                    )
+                    .transition(.move(edge: .leading))
+                    .zIndex(1)
+                }
             }
         }
         .frame(minWidth: Layout.minimumWindowWidth, minHeight: 520)
@@ -247,7 +260,7 @@ struct MarkdownEditorView: View {
         )
     }
 
-    private func adjustDocumentWidth(
+    private func adjustExplorerWidth(
         _ direction: AccessibilityAdjustmentDirection,
         totalWidth: CGFloat,
         visibleExplorerWidth: CGFloat
@@ -255,9 +268,9 @@ struct MarkdownEditorView: View {
         let explorerAdjustment: CGFloat
         switch direction {
         case .increment:
-            explorerAdjustment = -Layout.keyboardResizeStep
-        case .decrement:
             explorerAdjustment = Layout.keyboardResizeStep
+        case .decrement:
+            explorerAdjustment = -Layout.keyboardResizeStep
         @unknown default:
             return
         }
@@ -272,17 +285,11 @@ struct MarkdownEditorView: View {
         _ proposedWidth: CGFloat,
         totalWidth: CGFloat
     ) -> CGFloat {
-        let maximumWidth = max(
-            Layout.minimumExplorerWidth,
-            min(
-                Layout.maximumExplorerWidth,
-                totalWidth - Layout.minimumDocumentWidth
-                    - Layout.gripperWidth
-            )
-        )
-        return min(
-            max(proposedWidth, Layout.minimumExplorerWidth),
-            maximumWidth
+        EditorPaneGeometry.explorerWidth(
+            proposedWidth,
+            totalWidth: totalWidth,
+            minimum: Layout.minimumExplorerWidth,
+            maximum: Layout.maximumExplorerWidth
         )
     }
 }
@@ -305,6 +312,11 @@ private struct ResizableRichTextPreview: View {
             )
 
             HStack(spacing: 0) {
+                // Y-8: centered on the window. The gripper hangs outside the
+                // measure as an overlay so that reaching for it cannot itself
+                // shift the text it resizes.
+                Spacer(minLength: 0)
+
                 RichTextEditor(
                     text: $text,
                     documentURL: documentURL,
@@ -313,33 +325,35 @@ private struct ResizableRichTextPreview: View {
                     layoutWidth: visibleWidth
                 )
                 .frame(width: visibleWidth)
-
-                WidthGripper(
-                    colorTheme: colorTheme,
-                    displayedWidth: visibleWidth,
-                    dragGesture: resizeGesture(
-                        totalWidth: geometry.size.width,
-                        visibleWidth: visibleWidth
-                    ),
-                    onReset: {
-                        preferredWidth = clampedWidth(
-                            Layout.defaultPreviewWidth,
-                            totalWidth: geometry.size.width
-                        )
-                    },
-                    onAdjust: { direction in
-                        adjustWidth(
-                            direction,
+                .overlay(alignment: .trailing) {
+                    WidthGripper(
+                        colorTheme: colorTheme,
+                        displayedWidth: visibleWidth,
+                        dragGesture: resizeGesture(
                             totalWidth: geometry.size.width,
                             visibleWidth: visibleWidth
-                        )
-                    },
-                    helpText: """
-                        Drag to resize the Rich Text document; double-click to \
-                        reset its width
-                        """,
-                    accessibilityLabel: "Rich Text document width"
-                )
+                        ),
+                        onReset: {
+                            preferredWidth = clampedWidth(
+                                Layout.defaultPreviewWidth,
+                                totalWidth: geometry.size.width
+                            )
+                        },
+                        onAdjust: { direction in
+                            adjustWidth(
+                                direction,
+                                totalWidth: geometry.size.width,
+                                visibleWidth: visibleWidth
+                            )
+                        },
+                        helpText: """
+                            Drag to resize the Rich Text document; double-click \
+                            to reset its width
+                            """,
+                        accessibilityLabel: "Rich Text document width"
+                    )
+                    .offset(x: Layout.gripperWidth)
+                }
 
                 Spacer(minLength: 0)
             }
@@ -394,17 +408,12 @@ private struct ResizableRichTextPreview: View {
         _ proposedWidth: CGFloat,
         totalWidth: CGFloat
     ) -> CGFloat {
-        let availableWidth = max(
-            minimumWidth,
-            totalWidth - Layout.gripperWidth
-        )
-        let maximumWidth = min(
-            Layout.maximumPreviewWidth,
-            availableWidth
-        )
-        return min(
-            max(proposedWidth, minimumWidth),
-            maximumWidth
+        EditorPaneGeometry.measureWidth(
+            proposedWidth,
+            totalWidth: totalWidth,
+            minimum: minimumWidth,
+            maximum: Layout.maximumPreviewWidth,
+            handleWidth: Layout.gripperWidth
         )
     }
 }
@@ -421,12 +430,16 @@ private struct WidthGripper: View {
     @State private var isHovering = false
 
     var body: some View {
+        // Y-9: quiet until it is wanted. A permanent rule with three dots on
+        // it is furniture the document has to compete with, and this one is
+        // findable by hovering the edge whether or not it is drawn.
         ZStack {
             Color.accentColor
                 .opacity(isHovering ? 0.08 : 0)
             Rectangle()
                 .fill(Color(nsColor: colorTheme.separatorColor))
                 .frame(width: 1)
+                .opacity(isHovering ? 1 : 0.4)
             VStack(spacing: 3) {
                 ForEach(0..<3) { _ in
                     Circle()
@@ -434,7 +447,9 @@ private struct WidthGripper: View {
                         .frame(width: 3, height: 3)
                 }
             }
+            .opacity(isHovering ? 1 : 0)
         }
+        .animation(.easeOut(duration: 0.12), value: isHovering)
         .frame(width: Layout.gripperWidth)
         .contentShape(Rectangle())
         .gesture(dragGesture)
@@ -469,7 +484,7 @@ private enum Layout {
     static let maximumPreviewWidth: CGFloat = 1_100
     static let gripperWidth: CGFloat = 12
     static let keyboardResizeStep: CGFloat = 20
-    static let minimumWindowWidth = defaultExplorerWidth
-        + defaultDocumentWidth
-        + gripperWidth
+    // X-18: the explorer floats, so it no longer needs a column of its own for
+    // the window to be usable. The window only has to fit a document.
+    static let minimumWindowWidth = defaultDocumentWidth
 }

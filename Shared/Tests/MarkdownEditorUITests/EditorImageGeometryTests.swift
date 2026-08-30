@@ -1,0 +1,225 @@
+import CoreGraphics
+import XCTest
+
+@testable import MarkdownEditorUI
+
+final class EditorImageGeometryTests: XCTestCase {
+    // MARK: - Where the picture is
+
+    /// The case the whole change exists for: an image on a line taller than
+    /// itself. The line box starts above the picture and ends below it, so a
+    /// rect taken from the line would claim blank space on both sides.
+    func testAttachmentRectIgnoresTheHeightOfTheLine() {
+        // A 60pt line whose baseline sits 48pt down, holding a 40pt image.
+        let rect = EditorImageGeometry.attachmentRect(
+            lineFragment: CGRect(x: 10, y: 100, width: 500, height: 60),
+            glyphLocation: CGPoint(x: 4, y: 48),
+            attachmentSize: CGSize(width: 80, height: 40),
+            containerOrigin: .zero
+        )
+        // Bottom edge on the baseline, top edge 40pt above it.
+        XCTAssertEqual(rect.minY, 108)
+        XCTAssertEqual(rect.maxY, 148)
+        XCTAssertEqual(rect.minX, 14)
+        XCTAssertEqual(rect.width, 80)
+        XCTAssertEqual(rect.height, 40)
+        // Strictly inside the line it sits on, which is the point.
+        XCTAssertGreaterThan(rect.minY, 100)
+        XCTAssertLessThan(rect.maxY, 160)
+    }
+
+    func testAttachmentRectAddsTheContainerOrigin() {
+        let rect = EditorImageGeometry.attachmentRect(
+            lineFragment: CGRect(x: 0, y: 0, width: 500, height: 50),
+            glyphLocation: CGPoint(x: 0, y: 50),
+            attachmentSize: CGSize(width: 100, height: 50),
+            containerOrigin: CGPoint(x: 20, y: 8)
+        )
+        XCTAssertEqual(rect.origin, CGPoint(x: 20, y: 8))
+    }
+
+    /// The 4pt bug, as an assertion.
+    ///
+    /// `NSTextAttachment.bounds.origin` does not move the picture — the layout
+    /// manager has already applied it by the time it reports a glyph location.
+    /// Applying it again put every handle 4pt below the corner it was holding,
+    /// because the renderer sets a negative offset. The rect must depend on the
+    /// size and nothing else.
+    func testTheBaselineOffsetIsNotAppliedTwice() {
+        let fragment = CGRect(x: 0, y: 0, width: 500, height: 60)
+        let location = CGPoint(x: 0, y: 50)
+        let size = CGSize(width: 30, height: 30)
+        let rect = EditorImageGeometry.attachmentRect(
+            lineFragment: fragment,
+            glyphLocation: location,
+            attachmentSize: size,
+            containerOrigin: .zero
+        )
+        // The glyph location is the picture's bottom edge, whatever offset the
+        // renderer asked for, so the top is exactly one height above it.
+        XCTAssertEqual(rect.maxY, 50)
+        XCTAssertEqual(rect.minY, 20)
+    }
+
+    // MARK: - Handles
+
+    func testHandlesSitOnTheCornersTheyAreNamedFor() {
+        let frame = CGRect(x: 100, y: 200, width: 300, height: 150)
+        let side = EditorImageGeometry.handleSide
+        for corner in EditorImageCorner.allCases {
+            let rect = EditorImageGeometry.handleRect(corner, in: frame)
+            XCTAssertEqual(rect.width, side)
+            XCTAssertEqual(rect.height, side)
+            // Centred on the corner: half in, half out.
+            XCTAssertEqual(
+                CGPoint(x: rect.midX, y: rect.midY),
+                corner.position(in: frame)
+            )
+        }
+        XCTAssertEqual(
+            EditorImageCorner.topLeading.position(in: frame),
+            CGPoint(x: 100, y: 200)
+        )
+        XCTAssertEqual(
+            EditorImageCorner.bottomTrailing.position(in: frame),
+            CGPoint(x: 400, y: 350)
+        )
+    }
+
+    func testTheHitAreaIsLargerThanTheDotButStillLocal() {
+        let frame = CGRect(x: 0, y: 0, width: 400, height: 400)
+        let drawn = EditorImageGeometry.handleRect(.topLeading, in: frame)
+        let hit = EditorImageGeometry.handleHitRect(.topLeading, in: frame)
+        XCTAssertTrue(hit.contains(drawn))
+        XCTAssertGreaterThan(hit.width, drawn.width)
+        // The middle of a large picture is text, not a handle.
+        XCTAssertNil(
+            EditorImageGeometry.corner(at: CGPoint(x: 200, y: 200), in: frame)
+        )
+    }
+
+    /// On a picture small enough that two widened targets overlap, the overlap
+    /// has to go to the nearer corner or one of them cannot be reached.
+    func testOverlappingTargetsGoToTheNearerCorner() {
+        let tiny = CGRect(x: 0, y: 0, width: 14, height: 14)
+        XCTAssertEqual(
+            EditorImageGeometry.corner(at: CGPoint(x: 1, y: 1), in: tiny),
+            .topLeading
+        )
+        XCTAssertEqual(
+            EditorImageGeometry.corner(at: CGPoint(x: 13, y: 13), in: tiny),
+            .bottomTrailing
+        )
+        XCTAssertEqual(
+            EditorImageGeometry.corner(at: CGPoint(x: 13, y: 1), in: tiny),
+            .topTrailing
+        )
+        XCTAssertEqual(
+            EditorImageGeometry.corner(at: CGPoint(x: 1, y: 13), in: tiny),
+            .bottomLeading
+        )
+    }
+
+    func testTheOverlayIsInsetEnoughToDrawEveryHandle() {
+        let frame = CGRect(
+            x: EditorImageGeometry.overlayInset,
+            y: EditorImageGeometry.overlayInset,
+            width: 120,
+            height: 90
+        )
+        let bounds = CGRect(
+            x: 0,
+            y: 0,
+            width: frame.width + EditorImageGeometry.overlayInset * 2,
+            height: frame.height + EditorImageGeometry.overlayInset * 2
+        )
+        for corner in EditorImageCorner.allCases {
+            XCTAssertTrue(
+                bounds.contains(
+                    EditorImageGeometry.handleHitRect(corner, in: frame)
+                ),
+                "\(corner)'s target is clipped by the overlay"
+            )
+        }
+    }
+
+    // MARK: - Dragging
+
+    func testEachCornerGrowsWhenDraggedAwayFromTheImage() {
+        let start = CGRect(x: 0, y: 0, width: 200, height: 100)
+        let outward: [EditorImageCorner: CGPoint] = [
+            .topLeading: CGPoint(x: -10, y: -10),
+            .topTrailing: CGPoint(x: 10, y: -10),
+            .bottomLeading: CGPoint(x: -10, y: 10),
+            .bottomTrailing: CGPoint(x: 10, y: 10)
+        ]
+        for (corner, delta) in outward {
+            let grown = EditorImageGeometry.draggedWidth(
+                from: start,
+                corner: corner,
+                deltaX: delta.x,
+                deltaY: delta.y
+            )
+            XCTAssertGreaterThan(grown, start.width, "\(corner) shrank")
+            let shrunk = EditorImageGeometry.draggedWidth(
+                from: start,
+                corner: corner,
+                deltaX: -delta.x,
+                deltaY: -delta.y
+            )
+            XCTAssertLessThan(shrunk, start.width, "\(corner) grew")
+        }
+    }
+
+    /// A drag mostly sideways should follow the pointer sideways, and a drag
+    /// mostly vertical should follow it vertically — compared in width, since
+    /// a 2:1 image moves twice as far horizontally for the same size change.
+    func testTheLargerMovementWins() {
+        let wide = CGRect(x: 0, y: 0, width: 200, height: 100)
+        // 40 across, 2 down: horizontal wins outright.
+        XCTAssertEqual(
+            EditorImageGeometry.draggedWidth(
+                from: wide,
+                corner: .bottomTrailing,
+                deltaX: 40,
+                deltaY: 2
+            ),
+            240
+        )
+        // 2 across, 40 down: vertical wins, and 40pt of height on a 2:1 image
+        // is 80pt of width.
+        XCTAssertEqual(
+            EditorImageGeometry.draggedWidth(
+                from: wide,
+                corner: .bottomTrailing,
+                deltaX: 2,
+                deltaY: 40
+            ),
+            280
+        )
+    }
+
+    func testADragCannotShrinkAnImageAway() {
+        let start = CGRect(x: 0, y: 0, width: 200, height: 100)
+        XCTAssertEqual(
+            EditorImageGeometry.draggedWidth(
+                from: start,
+                corner: .bottomTrailing,
+                deltaX: -10_000,
+                deltaY: -10_000
+            ),
+            EditorImageGeometry.minimumSide
+        )
+    }
+
+    func testADegenerateFrameDoesNotDivideByZero() {
+        let width = EditorImageGeometry.draggedWidth(
+            from: .zero,
+            corner: .bottomTrailing,
+            deltaX: 50,
+            deltaY: 50
+        )
+        XCTAssertEqual(width, EditorImageGeometry.minimumSide)
+        XCTAssertFalse(width.isNaN)
+    }
+}

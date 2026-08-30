@@ -7,6 +7,30 @@ struct MarkdownFormattingToolbar: ToolbarContent {
     @State private var isThemePickerPresented = false
 
     var body: some ToolbarContent {
+        // X-18: the explorer is closed by default, so there has to be somewhere
+        // obvious to open it. First position, before the view switcher, is
+        // where a sidebar toggle lives in every other Mac app.
+        ToolbarItem(placement: .navigation) {
+            Button {
+                session.toggleExplorer()
+            } label: {
+                Label(
+                    session.isExplorerVisible
+                        ? "Hide File Explorer"
+                        : "Show File Explorer",
+                    systemImage: "sidebar.leading"
+                )
+            }
+            .help(
+                session.isExplorerVisible
+                    ? "Hide the file explorer (⌃⌘S)"
+                    : "Show the file explorer (⌃⌘S)"
+            )
+            .accessibilityAddTraits(
+                session.isExplorerVisible ? [.isSelected] : []
+            )
+        }
+
         ToolbarItem(placement: .navigation) {
             Picker(
                 "Editor View",

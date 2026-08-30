@@ -47,6 +47,20 @@ struct MarkdownEditorCommands: Commands {
             .disabled(session?.fileURL == nil)
         }
 
+        CommandGroup(after: .sidebar) {
+            Button(
+                session?.isExplorerVisible == true
+                    ? "Hide File Explorer"
+                    : "Show File Explorer"
+            ) {
+                session?.toggleExplorer()
+            }
+            .keyboardShortcut("s", modifiers: [.control, .command])
+            .disabled(session == nil)
+
+            Divider()
+        }
+
         CommandGroup(before: .windowList) {
             Button("Welcome to Markdown Editor") {
                 WelcomeWindowController.shared.show()

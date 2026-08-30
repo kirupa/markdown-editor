@@ -1,0 +1,103 @@
+#!/bin/bash
+#
+# Checks the pointer shapes over a picture in the real running app.
+#
+# The pointer is set by AppKit from cursor rects in response to real mouse
+# tracking, so it cannot be checked in a unit test. This seeds a throwaway
+# document, launches the app on it, moves the real mouse over the picture and
+# its corners, and identifies the pointer from the screen.
+#
+# The app is launched from a bundle whose identifier is deliberately different
+# from the installed one (MDE_DEV_BUNDLE=1). Without that, macOS state
+# restoration reopens whatever documents the installed copy had open, and this
+# script would be clicking around inside somebody's real files.
+
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+# This script takes over the screen: it brings the app to the front and moves
+# the real mouse. Run it only on an idle machine. It is opt-in for that reason
+# — run it by accident while somebody is working and it clicks into their
+# windows and steals focus mid-task.
+if [ "${MDE_ALLOW_SCREEN_CONTROL:-}" != "1" ]; then
+    cat <<'WHY'
+This check drives the real mouse and brings the app to the front, so it needs
+the machine to itself. Re-run it with:
+
+    MDE_ALLOW_SCREEN_CONTROL=1 ./Scripts/run-image-cursor-checks.sh
+
+The pointer rects themselves are checked without the screen by
+`make check-image-layout`, which is what CI and everyday work should use.
+WHY
+    exit 0
+fi
+
+fixture="$(mktemp -d)"
+app="build/Markdown Editor.app"
+pid=""
+
+cleanup() {
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+        kill "$pid" 2>/dev/null || true
+    fi
+    rm -rf "$fixture"
+}
+trap cleanup EXIT
+
+echo "building the dev app bundle…"
+MDE_DEV_BUNDLE=1 ./Scripts/build-app.sh >/dev/null
+
+mkdir -p "$fixture/Cursors.assets"
+# A flat, saturated rectangle so the picture can be found on screen by colour.
+swift - "$fixture/Cursors.assets/photo.png" <<'SWIFT' >/dev/null
+import Cocoa
+let size = NSSize(width: 240, height: 150)
+let image = NSImage(size: size)
+image.lockFocus()
+NSColor(calibratedRed: 1.0, green: 0.55, blue: 0.0, alpha: 1.0).setFill()
+NSRect(origin: .zero, size: size).fill()
+image.unlockFocus()
+let rep = NSBitmapImageRep(data: image.tiffRepresentation!)!
+try! rep.representation(using: .png, properties: [:])!
+    .write(to: URL(fileURLWithPath: CommandLine.arguments[1]))
+SWIFT
+
+cat > "$fixture/Cursors.md" <<'MD'
+# Cursors
+
+Some text before the picture.
+
+![photo](Cursors.assets/photo.png)
+
+Some text after the picture.
+MD
+
+before="$(ps -Ao pid=,comm= | grep "$PWD/$app" | awk '{print $1}' || true)"
+open -a "$PWD/$app" "$fixture/Cursors.md"
+
+for _ in $(seq 1 40); do
+    sleep 0.5
+    pid="$(ps -Ao pid=,comm= | grep "$PWD/$app" | awk '{print $1}' | grep -vxF "${before:-none}" | head -1 || true)"
+    [ -n "$pid" ] && break
+done
+
+if [ -z "$pid" ]; then
+    echo "could not launch the dev app"
+    exit 1
+fi
+
+sleep 3
+status=0
+swift Scripts/check-image-cursors.swift "$pid" || status=$?
+
+# The picture must come back the size it went in: a stray drag during the
+# checks would resize it, and that has happened.
+if grep -q '^!\[photo\](Cursors.assets/photo.png)$' "$fixture/Cursors.md"; then
+    echo "  ok   the checks did not resize the picture"
+else
+    echo "  FAIL the checks resized the picture — the pointer results are unreliable"
+    sed -n '5p' "$fixture/Cursors.md"
+    status=1
+fi
+
+exit $status

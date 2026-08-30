@@ -21,10 +21,17 @@ extension EditorColorTheme {
         textView.backgroundColor = editorBackgroundColor
         textView.textColor = primaryTextColor
         textView.insertionPointColor = primaryTextColor
-        textView.selectedTextAttributes = [
+        let selection: [NSAttributedString.Key: Any] = [
             .backgroundColor: selectionBackgroundColor,
             .foregroundColor: selectionTextColor
         ]
+        // The rendered view hides the band while a picture is selected, so it
+        // owns the decision; setting it here directly would undo that.
+        if let rich = textView as? RichMarkdownTextView {
+            rich.baseSelectedTextAttributes = selection
+        } else {
+            textView.selectedTextAttributes = selection
+        }
         scrollView.drawsBackground = true
         scrollView.backgroundColor = editorBackgroundColor
         scrollView.contentView.drawsBackground = true
