@@ -268,29 +268,37 @@ struct CheckImageLayout {
         textView.updateImageHandles()
         let unselected = textView.imageCursorRects()
         check(
-            "the picture claims the pointer even when nothing is selected",
-            unselected.count == 1,
+            "an unselected picture claims the pointer for its body and its corners",
+            unselected.count == 5,
             "\(unselected.count) rects"
         )
+        // The body is claimed last, so the four corner claims — which overlap
+        // it — are registered earlier and win. AppKit keeps the earlier claim.
+        let bodyClaim = unselected.last
         check(
-            "the pointer over the picture is an arrow, not an I-beam",
-            unselected.first?.cursor === NSCursor.arrow,
-            "cursor was \(String(describing: unselected.first?.cursor))"
+            "the pointer over the picture's body is the hand, not an I-beam",
+            bodyClaim?.cursor === NSCursor.pointingHand,
+            "cursor was \(String(describing: bodyClaim?.cursor))"
         )
         check(
-            "the arrow covers exactly the picture",
-            unselected.first.map {
+            "the hand covers exactly the picture",
+            bodyClaim.map {
                 abs($0.rect.minX - drawn.minX) <= 1 && abs($0.rect.minY - drawn.minY) <= 1
                     && abs($0.rect.maxX - drawn.maxX) <= 1 && abs($0.rect.maxY - drawn.maxY) <= 1
             } ?? false,
-            "arrow rect \(unselected.first?.rect.debugDescription ?? "none") vs drawn \(drawn)"
+            "hand rect \(bodyClaim?.rect.debugDescription ?? "none") vs drawn \(drawn)"
+        )
+        check(
+            "the four corner claims come before the body's",
+            unselected.dropLast().allSatisfy { $0.cursor !== NSCursor.pointingHand },
+            "a body claim is registered before a corner's"
         )
 
-        // The rects above are only a source. What decides the shape on screen
-        // is `pointerCursor`, because neither cursor rects on the text view nor
-        // a view layered over it survive NSTextView re-asserting its I-beam —
-        // both were measured on a real screen still showing an I-beam over a
-        // picture at 0.96 confidence.
+        // The rects are one half. `pointerCursor` is the other, and it is what
+        // `mouseMoved` sets after the superclass has put the I-beam back —
+        // measured against the running app, that happens on every move, while
+        // the rect-crossing event that would otherwise correct it arrived only
+        // 6 times in 99 moves.
         check(
             "the pointer over a picture is the hand you pick things up with",
             textView.pointerCursor(at: NSPoint(x: drawn.midX, y: drawn.midY)) === NSCursor.pointingHand
@@ -431,6 +439,66 @@ struct CheckImageLayout {
                 ) != nil
             )
         }
+
+        // These drive the real entry point, which *sets* the cursor. NSCursor's
+        // stack is process-wide and shared with the teardown checks further
+        // down, so whatever is current has to be put back afterwards or those
+        // checks fail on state this section left behind.
+        let cursorBeforeMoveChecks = NSCursor.current
+
+        // The shape has to survive the superclass. NSTextView's own mouseMoved
+        // puts the I-beam back on every single move, and cursorUpdate only
+        // arrives when the pointer crosses the edge of a registered rect —
+        // measured against the running app, 6 times across 99 moves. Inside a
+        // corner target no edge is crossed, so nothing asked for the shape
+        // again and the I-beam stayed. Every check that asked `pointerCursor`
+        // directly passed throughout, because the geometry was never wrong.
+        //
+        // So drive the real entry point and read the cursor AppKit ends up
+        // holding, which is the only thing a person actually sees.
+        for (name, at) in [
+            ("the top-left corner", NSPoint(x: drawn.minX, y: drawn.minY)),
+            ("the bottom-right corner", NSPoint(x: drawn.maxX, y: drawn.maxY)),
+            ("a 12pt miss at the top-left", NSPoint(x: drawn.minX - 12, y: drawn.minY - 12)),
+        ] {
+            NSCursor.iBeam.set()
+            if let move = NSEvent.mouseEvent(
+                with: .mouseMoved,
+                location: textView.convert(at, to: nil),
+                modifierFlags: [],
+                timestamp: 0,
+                windowNumber: window.windowNumber,
+                context: nil,
+                eventNumber: 0,
+                clickCount: 0,
+                pressure: 0
+            ) {
+                textView.mouseMoved(with: move)
+            }
+            check(
+                "moving the mouse to \(name) leaves a resize cursor set",
+                NSCursor.current !== NSCursor.iBeam
+                    && NSCursor.current !== NSCursor.pointingHand
+                    && NSCursor.current !== NSCursor.arrow,
+                "after the move AppKit is holding \(NSCursor.current)"
+            )
+        }
+        NSCursor.iBeam.set()
+        if let move = NSEvent.mouseEvent(
+            with: .mouseMoved,
+            location: textView.convert(NSPoint(x: drawn.midX, y: drawn.midY), to: nil),
+            modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+            context: nil, eventNumber: 0, clickCount: 0, pressure: 0
+        ) {
+            textView.mouseMoved(with: move)
+        }
+        check(
+            "moving the mouse onto the picture leaves the hand set",
+            NSCursor.current === NSCursor.pointingHand,
+            "after the move AppKit is holding \(NSCursor.current)"
+        )
+        textView.updateHover(at: nil)
+        cursorBeforeMoveChecks.set()
 
         // The reach is for the handles, so it must not become a halo. Beside
         // the middle of an edge there is nothing to grab, and lighting the

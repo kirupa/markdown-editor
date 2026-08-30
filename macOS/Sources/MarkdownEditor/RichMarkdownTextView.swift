@@ -346,7 +346,27 @@ final class RichMarkdownTextView: NSTextView {
     /// Not something registered on this view — see `resetCursorRects`. Kept
     /// readable because AppKit does not hand registered cursor rects back.
     func imageCursorRects() -> [(rect: NSRect, cursor: NSCursor)] {
-        visibleImageRects().map { ($0, NSCursor.arrow) }
+        var rects: [(rect: NSRect, cursor: NSCursor)] = []
+        for range in visibleImageRanges() {
+            guard let rect = imageRect(for: range) else { continue }
+            // Corners first: they overlap the picture's own edges, and the
+            // earlier claim on a region is the one AppKit keeps.
+            //
+            // These have to be real cursor rects. A tracking area asking for
+            // `cursorUpdate` looks like it should do the job and does not:
+            // measured against the running app, cursorUpdate arrived 6 times
+            // across 99 mouse moves — only when the pointer crossed the edge of
+            // some *rect*. Over a corner there was no rect to cross, so nothing
+            // was ever asked and NSTextView's I-beam simply stayed. That is the
+            // whole of the "resize cursor never appears" fault.
+            for corner in EditorImageCorner.allCases {
+                rects.append(
+                    (EditorImageGeometry.handleHitRect(corner, in: rect), corner.cursor)
+                )
+            }
+            rects.append((rect, NSCursor.pointingHand))
+        }
+        return rects
     }
 
     override func resetCursorRects() {
@@ -483,7 +503,18 @@ final class RichMarkdownTextView: NSTextView {
 
     override func mouseMoved(with event: NSEvent) {
         super.mouseMoved(with: event)
-        updateHover(at: convert(event.locationInWindow, from: nil))
+        let point = convert(event.locationInWindow, from: nil)
+        updateHover(at: point)
+        // Set the shape here, on every move, and not only from `cursorUpdate`.
+        //
+        // Measured against the running app: `super.mouseMoved` puts the I-beam
+        // back on every single move, and `cursorUpdate` only arrives when the
+        // pointer crosses the edge of a registered rect — 6 times across 99
+        // moves. Inside a corner target no edge is crossed, so nothing ever
+        // asked for the shape again and the I-beam NSTextView had just set
+        // simply stayed. The rects were correct and the geometry agreed; the
+        // shape was being overwritten immediately afterwards by the superclass.
+        pointerCursor(at: point).set()
     }
 
     override func mouseExited(with event: NSEvent) {
