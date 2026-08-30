@@ -610,6 +610,56 @@ public enum MarkdownFormatting {
         )
     }
 
+    /// Move the image occupying `range` so that it sits at `destination`.
+    ///
+    /// `destination` is an offset into the *original* text, which is what a
+    /// caller dragging a picture around a rendered document naturally has: the
+    /// place the pointer is pointing at, measured before anything moved.
+    /// Removing the image first shifts every later offset left by its length,
+    /// so a destination past the image has to be corrected for that — getting
+    /// this wrong lands the picture a whole image reference away from the
+    /// insertion point, and only when dragging forwards.
+    ///
+    /// Dropping an image back inside its own text is not a move, and neither is
+    /// dropping it exactly where it already begins or ends. Those return the
+    /// text unchanged rather than rebuilding it identically, so an accidental
+    /// nudge does not become an undo step.
+    public static func moveImage(
+        in text: String,
+        range requestedRange: NSRange,
+        to destination: Int
+    ) -> MarkdownEditResult {
+        let source = text as NSString
+        let range = clamped(requestedRange, to: source.length)
+        let target = min(max(destination, 0), source.length)
+
+        guard range.length > 0, readImage(source, range: range) != nil else {
+            return MarkdownEditResult(text: text, selection: range)
+        }
+        // Anywhere from the first character to the last is the image's own
+        // text; landing there means it did not go anywhere.
+        guard target < range.location || target > NSMaxRange(range) else {
+            return MarkdownEditResult(text: text, selection: range)
+        }
+
+        let markdown = source.substring(with: range)
+        let mutable = NSMutableString(string: text)
+        mutable.deleteCharacters(in: range)
+        // Clamped, not trusted: an offset that is wrong by the image's own
+        // length is an out-of-bounds insert on the shortened string, and that
+        // is a crash rather than a misplaced picture.
+        let shifted = target > NSMaxRange(range) ? target - range.length : target
+        let insertion = min(max(shifted, 0), mutable.length)
+        mutable.insert(markdown, at: insertion)
+
+        return MarkdownEditResult(
+            text: mutable as String,
+            // Keep the picture selected where it landed, so it can be nudged
+            // again or resized without hunting for it.
+            selection: NSRange(location: insertion, length: range.length)
+        )
+    }
+
     /// The image reference occupying exactly `range`, in either form, or nil.
     public static func readImage(
         _ source: NSString,

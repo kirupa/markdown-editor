@@ -559,6 +559,10 @@ meaningless, and the obvious report is "I cannot select my image".
 | I-55 | A click on a picture is checked against the **real editor hierarchy**, not a bare text view. The app layers a floating explorer, a centred preview column, a gripper and a toolbar around the text, and any of them covering the picture would swallow the click while every geometry check still passed. `make check-editor-clicks` asserts that a click on the picture reaches the rendered pane, a click on a corner reaches the resize handle, and a click on ordinary text still reaches the text. |
 | I-56 | The pointer check **proves it can see each cursor before trusting its verdict**. `NSCursor.arrow.image` and `NSCursor.iBeam.image` come back as empty 0x0 images unless an `NSApplication` exists, while `pointingHand` and `frameResize` load without one. A cursor that will not load scores zero against every sample and hands the verdict to whichever candidate did load, so the check reported "pointing hand" for every I-beam it ever saw — including over plain text, where the answer was never in doubt. The check now builds an application first and asserts every candidate has an image. |
 | I-57 | The pointer over a picture is an **arrow**, over the resize corners a **diagonal resize**, and over text an **I-beam** — verified on real pixels, not just in process. Two things are needed together and neither is sufficient alone, both measured: the picture's cursor rect must be registered **before** `super.resetCursorRects()`, because AppKit keeps the earlier claim on a region and NSTextView's `super` claims the whole surface for the I-beam; and `cursorUpdate` must set the shape from a tracking area, because the rect alone never reaches the screen. Removing either was measured to put the I-beam back at 0.96 confidence. `make check-image-layout` guards the ordering by reading the source, since nothing else can see a reorder. |
+| I-58 | Hovering a picture draws a **faint outline** around it. The arrow says a picture is an object but not where it ends, and the outline is what makes it look draggable before anything is clicked. It is fainter than the selection frame and is suppressed for the selected picture, so one picture never has two frames around it. Verified on real pixels. |
+| I-59 | A picture can be **dragged to somewhere else in the document**. A press stays a click until it has travelled 4pt, so selecting with an unsteady hand cannot rewrite the document. Past that, a caret shows the character the picture would be inserted before and a translucent copy of it follows the pointer. Releasing moves the Markdown as one undoable edit named *Move Image*. |
+| I-60 | Dropping a picture **inside its own text is not a move**. Those points offer no drop location, the caret disappears, and releasing changes nothing — so an accidental nudge does not become an undo step. `MarkdownFormatting.moveImage` refuses the same case at the text level. |
+| I-61 | The destination of a move is measured against the document **before** the picture is lifted out of it, so an offset after the picture must be corrected by its own length. Getting this wrong lands the picture one whole image reference away, and only when dragging forwards. The insertion offset is also clamped: an uncorrected offset is an out-of-bounds insert on the shortened string, which is a crash rather than a misplaced picture. |
 
 `boundingRect(forGlyphRange:in:)` is not the picture either: it returns the
 glyph's *line box*, as tall as the tallest thing on the line plus line spacing,
@@ -819,7 +823,7 @@ make install
 | `make check-scroll` | Drives real AppKit text views and asserts the "never jump" scroll rules |
 | `make check-session` | Compiles the real session against recording panes: which pane may move which, and what happens when another app rewrites the open file |
 | `make check-image-handles` | Renders real attachments and finds them by pixel: proves the picture rect is the drawn picture and not its line box, and guards the baseline-offset rule across seven offsets |
-| `make check-image-layout` | The same geometry through the **real** `RichMarkdownStyler`, plus the pointer rects each view registers, the clicks that select a picture, and the four ways a resize used to go wrong: focus, reflow, a refused commit, and a cursor stranded by teardown |
+| `make check-image-layout` | The same geometry through the **real** `RichMarkdownStyler`, plus the pointer shape at each place it matters, the clicks that select a picture, dragging a picture to a new place in the document, and the four ways a resize used to go wrong: focus, reflow, a refused commit, and a cursor stranded by teardown |
 | `make check-editor-clicks` | Hosts the **real SwiftUI editor**, opens a document off disk, and asks the window which view a click on a picture would actually reach — the one check that can see a floating explorer or gripper covering the preview |
 | `make check-image-cursors` | Opt-in. Drives the real mouse across a real screen and identifies the pointer from screen pixels. Needs `MDE_ALLOW_SCREEN_CONTROL=1` and an idle machine. Its first assertion is that it can see every cursor it is able to name — see I-56 |
 | `make clean` | Cleans the package build directory and removes `build/` |
@@ -861,7 +865,7 @@ the code they cover, so this one command covers the iOS build's engine too.
 
 ### 16.1 Test coverage
 
-403 tests across 30 suites, in the shared package:
+416 tests across 31 suites, in the shared package:
 
 | Suite | Tests | Covers |
 | --- | --- | --- |
@@ -870,6 +874,7 @@ the code they cover, so this one command covers the iOS build's engine too.
 | Markdown render model | 31 | Block and inline parsing, boundary rules, escapes, range mapping |
 | Remote images | 29 | Which addresses are fetched, the transfer ceiling enforced against a stubbed server, decoding, failure caching |
 | Image tags | 25 | `<img …>` parsing and writing, liberal attribute forms, proportional sizing |
+| Moving an image | 13 | Moving a picture's Markdown, the offset correction a forward move needs, dropping on itself, HTML tags, sizes surviving the move, and a move that undoes itself |
 | Local image cache | 12 | Serving unchanged files from memory, re-reading a picture edited underneath us, the pixel-cost budget, and unreadable files |
 | Editor scroll geometry | 18 | When a pane's figures may be trusted, fraction ↔ offset conversion, and the recorded numbers from the typing-jump bug |
 | Markdown text codec invariants | 14 | Byte-exact round trips over the corpus, line endings, byte order marks, nine shapes of malformed UTF-8 |
@@ -1319,4 +1324,4 @@ Known gaps, recorded deliberately so they are not mistaken for bugs:
 | Custom Find and Replace UI | Out of scope. The standard macOS find panel with incremental search is enabled instead. |
 | Resizing a picture by an edge or by keyboard | Only the four corners resize, and only by dragging. There is no side handle (which would not preserve the aspect ratio) and no keyboard equivalent; **Insert ▸ Image Size…** (`⇧⌥⌘I`) covers the exact-numbers case. |
 | Selecting more than one picture | Selection is one attachment character, so pictures cannot be multi-selected or resized together. |
-| Pointer shapes verified on every run | `make check-image-layout` asserts the rects and shapes each view registers, which is deterministic. Whether AppKit then *shows* those shapes is checked by `make check-image-cursors`, which drives the real mouse and so needs an idle machine — it is opt-in and not part of any suite. |
+| Pointer shapes verified on every run | `make check-image-layout` asserts what `pointerCursor` answers at each place that matters, which is deterministic. Whether AppKit then *shows* that shape is a separate question, and one this app got wrong for a long time while the in-process checks passed — see I-57. `make check-image-cursors` settles it against real screen pixels, currently 8 of 8, but it drives the real mouse and so is opt-in and not part of any suite. |

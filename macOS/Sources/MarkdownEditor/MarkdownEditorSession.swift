@@ -469,6 +469,33 @@ final class MarkdownEditorSession: ObservableObject {
         applyImageSize(size, to: image.range)
     }
 
+    /// Move the image at `location` so that it sits at `destination`.
+    ///
+    /// Both offsets are into the Markdown source, and `destination` is measured
+    /// against the document as it stands now — before the image is lifted out
+    /// of it.
+    func moveImage(
+        in editor: any MarkdownEditingSurface,
+        fromSourceLocation location: Int,
+        toSourceLocation destination: Int
+    ) {
+        guard let image = image(at: location, in: editor) else {
+            // The document may have been reloaded from disk mid-drag, in which
+            // case the remembered offset points at whatever is there now.
+            // Refusing is the only safe answer: moving the wrong run of text
+            // would quietly corrupt the document.
+            return
+        }
+        activate(editor)
+        let result = MarkdownFormatting.moveImage(
+            in: editor.sourceText,
+            range: image.range,
+            to: destination
+        )
+        editor.apply(result, actionName: "Move Image")
+        editor.focus()
+    }
+
     /// Set the size of the image at the selection.
     ///
     /// The two fields drive each other through the image's own proportions, so

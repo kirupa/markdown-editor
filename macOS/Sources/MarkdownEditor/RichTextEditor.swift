@@ -94,6 +94,17 @@ struct RichTextEditor: NSViewRepresentable {
                 to: size
             )
         }
+        textView.moveImage = {
+            [weak session, weak coordinator = context.coordinator] range, destination in
+            guard let session, let coordinator else { return }
+            session.moveImage(
+                in: coordinator,
+                fromSourceLocation: coordinator.sourceLocation(forRendered: range),
+                toSourceLocation: coordinator.sourceLocation(
+                    forRendered: NSRange(location: destination, length: 0)
+                )
+            )
+        }
         context.coordinator.render(
             sourceSelection: NSRange(location: 0, length: 0)
         )

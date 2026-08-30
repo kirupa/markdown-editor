@@ -18,12 +18,33 @@ final class RichMarkdownTextView: NSTextView {
     /// Commit a resize for the image the handles are drawn around. The rendered
     /// range is passed so the commit does not have to re-find the picture.
     var commitImageSize: ((MarkdownImageTag.Size, NSRange) -> Void)?
+    /// Move the picture occupying the first range so it sits at the second
+    /// location, both measured in rendered text.
+    var moveImage: ((NSRange, Int) -> Void)?
 
     private(set) var isUpdatingComposition = false
     /// The pictures the pointer should turn into an arrow over, and the
     /// visible area they were measured for.
     private var pointerRects: (visible: NSRect, length: Int, rects: [NSRect])?
     private var pointerTracking: NSTrackingArea?
+    private lazy var imageHover: MarkdownImageHoverOverlay = {
+        let overlay = MarkdownImageHoverOverlay(frame: .zero)
+        addSubview(overlay, positioned: .below, relativeTo: imageHandles)
+        return overlay
+    }()
+
+    private lazy var dropCaret: MarkdownImageDropCaret = {
+        let caret = MarkdownImageDropCaret(frame: .zero)
+        addSubview(caret, positioned: .above, relativeTo: imageHandles)
+        return caret
+    }()
+
+    private lazy var dragGhost: MarkdownImageDragGhost = {
+        let ghost = MarkdownImageDragGhost(frame: .zero)
+        addSubview(ghost, positioned: .above, relativeTo: imageHandles)
+        return ghost
+    }()
+
     private var compositionIsActive = false
     private weak var compositionUndoManager: UndoManager?
     private lazy var imageHandles: MarkdownImageHandleOverlay = {
@@ -328,6 +349,12 @@ final class RichMarkdownTextView: NSTextView {
     func refreshImageCursorRects() {
         pointerRects = nil
         installPointerTracking()
+        // Selecting, scrolling or reflowing moves pictures under a pointer that
+        // has not itself moved, so no mouseMoved arrives to correct the
+        // outline. Ask where the pointer is instead of waiting to be told.
+        if let window {
+            updateHover(at: convert(window.mouseLocationOutsideOfEventStream, from: nil))
+        }
         guard let window, window.isVisible else { return }
         window.invalidateCursorRects(for: self)
         if !imageHandles.isHidden {
@@ -371,7 +398,10 @@ final class RichMarkdownTextView: NSTextView {
         if let existing = pointerTracking, trackingAreas.contains(existing) { return }
         let area = NSTrackingArea(
             rect: .zero,
-            options: [.cursorUpdate, .activeAlways, .inVisibleRect],
+            options: [
+                .cursorUpdate, .mouseMoved, .mouseEnteredAndExited,
+                .activeAlways, .inVisibleRect,
+            ],
             owner: self
         )
         addTrackingArea(area)
@@ -414,6 +444,40 @@ final class RichMarkdownTextView: NSTextView {
 
     override func cursorUpdate(with event: NSEvent) {
         pointerCursor(at: convert(event.locationInWindow, from: nil)).set()
+    }
+
+    // MARK: - Hover
+
+    /// The picture the pointer is over, in this view's coordinates.
+    private(set) var hoveredImageRect: NSRect?
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        updateHover(at: convert(event.locationInWindow, from: nil))
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        updateHover(at: nil)
+    }
+
+    /// Outline the picture under `point`, if any.
+    ///
+    /// The selected picture is skipped: it already has a frame, and drawing
+    /// both would put two rectangles around one image.
+    func updateHover(at point: NSPoint?) {
+        let rect = point.flatMap { p in
+            pointerImageRects().first { $0.contains(p) }
+        }
+        let selected = imageHandles.isHidden ? nil : handledImageRect
+        hoveredImageRect = rect == selected ? nil : rect
+        imageHover.show(around: hoveredImageRect)
+    }
+
+    /// The rect the handles are drawn around, in this view's coordinates.
+    private var handledImageRect: NSRect? {
+        guard let handledImageRange else { return nil }
+        return imageRect(for: handledImageRange)
     }
 
     /// Whether `point` lands on linked text.
@@ -581,9 +645,137 @@ final class RichMarkdownTextView: NSTextView {
                 setSelectedRange(selectedRange())
             }
             updateImageHandles()
+            beginImageMove(at: point)
             return
         }
         super.mouseDown(with: event)
+    }
+
+    // MARK: - Moving a picture
+
+    /// Where a press on a picture started, and what it was on.
+    private var imageMoveRange: NSRange?
+    private var imageMoveOrigin: NSPoint?
+    private var imageMoveGrabOffset: NSSize = .zero
+    private(set) var isMovingImage = false
+    /// Where the picture would land if it were dropped now.
+    private(set) var imageDropLocation: Int?
+
+    /// Far enough that a click with an unsteady hand is still a click.
+    private static let imageMoveThreshold: CGFloat = 4
+
+    private func beginImageMove(at point: NSPoint) {
+        guard let range = handledImageRange, let rect = imageRect(for: range) else { return }
+        imageMoveRange = range
+        imageMoveOrigin = point
+        imageMoveGrabOffset = NSSize(
+            width: point.x - rect.midX,
+            height: point.y - rect.midY
+        )
+        isMovingImage = false
+        imageDropLocation = nil
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let origin = imageMoveOrigin, let range = imageMoveRange else {
+            super.mouseDragged(with: event)
+            return
+        }
+        let point = convert(event.locationInWindow, from: nil)
+        if !isMovingImage {
+            let dx = point.x - origin.x, dy = point.y - origin.y
+            guard (dx * dx + dy * dy).squareRoot() > Self.imageMoveThreshold else { return }
+            isMovingImage = true
+            // The handles belong to a picture sitting in the text. While it is
+            // being carried they would be drawn around where it used to be.
+            imageHandles.hide()
+            imageHover.show(around: nil)
+        }
+        updateImageDrop(at: point, range: range)
+        autoscroll(with: event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard let range = imageMoveRange else {
+            super.mouseUp(with: event)
+            return
+        }
+        let moving = isMovingImage
+        let destination = imageDropLocation
+        endImageMove()
+        guard moving, let destination else {
+            updateImageHandles()
+            return
+        }
+        moveImage?(range, destination)
+    }
+
+    /// Show where the picture would land, and carry a copy of it there.
+    private func updateImageDrop(at point: NSPoint, range: NSRange) {
+        let location = dropLocation(for: point, moving: range)
+        imageDropLocation = location
+        dropCaret.show(at: location.flatMap { insertionRect(at: $0) })
+        if let rect = imageRect(for: range) {
+            dragGhost.show(
+                movingImage(in: range),
+                size: rect.size,
+                centredOn: NSPoint(
+                    x: point.x - imageMoveGrabOffset.width,
+                    y: point.y - imageMoveGrabOffset.height
+                )
+            )
+        }
+    }
+
+    /// The picture being carried, however the attachment happens to hold it.
+    private func movingImage(in range: NSRange) -> NSImage? {
+        guard let attachment = attachment(in: range) else { return nil }
+        if let image = attachment.image { return image }
+        return (attachment.attachmentCell as? NSTextAttachmentCell)?.image
+    }
+
+    /// The character the picture would be inserted before.
+    ///
+    /// Inside its own text is not a destination — that is a drop back where it
+    /// started — so those points report nothing and the caret disappears,
+    /// which is how a person can tell the gesture will be a no-op.
+    private func dropLocation(for point: NSPoint, moving range: NSRange) -> Int? {
+        let index = characterIndexForInsertion(at: point)
+        guard index < range.location || index > NSMaxRange(range) else { return nil }
+        return index
+    }
+
+    /// A caret-shaped rect at `location`, in this view's coordinates.
+    func insertionRect(at location: Int) -> NSRect? {
+        guard
+            let layoutManager,
+            let textContainer,
+            let textStorage
+        else { return nil }
+        let origin = textContainerOrigin
+        if textStorage.length == 0 {
+            let rect = layoutManager.extraLineFragmentRect
+            return rect.isEmpty ? nil : rect.offsetBy(dx: origin.x, dy: origin.y)
+        }
+        // Past the last character there is no glyph to measure, so measure the
+        // last one and stand at its trailing edge instead.
+        let atEnd = location >= textStorage.length
+        let character = atEnd ? textStorage.length - 1 : location
+        let glyph = layoutManager.glyphIndexForCharacter(at: character)
+        var rect = layoutManager
+            .boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: textContainer)
+            .offsetBy(dx: origin.x, dy: origin.y)
+        if atEnd { rect.origin.x = rect.maxX }
+        return NSRect(x: rect.minX, y: rect.minY, width: 0, height: rect.height)
+    }
+
+    private func endImageMove() {
+        imageMoveRange = nil
+        imageMoveOrigin = nil
+        isMovingImage = false
+        imageDropLocation = nil
+        dropCaret.show(at: nil)
+        dragGhost.hide()
     }
 
     override func setSelectedRanges(

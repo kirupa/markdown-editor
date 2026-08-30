@@ -418,6 +418,101 @@ struct CheckImageLayout {
             window.firstResponder === textView
         )
 
+        // ── Dragging a picture to somewhere else in the document ─────────
+        //
+        // A press on a picture has to stay a click until it has clearly become
+        // a drag, or selecting a picture with a slightly unsteady hand would
+        // silently rewrite the document.
+        print("")
+        print("Dragging a picture")
+
+        func mouse(_ type: NSEvent.EventType, _ point: NSPoint) -> NSEvent? {
+            NSEvent.mouseEvent(
+                with: type,
+                location: textView.convert(point, to: nil),
+                modifierFlags: [],
+                timestamp: 0,
+                windowNumber: window.windowNumber,
+                context: nil,
+                eventNumber: 0,
+                clickCount: 1,
+                pressure: 1
+            )
+        }
+
+        var moved: (range: NSRange, destination: Int)?
+        textView.moveImage = { range, destination in moved = (range, destination) }
+
+        let grab = NSPoint(x: drawn.midX, y: drawn.midY)
+        let tail = NSPoint(x: drawn.midX, y: drawn.maxY + 40)
+
+        // A press that barely moves is a click.
+        moved = nil
+        if let d = mouse(.leftMouseDown, grab) { textView.mouseDown(with: d) }
+        if let m = mouse(.leftMouseDragged, NSPoint(x: grab.x + 2, y: grab.y + 1)) {
+            textView.mouseDragged(with: m)
+        }
+        check("a two-point wobble is not a drag", !textView.isMovingImage)
+        if let u = mouse(.leftMouseUp, NSPoint(x: grab.x + 2, y: grab.y + 1)) {
+            textView.mouseUp(with: u)
+        }
+        check("a wobble does not move the picture", moved == nil)
+
+        // A press that travels is a drag.
+        moved = nil
+        if let d = mouse(.leftMouseDown, grab) { textView.mouseDown(with: d) }
+        if let m = mouse(.leftMouseDragged, tail) { textView.mouseDragged(with: m) }
+        check("dragging away from the picture starts a move", textView.isMovingImage)
+        check(
+            "a drop point is offered",
+            textView.imageDropLocation != nil,
+            "\(String(describing: textView.imageDropLocation))"
+        )
+        if let drop = textView.imageDropLocation {
+            check(
+                "the drop point is outside the picture's own text",
+                drop < imageRange.location || drop > NSMaxRange(imageRange),
+                "drop \(drop) vs image \(imageRange)"
+            )
+            check(
+                "the caret has somewhere to be drawn",
+                (textView.insertionRect(at: drop)?.height ?? 0) > 1
+            )
+        }
+        let expected = textView.imageDropLocation
+        if let u = mouse(.leftMouseUp, tail) { textView.mouseUp(with: u) }
+        check("releasing asks for the move", moved != nil)
+        check(
+            "it asks to move the picture that was grabbed",
+            moved?.range == imageRange,
+            "\(String(describing: moved?.range)) vs \(imageRange)"
+        )
+        check(
+            "it asks for the point the caret was showing",
+            moved?.destination == expected,
+            "\(String(describing: moved?.destination)) vs \(String(describing: expected))"
+        )
+        check("the drag is over once released", !textView.isMovingImage)
+
+        // Dropping a picture back on itself is not a move.
+        moved = nil
+        if let d = mouse(.leftMouseDown, grab) { textView.mouseDown(with: d) }
+        if let m = mouse(.leftMouseDragged, NSPoint(x: grab.x + 12, y: grab.y + 8)) {
+            textView.mouseDragged(with: m)
+        }
+        check(
+            "there is no drop point inside the picture itself",
+            textView.imageDropLocation == nil,
+            "\(String(describing: textView.imageDropLocation))"
+        )
+        if let u = mouse(.leftMouseUp, NSPoint(x: grab.x + 12, y: grab.y + 8)) {
+            textView.mouseUp(with: u)
+        }
+        check("dropping a picture on itself does not move it", moved == nil)
+        textView.moveImage = nil
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        textView.updateImageHandles()
+
         // ── Reflow must carry the handles with the picture. ───────────────
         //
         // Re-wrapping the text above an image moves it without changing the
