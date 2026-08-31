@@ -215,3 +215,142 @@ suite('Remembered storage mode', () => {
       'the two only agree once a choice exists');
   });
 });
+
+suite('A picture reaching into the page margins', () => {
+  const render = (source) => {
+    const host = document.createElement('div');
+    renderInto(host, renderMarkdown(source), (d) => `about:blank#${d}`);
+    return host;
+  };
+
+  test('a line holding only a picture is marked as one', () => {
+    const host = render('Before.\n\n![a](a.png)\n\nAfter.');
+    const marked = host.querySelectorAll('.me-block--image');
+    expectEqual(marked.length, 1, 'exactly the picture line');
+    expect(
+      marked[0].querySelector('.me-image') !== null,
+      'the marked line is the one with the picture in it'
+    );
+  });
+
+  test('a picture in a sentence leaves its line alone', () => {
+    // Pulling this line into the margins would drag the words with it.
+    const host = render('Words ![a](a.png) more words.');
+    expectEqual(host.querySelectorAll('.me-block--image').length, 0);
+  });
+
+  test('the width the picture asks for is passed to the stylesheet', () => {
+    const host = render(
+      'Before.\n\n<img src="a.png" alt="a" width="842" height="500">\n\nAfter.'
+    );
+    const block = host.querySelector('.me-block--image');
+    expect(block !== null, 'the picture line should be marked');
+    expectEqual(block.style.getPropertyValue('--me-image-width'), '842px');
+  });
+
+  test('a picture with no size of its own passes no width', () => {
+    // It is drawn at its natural size, capped below the column, so there is
+    // nothing to reach into the margins with.
+    const host = render('Before.\n\n![a](a.png)\n\nAfter.');
+    const block = host.querySelector('.me-block--image');
+    expectEqual(block.style.getPropertyValue('--me-image-width'), '');
+  });
+
+  test('the overhang is measured, not assumed', async () => {
+    // The whole point is that the picture ends up centred on the column, and
+    // the arithmetic that puts it there lives in the stylesheet. So this loads
+    // the real stylesheet and measures the real layout: three widths, one
+    // centre. Asserting the CSS text instead would pass with a rule the
+    // browser silently drops.
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = '../css/app.css';
+    const loaded = new Promise((resolve) => {
+      link.addEventListener('load', resolve, { once: true });
+      link.addEventListener('error', resolve, { once: true });
+    });
+    document.head.append(link);
+    await loaded;
+
+    const surface = document.createElement('div');
+    surface.className = 'me-surface';
+    surface.style.cssText =
+      'position:absolute;left:-9999px;top:0;width:900px;box-sizing:border-box;' +
+      '--me-image-bleed:100px;--me-measure:652px;' +
+      'padding-left:124px;padding-right:124px;';
+    document.body.append(surface);
+    try {
+      // A picture that really loads, so the renderer has an <img> to read the
+      // width off. A destination it cannot resolve renders as a label
+      // instead, and a label has no width to reach into the margins with.
+      const pixel =
+        'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+      const centres = [];
+      for (const width of [652, 752, 852]) {
+        renderInto(
+          surface,
+          renderMarkdown(
+            `Before.\n\n<img src="a.png" alt="a" width="${width}" height="100">\n\nAfter.`
+          ),
+          () => pixel
+        );
+        const block = surface.querySelector('.me-block--image');
+        expect(block !== null, 'the picture line should be marked');
+        // The line's own box carries the overhang, and the picture is drawn
+        // from its leading edge, so this is where the picture starts.
+        const left = Number.parseFloat(getComputedStyle(block).marginLeft);
+        centres.push(left + width / 2);
+      }
+      const [first, ...rest] = centres;
+      for (const centre of rest) {
+        expect(
+          Math.abs(centre - first) < 1.5,
+          `the picture must stay centred as it grows: ${centres.join(', ')}`
+        );
+      }
+    } finally {
+      surface.remove();
+      link.remove();
+    }
+  });
+
+  test('the resize ceiling is the column plus both margins', () => {
+    // How wide a drag may take a picture. The bleed cannot be read back as a
+    // number — a custom property comes out of `getComputedStyle` as the tokens
+    // it was written with, so `--me-image-bleed` reads as the literal text
+    // "clamp( 0px, (100vw - 700px) / 2, 100px )" and parses as NaN. Shipping
+    // that would have collapsed the ceiling to the column, and a picture could
+    // never have been dragged into the margins at all.
+    //
+    // So the ceiling is measured instead: the surface's own width less the
+    // plain page padding, which leaves the column and both margins.
+    const surface = document.createElement('div');
+    surface.className = 'me-surface';
+    surface.style.cssText =
+      'position:absolute;left:-9999px;top:0;width:900px;box-sizing:border-box;' +
+      '--me-surface-padding:24px;padding-left:124px;padding-right:124px;';
+    document.body.append(surface);
+    try {
+      const style = getComputedStyle(surface);
+      const unresolved = style.getPropertyValue('--me-image-bleed');
+      if (unresolved.includes('clamp')) {
+        expect(
+          !Number.isFinite(Number.parseFloat(unresolved)),
+          'a clamped custom property must not be read back as a number'
+        );
+      }
+      const inset = Number.parseFloat(style.getPropertyValue('--me-surface-padding'));
+      expectEqual(inset, 24, 'the plain page padding must be a plain length');
+
+      const width = surface.getBoundingClientRect().width;
+      const column =
+        width -
+        Number.parseFloat(style.paddingLeft) -
+        Number.parseFloat(style.paddingRight);
+      expectEqual(column, 652, 'the column');
+      expectEqual(width - 2 * inset, column + 200, 'the column plus both margins');
+    } finally {
+      surface.remove();
+    }
+  });
+});

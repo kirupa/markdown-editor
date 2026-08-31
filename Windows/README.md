@@ -212,6 +212,7 @@ written down so the Windows port does not pay it again.
 | `MarkdownFormatting.moveImage` | The whole text transform. Covered by `Contract/formatting.jsonl` (451 `moveImage` cases). Port it and make the fixture pass before writing any UI. |
 | `EditorImageGeometry` | Handle rects, hit rects, the corner tie-break, `draggedWidth`. Pointer *and* touch variants. |
 | `MarkdownImageTag.proportionalSize` | Turning a dragged width into a written width/height pair. |
+| `EditorPaneGeometry` | The page, the column inside it, and how far a picture may reach past it: `imageBleed`, `maximumImageWidth`, `imageParagraphIndent`. |
 
 Constants, all in `EditorImageGeometry`:
 
@@ -222,6 +223,22 @@ Constants, all in `EditorImageGeometry`:
 | `touchTarget` | 44pt | The minimum a **finger** target may be. |
 | `overlayInset` | `handleSide/2 + handleSlop` | The overlay clips to its own bounds, so this must cover the *target*, not the dot. |
 | `minimumSide` | 24pt | The smallest a picture may be dragged to. |
+
+And in `EditorPaneGeometry`:
+
+| Name | Value | Why |
+| --- | --- | --- |
+| `maximumImageBleed` | 100pt | How far past the text column a picture may reach, **on each side**. |
+| `imageBleed(around:within:)` | — | The bleed actually available: whatever is left over, up to the maximum. Collapses to zero on a narrow window, and everything downstream keeps working with the page and the column being the same thing. |
+| `maximumImageWidth(measure:bleed:)` | `measure + 2 × bleed` | The page. A resize stops here. |
+| `imageParagraphIndent(imageWidth:measure:bleed:)` | — | How far the picture's own line is indented: `min(bleed, max(0, (page − width) / 2))`. Aligned with the prose while it fits, giving way evenly once it does not, and the two meet exactly at the column's width so there is no jump. |
+
+**The page is wider than the column the text is set in.** Prose wraps at the
+column; the margin either side is room a picture — and only a picture — may
+spread into. A longer line is a worse line to read, so text never uses it. The
+Mac and the web both do this; iOS does not, because a phone has no margins to
+give, and that falls out of `imageBleed` returning zero rather than needing a
+second code path.
 
 **Both hit rects are capped on small pictures.** Four fixed targets meet in the
 middle of anything narrow, leaving no body to take hold of — the picture could
@@ -322,6 +339,39 @@ These are platform-shaped, so the Windows equivalents will differ — but the
     picture wearing its frame wherever you tapped next. The filter and its
     scope both need a check; neither is visible to a unit test of the geometry,
     so this port guards them by reading the source.
+
+13. **Find out what your text engine does with a picture that does not fit
+    before you design around it.** TextKit does not overflow and does not clip:
+    it **compresses the picture into the line it has and carries on making it
+    taller**. Measured — asking for 700, 800 and 852 points all drew at 642,
+    taller each time, so dragging a picture wide silently distorted it and
+    nothing said so. That single fact decides the whole design: a picture can
+    only be wider than the column if *its own line* is wider, which is why the
+    text is indented and the picture's line gives that indent up, rather than
+    the picture being positioned or the container being narrowed. Run the
+    experiment on your engine first; if it clips or overflows instead, a
+    simpler design may be available.
+
+14. **A resize needs a ceiling, and the ceiling has to be measured.** On the web
+    the obvious source was the CSS custom property holding the bleed — but
+    `getComputedStyle` hands custom properties back as the tokens they were
+    written with, not as resolved lengths, so it read back as the literal text
+    `clamp( 0px, (100vw - 700px) / 2, 100px )` and parsed as `NaN`. The ceiling
+    silently became the column and a picture could never be dragged into the
+    margins at all. Measure the geometry you actually want — there, the
+    surface's own width less the plain page padding — rather than reading back
+    a number you wrote into a style.
+
+15. **Fit a picture that does not fit by scaling *both* sides.** The ceiling on
+    a *drag* is not enough, because a picture can arrive already too big: one
+    with no size of its own defaults to 560 points, and a phone's column is
+    about 368, so on iOS every unsized picture in every document was drawn
+    squashed — measured at 384x107 where its own shape at that width is 384x72.
+    Scale it down proportionally when it cannot fit, and change only what is
+    *drawn*: the document keeps the size it asked for, so the same file opened
+    somewhere wider shows the larger picture again. On the web this is free —
+    `max-width` with `height: auto` — which is why it was only ever visible on
+    the native builds.
 
 ### How to check it, and how not to
 

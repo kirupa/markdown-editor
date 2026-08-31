@@ -947,6 +947,129 @@ struct CheckImageLayout {
             "\(String(describing: NSCursor.current))"
         )
 
+        // ── A picture may reach into the page's margins. ─────────────────
+        //
+        // The column is narrower than the page, and a picture wider than the
+        // column has to spread into both margins rather than be squeezed into
+        // the line. TextKit's answer to a picture that does not fit is to
+        // *compress it and keep growing its height* — measured: asking for
+        // 700, 800 and 852 points all drew at 642, taller each time. Nothing
+        // in the arithmetic can see that; only the pixels can.
+        print("")
+        print("A picture reaching into the page's margins")
+
+        let measure: CGFloat = 400
+        let bleed: CGFloat = 100
+        let pageMetrics = MarkdownPageMetrics(measure: measure, bleed: bleed)
+        let inset: CGFloat = 24
+        let padding: CGFloat = 5
+        let paneWidth = measure + 2 * bleed + 2 * (inset + padding)
+
+        /// Where the marker colour actually lands, for a picture asked to be
+        /// `width` wide, in the text container's own coordinates.
+        func drawnPicture(width: Int) -> CGRect? {
+            let height = Int((CGFloat(width) * 150 / 240).rounded())
+            let source = """
+                # Heading
+
+                Some prose above the picture.
+
+                <img src="Doc.assets/photo.png" alt="photo" width="\(width)" height="\(height)">
+
+                Text after.
+                """
+            try? source.write(to: documentURL, atomically: true, encoding: .utf8)
+            let styled = RichMarkdownStyler.attributedString(
+                for: MarkdownRenderer.render(source),
+                documentURL: documentURL,
+                colorTheme: EditorColorTheme(color: .blue, mode: .light),
+                page: pageMetrics
+            )
+            let bleedFrame = NSRect(x: 0, y: 0, width: paneWidth, height: 900)
+            let view = RichMarkdownTextView(frame: bleedFrame)
+            view.textContainerInset = NSSize(width: inset, height: 20)
+            view.textContainer?.containerSize = NSSize(
+                width: paneWidth - 2 * inset,
+                height: .greatestFiniteMagnitude
+            )
+            view.textContainer?.widthTracksTextView = true
+            view.isVerticallyResizable = true
+            view.drawsBackground = true
+            view.backgroundColor = .white
+            view.textStorage?.setAttributedString(styled)
+            view.layoutManager?.ensureLayout(for: view.textContainer!)
+            let window = NSWindow(
+                contentRect: bleedFrame,
+                styleMask: [.borderless],
+                backing: .buffered,
+                defer: false
+            )
+            window.contentView = view
+            window.orderBack(nil)
+            view.layoutSubtreeIfNeeded()
+            return drawnMarkerBounds(in: view)
+        }
+
+        let columnLeft = inset + padding + bleed
+        let columnCentre = columnLeft + measure / 2
+
+        if let atColumn = drawnPicture(width: Int(measure)) {
+            check(
+                "a picture the width of the column is drawn at the column",
+                abs(atColumn.width - measure) < 2,
+                "drew \(Int(atColumn.width)), wanted \(Int(measure))"
+            )
+            check(
+                "and starts where the prose starts",
+                abs(atColumn.minX - columnLeft) < 2,
+                "x=\(Int(atColumn.minX)), wanted \(Int(columnLeft))"
+            )
+        } else {
+            check("a picture the width of the column is drawn", false, "not found")
+        }
+
+        // The whole page: 100 points past the column on each side.
+        if let full = drawnPicture(width: Int(measure + 2 * bleed)) {
+            check(
+                "a picture may be drawn the full width of the page",
+                abs(full.width - (measure + 2 * bleed)) < 2,
+                "drew \(Int(full.width)), wanted \(Int(measure + 2 * bleed))"
+            )
+            check(
+                "and it stays centred on the column",
+                abs(full.midX - columnCentre) < 2,
+                "centre \(Int(full.midX)), wanted \(Int(columnCentre))"
+            )
+            check(
+                "reaching the same distance into both margins",
+                abs((columnLeft - full.minX) - (full.maxX - (columnLeft + measure))) < 2,
+                "left \(Int(columnLeft - full.minX)), right \(Int(full.maxX - columnLeft - measure))"
+            )
+            check(
+                "without being squashed out of shape",
+                abs(full.height - full.width * 150 / 240) < 3,
+                "\(Int(full.width))x\(Int(full.height)), wanted 240:150"
+            )
+        } else {
+            check("a picture may be drawn the full width of the page", false, "not found")
+        }
+
+        // Half way out: the growth has to be even, not all to one side.
+        if let half = drawnPicture(width: Int(measure + bleed)) {
+            check(
+                "half past the column reaches half way into each margin",
+                abs(half.midX - columnCentre) < 2,
+                "centre \(Int(half.midX)), wanted \(Int(columnCentre))"
+            )
+            check(
+                "and is drawn at the width it asked for",
+                abs(half.width - (measure + bleed)) < 2,
+                "drew \(Int(half.width))"
+            )
+        } else {
+            check("half past the column is drawn", false, "not found")
+        }
+
         print("")
         if failures == 0 {
             print("ALL PASS (\(checks) checks)")

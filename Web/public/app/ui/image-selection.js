@@ -24,6 +24,7 @@
 // on the text — so neither half can reintroduce a mid-word splice alone.
 
 import { proportionalSize } from '../core/image-tag.js';
+import { setBlockImageWidth } from './renderer.js';
 
 const MIN_SIZE = 1;
 const MAX_SIZE = 10000;
@@ -414,16 +415,43 @@ export class ImageSelection {
     img.setAttribute('height', String(size.height));
     this._width.value = String(size.width);
     this._height.value = String(size.height);
+    // How far the line may reach into the page's margins depends on how wide
+    // the picture is, so a drag has to keep the two in step. Without this the
+    // picture grows while the room it is allowed to grow into stays where it
+    // was, and it is clipped until the next render catches up.
+    setBlockImageWidth(img.closest('.me-block--image'), size.width);
     this._position();
   }
 
-  /** How wide an image is allowed to get here, in CSS pixels. */
+  /**
+   * How wide an image is allowed to get here, in CSS pixels: the column, plus
+   * the margin either side of it that a picture — and only a picture — may
+   * reach into.
+   *
+   * The ceiling matters beyond tidiness. Past it the number written into the
+   * document is one the layout then ignores, so the picture stops following
+   * the drag while the handle carries on, and the two come apart.
+   */
   _availableWidth() {
     const surface = this._host.querySelector('.me-surface') ?? this._host;
     const style = getComputedStyle(surface);
-    const padding =
-      Number.parseFloat(style.paddingLeft || '0') +
-      Number.parseFloat(style.paddingRight || '0');
+    // The surface's padding is the plain page padding *plus* the bleed, so
+    // taking off only the plain part leaves the column and both margins —
+    // which is exactly how wide a picture may be drawn.
+    //
+    // Deliberately not by reading `--me-image-bleed`: a custom property comes
+    // back from `getComputedStyle` as the tokens it was written with, not as a
+    // resolved length. Measured in the browser, that property reads back as
+    // the literal text "clamp( 0px, (100vw - 700px) / 2, 100px )", which
+    // parses as NaN — so the ceiling quietly collapsed to the column and a
+    // picture could never be dragged into the margins at all.
+    const inset = Number.parseFloat(
+      style.getPropertyValue('--me-surface-padding')
+    );
+    const padding = Number.isFinite(inset)
+      ? 2 * inset
+      : Number.parseFloat(style.paddingLeft || '0') +
+        Number.parseFloat(style.paddingRight || '0');
     return Math.round(surface.getBoundingClientRect().width - padding);
   }
 

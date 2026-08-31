@@ -310,6 +310,16 @@ private struct ResizableRichTextPreview: View {
                 preferredWidth,
                 totalWidth: geometry.size.width
             )
+            // The page is wider than the column: whatever room the window has
+            // to spare, up to 100pt a side, is margin a picture may spread
+            // into. `visibleWidth` stays the column, so the gripper still
+            // resizes what the reader sees as the document and a width saved
+            // by an older build still means the same thing.
+            let bleed = EditorPaneGeometry.imageBleed(
+                around: visibleWidth,
+                within: geometry.size.width
+            )
+            let pageWidth = visibleWidth + 2 * bleed
 
             HStack(spacing: 0) {
                 // Y-8: centered on the window. The gripper hangs outside the
@@ -322,9 +332,13 @@ private struct ResizableRichTextPreview: View {
                     documentURL: documentURL,
                     session: session,
                     colorTheme: colorTheme,
-                    layoutWidth: visibleWidth
+                    layoutWidth: pageWidth,
+                    page: MarkdownPageMetrics(
+                        measure: Layout.textMeasure(inPane: visibleWidth),
+                        bleed: bleed
+                    )
                 )
-                .frame(width: visibleWidth)
+                .frame(width: pageWidth)
                 .overlay(alignment: .trailing) {
                     WidthGripper(
                         colorTheme: colorTheme,
@@ -352,7 +366,9 @@ private struct ResizableRichTextPreview: View {
                             """,
                         accessibilityLabel: "Rich Text document width"
                     )
-                    .offset(x: Layout.gripperWidth)
+                    // At the column's trailing edge, not the page's: it
+                    // resizes the column, so that is where it has to be.
+                    .offset(x: Layout.gripperWidth - bleed)
                 }
 
                 Spacer(minLength: 0)
@@ -484,6 +500,25 @@ private enum Layout {
     static let maximumPreviewWidth: CGFloat = 1_100
     static let gripperWidth: CGFloat = 12
     static let keyboardResizeStep: CGFloat = 20
+
+    /// The inset the rendered pane gives its text container, each side.
+    static let textContainerInset: CGFloat = 24
+    /// TextKit's own padding inside the container, each side.
+    static let lineFragmentPadding: CGFloat = 5
+
+    /// The width prose is actually set in inside a pane of `paneWidth`.
+    ///
+    /// The pane is not the column: the container is inset inside it and
+    /// TextKit pads inside that again. The styler indents to the column and
+    /// the drag clamps to it, so both need the width the words really get
+    /// rather than the width of the box around them.
+    static func textMeasure(inPane paneWidth: CGFloat) -> CGFloat {
+        max(
+            1,
+            paneWidth - 2 * (textContainerInset + lineFragmentPadding)
+        )
+    }
+
     // X-18: the explorer floats, so it no longer needs a column of its own for
     // the window to be usable. The window only has to fit a document.
     static let minimumWindowWidth = defaultDocumentWidth

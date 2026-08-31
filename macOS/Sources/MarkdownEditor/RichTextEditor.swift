@@ -9,13 +9,16 @@ struct RichTextEditor: NSViewRepresentable {
     let session: MarkdownEditorSession
     let colorTheme: EditorColorTheme
     let layoutWidth: CGFloat
+    /// The column prose is set in, and how far a picture may reach past it.
+    let page: MarkdownPageMetrics
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
             text: $text,
             documentURL: documentURL,
             session: session,
-            colorTheme: colorTheme
+            colorTheme: colorTheme,
+            page: page
         )
     }
 
@@ -51,6 +54,7 @@ struct RichTextEditor: NSViewRepresentable {
         textView.textContainerInset = NSSize(width: 24, height: 20)
         textView.setAccessibilityLabel("Rendered Markdown editor")
         scrollView.requestedDocumentWidth = layoutWidth
+        textView.page = page
         colorTheme.apply(to: textView, in: scrollView)
 
         scrollView.hasVerticalScroller = true
@@ -123,10 +127,12 @@ struct RichTextEditor: NSViewRepresentable {
                 .finishPendingComposition()
         }
         colorTheme.apply(to: textView, in: scrollView)
+        (textView as? RichMarkdownTextView)?.page = page
         context.coordinator.update(
             text: $text,
             documentURL: documentURL,
-            colorTheme: colorTheme
+            colorTheme: colorTheme,
+            page: page
         )
         (scrollView as? ReflowingTextScrollView)?
             .requestedDocumentWidth = layoutWidth
@@ -161,11 +167,13 @@ struct RichTextEditor: NSViewRepresentable {
         weak var session: MarkdownEditorSession?
         weak var textView: NSTextView?
         var colorTheme: EditorColorTheme
+        var page: MarkdownPageMetrics
 
         private var model = MarkdownRenderer.render("")
         private var renderedSource = ""
         private var renderedDocumentURL: URL?
         private var renderedColorTheme: EditorColorTheme?
+        private var renderedPage: MarkdownPageMetrics?
         private var isRendering = false
         private var compositionState: CompositionState?
         private let scrollSynchronizer = EditorScrollSynchronizer()
@@ -174,12 +182,14 @@ struct RichTextEditor: NSViewRepresentable {
             text: Binding<String>,
             documentURL: URL?,
             session: MarkdownEditorSession,
-            colorTheme: EditorColorTheme
+            colorTheme: EditorColorTheme,
+            page: MarkdownPageMetrics
         ) {
             self.text = text
             self.documentURL = documentURL
             self.session = session
             self.colorTheme = colorTheme
+            self.page = page
             super.init()
             observeRemoteImages()
         }
@@ -262,15 +272,21 @@ struct RichTextEditor: NSViewRepresentable {
         func update(
             text: Binding<String>,
             documentURL: URL?,
-            colorTheme: EditorColorTheme
+            colorTheme: EditorColorTheme,
+            page: MarkdownPageMetrics
         ) {
             self.text = text
             self.documentURL = documentURL
             self.colorTheme = colorTheme
+            self.page = page
             let contentChanged = renderedSource != text.wrappedValue
                 || renderedDocumentURL != documentURL
             let themeChanged = renderedColorTheme != colorTheme
-            guard contentChanged || themeChanged else {
+            // The indents that hold prose to the column are baked into the
+            // attributed text, so a change of column has to be re-styled and
+            // not merely re-laid-out.
+            let pageChanged = renderedPage != page
+            guard contentChanged || themeChanged || pageChanged else {
                 return
             }
 
@@ -397,7 +413,8 @@ struct RichTextEditor: NSViewRepresentable {
                 let attributedText = RichMarkdownStyler.attributedString(
                     for: model,
                     documentURL: documentURL,
-                    colorTheme: colorTheme
+                    colorTheme: colorTheme,
+                    page: page
                 )
                 textView.textStorage?.setAttributedString(attributedText)
                 // Measure enough of the new document to put the reader back
@@ -410,6 +427,7 @@ struct RichTextEditor: NSViewRepresentable {
                 renderedSource = text.wrappedValue
                 renderedDocumentURL = documentURL
                 renderedColorTheme = colorTheme
+                renderedPage = page
                 setSourceSelection(
                     sourceSelection,
                     scrollToSelection: scrollToSelection,

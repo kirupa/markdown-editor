@@ -30,6 +30,18 @@
 
   --me-sidebar-width: 240px;
   --me-preview-width: 700px;
+  /* The page is wider than the column the text is set in. This is how much
+     wider it may be, on each side, and a picture is the only thing allowed to
+     use it — text stays at the column, because a longer line is a worse line
+     to read. Matches EditorPaneGeometry.maximumImageBleed on the Mac. */
+  --me-image-bleed-max: 100px;
+  /* Off unless something turns it on. Only the Rich Text pane on its own has
+     margins to reach into: in Split the pane is exactly the column wide, and
+     an overhang there would hang over the divider. */
+  --me-image-bleed: 0px;
+  --me-surface-padding: 24px;
+  /* The column itself: the surface's width less the padding either side. */
+  --me-measure: calc(var(--me-preview-width) - 2 * var(--me-surface-padding));
 
   --me-ui-font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --me-text-font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
@@ -570,8 +582,22 @@ body {
    uses in Split, so switching modes does not reflow the text (E-14). */
 .me-editor[data-mode="rich"] .me-pane--rich .me-surface {
   width: 100%;
-  max-width: var(--me-preview-width);
+  /* Whatever room is left over each side of the column, up to the maximum —
+     the same rule as EditorPaneGeometry.imageBleed, and it collapses to
+     nothing on a screen too narrow to afford it rather than pushing the text
+     off the side. The explorer floats, so the pane really is the viewport. */
+  --me-image-bleed: clamp(
+    0px,
+    (100vw - var(--me-preview-width)) / 2,
+    var(--me-image-bleed-max)
+  );
+  /* The page, not the column: the extra is margin a picture may reach into.
+     The padding puts it back for the text, so the measure is exactly what it
+     was before the margins existed. */
+  max-width: calc(var(--me-preview-width) + 2 * var(--me-image-bleed));
   margin: 0 auto;
+  padding-left: calc(var(--me-surface-padding) + var(--me-image-bleed));
+  padding-right: calc(var(--me-surface-padding) + var(--me-image-bleed));
 }
 
 .me-surface {
@@ -583,7 +609,7 @@ body {
      still fills a short document so the whole pane stays clickable. */
   flex: 1 0 auto;
   min-height: 100%;
-  padding: 20px 24px;      /* Y-7 */
+  padding: 20px var(--me-surface-padding);      /* Y-7 */
   outline: none;
   font-family: var(--me-text-font);
   font-size: var(--me-body-size);
@@ -692,13 +718,28 @@ body {
 }
 
 /* An explicit size is the author's instruction, so the default cap must not
-   quietly override it. Only the pane width still constrains it, because an
-   image wider than the pane would be unusable rather than merely large. */
+   quietly override it. Only the page still constrains it, because an image
+   wider than the page would be unusable rather than merely large. */
 .me-image img[width],
 .me-image img[height] {
-  max-width: 100%;
+  max-width: calc(100% + 2 * var(--me-image-bleed));
   max-height: none;
   height: auto;
+}
+
+/* A line holding nothing but a picture gives up its share of the column as the
+   picture outgrows it, so the picture spreads into both margins and stays
+   centred on the column. The two rules meet exactly at the column's width, so
+   there is no jump as a picture is dragged past it. The same arithmetic as
+   EditorPaneGeometry.imageParagraphIndent, expressed the other way round:
+   here it is the overhang rather than what is left of the indent. */
+.me-block--image {
+  --me-image-overhang: min(
+    var(--me-image-bleed),
+    max(0px, (var(--me-image-width, 0px) - var(--me-measure)) / 2)
+  );
+  margin-left: calc(-1 * var(--me-image-overhang));
+  margin-right: calc(-1 * var(--me-image-overhang));
 }
 
 .me-image--selected img {

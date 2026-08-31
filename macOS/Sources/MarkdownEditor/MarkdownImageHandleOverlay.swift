@@ -51,6 +51,10 @@ final class MarkdownImageHandleOverlay: NSView {
     var onPreview: ((MarkdownImageTag.Size) -> Void)?
     /// Release: the size to write into the document, as one undoable edit.
     var onCommit: ((MarkdownImageTag.Size) -> Void)?
+    /// The widest a picture may be drawn: the column plus the page's margins.
+    /// Past it TextKit squeezes the picture into the line and goes on making
+    /// it taller, which distorts it with nothing to say so.
+    var maximumImageWidth: CGFloat = .greatestFiniteMagnitude
 
     private var naturalSize: MarkdownImageTag.Size?
     private var dragCorner: MarkdownImageCorner?
@@ -222,7 +226,8 @@ final class MarkdownImageHandleOverlay: NSView {
             from: dragStartFrame,
             corner: corner,
             deltaX: deltaX,
-            deltaY: deltaY
+            deltaY: deltaY,
+            maximum: maximumImageWidth
         )
         let size = MarkdownImageTag.proportionalSize(
             MarkdownImageTag.Size(width: Int(width.rounded()), height: nil),

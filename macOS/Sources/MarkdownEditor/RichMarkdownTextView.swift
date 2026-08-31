@@ -47,6 +47,19 @@ final class RichMarkdownTextView: NSTextView {
 
     private var compositionIsActive = false
     private weak var compositionUndoManager: UndoManager?
+
+    /// The column prose is set in, and how far a picture may reach past it.
+    ///
+    /// The page is wider than the column, and a picture may spread into that
+    /// margin — up to `EditorPaneGeometry.maximumImageBleed` on each side —
+    /// while text stays at the column, because a longer line is a worse line
+    /// to read.
+    var page = MarkdownPageMetrics(measure: 1, bleed: 0) {
+        didSet {
+            guard page != oldValue else { return }
+            imageHandles.maximumImageWidth = page.maximumImageWidth
+        }
+    }
     private lazy var imageHandles: MarkdownImageHandleOverlay = {
         let overlay = MarkdownImageHandleOverlay(frame: .zero)
         overlay.isHidden = true
@@ -65,6 +78,7 @@ final class RichMarkdownTextView: NSTextView {
             guard let range = self.handledImageRange else { return }
             self.commitImageSize?(size, range)
         }
+        overlay.maximumImageWidth = page.maximumImageWidth
         addSubview(overlay)
         return overlay
     }()

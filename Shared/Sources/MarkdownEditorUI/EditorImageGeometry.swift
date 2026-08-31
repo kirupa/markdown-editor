@@ -212,11 +212,18 @@ public enum EditorImageGeometry {
     /// comparison is like for like, so a diagonal drag does what it looks like
     /// it should whichever way it leans. `deltaY` is in the flipped space the
     /// image is drawn in: positive is down the screen.
+    ///
+    /// `maximum` is the width of the page. Without it a drag can ask for more
+    /// room than the layout has, and TextKit answers by *compressing the
+    /// picture into the line it has* while the height carries on growing —
+    /// measured: asking for 700, 800 and 852 points all drew at 642, taller
+    /// each time. The picture is silently distorted, and nothing says so.
     public static func draggedWidth(
         from startFrame: CGRect,
         corner: EditorImageCorner,
         deltaX: CGFloat,
-        deltaY: CGFloat
+        deltaY: CGFloat,
+        maximum: CGFloat = .greatestFiniteMagnitude
     ) -> CGFloat {
         guard startFrame.width > 0 else { return minimumSide }
         let ratio = startFrame.height / startFrame.width
@@ -228,6 +235,7 @@ public enum EditorImageGeometry {
         let change = abs(widthChange) >= abs(heightChangeAsWidth)
             ? widthChange
             : heightChangeAsWidth
-        return max(minimumSide, startFrame.width + change)
+        let ceiling = max(minimumSide, maximum)
+        return min(ceiling, max(minimumSide, startFrame.width + change))
     }
 }

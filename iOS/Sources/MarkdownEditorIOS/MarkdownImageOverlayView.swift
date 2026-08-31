@@ -29,6 +29,11 @@ final class MarkdownImageOverlayView: UIView {
     var onMove: ((NSRange, Int) -> Void)?
     /// The natural pixel size of the image occupying a source range.
     var naturalSizeForImage: ((NSRange) -> MarkdownImageTag.Size?)?
+    /// The widest a picture may be drawn. There is no margin to spread into on
+    /// a phone, so this is the column itself — but the clamp still matters,
+    /// because past it TextKit squeezes the picture into the line and carries
+    /// on making it taller, distorting it silently.
+    var maximumImageWidth: CGFloat = .greatestFiniteMagnitude
 
 
     private weak var textView: UITextView?
@@ -194,7 +199,8 @@ final class MarkdownImageOverlayView: UIView {
                 from: drag.startFrame,
                 corner: drag.corner,
                 deltaX: point.x - drag.startPoint.x,
-                deltaY: point.y - drag.startPoint.y
+                deltaY: point.y - drag.startPoint.y,
+                maximum: maximumImageWidth
             )
             // The same conversion macOS makes, so a width dragged on a phone
             // and on a Mac writes the same pair of numbers.

@@ -116,10 +116,59 @@ export function renderInto(root, model, resolveImage = () => null) {
 
     appendInlineContent(block, text, start, end, spans, resolveImage);
     if (block.childNodes.length === 0) block.append(document.createElement('br'));
+    markImageOnlyBlock(block);
     return block;
   });
 
   root.replaceChildren(...elements);
+}
+
+/**
+ * Marks a line that holds nothing but one picture, and records how wide that
+ * picture is.
+ *
+ * The page is wider than the column the text is set in, and a picture wider
+ * than the column reaches into the margins on both sides — the same rule the
+ * Mac and iOS builds follow. The stylesheet does the arithmetic; all it needs
+ * from here is the width, and to know that this line is a picture's own line.
+ *
+ * Only when the picture is alone. A picture sitting in a sentence is part of
+ * that sentence's line, and pulling the line out from under the words around
+ * it would drag them into the margin too.
+ */
+function markImageOnlyBlock(block) {
+  const images = block.querySelectorAll('.me-image');
+  if (images.length !== 1) return;
+  // `.me-image` carries the model's placeholder character in a hidden holder,
+  // so a line that is only a picture has no text of its own beyond it.
+  const withoutImages = [...block.childNodes]
+    .filter((node) => !(node instanceof Element && node.classList.contains('me-image')))
+    .map((node) => node.textContent ?? '')
+    .join('')
+    .trim();
+  if (withoutImages !== '') return;
+
+  block.classList.add('me-block--image');
+  const img = images[0].querySelector('img');
+  const width = Number.parseFloat(img?.getAttribute('width') ?? '');
+  setBlockImageWidth(block, Number.isFinite(width) ? width : null);
+}
+
+/**
+ * Tells the stylesheet how wide the picture on this line is, so it can work
+ * out how far the line may reach into the page's margins.
+ *
+ * Exported because a resize has to keep it up to date as the picture is
+ * dragged, or the picture grows while the room it is allowed spreads into
+ * stays where it was.
+ */
+export function setBlockImageWidth(block, width) {
+  if (!block) return;
+  if (width === null || !Number.isFinite(width)) {
+    block.style.removeProperty('--me-image-width');
+    return;
+  }
+  block.style.setProperty('--me-image-width', `${Math.round(width)}px`);
 }
 
 /**

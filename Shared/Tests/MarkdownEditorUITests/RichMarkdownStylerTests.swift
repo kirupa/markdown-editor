@@ -265,4 +265,142 @@ struct RichMarkdownStylerTests {
             }
         }
     }
+
+    // MARK: - The column and the page's margins
+
+    /// The paragraph style in force at `location`.
+    private func indent(
+        of styled: NSAttributedString,
+        at location: Int
+    ) -> CGFloat {
+        let style = styled.attribute(
+            .paragraphStyle, at: location, effectiveRange: nil
+        ) as? NSParagraphStyle
+        return style?.headIndent ?? 0
+    }
+
+    private func styled(
+        _ source: String,
+        page: MarkdownPageMetrics?
+    ) -> NSAttributedString {
+        RichMarkdownStyler.attributedString(
+            for: MarkdownRenderer.render(source),
+            documentURL: nil,
+            colorTheme: EditorColorTheme(color: .blue, mode: .light),
+            page: page
+        )
+    }
+
+    @Test("Prose is indented to the column, not left across the page")
+    func proseIsHeldToTheColumn() {
+        let text = styled("Just a paragraph.", page: .init(measure: 642, bleed: 100))
+        #expect(indent(of: text, at: 0) == 100)
+    }
+
+    @Test("A quote and a list keep their own indent on top of the column's")
+    func blockIndentsAreRelativeToTheColumn() {
+        let page = MarkdownPageMetrics(measure: 642, bleed: 100)
+        let quote = styled("> Quoted.", page: page)
+        // 20 is the quote's own indent; it must sit inside the column, not
+        // replace the indent that puts the column there in the first place.
+        #expect(indent(of: quote, at: 0) == 120)
+
+        let list = styled("- One", page: page)
+        #expect(indent(of: list, at: 0) == 124)
+    }
+
+    @Test("Asking for no page leaves every indent exactly where it was")
+    func noPageMeansNoChange() {
+        #expect(indent(of: styled("Just a paragraph.", page: nil), at: 0) == 0)
+        #expect(indent(of: styled("> Quoted.", page: nil), at: 0) == 20)
+        #expect(indent(of: styled("- One", page: nil), at: 0) == 24)
+    }
+
+    @Test("A picture gives up its indent as it outgrows the column")
+    func aPictureSpreadsIntoTheMargins() {
+        let page = MarkdownPageMetrics(measure: 642, bleed: 100)
+        let attachmentIndent: (Int) -> CGFloat = { width in
+            let text = self.styled(
+                """
+                Before.
+
+                <img src="a.png" alt="a" width="\(width)" height="100">
+
+                After.
+                """,
+                page: page
+            )
+            var found: CGFloat = -1
+            text.enumerateAttribute(
+                .attachment,
+                in: NSRange(location: 0, length: text.length)
+            ) { value, range, stop in
+                guard value != nil else { return }
+                found = self.indent(of: text, at: range.location)
+                stop.pointee = true
+            }
+            return found
+        }
+        #expect(attachmentIndent(300) == 100)
+        #expect(attachmentIndent(642) == 100)
+        #expect(attachmentIndent(742) == 50)
+        #expect(attachmentIndent(842) == 0)
+    }
+
+    @Test("A picture sitting in a sentence does not drag the words out with it")
+    func anInlinePictureLeavesItsParagraphAlone() {
+        let page = MarkdownPageMetrics(measure: 642, bleed: 100)
+        let text = styled(
+            "Words <img src=\"a.png\" alt=\"a\" width=\"842\" height=\"100\"> more words.",
+            page: page
+        )
+        // The paragraph holds prose as well, so it stays at the column however
+        // wide the picture claims to be — otherwise the sentence around it
+        // would be pulled into the margins too.
+        #expect(indent(of: text, at: 0) == 100)
+    }
+
+    @Test("A picture is never drawn out of shape to fit the page")
+    func fittingAPictureKeepsItsShape() {
+        // TextKit's answer to a picture wider than its line is to squash it
+        // horizontally and keep the height it was asked for. Measured on a
+        // phone before this: a 1600x300 picture defaulting to 560 wide in a
+        // 368pt column drew 384x107, where its own shape at that width is
+        // 384x72. Scaling both sides is the only answer that keeps the picture
+        // honest.
+        let source = CGSize(width: 1_600, height: 300)
+        let fitted = RichMarkdownStyler.displaySize(
+            of: source, width: nil, height: nil, maximumWidth: 368
+        )
+        #expect(fitted.width == 368)
+        #expect(abs(fitted.height - 368 * 300 / 1_600) < 0.5)
+    }
+
+    @Test("A size written into the document is fitted too, not squashed")
+    func anAuthoredSizeIsScaledRatherThanCompressed() {
+        // The document keeps the size it asked for — this only changes what is
+        // drawn — but drawing it at a width the line cannot hold would squash
+        // it, which is worse than drawing it smaller.
+        let fitted = RichMarkdownStyler.displaySize(
+            of: CGSize(width: 1_600, height: 300),
+            width: 2_000, height: 375, maximumWidth: 400
+        )
+        #expect(fitted.width == 400)
+        #expect(abs(fitted.height - 75) < 0.5, "the shape must survive")
+    }
+
+    @Test("A picture that already fits is left exactly alone")
+    func fittingDoesNothingWhenThereIsRoom() {
+        let asked = RichMarkdownStyler.displaySize(
+            of: CGSize(width: 800, height: 400),
+            width: 300, height: nil, maximumWidth: 842
+        )
+        #expect(asked.width == 300)
+        #expect(asked.height == 150)
+        // And with no ceiling at all, which is how every other caller uses it.
+        let unbounded = RichMarkdownStyler.displaySize(
+            of: CGSize(width: 800, height: 400), width: 300, height: nil
+        )
+        #expect(unbounded == asked)
+    }
 }

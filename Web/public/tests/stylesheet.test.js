@@ -237,4 +237,113 @@ suite('stylesheet conformance', () => {
     );
     expect(floats, 'the desktop explorer must be positioned out of the flow');
   });
+
+  test('the page is wider than the column, and only a picture may use it', () => {
+    // The surface holds the page; its padding holds the column inside it. Both
+    // halves have to move together: widening the surface without padding it
+    // back makes every line 200 points longer, which is the one thing the
+    // margins exist to avoid.
+    const surface = rules.find((rule) =>
+      rule.selectors.some(
+        (s) => s.includes('[data-mode="rich"]') && s.includes('.me-surface')
+      )
+    );
+    expect(surface !== undefined, 'the Rich Text surface rule is missing');
+
+    const maxWidth = surface.declarations.get('max-width') ?? '';
+    expect(
+      maxWidth.includes('--me-preview-width') && maxWidth.includes('--me-image-bleed'),
+      `the surface must be the page, not the column: ${maxWidth}`
+    );
+    for (const side of ['padding-left', 'padding-right']) {
+      const padding = surface.declarations.get(side) ?? '';
+      expect(
+        padding.includes('--me-image-bleed'),
+        `${side} must put the margin back for the text: ${padding}`
+      );
+    }
+  });
+
+  test('the bleed collapses on a screen with no room for it', () => {
+    // The same rule as EditorPaneGeometry.imageBleed: whatever is left over,
+    // up to the maximum. A phone has nothing left over, and a fixed 100 there
+    // would push the text off the side rather than merely fail to indulge it.
+    const surface = rules.find((rule) =>
+      rule.selectors.some(
+        (s) => s.includes('[data-mode="rich"]') && s.includes('.me-surface')
+      )
+    );
+    const bleed = surface?.declarations.get('--me-image-bleed') ?? '';
+    expect(bleed.includes('clamp('), `the bleed must be clamped, not fixed: ${bleed}`);
+    expect(bleed.includes('100vw'), 'the clamp must be against the room available');
+    expect(
+      bleed.includes('--me-image-bleed-max'),
+      'the clamp must stop at the shared maximum'
+    );
+  });
+
+  test('a pane with no margins gets no bleed', () => {
+    // In Split the Rich pane is exactly the column wide, so an overhang there
+    // would hang over the divider and into the source. The default has to be
+    // off, and turned on only where there is somewhere to overhang into.
+    const root = rules.find((rule) => rule.selectors.includes(':root'));
+    expect(
+      root?.declarations.get('--me-image-bleed') === '0px',
+      'the bleed must default to nothing'
+    );
+    expect(
+      root?.declarations.get('--me-image-bleed-max') === '100px',
+      'the maximum bleed must match the native builds'
+    );
+  });
+
+  test('a picture line reaches into the margins as the picture outgrows the column', () => {
+    const imageBlock = rules.find((rule) =>
+      rule.selectors.includes('.me-block--image')
+    );
+    expect(imageBlock !== undefined, 'the picture-line rule is missing');
+
+    const overhang = imageBlock.declarations.get('--me-image-overhang') ?? '';
+    // min(bleed, max(0, (width - measure) / 2)) — the same arithmetic as
+    // EditorPaneGeometry.imageParagraphIndent, expressed as the overhang
+    // rather than as what is left of the indent.
+    expect(overhang.includes('--me-image-bleed'), `capped by the bleed: ${overhang}`);
+    expect(overhang.includes('--me-image-width'), `driven by the picture: ${overhang}`);
+    expect(overhang.includes('--me-measure'), `measured from the column: ${overhang}`);
+    expect(overhang.includes('max(0px'), `never negative: ${overhang}`);
+
+    for (const side of ['margin-left', 'margin-right']) {
+      const margin = imageBlock.declarations.get(side) ?? '';
+      expect(
+        margin.includes('--me-image-overhang') && margin.includes('-1'),
+        `${side} must pull the line out by the overhang: ${margin}`
+      );
+    }
+  });
+
+  test('a sized picture may be drawn wider than the column', () => {
+    // Without this the picture is capped at the column however far the line is
+    // allowed to reach, so the margins exist and nothing can use them.
+    const sized = rules.find((rule) =>
+      rule.selectors.some((s) => s.includes('.me-image img[width]'))
+    );
+    const maxWidth = sized?.declarations.get('max-width') ?? '';
+    expect(
+      maxWidth.includes('--me-image-bleed'),
+      `a sized picture must be allowed the whole page: ${maxWidth}`
+    );
+  });
+
+  test('the plain page padding stays a plain length', () => {
+    // The resize ceiling is worked out by taking this off the surface's width,
+    // in JavaScript, with `parseFloat`. A `calc()` or a `clamp()` here would
+    // come back as unparseable text and the ceiling would silently become NaN
+    // — which is exactly how the bleed itself failed the first time.
+    const root = rules.find((rule) => rule.selectors.includes(':root'));
+    const padding = root?.declarations.get('--me-surface-padding') ?? '';
+    expect(
+      /^\d+(\.\d+)?px$/.test(padding.trim()),
+      `--me-surface-padding must be a plain length, not ${padding}`
+    );
+  });
 });

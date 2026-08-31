@@ -13,11 +13,25 @@ public enum RichMarkdownStyler {
     public static func attributedString(
         for model: MarkdownRenderModel,
         documentURL: URL?,
-        colorTheme: EditorColorTheme
+        colorTheme: EditorColorTheme,
+        page: MarkdownPageMetrics? = nil
     ) -> NSAttributedString {
+        // The page is wider than the column prose is set in, and every
+        // paragraph is indented by the difference so it wraps at the column.
+        // A picture is the one thing allowed to give that indent up — see
+        // `applyImageParagraphIndent`.
+        //
+        // Indenting rather than narrowing the container is what makes the
+        // margin reachable at all: TextKit compresses an attachment to the
+        // width of the line it is on, so a picture can only be wider than the
+        // column if its own line is.
+        let bleed = page?.bleed ?? 0
         let baseParagraphStyle = NSMutableParagraphStyle()
         baseParagraphStyle.lineSpacing = 2
         baseParagraphStyle.paragraphSpacing = 7
+        baseParagraphStyle.firstLineHeadIndent = bleed
+        baseParagraphStyle.headIndent = bleed
+        baseParagraphStyle.tailIndent = -bleed
 
         let attributedText = NSMutableAttributedString(
             string: model.text,
@@ -37,7 +51,8 @@ public enum RichMarkdownStyler {
             applyBlockStyle(
                 span,
                 to: attributedText,
-                colorTheme: colorTheme
+                colorTheme: colorTheme,
+                bleed: bleed
             )
         }
         for span in model.spans
@@ -48,7 +63,8 @@ public enum RichMarkdownStyler {
                 span,
                 to: attributedText,
                 documentURL: documentURL,
-                colorTheme: colorTheme
+                colorTheme: colorTheme,
+                page: page
             )
         }
 
@@ -58,7 +74,8 @@ public enum RichMarkdownStyler {
     private static func applyBlockStyle(
         _ span: MarkdownRenderSpan,
         to text: NSMutableAttributedString,
-        colorTheme: EditorColorTheme
+        colorTheme: EditorColorTheme,
+        bleed: CGFloat
     ) {
         let range = clamped(span.renderedRange, to: text.length)
         guard range.length > 0 else {
@@ -99,9 +116,9 @@ public enum RichMarkdownStyler {
                 range: range
             )
             let paragraphStyle = paragraphStyle(in: text, at: range.location)
-            paragraphStyle.firstLineHeadIndent = 14
-            paragraphStyle.headIndent = 14
-            paragraphStyle.tailIndent = -14
+            paragraphStyle.firstLineHeadIndent = bleed + 14
+            paragraphStyle.headIndent = bleed + 14
+            paragraphStyle.tailIndent = -(bleed + 14)
             paragraphStyle.lineSpacing = 1
             paragraphStyle.paragraphSpacingBefore = 0
             paragraphStyle.paragraphSpacing = 0
@@ -122,9 +139,9 @@ public enum RichMarkdownStyler {
                 range: range
             )
             let paragraphStyle = paragraphStyle(in: text, at: range.location)
-            paragraphStyle.firstLineHeadIndent = 20
-            paragraphStyle.headIndent = 20
-            paragraphStyle.tailIndent = -8
+            paragraphStyle.firstLineHeadIndent = bleed + 20
+            paragraphStyle.headIndent = bleed + 20
+            paragraphStyle.tailIndent = -(bleed + 8)
             text.addAttribute(
                 .paragraphStyle,
                 value: paragraphStyle,
@@ -132,12 +149,12 @@ public enum RichMarkdownStyler {
             )
         case .bulletedList, .numberedList, .taskList:
             let paragraphStyle = paragraphStyle(in: text, at: range.location)
-            paragraphStyle.firstLineHeadIndent = 5
-            paragraphStyle.headIndent = 24
+            paragraphStyle.firstLineHeadIndent = bleed + 5
+            paragraphStyle.headIndent = bleed + 24
             paragraphStyle.tabStops = [
                 NSTextTab(
                     textAlignment: .left,
-                    location: 24
+                    location: bleed + 24
                 )
             ]
             text.addAttribute(
@@ -168,7 +185,8 @@ public enum RichMarkdownStyler {
         _ span: MarkdownRenderSpan,
         to text: NSMutableAttributedString,
         documentURL: URL?,
-        colorTheme: EditorColorTheme
+        colorTheme: EditorColorTheme,
+        page: MarkdownPageMetrics?
     ) {
         let range = clamped(span.renderedRange, to: text.length)
         guard range.length > 0 else {
@@ -219,12 +237,19 @@ public enum RichMarkdownStyler {
                 destination: destination,
                 width: width,
                 height: height,
-                documentURL: documentURL
+                documentURL: documentURL,
+                maximumWidth: page?.maximumImageWidth
             )
             text.addAttribute(
                 .attachment,
                 value: attachment,
                 range: range
+            )
+            applyImageParagraphIndent(
+                imageWidth: attachment.bounds.width,
+                imageRange: range,
+                to: text,
+                page: page
             )
         case .taskList(let checked):
             text.addAttribute(
@@ -319,12 +344,66 @@ public enum RichMarkdownStyler {
         )
     }
 
+    /// Let a picture spread into the page's margins as it outgrows the column.
+    ///
+    /// Only when the picture is the whole paragraph. A picture sitting in a
+    /// sentence is part of that sentence's line, and pulling the line's indent
+    /// out from under the words around it would drag them into the margin too.
+    private static func applyImageParagraphIndent(
+        imageWidth: CGFloat,
+        imageRange: NSRange,
+        to text: NSMutableAttributedString,
+        page: MarkdownPageMetrics?
+    ) {
+        guard let page, page.bleed > 0 else { return }
+        let string = text.string as NSString
+        let paragraph = string.paragraphRange(for: imageRange)
+        guard paragraph.length > 0, isAlone(
+            imageRange: imageRange,
+            inParagraph: paragraph,
+            of: string
+        ) else {
+            return
+        }
+        let indent = page.imageParagraphIndent(imageWidth: imageWidth)
+        let style = paragraphStyle(in: text, at: paragraph.location)
+        style.firstLineHeadIndent = indent
+        style.headIndent = indent
+        style.tailIndent = -indent
+        text.addAttribute(.paragraphStyle, value: style, range: paragraph)
+    }
+
+    /// Whether `imageRange` is all its paragraph holds, give or take the
+    /// newline that ends it.
+    private static func isAlone(
+        imageRange: NSRange,
+        inParagraph paragraph: NSRange,
+        of string: NSString
+    ) -> Bool {
+        let before = NSRange(
+            location: paragraph.location,
+            length: max(0, imageRange.location - paragraph.location)
+        )
+        let afterStart = imageRange.location + imageRange.length
+        let paragraphEnd = paragraph.location + paragraph.length
+        let after = NSRange(
+            location: min(afterStart, paragraphEnd),
+            length: max(0, paragraphEnd - afterStart)
+        )
+        let neighbours = string.substring(with: before)
+            + string.substring(with: after)
+        return neighbours.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        ).isEmpty
+    }
+
     private static func imageAttachment(
         altText: String,
         destination: String,
         width: Int?,
         height: Int?,
-        documentURL: URL?
+        documentURL: URL?,
+        maximumWidth: CGFloat?
     ) -> NSTextAttachment {
         let image = localImage(
             destination: destination,
@@ -345,7 +424,8 @@ public enum RichMarkdownStyler {
             size: displaySize(
                 of: image.size,
                 width: width,
-                height: height
+                height: height,
+                maximumWidth: maximumWidth
             )
         )
         return attachment
@@ -358,6 +438,45 @@ public enum RichMarkdownStyler {
     /// is given the other is derived from the image's own shape, which is more
     /// accurate than anything the document could carry.
     static func displaySize(
+        of sourceSize: CGSize,
+        width: Int?,
+        height: Int?,
+        maximumWidth: CGFloat? = nil
+    ) -> CGSize {
+        let fitted = fit(
+            unconstrainedDisplaySize(of: sourceSize, width: width, height: height),
+            within: maximumWidth
+        )
+        return fitted
+    }
+
+    /// Hold a picture to the page **without changing its shape**.
+    ///
+    /// TextKit's answer to a picture wider than the line it is on is to squash
+    /// it horizontally and carry on using the height it was asked for, so the
+    /// picture comes out the wrong shape and nothing says so. Measured on a
+    /// phone: a 1600x300 picture defaulting to 560 wide in a 368pt column drew
+    /// 384x107, where its own shape at that width is 384x72.
+    ///
+    /// Scaling both sides is the only answer that keeps the picture itself
+    /// honest. It changes what is *drawn*, never what is written: the document
+    /// keeps the size it asked for, so opening it somewhere wider shows it at
+    /// that size again.
+    private static func fit(
+        _ size: CGSize,
+        within maximumWidth: CGFloat?
+    ) -> CGSize {
+        guard let maximumWidth, maximumWidth > 0, size.width > maximumWidth else {
+            return size
+        }
+        let scale = maximumWidth / size.width
+        return CGSize(
+            width: maximumWidth,
+            height: max(1, size.height * scale)
+        )
+    }
+
+    private static func unconstrainedDisplaySize(
         of sourceSize: CGSize,
         width: Int?,
         height: Int?

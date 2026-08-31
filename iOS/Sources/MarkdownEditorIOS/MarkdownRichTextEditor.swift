@@ -60,6 +60,7 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
         private var appliedRevision = -1
         private var appliedTheme: EditorColorTheme?
         private var appliedText: String?
+        private var appliedPage: MarkdownPageMetrics?
         private var isApplyingProgrammatically = false
 
         init(parent: MarkdownRichTextEditor) {
@@ -109,6 +110,7 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
             // and never touched. Autoresizing does not save it either: that
             // responds to size changes, and scrolling moves the origin.
             overlay.frame = CGRect(origin: .zero, size: textView.contentSize)
+            overlay.maximumImageWidth = Self.usableTextWidth(in: textView)
             overlay.onResize = { [weak self] range, size in
                 self?.parent.onResizeImage?(range, size)
             }
@@ -151,6 +153,7 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
                 return
             }
             imageOverlay?.frame = CGRect(origin: .zero, size: textView.contentSize)
+            imageOverlay?.maximumImageWidth = Self.usableTextWidth(in: textView)
             imageOverlay?.show(range: found.source, rect: found.rect)
         }
 
@@ -166,6 +169,7 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
             case .began:
                 guard let found = image(at: point, in: textView) else { return }
                 overlay.frame = CGRect(origin: .zero, size: textView.contentSize)
+                overlay.maximumImageWidth = Self.usableTextWidth(in: textView)
                 overlay.show(range: found.source, rect: found.rect)
                 textView.isScrollEnabled = false
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -183,6 +187,33 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
             default:
                 break
             }
+        }
+
+        /// The width a line of text actually gets, which is the widest a
+        /// picture can be drawn.
+        ///
+        /// There is no page margin on a phone — the document is as wide as the
+        /// screen — so unlike the Mac the ceiling is the column itself. It
+        /// still has to exist: past it TextKit squeezes the picture into the
+        /// line it has and goes on making it taller, so the picture is
+        /// distorted with nothing to say so.
+        ///
+        /// Read from the container rather than assumed, because it changes
+        /// with rotation and with the size class.
+        /// The column, and how far a picture may reach past it — nowhere, on a
+        /// phone, because the document is already as wide as the screen.
+        static func page(for textView: UITextView) -> MarkdownPageMetrics {
+            MarkdownPageMetrics(
+                measure: usableTextWidth(in: textView),
+                bleed: 0
+            )
+        }
+
+        static func usableTextWidth(in textView: UITextView) -> CGFloat {
+            let container = textView.textContainer
+            let width = container.size.width
+                - 2 * container.lineFragmentPadding
+            return max(EditorImageGeometry.minimumSide, width)
         }
 
         /// The picture drawn under `point`, with its source range and rect.
@@ -341,7 +372,8 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
             textView.attributedText = RichMarkdownStyler.attributedString(
                 for: model,
                 documentURL: documentURL,
-                colorTheme: theme
+                colorTheme: theme,
+                page: Self.page(for: textView)
             )
             textView.backgroundColor = theme.editorBackgroundColor
             textView.tintColor = theme.accentColor
@@ -355,6 +387,7 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
             restoreOffset(restoredOffset, in: textView)
             appliedText = source
             appliedTheme = theme
+            appliedPage = Self.page(for: textView)
         }
 
         private func restoreOffset(
@@ -384,8 +417,14 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
             let textChanged = appliedText != text
             let cameFromElsewhere = revision != appliedRevision
                 && parent.controller.lastEditingSurface != .rich
+            // A picture is drawn no wider than the line it sits on, or TextKit
+            // squashes it out of shape. That width changes with rotation and
+            // with the size class, and neither of those touches the text — so
+            // without this the picture stays at the old width and is either
+            // squashed or needlessly small until the next keystroke.
+            let pageChanged = textView.map { appliedPage != Self.page(for: $0) } ?? false
 
-            if themeChanged || (textChanged && cameFromElsewhere) {
+            if themeChanged || pageChanged || (textChanged && cameFromElsewhere) {
                 render(text, theme: theme, documentURL: documentURL)
             } else if textChanged {
                 appliedText = text
