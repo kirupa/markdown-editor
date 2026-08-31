@@ -171,6 +171,39 @@ func checkHighlightsAndClicking() {
     // Clicking a shaded passage has to raise its own comment. This is the
     // interaction the whole rail rests on, and the failure — reporting the
     // wrong finding — looks exactly like a working feature.
+    // The rail sits beside the text, so reading down the comments has to mean
+    // reading down the draft. Ordering by severity instead would put the first
+    // card next to the last paragraph, which is the thing that makes a rail
+    // feel like a list that happens to be on the right.
+    print("")
+    print("Ordering the rail")
+    let model2 = CritiqueModel()
+    model2.applyForChecking(
+        CritiqueReport(
+            jobRead: "", overall: "",
+            // Deliberately worst-last in the report, and last-first in the
+            // draft, so severity order and reading order disagree.
+            findings: [findings[0], findings[1]]
+        ),
+        for: source
+    )
+    let positions = model2.items.compactMap { $0.range?.location }
+    check(
+        "cards read down the draft, not by severity",
+        positions == positions.sorted(),
+        "positions \(positions)"
+    )
+    check(
+        "and the low finding, which comes first in the text, is first",
+        model2.items.first?.finding.severity == .low,
+        "\(model2.items.first?.finding.severity.rawValue ?? "none") was first"
+    )
+    check(
+        "severity is still legible as a count",
+        model2.severityCounts.count == 2,
+        "\(model2.severityCounts.count) severities counted"
+    )
+
     print("")
     print("Clicking a shaded passage")
     var clicked: UUID?

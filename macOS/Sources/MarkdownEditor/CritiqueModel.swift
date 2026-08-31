@@ -46,6 +46,18 @@ final class CritiqueModel: ObservableObject {
 
     var anchoredCount: Int { items.filter(\.isAnchored).count }
 
+    /// How many findings there are at each severity, worst first.
+    ///
+    /// The rail is in reading order, so this is where the shape of the
+    /// critique is legible at a glance — "three high" is the thing an author
+    /// wants to know before reading anything.
+    var severityCounts: [(severity: CritiqueSeverity, count: Int)] {
+        CritiqueSeverity.allCases.compactMap { severity in
+            let count = items.filter { $0.finding.severity == severity }.count
+            return count > 0 ? (severity, count) : nil
+        }
+    }
+
     func item(withID id: UUID?) -> Item? {
         guard let id else { return nil }
         return items.first { $0.id == id }
@@ -94,6 +106,11 @@ final class CritiqueModel: ObservableObject {
         criticisedText = nil
     }
 
+    /// Applies a report without going through the CLI. For checks only.
+    func applyForChecking(_ report: CritiqueReport, for text: String) {
+        apply(report, for: text)
+    }
+
     private func apply(_ report: CritiqueReport, for text: String) {
         let anchors = CritiqueAnchoring.anchor(report.findings, in: text)
         let byID = Dictionary(
@@ -101,18 +118,29 @@ final class CritiqueModel: ObservableObject {
             uniquingKeysWith: { first, _ in first }
         )
         self.report = report
-        // Sorted worst first, then by where they are in the document, so the
-        // rail reads like the report does rather than like the order a model
-        // happened to emit.
+        // Ordered by where they are in the document, not by severity.
+        //
+        // The rail sits beside the text, and a rail beside the text that is
+        // ordered by something other than the text reads as a list that
+        // happens to be on the right. Reading down the comments should mean
+        // reading down the draft. Severity is not lost — it is the colour and
+        // the label on every card, and counted at the top — but it decides how
+        // a finding *looks*, not where it sits.
+        //
+        // A finding whose quote was not found has no position, so it goes last
+        // rather than to the top, which is where an unset offset would put it.
         items = report.findings
             .map { Item(finding: $0, range: byID[$0.id] ?? nil) }
+            .enumerated()
             .sorted { left, right in
-                if left.finding.severity.rank != right.finding.severity.rank {
-                    return left.finding.severity.rank < right.finding.severity.rank
-                }
-                return (left.range?.location ?? Int.max)
-                    < (right.range?.location ?? Int.max)
+                let leftAt = left.element.range?.location ?? Int.max
+                let rightAt = right.element.range?.location ?? Int.max
+                if leftAt != rightAt { return leftAt < rightAt }
+                // Two findings on the same passage keep the order the critique
+                // reported them in, which is worst first.
+                return left.offset < right.offset
             }
+            .map(\.element)
         criticisedText = text
         isRunning = false
         failure = nil

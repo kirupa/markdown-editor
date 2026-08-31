@@ -238,6 +238,21 @@ struct CritiqueSidebar: View {
                     .font(.system(size: 12))
                     .foregroundStyle(colorTheme.primaryText)
             }
+            if !critique.severityCounts.isEmpty {
+                HStack(spacing: 10) {
+                    ForEach(critique.severityCounts, id: \.severity) { entry in
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(entry.severity.tint)
+                                .frame(width: 6, height: 6)
+                            Text("\(entry.count) \(entry.severity.label.lowercased())")
+                                .font(.system(size: 11))
+                                .foregroundStyle(colorTheme.secondaryText)
+                        }
+                    }
+                }
+                .padding(.top, 2)
+            }
             let unanchored = critique.items.count - critique.anchoredCount
             if unanchored > 0 {
                 // Said plainly rather than hidden: a card with no highlight is
