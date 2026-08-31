@@ -37,8 +37,19 @@ private extension EditorColorTheme {
 /// comment nobody can read is worse than one in the wrong face.
 enum CritiqueTypography {
     static let familyChain = [
-        "BradleyHandITCTT-Bold", "Noteworthy-Light", "SegoeMarker",
-        "ChalkboardSE-Light",
+        "PermanentMarker-Regular", "BradleyHandITCTT-Bold", "Noteworthy-Light",
+        "SegoeMarker", "ChalkboardSE-Light",
+    ]
+
+    /// Faces that run large for their point size, and by how much.
+    ///
+    /// Type is specified in points but read at whatever size it happens to
+    /// draw, and these two are not the same size at the same number: Permanent
+    /// Marker at 15 takes half again as many lines as Bradley Hand at 15. The
+    /// rail asks for an *optical* size and this is what turns that into a
+    /// number each face can be given.
+    static let opticalScale: [String: CGFloat] = [
+        "PermanentMarker-Regular": 0.84,
     ]
 
     /// Handwriting runs small for its point size, so it is set a shade larger
@@ -50,7 +61,8 @@ enum CritiqueTypography {
     /// it was given — so emphasis has to come from size, which the callers do.
     static func hand(_ size: CGFloat, bold: Bool = false) -> Font {
         for name in familyChain {
-            guard let found = NSFont(name: name, size: size) else { continue }
+            let scaled = size * (opticalScale[name] ?? 1)
+            guard let found = NSFont(name: name, size: scaled) else { continue }
             let face = bold
                 ? NSFontManager.shared.convert(found, toHaveTrait: .boldFontMask)
                 : found

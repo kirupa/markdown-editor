@@ -651,6 +651,8 @@ can fail says so.
 | I-110 | The history lives in Application Support, one file per document named by a digest of its path, not in user defaults and not beside the document. Each entry carries a copy of the draft, which defaults is not built to hold — it is read into memory in full at launch. The digest is an FNV hash rather than `hashValue`, which is seeded per process and would name a different file every launch. |
 | I-111 | Opening a document with a saved critique **shows it**, anchored against the current draft, rather than an empty panel beside a badge saying two exist. |
 | I-112 | A revision's timestamp is truncated to the second when it is created, because that is the precision it is stored and shown at. Keeping fractions means a revision never equals itself after a save and reload — a difference that exists only in memory and would quietly break anything comparing the two. |
+| I-113 | **One rail, whatever the mode.** In Rich Text it is in the document's own margin; side by side it goes after the Markdown pane, at the end of the row. The pane that hosts it is told to, rather than deciding for itself — the rendered pane is used in both modes, so a rail it drew unconditionally appeared *twice* in Split: once between the two views of the same text, and once at the end. |
+| I-114 | The hand is **Permanent Marker**, bundled under the Apache License 2.0. Faces are not the same size at the same point size — Permanent Marker at 15 takes half again as many lines as Bradley Hand at 15 — so the rail asks for an *optical* size and a per-face scale turns that into the number each is given. Without it, changing the hand silently changes how much of the rail a note occupies. |
 
 ### 10a.1 What this sends, and where
 

@@ -33,7 +33,7 @@ cp "$ROOT/Packaging/MarkdownDocument.icns" "$APP_DIR/Contents/Resources/Markdown
 # somebody's Font Book.
 mkdir -p "$APP_DIR/Contents/Resources/Fonts"
 cp "$ROOT/Packaging/Fonts/"*.ttf "$APP_DIR/Contents/Resources/Fonts/"
-cp "$ROOT/Packaging/Fonts/"*OFL.txt "$APP_DIR/Contents/Resources/Fonts/"
+cp "$ROOT/Packaging/Fonts/"*.txt "$APP_DIR/Contents/Resources/Fonts/"
 
 # SwiftPM emits one <Package>_<Target>.bundle beside the executable for every
 # target that declares `resources:`, and `Bundle.module` looks for it in

@@ -85,7 +85,8 @@ struct MarkdownEditorView: View {
                                 colorTheme: colorTheme,
                                 preferredWidth: $previewWidth,
                                 minimumWidth: Layout.minimumPreviewWidth,
-                                critique: critique
+                                critique: critique,
+                                hostsRail: true
                             )
                         case .source:
                             SourceTextEditor(
@@ -359,6 +360,12 @@ private struct ResizableRichTextPreview: View {
     @Binding var preferredWidth: CGFloat
     let minimumWidth: CGFloat
     @ObservedObject var critique: CritiqueModel
+    /// Whether the comments rail is laid out inside this pane.
+    ///
+    /// True only in Rich Text, where this pane is the whole document and the
+    /// rail belongs in its margin. Side by side, the row continues into the
+    /// Markdown pane and the rail goes after that.
+    var hostsRail: Bool = false
 
     @State private var dragStartWidth: CGFloat?
 
@@ -382,7 +389,7 @@ private struct ResizableRichTextPreview: View {
             // With comments open the document stops being centred and is
             // placed so the rail lands in its right margin — but only as far
             // as it has to move. On a wide window it does not move at all.
-            let railWidth = critique.isPresented ? Layout.railWidth : 0
+            let railWidth = hostsRail && critique.isPresented ? Layout.railWidth : 0
             let leadingInset = EditorPaneGeometry.documentInsetWithRail(
                 documentWidth: pageWidth,
                 railWidth: railWidth,
@@ -441,7 +448,12 @@ private struct ResizableRichTextPreview: View {
                     .offset(x: Layout.gripperWidth - bleed)
                 }
 
-                if critique.isPresented {
+                // Only when this pane *is* the document. Side by side, the
+                // Markdown pane is to the right of this one and the rail
+                // belongs beyond it — a rail here would sit between the two
+                // views of the same text, and there would be a second one at
+                // the end of the row.
+                if hostsRail, critique.isPresented {
                     CritiqueSidebar(
                         critique: critique,
                         colorTheme: colorTheme,
