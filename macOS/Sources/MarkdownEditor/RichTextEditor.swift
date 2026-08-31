@@ -11,6 +11,8 @@ struct RichTextEditor: NSViewRepresentable {
     let layoutWidth: CGFloat
     /// The column prose is set in, and how far a picture may reach past it.
     let page: MarkdownPageMetrics
+    /// The critique whose passages are shaded in this pane, if any.
+    @ObservedObject var critique: CritiqueModel
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
@@ -40,6 +42,9 @@ struct RichTextEditor: NSViewRepresentable {
         textView.textContainer?.widthTracksTextView = true
         scrollView.documentView = textView
 
+        textView.didClickCritiqueHighlight = { [weak coordinator = context.coordinator] id in
+            coordinator?.critique?.selectedFindingID = id
+        }
         textView.delegate = context.coordinator
         textView.allowsUndo = true
         textView.isRichText = true
@@ -128,6 +133,7 @@ struct RichTextEditor: NSViewRepresentable {
         }
         colorTheme.apply(to: textView, in: scrollView)
         (textView as? RichMarkdownTextView)?.page = page
+        context.coordinator.applyCritique(critique)
         context.coordinator.update(
             text: $text,
             documentURL: documentURL,
@@ -174,6 +180,9 @@ struct RichTextEditor: NSViewRepresentable {
         private var renderedDocumentURL: URL?
         private var renderedColorTheme: EditorColorTheme?
         private var renderedPage: MarkdownPageMetrics?
+        weak var critique: CritiqueModel?
+        private var shownHighlights: [RichMarkdownTextView.CritiqueHighlight] = []
+        private var scrolledToFinding: UUID?
         private var isRendering = false
         private var compositionState: CompositionState?
         private let scrollSynchronizer = EditorScrollSynchronizer()
@@ -303,6 +312,51 @@ struct RichTextEditor: NSViewRepresentable {
                 scrollToSelection: contentChanged
                     && session?.viewMode == .split
             )
+        }
+
+        /// Shade the passages the critique points at, and follow its selection.
+        ///
+        /// The conversion from source offsets to rendered ones has to happen
+        /// here: a critique is written about the Markdown the author saved,
+        /// while this pane shows text with the markup taken out, so the two
+        /// disagree by however much syntax came before the passage.
+        func applyCritique(_ critique: CritiqueModel) {
+            self.critique = critique
+            guard let textView = textView as? RichMarkdownTextView else { return }
+
+            let highlights = critique.highlights.compactMap {
+                id, sourceRange, severity -> RichMarkdownTextView.CritiqueHighlight? in
+                let rendered = model.renderedRange(for: sourceRange)
+                guard rendered.length > 0 else { return nil }
+                let selected = critique.selectedFindingID == id
+                return RichMarkdownTextView.CritiqueHighlight(
+                    id: id,
+                    range: rendered,
+                    colour: selected
+                        ? severity.selectedHighlight
+                        : severity.highlight
+                )
+            }
+            if highlights != shownHighlights {
+                shownHighlights = highlights
+                textView.critiqueHighlights = highlights
+            }
+
+            // Bring the passage into view when a card is opened, but only once
+            // per selection: doing it on every update would fight the author
+            // for the scroll position while they read.
+            guard critique.selectedFindingID != scrolledToFinding else { return }
+            scrolledToFinding = critique.selectedFindingID
+            guard
+                let id = critique.selectedFindingID,
+                let item = critique.item(withID: id),
+                let sourceRange = item.range
+            else {
+                return
+            }
+            let rendered = model.renderedRange(for: sourceRange)
+            guard rendered.length > 0 else { return }
+            textView.scrollRangeToVisible(rendered)
         }
 
         func apply(_ result: MarkdownEditResult, actionName: String) {
@@ -439,6 +493,10 @@ struct RichTextEditor: NSViewRepresentable {
             // image cursor rects were measured from, so both are stale until
             // they are measured against the new one.
             (textView as? RichMarkdownTextView)?.updateImageHandles()
+            // Temporary attributes live on the layout manager, and replacing
+            // the storage takes them with it. Without this every critique
+            // highlight disappears on the next keystroke.
+            (textView as? RichMarkdownTextView)?.redrawCritiqueHighlights()
             // The selection changes AppKit made while the storage was being
             // replaced were suppressed as intermediate. Publish the settled
             // one now, so the two panes still track each other's caret and

@@ -1,4 +1,4 @@
-.PHONY: app check-editor-clicks check-image-cursors check-image-handles check-image-layout check-scroll check-session clean icons install run test uninstall
+.PHONY: app check-critique check-editor-clicks check-image-cursors check-image-handles check-image-layout check-scroll check-session clean icons install run test uninstall
 
 app:
 	@./Scripts/build-app.sh
@@ -11,6 +11,9 @@ check-image-handles:
 
 check-editor-clicks:
 	@./Scripts/run-editor-click-checks.sh
+
+check-critique:
+	@./Scripts/run-critique-checks.sh
 
 check-image-layout:
 	@./Scripts/run-image-layout-checks.sh

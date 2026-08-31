@@ -18,6 +18,100 @@ final class RichMarkdownTextView: NSTextView {
     /// Commit a resize for the image the handles are drawn around. The rendered
     /// range is passed so the commit does not have to re-find the picture.
     var commitImageSize: ((MarkdownImageTag.Size, NSRange) -> Void)?
+
+    // MARK: - Critique highlights
+
+    /// A passage a critique has something to say about, in *rendered* offsets.
+    struct CritiqueHighlight: Equatable {
+        let id: UUID
+        let range: NSRange
+        let colour: NSColor
+    }
+
+    /// Told to the view rather than worked out by it: turning a source range
+    /// into a rendered one needs the render model, which the coordinator owns.
+    var critiqueHighlights: [CritiqueHighlight] = [] {
+        didSet {
+            guard critiqueHighlights != oldValue else { return }
+            redrawCritiqueHighlights()
+        }
+    }
+
+    /// Called when a click lands on a highlighted passage, so the rail can
+    /// raise the matching card.
+    var didClickCritiqueHighlight: ((UUID) -> Void)?
+
+    /// Paints the highlights as *temporary* attributes.
+    ///
+    /// Temporary attributes are the right tool: they live on the layout
+    /// manager rather than in the text storage, so they cannot end up in the
+    /// document, cannot be picked up by a copy, and do not have to be
+    /// unpicked from the styling every time the draft is re-rendered. It is
+    /// the same mechanism the find bar uses to shade a match.
+    func redrawCritiqueHighlights() {
+        guard let layoutManager, let textStorage else { return }
+        let whole = NSRange(location: 0, length: textStorage.length)
+        layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: whole)
+        for highlight in critiqueHighlights {
+            let clamped = NSIntersectionRange(highlight.range, whole)
+            guard clamped.length > 0 else { continue }
+            layoutManager.addTemporaryAttributes(
+                [.backgroundColor: highlight.colour],
+                forCharacterRange: clamped
+            )
+        }
+    }
+
+    /// Raises the comment for the passage under `point`, if there is one.
+    ///
+    /// Split out from `mouseDown` so it can be exercised on its own. A
+    /// synthesised press cannot be used to check this: `NSTextView.mouseDown`
+    /// runs a modal tracking loop waiting for a real mouse-up, so the check
+    /// hangs rather than fails — which is a worse outcome than either.
+    @discardableResult
+    func raiseCritiqueComment(at point: CGPoint) -> UUID? {
+        guard let found = critiqueHighlight(at: point) else { return nil }
+        didClickCritiqueHighlight?(found)
+        return found
+    }
+
+    /// The highlight under a point, if any.
+    ///
+    /// Smallest first, so a short passage inside a longer one is reachable
+    /// rather than permanently covered by the finding that encloses it.
+    private func critiqueHighlight(at point: CGPoint) -> UUID? {
+        guard !critiqueHighlights.isEmpty,
+              let layoutManager,
+              let textContainer,
+              let textStorage,
+              textStorage.length > 0
+        else {
+            return nil
+        }
+        let inContainer = CGPoint(
+            x: point.x - textContainerInset.width,
+            y: point.y - textContainerInset.height
+        )
+        // `characterIndex(for:)` answers for the nearest glyph however far away
+        // the click was, so a click in the margin would select the passage on
+        // that line. Checking the glyph's own rectangle keeps a hit meaning
+        // what it looks like.
+        let glyph = layoutManager.glyphIndex(
+            for: inContainer,
+            in: textContainer,
+            fractionOfDistanceThroughGlyph: nil
+        )
+        let glyphBounds = layoutManager.boundingRect(
+            forGlyphRange: NSRange(location: glyph, length: 1),
+            in: textContainer
+        )
+        guard glyphBounds.contains(inContainer) else { return nil }
+        let character = layoutManager.characterIndexForGlyph(at: glyph)
+        return critiqueHighlights
+            .filter { NSLocationInRange(character, $0.range) }
+            .min { $0.range.length < $1.range.length }?
+            .id
+    }
     /// Move the picture occupying the first range so it sits at the second
     /// location, both measured in rendered text.
     var moveImage: ((NSRange, Int) -> Void)?
@@ -788,6 +882,13 @@ final class RichMarkdownTextView: NSTextView {
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+        // Before the picture check, because a highlight is only ever on text.
+        // After it would be unreachable on a line that also holds a picture.
+        //
+        // Deliberately falls through to `super` so the caret still lands where
+        // it was clicked. Raising a comment should not cost the author their
+        // place in the sentence.
+        raiseCritiqueComment(at: point)
         if selectImage(at: point) {
             // `NSTextView` takes first responder inside its own `mouseDown`,
             // and this path deliberately does not call super. Without taking it

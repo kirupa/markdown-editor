@@ -10,6 +10,7 @@ struct MarkdownEditorView: View {
     @State private var explorerWidth = Layout.defaultExplorerWidth
     @State private var dragStartExplorerWidth: CGFloat?
     @State private var previewWidth = Layout.defaultPreviewWidth
+    @StateObject private var critique = CritiqueModel()
     @Binding private var themeColorRawValue: String
     @Binding private var appearanceModeRawValue: String
     private let fileURL: URL?
@@ -73,6 +74,7 @@ struct MarkdownEditorView: View {
                         }
                     )
 
+                    HStack(spacing: 0) {
                     Group {
                         switch session.viewMode {
                         case .rich:
@@ -82,7 +84,8 @@ struct MarkdownEditorView: View {
                                 session: session,
                                 colorTheme: colorTheme,
                                 preferredWidth: $previewWidth,
-                                minimumWidth: Layout.minimumPreviewWidth
+                                minimumWidth: Layout.minimumPreviewWidth,
+                                critique: critique
                             )
                         case .source:
                             SourceTextEditor(
@@ -98,7 +101,8 @@ struct MarkdownEditorView: View {
                                     session: session,
                                     colorTheme: colorTheme,
                                     preferredWidth: $previewWidth,
-                                    minimumWidth: Layout.minimumSplitPreviewWidth
+                                    minimumWidth: Layout.minimumSplitPreviewWidth,
+                                    critique: critique
                                 )
                                 .frame(
                                     minWidth: Layout.minimumSplitPaneWidth,
@@ -116,6 +120,21 @@ struct MarkdownEditorView: View {
                                 )
                             }
                         }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    // Beside the document, never over it: the comments are
+                    // about words the author needs to keep reading.
+                    if critique.isPresented {
+                        Divider()
+                        CritiqueSidebar(
+                            critique: critique,
+                            colorTheme: colorTheme,
+                            isStale: critique.isStale(against: document.text),
+                            onRerun: { critique.run(on: document.text) }
+                        )
+                        .transition(.move(edge: .trailing))
+                    }
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -182,7 +201,23 @@ struct MarkdownEditorView: View {
                 session: session,
                 colorTheme: colorThemeSelection
             )
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    startCritique()
+                } label: {
+                    Image(systemName: critique.isRunning
+                        ? "sparkles.rectangle.stack"
+                        : "sparkles")
+                }
+                .disabled(critique.isRunning)
+                .help(
+                    critique.isRunning
+                        ? "A critique is already running"
+                        : "AI Assisted critique of this draft (⌃⌘C)"
+                )
+            }
         }
+        .focusedSceneValue(\.runCritique, startCritique)
         .onAppear {
             if let fileURL {
                 RecentDocumentsModel.shared.record(fileURL)
@@ -281,6 +316,12 @@ struct MarkdownEditorView: View {
         )
     }
 
+    /// Start a critique of the document as it stands.
+    private func startCritique() {
+        guard !critique.isRunning else { return }
+        critique.run(on: document.text)
+    }
+
     private func clampedExplorerWidth(
         _ proposedWidth: CGFloat,
         totalWidth: CGFloat
@@ -301,6 +342,7 @@ private struct ResizableRichTextPreview: View {
     let colorTheme: EditorColorTheme
     @Binding var preferredWidth: CGFloat
     let minimumWidth: CGFloat
+    @ObservedObject var critique: CritiqueModel
 
     @State private var dragStartWidth: CGFloat?
 
@@ -336,7 +378,8 @@ private struct ResizableRichTextPreview: View {
                     page: MarkdownPageMetrics(
                         measure: Layout.textMeasure(inPane: visibleWidth),
                         bleed: bleed
-                    )
+                    ),
+                    critique: critique
                 )
                 .frame(width: pageWidth)
                 .overlay(alignment: .trailing) {

@@ -24,6 +24,9 @@ extension FocusedValues {
 struct MarkdownEditorCommands: Commands {
     @FocusedValue(\.markdownEditorSession)
     private var session
+    @FocusedValue(\.runCritique)
+    private var runCritique: (() -> Void)?
+
     @FocusedValue(\.editorColorThemeSelection)
     private var colorThemeSelection
 
@@ -69,6 +72,12 @@ struct MarkdownEditorCommands: Commands {
         }
 
         CommandMenu("Markdown") {
+            Button("AI Assisted Critique") { runCritique?() }
+                .keyboardShortcut("c", modifiers: [.control, .command])
+                .disabled(runCritique == nil)
+
+            Divider()
+
             Menu("Editor View") {
                 ForEach(EditorViewMode.allCases) { mode in
                     Button {
@@ -195,5 +204,25 @@ struct MarkdownEditorCommands: Commands {
             .keyboardShortcut("i", modifiers: [.command, .option, .shift])
             .disabled(session == nil)
         }
+    }
+}
+
+
+/// The focused document's critique command.
+///
+/// Routed through the focus system rather than a notification. A notification
+/// reaches every open document at once, and each one then has to work out
+/// whether it was the intended target — which cannot be done reliably for a
+/// document that has never been saved, because it has no URL to be recognised
+/// by. Two unsaved windows would both run a critique, and both would spend
+/// credits.
+struct CritiqueActionKey: FocusedValueKey {
+    typealias Value = () -> Void
+}
+
+extension FocusedValues {
+    var runCritique: CritiqueActionKey.Value? {
+        get { self[CritiqueActionKey.self] }
+        set { self[CritiqueActionKey.self] = newValue }
     }
 }

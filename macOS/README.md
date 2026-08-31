@@ -604,6 +604,55 @@ Both rules are asserted against pixels drawn by a real text view in
 
 ---
 
+## 10a. AI Assisted critique
+
+An editorial pass over the draft, shown as comments beside the text.
+
+The findings are written by the **konvo** skill running in the GitHub Copilot
+CLI, which the editor starts on the author's behalf. That is a deliberate choice
+over talking to a model directly: the CLI already holds the sign-in, already
+knows where the author's skills live, and already picks a model — so this app
+needs no API key, stores no credential, and gains no second thing to keep
+working. What it costs is a dependency the app cannot install, so every way that
+can fail says so.
+
+| ID | Requirement |
+| --- | --- |
+| I-82 | **AI Assisted Critique** (⌃⌘C, or the sparkles button) runs the konvo skill's critique pass over the document as it currently stands and opens a rail of comments beside it. Desktop only. |
+| I-83 | Each finding is a card carrying its severity, its category, the passage it is about, the reader consequence, and either a `Fix` or a `Direction` — the distinction the skill draws between a correction that needs no judgement and a revision only the author can make. A load-bearing claim without support is marked `needs verification`, which records its editorial status rather than declaring it false. |
+| I-84 | The passage each finding quotes is **shaded in the text**. Clicking it raises that card; clicking a card scrolls the passage into view and deepens its shading. Cards are ordered worst first, then by reading order. |
+| I-85 | Shading is drawn as a **temporary attribute** on the layout manager, never in the text storage. It cannot be saved into the document, cannot be carried along by a copy, and does not have to be unpicked from the styling on every re-render. |
+| I-86 | A click reaches a comment only when it lands on the passage's own glyphs. The nearest glyph to a point is still *some* glyph however far away the click was, so without this a click in the margin opens whichever comment happens to be on that line. |
+| I-87 | A quote is matched to the draft **exactly first**, then allowing for the ways a model retypes a passage: curly quotes straightened, a line break inside a sentence become a space, runs of spaces collapsed. The match is made on a folded copy but the highlight is reported in the *original* offsets, so it lands on real characters rather than an approximation of them. |
+| I-88 | A quote that appears more than once is disambiguated by the paragraph number in the finding's location, counting blank-line separated blocks as a reader would. Two findings quoting the same words take one occurrence each. |
+| I-89 | A quote that is **nowhere in the draft** — the model paraphrased — leaves its card unanchored and says so, rather than highlighting the nearest thing that looks similar. The rail reports how many could not be matched. |
+| I-90 | The critique is written about the Markdown source, while the rendered pane shows it with the syntax removed, so every range is converted through the render model before it is drawn. |
+| I-91 | Editing after a critique marks it **stale** in the rail. A critique describes a draft at a moment; once the words move, its offsets point at whatever now sits there. |
+| I-92 | The draft is fenced inside the prompt and named as material to critique, never as instructions, so a document *about* prompts is not read as one. |
+| I-93 | Nothing is written to the document. A critique is a review, and the findings live only for as long as the rail is open. |
+| I-94 | Every failure is explained and recoverable: the CLI missing (with the command to install it), an empty document, a stopped run, a non-zero exit carrying the CLI's own message, and a reply that would not decode. |
+| I-95 | The command reaches the **focused** document through the focus system, not a notification. A notification arrives at every open document at once, and a document that has never been saved has no URL to recognise itself by — so two unsaved windows would both run a critique, and both would spend credits. |
+
+### 10a.1 What this sends, and where
+
+The whole document is sent to the model the Copilot CLI is signed in to. That is
+the feature working as intended, and it is worth stating plainly rather than
+burying: a critique of a draft cannot be written without reading the draft. It
+runs only when asked. Nothing is sent while typing, and no critique is stored.
+
+### 10a.2 Why the reply is JSON
+
+The skill's own report is Markdown, which is right for a person and wrong for a
+rail of cards: parsing prose back into structure would break the first time the
+model reformatted a heading. The skill sanctions the change — *"use this shape
+unless the user requests another"* — so the prompt asks for the same findings in
+JSON, and the decoder is deliberately forgiving. An unfamiliar severity, a
+missing field, a code fence, a sentence of preamble, or a brace inside a quoted
+passage all still produce a usable report, because a report that is mostly right
+is worth far more to the author than an error message.
+
+---
+
 ## 11. File explorer
 
 | ID | Requirement |
@@ -729,6 +778,7 @@ else is either quiet or absent until it is asked for.
 | `⌘K` | Insert Link… |
 | `⌘⌥I` | Insert Image… |
 | `⌘⌥M` | Cycle Editor View |
+| `⌃⌘C` | AI Assisted Critique |
 | `⌘⌥O` | Open Folder… |
 | `⌃⌘S` | Show / Hide File Explorer |
 
@@ -845,6 +895,7 @@ make install
 | `make check-image-handles` | Renders real attachments and finds them by pixel: proves the picture rect is the drawn picture and not its line box, and guards the baseline-offset rule across seven offsets |
 | `make check-image-layout` | The same geometry through the **real** `RichMarkdownStyler`, at the app's own container inset — a bug whose size *is* the inset cannot happen in a view that has none — plus the pointer shape at each place it matters, the clicks that select a picture, dragging a picture to a new place in the document, and the four ways a resize used to go wrong: focus, reflow, a refused commit, and a cursor stranded by teardown |
 | `make check-editor-clicks` | Hosts the **real SwiftUI editor**, opens a document off disk, and asks the window which view a click on a picture would actually reach — the one check that can see a floating explorer or gripper covering the preview |
+| `make check-critique` | The critique path end to end. The shading and the click-to-comment half is free and always runs (`Scripts/run-critique-checks.sh --offline`): it reads the temporary attributes the view really holds and hit-tests real points, including a click in the margin *level with a shaded passage*, which is the case that passes whether or not the guard exists if you aim it anywhere else. The second half asks the **real** CLI for a **real** critique and re-anchors every quote it returns, because whether the quotes are still verbatim enough to highlight is a property of the prompt that no fixture can answer. That half costs AI credits and about half a minute, so it is not in `make test` |
 | `make check-image-cursors` | Opt-in. Drives the real mouse across a real screen and identifies the pointer from screen pixels. Needs `MDE_ALLOW_SCREEN_CONTROL=1`, an idle machine, and an **unlocked screen** — `screencapture -R` and `-l` both fail behind the lock screen while full-screen capture still succeeds, so a locked machine looks like a broken check. Its first assertion is that it can see every cursor it is able to name — see I-56 |
 | `make clean` | Cleans the package build directory and removes `build/` |
 
@@ -1289,6 +1340,7 @@ async `@main` instead.
 
 | Change | Summary |
 | --- | --- |
+| Ask for a second opinion | **AI Assisted Critique** (⌃⌘C) runs the konvo skill over the draft and shows what it finds as comments beside the text, with each finding's passage shaded and clicking either one raising the other — the Google Docs interaction, because it is the one people already know. Runs through the GitHub Copilot CLI, so the app holds no API key of its own. The load-bearing part is not the model but the anchoring: a quote has to be found again in the draft to be highlighted, and a model retypes a passage as often as it copies one. See [§10a](#10a-ai-assisted-critique). |
 | Give a picture the run of the page | The page is now wider than the column the text is set in, and a picture may spread up to 100 points into the margin on each side while prose stays at the column. It also fixes a fault nobody had named: past the column TextKit was **compressing the picture into the line and going on making it taller**, so dragging a picture wide silently distorted it — asking for 700, 800 and 852 points all drew at 642. A resize now stops at the page. The bleed collapses to nothing where there is no room, so a Split pane and a narrow window behave exactly as before. Ported to the web the same day; iOS has no margins to give, so it takes the ceiling and not the bleed. See [I-75 to I-80](#9-images-and-assets). |
 | Draw the picture the document points at | A picture kept **above** the document — `../images/photo.png`, the layout every static site generator and most note folders produce — silently did not draw. The renderer applied the *assets containment* rule to reading, but that rule is about writing: an import must not put a file outside the document's folder. Reading was never the same act, and the app can already open anything its reader can, so the check protected nothing and cost the picture. What made it hard to see is that an unresolved picture is not a broken one: a placeholder symbol takes its place, so the line still looks deliberate, and the visible symptom is the unrelated-sounding "I cannot select my image". Every styler test until now passed `documentURL: nil`, so resolution had never been exercised once; there are now 11 tests over the path shapes real documents use, and they distinguish the reader's picture from the placeholder by aspect ratio rather than by the mere presence of an attachment. See [§9.9](#99-which-pictures-actually-draw). |
 | Make a resize land on the picture you dragged | Four faults behind image resizing, all found by review rather than by use. Clicking a picture never focused the pane it was in — the image path returns before `super.mouseDown`, so `NSTextView` never took first responder — and the commit then resolved the target through *whichever pane had focus*, which in Split view is the Markdown pane. A resize could therefore rewrite a **different image** or refuse outright. The commit now carries the source offset the handles were drawn around. The handles also never moved on **reflow**, so a window resize or a width drag left them over blank text while still taking the drag; and a **refused** resize left the picture at the size the drag abandoned it at, because a drag previews by changing the attachment's bounds and only a re-render puts them back. Finally, a drag ended by the view going away stranded a pushed `NSCursor` — a process-wide stack, so the diagonal arrow leaked into every other app. See [§9.7](#97-selecting-and-resizing-a-picture), [§9.8](#98-what-the-pointer-says). |
