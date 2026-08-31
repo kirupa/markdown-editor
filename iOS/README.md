@@ -107,6 +107,7 @@ byte-identical.
 | ID-56 | A **long press** picks a picture up, and dragging moves it. Deliberately not travel alone, as on macOS: a short drag on a touch screen is how the document is scrolled, so treating it as a move would make a document with pictures impossible to read. A rule marks the paragraph boundary it would land on, and a translucent copy follows the finger. |
 | ID-57 | The overlay claims **only its handles**. Everything else — including the middle of the picture — reaches the text view underneath, so scrolling, the caret and text selection behave exactly as they did before it existed. The tap and long-press recognisers run alongside UITextView's own rather than replacing them. |
 | ID-58 | The geometry and the text transform are **shared, not re-implemented**: `EditorImageGeometry.touchHitRect` / `touchCorner` for the targets, `MarkdownImageTag.proportionalSize` for the size, and `MarkdownFormatting.moveImage` for the edit. A picture resized or moved on a phone lands exactly where it lands on a Mac. |
+| ID-59 | The overlay is sized to the text view's **`contentSize`**, not its `bounds`. A `UITextView` is a scroll view, so its subviews live in content coordinates while `bounds` is only what is on screen. Sizing it to `bounds` leaves every handle below the first screenful outside the overlay, and UIKit refuses hit tests outside a view's bounds — so those handles could be seen and never touched. It reads as "resize doesn't work", but only after scrolling. Guarded by a test that reads the source, since nothing else can see it. |
 
 ---
 

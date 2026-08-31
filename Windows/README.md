@@ -279,7 +279,14 @@ These are platform-shaped, so the Windows equivalents will differ — but the
    own hit rects — not a uniform halo, which lights the picture up when the
    pointer is plainly beside it.
 
-8. **On Win32/WinUI, check who wins the cursor.** On AppKit the text view
+8. **A scrolling text control puts its children in *content* coordinates.**
+   On iOS the overlay was sized to the text view's visible `bounds`, so every
+   handle below the first screenful fell outside it — and UIKit refuses hit
+   tests outside a view's bounds, so those handles could be seen and never
+   touched. It reads as "resize doesn't work", but only after scrolling. Size
+   any overlay to the *content*, and keep it in step as the document grows.
+
+9. **On Win32/WinUI, check who wins the cursor.** On AppKit the text view
    re-asserted its I-beam on *every* mouse move, while the event that would have
    corrected it only fired when the pointer crossed a registered rect boundary
    — 6 times in 99 moves, measured. Inside a corner target no boundary is

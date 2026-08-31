@@ -78,7 +78,7 @@ final class MarkdownImageOverlayView: UIView {
     /// behave exactly as they did before this view existed. The long press and
     /// tap recognisers are attached to the text view for the same reason.
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        guard let selection, !isHidden else { return nil }
+        guard !isHidden, selection != nil else { return nil }
         return corner(at: point) == nil ? nil : self
     }
 

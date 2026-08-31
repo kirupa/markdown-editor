@@ -80,6 +80,9 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
         // MARK: - Selecting, resizing and moving a picture
 
         private var imageOverlay: MarkdownImageOverlayView?
+        /// The document grows as it is typed into and as pictures load, and the
+        /// overlay has to grow with it or its lower handles fall outside it.
+        private var contentSizeObservation: NSKeyValueObservation?
 
         /// Put the overlay over the text and attach the two gestures that
         /// belong to the *text view* rather than to a handle.
@@ -90,8 +93,16 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
         func installImageOverlay(on textView: UITextView) {
             let overlay = MarkdownImageOverlayView(textView: textView)
             overlay.isHidden = true
-            overlay.frame = textView.bounds
-            overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            // Sized to the *content*, not the visible rectangle.
+            //
+            // A UITextView is a scroll view, so its subviews live in content
+            // coordinates while `bounds` is only what is on screen right now.
+            // Sizing the overlay to `bounds` leaves every handle below the
+            // first screenful outside it — and UIView's hit testing refuses
+            // points outside a view's bounds, so those handles could be seen
+            // and never touched. Autoresizing does not save it either: that
+            // responds to size changes, and scrolling moves the origin.
+            overlay.frame = CGRect(origin: .zero, size: textView.contentSize)
             overlay.onResize = { [weak self] range, size in
                 self?.parent.onResizeImage?(range, size)
             }
@@ -103,6 +114,12 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
             }
             textView.addSubview(overlay)
             imageOverlay = overlay
+            contentSizeObservation = textView.observe(\.contentSize, options: [.new]) {
+                [weak overlay] textView, _ in
+                MainActor.assumeIsolated {
+                    overlay?.frame = CGRect(origin: .zero, size: textView.contentSize)
+                }
+            }
 
             let tap = UITapGestureRecognizer(target: self, action: #selector(didTap))
             tap.delegate = self

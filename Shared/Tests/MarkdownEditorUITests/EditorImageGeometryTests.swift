@@ -120,6 +120,33 @@ final class EditorImageGeometryTests: XCTestCase {
         )
     }
 
+    // MARK: - Structural guards
+
+    func testTheIOSOverlayIsSizedToTheContentNotTheVisibleRect() throws {
+        // A UITextView is a scroll view, so its subviews live in content
+        // coordinates while `bounds` is only what is on screen. Sizing the
+        // overlay to `bounds` leaves every handle below the first screenful
+        // outside it, and UIKit refuses hit tests outside a view's bounds — so
+        // those handles can be seen and never touched. It reads as "resize
+        // doesn't work", but only after scrolling, which is exactly the kind of
+        // fault that survives a demo.
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()   // MarkdownEditorUITests
+            .deletingLastPathComponent()   // Tests
+            .deletingLastPathComponent()   // Shared
+            .deletingLastPathComponent()   // the repository root
+            .appendingPathComponent("iOS/Sources/MarkdownEditorIOS/MarkdownRichTextEditor.swift")
+        let source = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(
+            source.contains("overlay.frame = CGRect(origin: .zero, size: textView.contentSize)"),
+            "the iOS image overlay must be sized to the text view's contentSize"
+        )
+        XCTAssertFalse(
+            source.contains("overlay.frame = textView.bounds"),
+            "sizing the overlay to bounds makes handles below the fold untouchable"
+        )
+    }
+
     // MARK: - Touch targets
 
     func testAFingerTargetIsAtLeastTheComfortableTapSize() {
