@@ -200,4 +200,55 @@ struct EditorPaneGeometryTests {
         #expect(page.imageParagraphIndent(imageWidth: 100) == 0)
         #expect(page.imageParagraphIndent(imageWidth: 390) == 0)
     }
+
+    // MARK: - A rail in the document's margin
+
+    @Test("A wide window keeps the document still and puts the rail in the margin")
+    func aWideWindowDoesNotMoveTheDocument() {
+        // 1600 wide, 700 of document: 450 of margin each side, and the rail
+        // needs 320. The document must not move — opening comments should not
+        // reflow what you are reading.
+        let inset = EditorPaneGeometry.documentInsetWithRail(
+            documentWidth: 700, railWidth: 320, totalWidth: 1_600
+        )
+        #expect(inset == 450)
+        // And the rail lands clear of the window's edge, in the margin.
+        #expect(1_600 - inset - 700 == 450)
+    }
+
+    @Test("A tight window gives way by the least it can")
+    func aTightWindowShiftsTheDocumentOnlyAsFarAsNeeded() {
+        // 1200 wide, 700 of document: 250 each side, and the rail needs 320.
+        // The document shifts left, but only enough to fit the rail.
+        let inset = EditorPaneGeometry.documentInsetWithRail(
+            documentWidth: 700, railWidth: 320, totalWidth: 1_200
+        )
+        #expect(inset == 180)
+        #expect(inset < 250, "it has to move")
+    }
+
+    @Test("A window too narrow for both puts the document at the leading edge")
+    func aVeryNarrowWindowDoesNotGoNegative() {
+        // Below 1020 there is no arrangement that fits both, so the document
+        // starts at the leading edge and the rail takes what is left.
+        #expect(
+            EditorPaneGeometry.documentInsetWithRail(
+                documentWidth: 700, railWidth: 320, totalWidth: 1_000
+            ) == 0
+        )
+        #expect(
+            EditorPaneGeometry.documentInsetWithRail(
+                documentWidth: 700, railWidth: 320, totalWidth: 800
+            ) == 0
+        )
+    }
+
+    @Test("With no rail the document is centred as before")
+    func aRailOfNothingChangesNothing() {
+        #expect(
+            EditorPaneGeometry.documentInsetWithRail(
+                documentWidth: 700, railWidth: 0, totalWidth: 1_600
+            ) == EditorPaneGeometry.centeringInset(measure: 700, totalWidth: 1_600)
+        )
+    }
 }

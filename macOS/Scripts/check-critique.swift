@@ -421,6 +421,56 @@ func checkTheRailRenders() {
         for: source
     )
 
+    // Answer one, so the check covers the score moving, the answered section,
+    // and a resolved passage giving up its shading.
+    let outstandingBefore = model.outstanding.count
+    let scoreBefore = model.score
+    let answered = model.items.first { $0.finding.severity == .low }
+    model.setResolution(.dismissed, for: answered!.id)
+
+    check(
+        "answering one takes it out of the outstanding count",
+        model.outstanding.count == outstandingBefore - 1,
+        "\(model.outstanding.count) of \(outstandingBefore)"
+    )
+    check(
+        "the score goes up when something is answered",
+        model.score > scoreBefore,
+        "\(scoreBefore) -> \(model.score)"
+    )
+    check(
+        "an answered finding stops shading its passage",
+        !model.highlights.contains { $0.id == answered!.id },
+        "it is still shaded"
+    )
+    check(
+        "and moves to the bottom of the list",
+        model.items.last?.id == answered!.id,
+        "it is at position \(model.items.firstIndex { $0.id == answered!.id } ?? -1)"
+    )
+    check(
+        "answering everything returns the score to a hundred",
+        {
+            let all = CritiqueModel()
+            all.applyForChecking(
+                CritiqueReport(jobRead: "", overall: "", findings: model.items.map(\.finding)),
+                for: source
+            )
+            for item in all.items { all.setResolution(.completed, for: item.id) }
+            return all.score == 100
+        }(),
+        "it did not reach 100"
+    )
+    // And taking the answer back restores it.
+    model.setResolution(nil, for: answered!.id)
+    check(
+        "undoing an answer brings the finding back",
+        model.outstanding.count == outstandingBefore
+            && model.score == scoreBefore,
+        "\(model.outstanding.count) outstanding, score \(model.score)"
+    )
+    model.setResolution(.dismissed, for: answered!.id)
+
     let rail = CritiqueSidebar(
         critique: model,
         colorTheme: EditorColorTheme(color: .blue, mode: .light),
@@ -460,6 +510,8 @@ func checkTheRailRenders() {
         "Nothing supports it.",
         "Generic opening.",
         "No running example.",
+        // The answered card names its answer where its severity used to be.
+        "Dismissed",
     ] {
         check(
             "the rail shows \"\(expected)\"",
@@ -550,15 +602,6 @@ func checkTheRailRenders() {
         return Double(found) * 2 / Double(scale * scale)
     }
 
-    let accent = accentPixels(fromTop: 0, height: 34)
-    if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
-        print("  accent mark in the header band: \(Int(accent))pt²  (scale \(scale))")
-    }
-    check(
-        "the header is drawn, mark and all",
-        accent > 15,
-        "only \(Int(accent))pt² of accent colour at the top of the rail"
-    )
     /// The widest unbroken run of non-background pixels in a band, in points.
     ///
     /// Text never gives a long run — it is letters with gaps. A filled panel
@@ -589,6 +632,54 @@ func checkTheRailRenders() {
         }
         return CGFloat(widest) / scale
     }
+
+    /// How much of a band is a strongly coloured pixel, in points squared.
+    ///
+    /// The score is drawn as a big numeral in the severity tint. Everything
+    /// else that could occupy that band — the stale notice, the summary — is
+    /// grey on grey, so saturation is what tells them apart. Looking for a
+    /// filled panel does not: the stale notice is one too, and slides up into
+    /// this band the moment the score is removed. That version of this check
+    /// passed against a build with the score deleted.
+    func saturatedArea(fromTop top: CGFloat, height: CGFloat) -> Double {
+        let firstRow = Int(top * scale)
+        let lastRow = min(rep.pixelsHigh, Int((top + height) * scale))
+        guard firstRow < lastRow else { return 0 }
+        var found = 0
+        for y in firstRow..<lastRow {
+            for x in stride(from: 0, to: rep.pixelsWide, by: 2) {
+                guard let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB)
+                else { continue }
+                let high = max(c.redComponent, max(c.greenComponent, c.blueComponent))
+                let low = min(c.redComponent, min(c.greenComponent, c.blueComponent))
+                if high - low > 0.25 { found += 1 }
+            }
+        }
+        return Double(found) * 2 / Double(scale * scale)
+    }
+
+    let scoreInk = saturatedArea(fromTop: 58, height: 64)
+    if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
+        print("  saturated ink in the score band: \(Int(scoreInk))pt²")
+        for top in stride(from: 0.0, to: 200.0, by: 20.0) {
+            print("    band \(Int(top))-\(Int(top)+20): \(Int(saturatedArea(fromTop: top, height: 20)))pt²")
+        }
+    }
+    check(
+        "the awesomeness score is drawn",
+        scoreInk > 150,
+        "only \(Int(scoreInk))pt² of coloured ink where the score belongs"
+    )
+
+    let accent = accentPixels(fromTop: 0, height: 34)
+    if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
+        print("  accent mark in the header band: \(Int(accent))pt²  (scale \(scale))")
+    }
+    check(
+        "the header is drawn, mark and all",
+        accent > 15,
+        "only \(Int(accent))pt² of accent colour at the top of the rail"
+    )
 
     let noticeRun = widestRun(fromTop: 36, height: 52)
     if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {

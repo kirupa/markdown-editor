@@ -143,8 +143,8 @@ public enum CritiqueAnchoring {
     }
 
     /// A canonical form, plus where each of its characters came from.
-    struct Folded {
-        let value: String
+    public struct Folded {
+        public let value: String
         /// `offsets[i]` is the UTF-16 offset in the original text that
         /// `value[i]` came from.
         let offsets: [Int]
@@ -152,7 +152,7 @@ public enum CritiqueAnchoring {
 
     /// Collapses whitespace runs to one space and normalises the punctuation a
     /// model is most likely to re-type: curly quotes, dashes, and ellipses.
-    static func fold(_ text: String) -> Folded {
+    public static func fold(_ text: String) -> Folded {
         let source = text as NSString
         var value = ""
         var offsets: [Int] = []

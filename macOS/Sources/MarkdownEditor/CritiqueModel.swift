@@ -16,9 +16,12 @@ final class CritiqueModel: ObservableObject {
         let finding: CritiqueFinding
         /// Nil when the quoted passage could not be found in the draft.
         let range: NSRange?
+        /// What the author has already decided about it, if anything.
+        var resolution: CritiqueResolution?
 
         var id: UUID { finding.id }
         var isAnchored: Bool { range != nil }
+        var isOutstanding: Bool { resolution == nil }
     }
 
     @Published private(set) var report: CritiqueReport?
@@ -35,6 +38,9 @@ final class CritiqueModel: ObservableObject {
     @Published private(set) var criticisedText: String?
 
     private let service = CritiqueService()
+    private var resolutions = CritiqueResolutions()
+    /// Where the decisions for the document being critiqued are kept.
+    private var documentURL: URL?
 
     var isPresented: Bool { report != nil || isRunning || failure != nil }
 
@@ -45,6 +51,32 @@ final class CritiqueModel: ObservableObject {
     }
 
     var anchoredCount: Int { items.filter(\.isAnchored).count }
+    var outstanding: [Item] { items.filter(\.isOutstanding) }
+    var resolvedCount: Int { items.count - outstanding.count }
+
+    /// How good the draft looks, counting only what is still outstanding.
+    ///
+    /// Answering everything returns it to 100 — the point of the two actions
+    /// is that the author has said what they meant to say, and the score
+    /// should agree with them rather than keep score against them.
+    var score: Int {
+        CritiqueScore.score(for: outstanding.map(\.finding))
+    }
+
+    var verdict: String { CritiqueScore.verdict(score) }
+
+    func setResolution(_ resolution: CritiqueResolution?, for id: UUID) {
+        guard let index = items.firstIndex(where: { $0.id == id }) else { return }
+        items[index].resolution = resolution
+        resolutions.set(resolution, for: items[index].finding)
+        CritiqueResolutionStore.save(resolutions, for: documentURL)
+        // A resolved finding stops shading its passage: the whole point of
+        // answering one is that it is no longer something to look at.
+        if resolution != nil, selectedFindingID == id {
+            selectedFindingID = nil
+        }
+        reorder()
+    }
 
     /// How many findings there are at each severity, worst first.
     ///
@@ -53,7 +85,7 @@ final class CritiqueModel: ObservableObject {
     /// wants to know before reading anything.
     var severityCounts: [(severity: CritiqueSeverity, count: Int)] {
         CritiqueSeverity.allCases.compactMap { severity in
-            let count = items.filter { $0.finding.severity == severity }.count
+            let count = outstanding.filter { $0.finding.severity == severity }.count
             return count > 0 ? (severity, count) : nil
         }
     }
@@ -67,14 +99,19 @@ final class CritiqueModel: ObservableObject {
     /// one where two passages overlap.
     var highlights: [(id: UUID, range: NSRange, severity: CritiqueSeverity)] {
         items
+            .filter(\.isOutstanding)
             .compactMap { item in
                 item.range.map { (item.id, $0, item.finding.severity) }
             }
             .sorted { $0.severity.rank > $1.severity.rank }
     }
 
-    func run(on text: String) {
+    func run(on text: String, documentURL: URL?) {
         guard !isRunning else { return }
+        if self.documentURL != documentURL {
+            self.documentURL = documentURL
+            resolutions = CritiqueResolutionStore.load(for: documentURL)
+        }
         isRunning = true
         failure = nil
         Task { [weak self] in
@@ -117,6 +154,11 @@ final class CritiqueModel: ObservableObject {
             anchors.map { ($0.findingID, $0.range) },
             uniquingKeysWith: { first, _ in first }
         )
+        // A finding the author has already answered arrives answered. Without
+        // this every re-run resurrects every dismissal, and the feature nags
+        // at somebody who told it not to.
+        resolutions.prune(keeping: report.findings)
+        CritiqueResolutionStore.save(resolutions, for: documentURL)
         self.report = report
         // Ordered by where they are in the document, not by severity.
         //
@@ -129,10 +171,32 @@ final class CritiqueModel: ObservableObject {
         //
         // A finding whose quote was not found has no position, so it goes last
         // rather than to the top, which is where an unset offset would put it.
-        items = report.findings
-            .map { Item(finding: $0, range: byID[$0.id] ?? nil) }
+        items = report.findings.map {
+            Item(
+                finding: $0,
+                range: byID[$0.id] ?? nil,
+                resolution: resolutions.resolution(for: $0)
+            )
+        }
+        reorder()
+        criticisedText = text
+        isRunning = false
+        failure = nil
+        selectedFindingID = nil
+    }
+
+    /// Outstanding first in reading order, answered ones after them.
+    ///
+    /// Answered findings stay in the list rather than disappearing, because a
+    /// decision the author cannot see is a decision they cannot take back —
+    /// and because "I already dealt with that" is worth being able to check.
+    private func reorder() {
+        items = items
             .enumerated()
             .sorted { left, right in
+                let leftDone = !left.element.isOutstanding
+                let rightDone = !right.element.isOutstanding
+                if leftDone != rightDone { return rightDone }
                 let leftAt = left.element.range?.location ?? Int.max
                 let rightAt = right.element.range?.location ?? Int.max
                 if leftAt != rightAt { return leftAt < rightAt }
@@ -141,10 +205,6 @@ final class CritiqueModel: ObservableObject {
                 return left.offset < right.offset
             }
             .map(\.element)
-        criticisedText = text
-        isRunning = false
-        failure = nil
-        selectedFindingID = nil
     }
 
     private func fail(with failure: CritiqueService.Failure) {

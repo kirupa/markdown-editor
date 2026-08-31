@@ -81,6 +81,27 @@ public enum EditorPaneGeometry {
         return min(maximumImageBleed, (availableWidth - columnWidth) / 2)
     }
 
+    /// Where the document's leading edge goes when a margin rail is open.
+    ///
+    /// Comments belong beside the passage they are about, so the rail sits in
+    /// the document's right margin rather than against the window's edge —
+    /// pinned to the edge it is a panel that happens to contain comments, and
+    /// on a wide screen the note ends up a hand's width from the sentence.
+    ///
+    /// The document does not move while the margin can hold the rail, which is
+    /// the usual case and the one that matters: opening comments should not
+    /// reflow what you are reading. Only when the margin is too narrow does the
+    /// document give way, and then by the least it can.
+    public static func documentInsetWithRail(
+        documentWidth: CGFloat,
+        railWidth: CGFloat,
+        totalWidth: CGFloat
+    ) -> CGFloat {
+        let centred = max(0, (totalWidth - documentWidth) / 2)
+        guard centred < railWidth else { return centred }
+        return max(0, totalWidth - documentWidth - railWidth)
+    }
+
     /// The widest a picture may be drawn: the full page.
     public static func maximumImageWidth(
         measure: CGFloat,

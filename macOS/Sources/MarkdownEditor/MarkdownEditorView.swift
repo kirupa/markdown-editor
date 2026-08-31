@@ -125,16 +125,25 @@ struct MarkdownEditorView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                    // Beside the document, never over it: the comments are
-                    // about words the author needs to keep reading.
-                    if critique.isPresented {
+                    // In Rich Text the rail is laid out *inside* the preview,
+                    // in the document's own margin — see
+                    // `ResizableRichTextPreview`. Here it would be against the
+                    // window's edge, a hand's width from the sentence it is
+                    // about on a wide screen. The other two modes fill the row,
+                    // so for them the row's trailing edge *is* beside the
+                    // document.
+                    if critique.isPresented, session.viewMode != .rich {
                         Divider()
                         CritiqueSidebar(
                             critique: critique,
                             colorTheme: colorTheme,
                             isStale: critique.isStale(against: document.text),
-                            onRerun: { critique.run(on: document.text) }
+                            onRerun: { critique.run(on: document.text, documentURL: fileURL) }
                         )
+                        // The rail carries its own width. Without this it took
+                        // `maxWidth: .infinity` from its own layout and ate
+                        // half the window.
+                        .frame(width: Layout.railWidth)
                         .transition(.move(edge: .trailing))
                     }
                     }
@@ -321,7 +330,7 @@ struct MarkdownEditorView: View {
     /// Start a critique of the document as it stands.
     private func startCritique() {
         guard !critique.isRunning else { return }
-        critique.run(on: document.text)
+        critique.run(on: document.text, documentURL: fileURL)
     }
 
     private func clampedExplorerWidth(
@@ -365,11 +374,22 @@ private struct ResizableRichTextPreview: View {
             )
             let pageWidth = visibleWidth + 2 * bleed
 
+            // With comments open the document stops being centred and is
+            // placed so the rail lands in its right margin — but only as far
+            // as it has to move. On a wide window it does not move at all.
+            let railWidth = critique.isPresented ? Layout.railWidth : 0
+            let leadingInset = EditorPaneGeometry.documentInsetWithRail(
+                documentWidth: pageWidth,
+                railWidth: railWidth,
+                totalWidth: geometry.size.width
+            )
+
             HStack(spacing: 0) {
                 // Y-8: centered on the window. The gripper hangs outside the
                 // measure as an overlay so that reaching for it cannot itself
                 // shift the text it resizes.
                 Spacer(minLength: 0)
+                    .frame(width: leadingInset)
 
                 RichTextEditor(
                     text: $text,
@@ -414,6 +434,17 @@ private struct ResizableRichTextPreview: View {
                     // At the column's trailing edge, not the page's: it
                     // resizes the column, so that is where it has to be.
                     .offset(x: Layout.gripperWidth - bleed)
+                }
+
+                if critique.isPresented {
+                    CritiqueSidebar(
+                        critique: critique,
+                        colorTheme: colorTheme,
+                        isStale: critique.isStale(against: text),
+                        onRerun: { critique.run(on: text, documentURL: documentURL) }
+                    )
+                    .frame(width: Layout.railWidth)
+                    .transition(.move(edge: .trailing))
                 }
 
                 Spacer(minLength: 0)
@@ -544,6 +575,8 @@ private enum Layout {
     static let defaultPreviewWidth: CGFloat = 700
     static let maximumPreviewWidth: CGFloat = 1_100
     static let gripperWidth: CGFloat = 12
+    /// The comments rail, including the gutter between it and the document.
+    static let railWidth: CGFloat = 316
     static let keyboardResizeStep: CGFloat = 20
 
     /// The inset the rendered pane gives its text container, each side.
