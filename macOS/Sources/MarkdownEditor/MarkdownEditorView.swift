@@ -91,7 +91,8 @@ struct MarkdownEditorView: View {
                             SourceTextEditor(
                                 text: $document.text,
                                 session: session,
-                                colorTheme: colorTheme
+                                colorTheme: colorTheme,
+                                critique: critique
                             )
                         case .split:
                             HSplitView {
@@ -112,7 +113,8 @@ struct MarkdownEditorView: View {
                                 SourceTextEditor(
                                     text: $document.text,
                                     session: session,
-                                    colorTheme: colorTheme
+                                    colorTheme: colorTheme,
+                                    critique: critique
                                 )
                                 .frame(
                                     minWidth: Layout.minimumSplitPaneWidth,

@@ -7,6 +7,12 @@ struct SourceTextEditor: NSViewRepresentable {
     @Binding var text: String
     let session: MarkdownEditorSession
     let colorTheme: EditorColorTheme
+    /// The critique whose passages are shaded in this pane, if any.
+    ///
+    /// A critique is written *about the Markdown*, so this pane needs no
+    /// conversion — the ranges it is given are already the ranges it holds.
+    /// The rendered pane is the one that has to translate.
+    @ObservedObject var critique: CritiqueModel
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
@@ -34,6 +40,9 @@ struct SourceTextEditor: NSViewRepresentable {
         textView.textContainer?.widthTracksTextView = true
         scrollView.documentView = textView
 
+        textView.didClickCritiqueHighlight = { [weak coordinator = context.coordinator] id in
+            coordinator?.critique?.selectedFindingID = id
+        }
         textView.delegate = context.coordinator
         textView.allowsUndo = true
         textView.isRichText = false
@@ -90,6 +99,7 @@ struct SourceTextEditor: NSViewRepresentable {
         guard let textView = scrollView.documentView as? NSTextView else {
             return
         }
+        defer { context.coordinator.applyCritique(critique, to: textView) }
 
         context.coordinator.text = $text
         let themeChanged = context.coordinator.colorTheme != colorTheme
@@ -182,6 +192,50 @@ struct SourceTextEditor: NSViewRepresentable {
         /// styling. Selection changes AppKit makes during that are not the
         /// writer moving the caret.
         private var isRestyling = false
+        weak var critique: CritiqueModel?
+        private var shownHighlights: [RichMarkdownTextView.CritiqueHighlight] = []
+        private var scrolledToFinding: UUID?
+
+        /// Shade the passages the critique points at, and follow its selection.
+        ///
+        /// Re-applied on every update rather than only when the list changes,
+        /// because re-styling replaces the text storage and takes the layout
+        /// manager's temporary attributes with it. Without that the highlights
+        /// vanish on the next keystroke.
+        func applyCritique(_ critique: CritiqueModel, to textView: NSTextView) {
+            self.critique = critique
+            guard let markdownView = textView as? RichMarkdownTextView else {
+                return
+            }
+            let highlights = critique.highlights.map {
+                id, range, severity in
+                RichMarkdownTextView.CritiqueHighlight(
+                    id: id,
+                    range: range,
+                    colour: critique.selectedFindingID == id
+                        ? severity.selectedHighlight
+                        : severity.highlight
+                )
+            }
+            if highlights != shownHighlights {
+                shownHighlights = highlights
+                markdownView.critiqueHighlights = highlights
+            } else {
+                markdownView.redrawCritiqueHighlights()
+            }
+
+            // Only once per selection, or opening a card would keep dragging
+            // this pane back while the author read somewhere else.
+            guard critique.selectedFindingID != scrolledToFinding else { return }
+            scrolledToFinding = critique.selectedFindingID
+            guard
+                let id = critique.selectedFindingID,
+                let range = critique.item(withID: id)?.range
+            else {
+                return
+            }
+            markdownView.scrollRangeToVisible(range)
+        }
 
         init(
             text: Binding<String>,

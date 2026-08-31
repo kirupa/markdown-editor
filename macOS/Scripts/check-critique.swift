@@ -276,6 +276,7 @@ struct CheckCritique {
         app.setActivationPolicy(.accessory)
 
         checkHighlightsAndClicking()
+        checkTheSourcePaneShadesToo()
         checkTheRailRenders()
 
         // The live half costs credits and half a minute. Everything above is
@@ -524,7 +525,13 @@ func checkTheRailRenders() {
     /// header slides up into its place when it is missing — so "something is
     /// drawn at the top" passes either way, which it did. The sparkles mark is
     /// the one accent-coloured thing up there.
-    func accentPixels(fromTop top: CGFloat, height: CGFloat) -> Int {
+    /// Returned in *points squared*, not pixels.
+    ///
+    /// A backing store is 1x or 2x depending on what the window ended up on,
+    /// and a threshold in raw pixels quietly means four times as much on one
+    /// as on the other — measured here as 77 against 18 for the same rail,
+    /// which failed the check by changing nothing but the order of the checks.
+    func accentPixels(fromTop top: CGFloat, height: CGFloat) -> Double {
         let firstRow = Int(top * scale)
         let lastRow = min(rep.pixelsHigh, Int((top + height) * scale))
         guard firstRow < lastRow else { return 0 }
@@ -539,17 +546,18 @@ func checkTheRailRenders() {
                 }
             }
         }
-        return found
+        // Sampled every second column, so each hit stands for two pixels.
+        return Double(found) * 2 / Double(scale * scale)
     }
 
     let accent = accentPixels(fromTop: 0, height: 34)
     if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
-        print("  accent pixels in the header band: \(accent)")
+        print("  accent mark in the header band: \(Int(accent))pt²  (scale \(scale))")
     }
     check(
         "the header is drawn, mark and all",
-        accent > 40,
-        "only \(accent) accent-coloured pixels at the top of the rail"
+        accent > 15,
+        "only \(Int(accent))pt² of accent colour at the top of the rail"
     )
     /// The widest unbroken run of non-background pixels in a band, in points.
     ///
@@ -590,6 +598,112 @@ func checkTheRailRenders() {
         "a stale critique says so rather than drifting quietly",
         noticeRun > 150,
         "widest run was \(Int(noticeRun))pt, which is text, not a panel"
+    )
+}
+
+/// The Markdown pane shades the same passages, without converting anything.
+///
+/// A critique is written about the source, so this pane's ranges *are* the
+/// critique's ranges. Worth checking rather than assuming: the pane opens
+/// alongside the rail in Split and on its own in Markdown mode, and a rail of
+/// comments beside a pane that highlights nothing is the feature half working.
+@MainActor
+func checkTheSourcePaneShadesToo() {
+    print("")
+    print("Shading the Markdown pane")
+
+    let source = """
+        # Understanding Caching
+
+        Caching is important because the cache stores data for later reads.
+        """
+    let view = RichMarkdownTextView(frame: NSRect(x: 0, y: 0, width: 700, height: 400))
+    view.textContainerInset = NSSize(width: 18, height: 16)
+    view.textContainer?.containerSize = NSSize(
+        width: 664, height: CGFloat.greatestFiniteMagnitude
+    )
+    view.textContainer?.widthTracksTextView = true
+    view.isVerticallyResizable = true
+    MarkdownSourceStyler.apply(
+        source, to: view, colorTheme: EditorColorTheme(color: .blue, mode: .light)
+    )
+    let window = NSWindow(
+        contentRect: view.frame, styleMask: [.borderless],
+        backing: .buffered, defer: false
+    )
+    window.contentView = view
+    window.orderBack(nil)
+    view.layoutSubtreeIfNeeded()
+    view.layoutManager?.ensureLayout(for: view.textContainer!)
+
+    check(
+        "the Markdown pane holds the source exactly",
+        view.string == source,
+        "it holds something else"
+    )
+
+    let finding = CritiqueFinding(
+        severity: .high, category: "Clarity and precision",
+        location: "paragraph 2", quote: "the cache stores data", why: "Vague."
+    )
+    guard let range = CritiqueAnchoring.range(for: finding, in: source) else {
+        check("the quote anchors in the source", false)
+        return
+    }
+    // No conversion here, unlike the rendered pane: the ranges are the same.
+    check(
+        "the range needs no conversion for this pane",
+        (view.string as NSString).substring(with: range) == finding.quote,
+        "it points somewhere else"
+    )
+
+    view.critiqueHighlights = [
+        .init(id: finding.id, range: range, colour: finding.severity.highlight)
+    ]
+    let shaded = view.layoutManager?.temporaryAttribute(
+        .backgroundColor, atCharacterIndex: range.location, effectiveRange: nil
+    )
+    check("the passage is shaded in the Markdown pane", shaded != nil)
+
+    var clicked: UUID?
+    view.didClickCritiqueHighlight = { clicked = $0 }
+    let box = view.layoutManager!.boundingRect(
+        forGlyphRange: view.layoutManager!.glyphRange(
+            forCharacterRange: range, actualCharacterRange: nil
+        ),
+        in: view.textContainer!
+    )
+    view.raiseCritiqueComment(
+        at: CGPoint(
+            x: box.midX + view.textContainerInset.width,
+            y: box.midY + view.textContainerInset.height
+        )
+    )
+    check(
+        "clicking it raises the comment",
+        clicked == finding.id,
+        clicked == nil ? "nothing was raised" : "the wrong comment"
+    )
+
+    // Everything above exercises the text view, which both panes share — so
+    // it would pass with the Markdown pane not wired to a critique at all.
+    // Whether the pane *asks* for any of this is only decidable by reading it.
+    let paneSource = (try? String(
+        contentsOf: URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/MarkdownEditor/SourceTextEditor.swift"),
+        encoding: .utf8
+    )) ?? ""
+    check(
+        "the Markdown pane asks for the shading on every update",
+        paneSource.contains("applyCritique(critique, to: textView)"),
+        "SourceTextEditor never applies a critique"
+    )
+    check(
+        "and reports clicks on it",
+        paneSource.contains("didClickCritiqueHighlight"),
+        "SourceTextEditor never reports a click on a shaded passage"
     )
 }
 
