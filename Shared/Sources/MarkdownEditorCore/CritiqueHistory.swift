@@ -88,10 +88,6 @@ public struct CritiqueHistory: Equatable, Sendable, Codable {
             revisions.removeSubrange(Self.limit...)
         }
     }
-
-    public mutating func remove(id: UUID) {
-        revisions.removeAll { $0.id == id }
-    }
 }
 
 /// How a revision is named in the list.

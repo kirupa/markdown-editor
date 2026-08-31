@@ -59,12 +59,6 @@ enum CritiqueTypography {
         return .system(size: size, weight: bold ? .semibold : .regular)
     }
 
-    /// Whether the hand is available at all, so the rail can space itself for
-    /// whichever face it actually gets.
-    static var hasHand: Bool {
-        familyChain.contains { NSFont(name: $0, size: 12) != nil }
-    }
-
     // MARK: - The labels
 
     /// The face the rail's own words are set in — the score, the severities,

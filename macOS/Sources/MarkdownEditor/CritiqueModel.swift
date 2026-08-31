@@ -117,13 +117,6 @@ final class CritiqueModel: ObservableObject {
         apply(revision.report, for: currentText, record: false)
     }
 
-    func deleteShownRevision() {
-        guard let id = shownRevisionID else { return }
-        history.remove(id: id)
-        CritiqueHistoryStore.save(history, for: documentURL)
-        show(revision: nil)
-    }
-
     /// Whether the document has been edited since the critique was written.
     /// Told the draft as it stands, so anything measured against "now" is.
     func noteCurrentText(_ text: String) {
