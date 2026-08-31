@@ -27,6 +27,8 @@ final class CritiqueModel: ObservableObject {
     @Published private(set) var report: CritiqueReport?
     @Published private(set) var items: [Item] = []
     @Published private(set) var isRunning = false
+    /// What the critique is doing, while it is doing it.
+    @Published private(set) var progress: CritiqueProgress?
     @Published private(set) var failure: CritiqueService.Failure?
     /// Which card is raised, and which highlight is drawn strongly.
     @Published var selectedFindingID: UUID?
@@ -39,13 +41,97 @@ final class CritiqueModel: ObservableObject {
 
     private let service = CritiqueService()
     private var resolutions = CritiqueResolutions()
+    @Published private(set) var history = CritiqueHistory()
+    /// Which revision is on screen. Nil means the newest.
+    @Published private(set) var shownRevisionID: UUID?
+    /// The draft as it is now, so an old critique can be re-anchored to it.
+    private var currentText = ""
     /// Where the decisions for the document being critiqued are kept.
     private var documentURL: URL?
 
-    var isPresented: Bool { report != nil || isRunning || failure != nil }
+    var isPresented: Bool {
+        report != nil || isRunning || failure != nil || !history.isEmpty
+    }
+
+    /// The revision being shown, when it is not the newest.
+    var shownRevision: CritiqueRevision? { history.revision(withID: shownRevisionID) }
+
+    /// How many of the shown critique's notes still point at something in the
+    /// draft **as it is now**.
+    ///
+    /// The honest measure of an old critique's worth: not how long ago it was,
+    /// but how much of the draft it described is still there.
+    ///
+    /// Re-anchored rather than read off `items`, whose ranges were worked out
+    /// against the text as it stood when the critique was applied. Those are
+    /// exactly the numbers that stop being true the moment the draft moves,
+    /// which is the situation this is here to describe.
+    var stillApplyingCount: Int {
+        guard let report else { return 0 }
+        return CritiqueAnchoring.anchor(report.findings, in: currentText)
+            .filter(\.isAnchored)
+            .count
+    }
+
+    /// Opens the history for a document without running anything.
+    ///
+    /// Called when a document is opened, so past critiques are there to read
+    /// rather than only after somebody runs a new one.
+    func attach(to documentURL: URL?, text: String) {
+        currentText = text
+        guard self.documentURL != documentURL else { return }
+        self.documentURL = documentURL
+        resolutions = CritiqueResolutionStore.load(for: documentURL)
+        history = CritiqueHistoryStore.load(for: documentURL)
+        report = nil
+        items = []
+        shownRevisionID = nil
+        failure = nil
+        // Opening a document with a saved critique shows it, rather than an
+        // empty panel beside a history badge saying two exist. It is anchored
+        // against the draft as it is now, so it is immediately honest about
+        // how much of itself still applies.
+        if let latest = history.latest {
+            apply(latest.report, for: text, record: false)
+            criticisedText = latest.documentText
+        }
+    }
+
+    /// Puts an earlier critique on screen, anchored against the draft as it is
+    /// **now** rather than as it was.
+    ///
+    /// That is the whole point of being able to look back. Re-anchoring is what
+    /// makes an old critique honest about itself: the notes whose sentences
+    /// survive still highlight, and the ones whose sentences have been
+    /// rewritten say so instead of pointing at whatever now sits at that
+    /// offset.
+    func show(revision id: UUID?) {
+        guard let id, let revision = history.revision(withID: id) else {
+            shownRevisionID = nil
+            if let latest = history.latest {
+                apply(latest.report, for: currentText, record: false)
+            }
+            return
+        }
+        shownRevisionID = id
+        apply(revision.report, for: currentText, record: false)
+    }
+
+    func deleteShownRevision() {
+        guard let id = shownRevisionID else { return }
+        history.remove(id: id)
+        CritiqueHistoryStore.save(history, for: documentURL)
+        show(revision: nil)
+    }
 
     /// Whether the document has been edited since the critique was written.
+    /// Told the draft as it stands, so anything measured against "now" is.
+    func noteCurrentText(_ text: String) {
+        currentText = text
+    }
+
     func isStale(against text: String) -> Bool {
+        if let shown = shownRevision { return shown.isStale(against: text) }
         guard let criticisedText else { return false }
         return criticisedText != text
     }
@@ -108,16 +194,17 @@ final class CritiqueModel: ObservableObject {
 
     func run(on text: String, documentURL: URL?) {
         guard !isRunning else { return }
-        if self.documentURL != documentURL {
-            self.documentURL = documentURL
-            resolutions = CritiqueResolutionStore.load(for: documentURL)
-        }
+        attach(to: documentURL, text: text)
+        currentText = text
         isRunning = true
         failure = nil
+        progress = CritiqueProgress(stage: .starting)
         Task { [weak self] in
             guard let self else { return }
             do {
-                let report = try await service.critique(document: text)
+                let report = try await service.critique(document: text) { update in
+                    Task { @MainActor [weak self] in self?.progress = update }
+                }
                 self.apply(report, for: text)
             } catch let error as CritiqueService.Failure {
                 self.fail(with: error)
@@ -132,6 +219,7 @@ final class CritiqueModel: ObservableObject {
     func cancel() {
         service.cancel()
         isRunning = false
+        progress = nil
     }
 
     func dismiss() {
@@ -148,7 +236,11 @@ final class CritiqueModel: ObservableObject {
         apply(report, for: text)
     }
 
-    private func apply(_ report: CritiqueReport, for text: String) {
+    private func apply(
+        _ report: CritiqueReport,
+        for text: String,
+        record: Bool = true
+    ) {
         let anchors = CritiqueAnchoring.anchor(report.findings, in: text)
         let byID = Dictionary(
             anchors.map { ($0.findingID, $0.range) },
@@ -157,8 +249,13 @@ final class CritiqueModel: ObservableObject {
         // A finding the author has already answered arrives answered. Without
         // this every re-run resurrects every dismissal, and the feature nags
         // at somebody who told it not to.
-        resolutions.prune(keeping: report.findings)
-        CritiqueResolutionStore.save(resolutions, for: documentURL)
+        if record {
+            resolutions.prune(keeping: report.findings)
+            CritiqueResolutionStore.save(resolutions, for: documentURL)
+            history.add(CritiqueRevision(report: report, documentText: text))
+            CritiqueHistoryStore.save(history, for: documentURL)
+            shownRevisionID = nil
+        }
         self.report = report
         // Ordered by where they are in the document, not by severity.
         //
@@ -179,8 +276,11 @@ final class CritiqueModel: ObservableObject {
             )
         }
         reorder()
-        criticisedText = text
+        criticisedText = record
+            ? text
+            : (shownRevision?.documentText ?? criticisedText ?? text)
         isRunning = false
+        progress = nil
         failure = nil
         selectedFindingID = nil
     }
@@ -210,6 +310,7 @@ final class CritiqueModel: ObservableObject {
     private func fail(with failure: CritiqueService.Failure) {
         self.failure = failure
         isRunning = false
+        progress = nil
         report = nil
         items = []
     }

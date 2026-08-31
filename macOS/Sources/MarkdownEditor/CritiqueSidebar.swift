@@ -64,6 +64,31 @@ enum CritiqueTypography {
     static var hasHand: Bool {
         familyChain.contains { NSFont(name: $0, size: 12) != nil }
     }
+
+    // MARK: - The labels
+
+    /// The face the rail's own words are set in — the score, the severities,
+    /// the section headings, the field names.
+    ///
+    /// Monomaniac One: condensed, technical, and nothing like handwriting,
+    /// which is the point. The rail says two kinds of thing and they should
+    /// not look alike — what the reviewer wrote is in their hand, and what the
+    /// editor is telling you *about* that note is in the editor's voice.
+    ///
+    /// Bundled rather than assumed, under the SIL Open Font License, because
+    /// macOS does not ship it. Loaded from the app's own `Fonts` directory via
+    /// `ATSApplicationFontsPath`, so it is available to this process without
+    /// being installed into anybody's Font Book.
+    static let labelFamily = "MonomaniacOne-Regular"
+
+    static func label(_ size: CGFloat) -> Font {
+        if let font = NSFont(name: labelFamily, size: size) {
+            return Font(font)
+        }
+        // Condensed and heavy is the shape that matters, so the fallback is
+        // the nearest the system has rather than the plain body face.
+        return .system(size: size, weight: .heavy).width(.condensed)
+    }
 }
 
 /// The rail of comments down the right-hand side.
@@ -95,11 +120,16 @@ struct CritiqueSidebar: View {
         HStack(spacing: 8) {
             Image(systemName: "sparkles")
                 .foregroundStyle(colorTheme.accent)
-            Text("Critique")
-                .font(CritiqueTypography.hand(16, bold: true))
+            Text("CRITIQUE")
+                .font(CritiqueTypography.label(17))
+                .tracking(0.5)
                 .foregroundStyle(colorTheme.primaryText)
 
             Spacer()
+
+            if !critique.history.isEmpty, !critique.isRunning {
+                revisionMenu
+            }
 
             if critique.isRunning {
                 Button("Stop") { critique.cancel() }
@@ -130,6 +160,49 @@ struct CritiqueSidebar: View {
         .padding(.vertical, 10)
     }
 
+    /// The list of earlier critiques.
+    ///
+    /// Named by when they were written rather than by number, because that is
+    /// what anybody is actually looking for — "the one before I rewrote the
+    /// opening" — and carrying their score, so the list reads as a record of
+    /// whether the draft is getting better.
+    private var revisionMenu: some View {
+        Menu {
+            Button {
+                critique.show(revision: nil)
+            } label: {
+                Label(
+                    "Latest",
+                    systemImage: critique.shownRevisionID == nil ? "checkmark" : ""
+                )
+            }
+            if critique.history.revisions.count > 1 {
+                Divider()
+            }
+            ForEach(critique.history.revisions.dropFirst()) { revision in
+                Button {
+                    critique.show(revision: revision.id)
+                } label: {
+                    Text(
+                        "\(CritiqueRevisionLabel.relative(revision.date))"
+                            + "  ·  \(revision.score)/100"
+                    )
+                }
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: "clock.arrow.circlepath")
+                Text("\(critique.history.revisions.count)")
+                    .font(CritiqueTypography.label(12))
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .foregroundStyle(colorTheme.secondaryText)
+        .help("Earlier critiques of this document")
+    }
+
     @ViewBuilder
     private var content: some View {
         if critique.isRunning {
@@ -144,34 +217,80 @@ struct CritiqueSidebar: View {
     }
 
     private var running: some View {
-        VStack(spacing: 12) {
-            Spacer()
-            ProgressView()
-                .controlSize(.small)
-            Text("Reading the whole draft…")
-                .font(CritiqueTypography.hand(14))
-                .foregroundStyle(colorTheme.secondaryText)
-            // Honest about the wait. A critique reads the piece twice before
-            // it says anything, and a spinner with no expectation attached
-            // reads as a hang after about ten seconds.
-            Text("This usually takes half a minute.")
-                .font(CritiqueTypography.hand(13))
-                .foregroundStyle(colorTheme.secondaryText.opacity(0.8))
-            Spacer()
+        let progress = critique.progress ?? CritiqueProgress(stage: .starting)
+        return VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(progress.stage.headline.uppercased())
+                    .font(CritiqueTypography.label(15))
+                    .tracking(0.5)
+                    .foregroundStyle(colorTheme.primaryText)
+                Text(progress.stage.explanation)
+                    .font(CritiqueTypography.hand(14))
+                    .foregroundStyle(colorTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // The four stages, so the wait has a shape. A spinner says only
+            // that something is happening; this says which part, and how much
+            // of it is behind you.
+            HStack(spacing: 4) {
+                ForEach(CritiqueProgress.Stage.allCases, id: \.self) { stage in
+                    Capsule()
+                        .fill(
+                            stage.rawValue <= progress.stage.rawValue
+                                ? colorTheme.accent
+                                : colorTheme.secondaryText.opacity(0.18)
+                        )
+                        .frame(height: 5)
+                }
+            }
+            .animation(.easeOut(duration: 0.3), value: progress.stage)
+
+            if progress.findingsSoFar > 0 {
+                Text(
+                    progress.findingsSoFar == 1
+                        ? "1 NOTE SO FAR"
+                        : "\(progress.findingsSoFar) NOTES SO FAR"
+                )
+                .font(CritiqueTypography.label(13))
+                .foregroundStyle(colorTheme.accent)
+                .contentTransition(.numericText())
+                .animation(.easeOut(duration: 0.2), value: progress.findingsSoFar)
+            }
+
+            // The model's own account of what it is looking at. Shown as-is:
+            // it is a better progress message than anything this code could
+            // invent, because it is actually true.
+            if let detail = progress.detail, progress.stage == .reading {
+                Text(detail)
+                    .font(CritiqueTypography.hand(13))
+                    .foregroundStyle(colorTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 8)
+                    .overlay(alignment: .leading) {
+                        Rectangle()
+                            .fill(colorTheme.accent.opacity(0.35))
+                            .frame(width: 2)
+                    }
+                    .transition(.opacity)
+            }
+
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 20)
-        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.top, 14)
+        .animation(.easeOut(duration: 0.2), value: progress.stage)
     }
 
     private func failure(_ failure: CritiqueService.Failure) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(failure.errorDescription ?? "Something went wrong.")
-                .font(CritiqueTypography.hand(15, bold: true))
+                .font(CritiqueTypography.hand(16, bold: true))
                 .foregroundStyle(colorTheme.primaryText)
             if let suggestion = failure.recoverySuggestion {
                 Text(suggestion)
-                    .font(CritiqueTypography.hand(14))
+                    .font(CritiqueTypography.hand(15))
                     .foregroundStyle(colorTheme.secondaryText)
                     .textSelection(.enabled)
             }
@@ -187,7 +306,7 @@ struct CritiqueSidebar: View {
         VStack(spacing: 8) {
             Spacer()
             Text("No critique yet.")
-                .font(CritiqueTypography.hand(14))
+                .font(CritiqueTypography.hand(15))
                 .foregroundStyle(colorTheme.secondaryText)
             Spacer()
         }
@@ -204,7 +323,7 @@ struct CritiqueSidebar: View {
 
                     if critique.items.isEmpty {
                         Text("No high or medium problems found.")
-                            .font(CritiqueTypography.hand(14))
+                            .font(CritiqueTypography.hand(15))
                             .foregroundStyle(colorTheme.secondaryText)
                             .padding(.horizontal, 12)
                     }
@@ -236,7 +355,7 @@ struct CritiqueSidebar: View {
                             ForEach(report.repeatedPatterns) { pattern in
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(pattern.pattern)
-                                        .font(CritiqueTypography.hand(14))
+                                        .font(CritiqueTypography.hand(15))
                                     if !pattern.locations.isEmpty {
                                         Text(pattern.locations.joined(separator: " · "))
                                             .font(.system(size: 11))
@@ -250,7 +369,7 @@ struct CritiqueSidebar: View {
                     if !report.keep.isEmpty {
                         section("Keep") {
                             ForEach(Array(report.keep.enumerated()), id: \.offset) { _, note in
-                                Text(note).font(CritiqueTypography.hand(14))
+                                Text(note).font(CritiqueTypography.hand(15))
                             }
                         }
                     }
@@ -279,28 +398,71 @@ struct CritiqueSidebar: View {
     private var scoreBanner: some View {
         let score = critique.score
         let tint = scoreTint(score)
-        return HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text("\(score)")
-                .font(CritiqueTypography.hand(32, bold: true))
-                .foregroundStyle(tint)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Awesomeness")
-                    .font(CritiqueTypography.hand(13))
-                    .foregroundStyle(colorTheme.secondaryText)
-                Text(critique.verdict)
-                    .font(CritiqueTypography.hand(14, bold: true))
-                    .foregroundStyle(colorTheme.primaryText)
+        return VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .lastTextBaseline, spacing: 8) {
+                Text("\(score)")
+                    .font(CritiqueTypography.label(46))
+                    .foregroundStyle(tint)
+                    .contentTransition(.numericText())
+                Text("/100")
+                    .font(CritiqueTypography.label(15))
+                    .foregroundStyle(tint.opacity(0.55))
+                Spacer(minLength: 0)
+                VStack(alignment: .trailing, spacing: 1) {
+                    Text("AWESOMENESS")
+                        .font(CritiqueTypography.label(11))
+                        .tracking(0.8)
+                        .foregroundStyle(colorTheme.secondaryText)
+                    Text(critique.verdict)
+                        .font(CritiqueTypography.label(13))
+                        .foregroundStyle(colorTheme.primaryText)
+                        .multilineTextAlignment(.trailing)
+                }
             }
-            Spacer(minLength: 0)
+
+            // A bar, because a number alone gives nothing to compare against.
+            // It fills as findings are answered, which is the whole loop: the
+            // rail is a list of things to do, and this is how much is left.
+            GeometryReader { bar in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(colorTheme.secondaryText.opacity(0.16))
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [tint.opacity(0.75), tint],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: max(4, bar.size.width * CGFloat(score) / 100))
+                }
+            }
+            .frame(height: 7)
+
+            if critique.resolvedCount > 0 {
+                Text(
+                    critique.outstanding.isEmpty
+                        ? "Everything answered."
+                        : "\(critique.resolvedCount) of \(critique.items.count) answered."
+                )
+                .font(CritiqueTypography.label(11))
+                .foregroundStyle(colorTheme.secondaryText)
+            }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 8).fill(tint.opacity(0.12))
+            RoundedRectangle(cornerRadius: 10)
+                .fill(tint.opacity(0.10))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .strokeBorder(tint.opacity(0.28), lineWidth: 1)
+                )
         )
         .padding(.horizontal, 12)
-        .animation(.easeOut(duration: 0.25), value: score)
+        .animation(.easeOut(duration: 0.3), value: score)
     }
 
     private func scoreTint(_ score: Int) -> Color {
@@ -319,7 +481,8 @@ struct CritiqueSidebar: View {
     private var answeredHeading: some View {
         HStack(spacing: 6) {
             Text("ANSWERED")
-                .font(.system(size: 10, weight: .semibold))
+                .font(CritiqueTypography.label(12))
+                .tracking(0.5)
                 .foregroundStyle(colorTheme.secondaryText)
             Rectangle()
                 .fill(colorTheme.separator.opacity(0.7))
@@ -334,11 +497,22 @@ struct CritiqueSidebar: View {
         // the words move, the offsets it was anchored to are pointing at
         // whatever now sits there — so this says so rather than letting the
         // highlights drift quietly out of true.
-        Label(
-            "The document has changed since this critique. Passages may no longer line up.",
-            systemImage: "exclamationmark.triangle"
-        )
-        .font(CritiqueTypography.hand(13))
+        //
+        // And it says *how much* still applies, which is the useful number: an
+        // old critique is worth reading in proportion to how much of the draft
+        // it described is still there, not to how recent it is.
+        let total = critique.items.count
+        let applying = critique.stillApplyingCount
+        let when = critique.shownRevision.map {
+            CritiqueRevisionLabel.relative($0.date).lowercased()
+        }
+        let opening = when.map { "Written \($0), and the draft has changed since." }
+            ?? "The draft has changed since this critique."
+        let survivors = total > 0
+            ? " \(applying) of \(total) notes still point at something."
+            : ""
+        return Label(opening + survivors, systemImage: "clock.badge.exclamationmark")
+        .font(CritiqueTypography.hand(15))
         .foregroundStyle(colorTheme.secondaryText)
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -353,12 +527,12 @@ struct CritiqueSidebar: View {
         VStack(alignment: .leading, spacing: 6) {
             if !report.jobRead.isEmpty {
                 Text(report.jobRead)
-                    .font(CritiqueTypography.hand(13))
+                    .font(CritiqueTypography.hand(15))
                     .foregroundStyle(colorTheme.secondaryText)
             }
             if !report.overall.isEmpty {
                 Text(report.overall)
-                    .font(CritiqueTypography.hand(14))
+                    .font(CritiqueTypography.hand(15))
                     .foregroundStyle(colorTheme.primaryText)
             }
             if !critique.severityCounts.isEmpty {
@@ -368,8 +542,9 @@ struct CritiqueSidebar: View {
                             Circle()
                                 .fill(entry.severity.tint)
                                 .frame(width: 6, height: 6)
-                            Text("\(entry.count) \(entry.severity.label.lowercased())")
-                                .font(.system(size: 11))
+                            Text("\(entry.count) \(entry.severity.label)")
+                                .font(CritiqueTypography.label(12))
+                                .textCase(.uppercase)
                                 .foregroundStyle(colorTheme.secondaryText)
                         }
                     }
@@ -383,7 +558,7 @@ struct CritiqueSidebar: View {
                 Text(
                     "\(unanchored) of \(critique.items.count) could not be matched to a passage."
                 )
-                .font(CritiqueTypography.hand(13))
+                .font(CritiqueTypography.hand(15))
                 .foregroundStyle(colorTheme.secondaryText)
             }
         }
@@ -398,7 +573,8 @@ struct CritiqueSidebar: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title.uppercased())
-                .font(.system(size: 10, weight: .semibold))
+                .font(CritiqueTypography.label(12))
+                .tracking(0.5)
                 .foregroundStyle(colorTheme.secondaryText)
                 .padding(.top, 8)
             body()
@@ -433,7 +609,7 @@ private struct CritiqueCard: View {
         if isAnswered {
             Button("Undo") { onResolve(nil) }
                 .buttonStyle(.plain)
-                .font(.system(size: 10, weight: .medium))
+                .font(CritiqueTypography.label(12))
                 .foregroundStyle(colorTheme.accent)
         } else {
             Button {
@@ -443,13 +619,13 @@ private struct CritiqueCard: View {
                     .labelStyle(.titleAndIcon)
             }
             .buttonStyle(.plain)
-            .font(.system(size: 10, weight: .medium))
+            .font(CritiqueTypography.label(12))
             .foregroundStyle(colorTheme.accent)
             .help("I have fixed this. It will not be raised again.")
 
             Button("Dismiss") { onResolve(.dismissed) }
                 .buttonStyle(.plain)
-                .font(.system(size: 10, weight: .medium))
+                .font(CritiqueTypography.label(12))
                 .foregroundStyle(colorTheme.secondaryText)
                 .help("I am not doing this. It will not be raised again.")
         }
@@ -464,18 +640,19 @@ private struct CritiqueCard: View {
                 Text(
                     item.resolution.map(\.label) ?? finding.severity.label
                 )
-                .font(.system(size: 10, weight: .semibold))
+                .font(CritiqueTypography.label(12))
+                .textCase(.uppercase)
                 .foregroundStyle(
                     isAnswered ? colorTheme.secondaryText : finding.severity.tint
                 )
                 Text(finding.category)
-                    .font(.system(size: 10))
+                    .font(CritiqueTypography.label(12))
                     .foregroundStyle(colorTheme.secondaryText)
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 if finding.needsVerification {
                     Text("needs verification")
-                        .font(.system(size: 9, weight: .medium))
+                        .font(CritiqueTypography.label(10))
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1)
                         .background(
@@ -491,7 +668,7 @@ private struct CritiqueCard: View {
                 // as theirs — re-lettering it in the reviewer's hand makes the
                 // draft look like it already says something it does not.
                 Text(finding.quote)
-                    .font(.system(size: 11.5))
+                    .font(.system(size: 13))
                     .italic()
                     .foregroundStyle(colorTheme.secondaryText)
                     .lineLimit(isSelected ? nil : 2)
@@ -504,17 +681,18 @@ private struct CritiqueCard: View {
             }
 
             Text(finding.why)
-                .font(CritiqueTypography.hand(14))
+                .font(CritiqueTypography.hand(15))
                 .foregroundStyle(colorTheme.primaryText)
                 .fixedSize(horizontal: false, vertical: true)
 
             if let advice = finding.advice {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(finding.adviceLabel.uppercased())
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(CritiqueTypography.label(11))
+                        .tracking(0.4)
                         .foregroundStyle(colorTheme.secondaryText)
                     Text(advice)
-                        .font(CritiqueTypography.hand(14))
+                        .font(CritiqueTypography.hand(15))
                         .foregroundStyle(colorTheme.primaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -525,12 +703,12 @@ private struct CritiqueCard: View {
                 if item.isAnchored {
                     if !finding.location.isEmpty {
                         Text(finding.location)
-                            .font(.system(size: 10))
+                            .font(CritiqueTypography.label(11))
                             .foregroundStyle(colorTheme.secondaryText)
                     }
                 } else {
                     Label("Not found in the document", systemImage: "questionmark.circle")
-                        .font(.system(size: 10))
+                        .font(CritiqueTypography.label(11))
                         .foregroundStyle(colorTheme.secondaryText)
                 }
 

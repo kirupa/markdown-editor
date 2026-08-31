@@ -63,6 +63,8 @@ final class CritiqueService {
     }
 
     private var running: Process?
+    /// The report assembled from the stream, handed back once it has finished.
+    private var streamedReply = ""
 
     var isRunning: Bool { running?.isRunning == true }
 
@@ -104,14 +106,23 @@ final class CritiqueService {
     }
 
     /// Runs a critique and returns the report, or throws something explainable.
-    func critique(document: String) async throws -> CritiqueReport {
+    ///
+    /// `onProgress` is called as the CLI announces what it is doing. Half a
+    /// minute of spinner reads as a hang; half a minute of "reading the draft,
+    /// then writing eleven notes" reads as work.
+    func critique(
+        document: String,
+        onProgress: @escaping (CritiqueProgress) -> Void = { _ in }
+    ) async throws -> CritiqueReport {
         let trimmed = document.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw Failure.documentIsEmpty }
         guard let cli = Self.locateCLI() else { throw Failure.cliNotFound }
 
-        let reply = try await run(cli: cli, prompt: CritiqueRequest.prompt(
-            forDocument: document
-        ))
+        let reply = try await run(
+            cli: cli,
+            prompt: CritiqueRequest.prompt(forDocument: document),
+            onProgress: onProgress
+        )
         do {
             return try CritiqueReportDecoder.decode(reply)
         } catch {
@@ -131,7 +142,11 @@ final class CritiqueService {
         running = nil
     }
 
-    private func run(cli: URL, prompt: String) async throws -> String {
+    private func run(
+        cli: URL,
+        prompt: String,
+        onProgress: @escaping (CritiqueProgress) -> Void
+    ) async throws -> String {
         let process = Process()
         process.executableURL = cli
         process.arguments = [
@@ -150,6 +165,11 @@ final class CritiqueService {
             "--disable-builtin-mcps",
             "--no-color",
             "--log-level", "none",
+            // One JSON object per line, which is what makes it possible to say
+            // what is happening rather than only that something is. The reply
+            // is assembled from the same stream, so there is no second source
+            // to disagree with it.
+            "--output-format", "json",
         ]
 
         let output = Pipe()
@@ -167,15 +187,48 @@ final class CritiqueService {
         }
         running = process
 
-        let (stdout, stderr) = await Task.detached {
-            let out = output.fileHandleForReading.readDataToEndOfFile()
+        // Read as it arrives rather than at the end. `readDataToEndOfFile`
+        // would give the same bytes half a minute later, with nothing to say
+        // in the meantime.
+        let stream = AsyncStream<CritiqueProgress> { continuation in
+            Task.detached {
+                var reader = CritiqueProgressReader()
+                var buffer = Data()
+                let handle = output.fileHandleForReading
+                while true {
+                    let chunk = handle.availableData
+                    if chunk.isEmpty { break }
+                    buffer.append(chunk)
+                    while let newline = buffer.firstIndex(of: UInt8(ascii: "\n")) {
+                        let line = String(
+                            decoding: buffer[buffer.startIndex..<newline], as: UTF8.self
+                        )
+                        buffer.removeSubrange(buffer.startIndex...newline)
+                        if let update = reader.read(line: line) {
+                            continuation.yield(update)
+                        }
+                    }
+                }
+                if !buffer.isEmpty {
+                    _ = reader.read(line: String(decoding: buffer, as: UTF8.self))
+                }
+                await MainActor.run { self.streamedReply = reader.reply }
+                continuation.finish()
+            }
+        }
+        for await update in stream {
+            onProgress(update)
+        }
+
+        let (stderr, _) = await Task.detached { () -> (Data, Void) in
             let err = errors.fileHandleForReading.readDataToEndOfFile()
             process.waitUntilExit()
-            return (out, err)
+            return (err, ())
         }.value
 
         running = nil
-        let reply = String(decoding: stdout, as: UTF8.self)
+        let reply = streamedReply
+        streamedReply = ""
         guard process.terminationStatus == 0 else {
             if process.terminationReason == .uncaughtSignal {
                 throw Failure.cancelled

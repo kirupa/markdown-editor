@@ -233,6 +233,9 @@ struct MarkdownEditorView: View {
             if let fileURL {
                 RecentDocumentsModel.shared.record(fileURL)
             }
+            // Past critiques are there to read the moment a document opens,
+            // not only once somebody runs a new one.
+            critique.attach(to: fileURL, text: document.text)
             session.startWatchingFile(text: document.text)
             autosaveController.onSave = { [session] in
                 session.externalChange.noteSaved()
@@ -240,6 +243,7 @@ struct MarkdownEditorView: View {
         }
         .onChange(of: fileURL) { newFileURL in
             autosaveController.cancelPendingSave()
+            critique.attach(to: newFileURL, text: document.text)
             session.fileURL = newFileURL
             if let newFileURL {
                 RecentDocumentsModel.shared.record(newFileURL)
@@ -249,6 +253,7 @@ struct MarkdownEditorView: View {
             session.startWatchingFile(text: document.text)
         }
         .onChange(of: document.text) { newText in
+            critique.noteCurrentText(newText)
             session.externalChange.noteEditorText(newText)
             // Writing during an unresolved conflict would overwrite the other
             // app's version seconds after pointing it out.
@@ -576,7 +581,12 @@ private enum Layout {
     static let maximumPreviewWidth: CGFloat = 1_100
     static let gripperWidth: CGFloat = 12
     /// The comments rail, including the gutter between it and the document.
-    static let railWidth: CGFloat = 316
+    ///
+    /// Wide enough that a category name — "Logic and credibility" is the
+    /// longest — fits beside its severity without truncating. At the earlier
+    /// 300 it did not, and a label that ends in an ellipsis is a label that
+    /// has stopped doing its job.
+    static let railWidth: CGFloat = 356
     static let keyboardResizeStep: CGFloat = 20
 
     /// The inset the rendered pane gives its text container, each side.

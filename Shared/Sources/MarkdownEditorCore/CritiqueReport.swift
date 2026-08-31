@@ -12,7 +12,7 @@ import Foundation
 /// kind of input that is worth being suspicious of: the decoding below is
 /// deliberately forgiving, because a report that is 90% right should still be
 /// shown rather than thrown away over one unexpected field.
-public struct CritiqueReport: Equatable, Sendable {
+public struct CritiqueReport: Equatable, Sendable, Codable {
     /// One sentence naming the apparent reader, purpose, and container.
     public let jobRead: String
     /// The strongest working choice and the largest quality risk.
@@ -46,7 +46,7 @@ public struct CritiqueReport: Equatable, Sendable {
 ///
 /// Severity is about reader impact, not how hard the edit is: a missing "not"
 /// in a safety instruction is high, and a whole bland paragraph may be medium.
-public enum CritiqueSeverity: String, CaseIterable, Equatable, Sendable {
+public enum CritiqueSeverity: String, CaseIterable, Equatable, Sendable, Codable {
     case high
     case medium
     case low
@@ -77,7 +77,7 @@ public enum CritiqueSeverity: String, CaseIterable, Equatable, Sendable {
 }
 
 /// One thing worth changing, anchored to the passage that proves it.
-public struct CritiqueFinding: Equatable, Identifiable, Sendable {
+public struct CritiqueFinding: Equatable, Identifiable, Sendable, Codable {
     public let id: UUID
     public let severity: CritiqueSeverity
     /// The narrowest useful label, as the skill names them — "Grammar and
@@ -139,7 +139,7 @@ public struct CritiqueFinding: Equatable, Identifiable, Sendable {
 }
 
 /// Something the draft does more than once.
-public struct CritiquePattern: Equatable, Identifiable, Sendable {
+public struct CritiquePattern: Equatable, Identifiable, Sendable, Codable {
     public let id: UUID
     public let pattern: String
     public let locations: [String]

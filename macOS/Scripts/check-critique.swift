@@ -277,6 +277,7 @@ struct CheckCritique {
 
         checkHighlightsAndClicking()
         checkTheSourcePaneShadesToo()
+        checkTheHistory()
         checkTheRailRenders()
 
         // The live half costs credits and half a minute. Everything above is
@@ -300,8 +301,18 @@ struct CheckCritique {
         print("Running a real critique (this costs credits and takes ~30s)")
         let service = CritiqueService()
         let report: CritiqueReport
+        var stagesSeen: [CritiqueProgress.Stage] = []
+        var sawCommentary = false
+        var peakFindings = 0
         do {
-            report = try await service.critique(document: draft)
+            report = try await service.critique(document: draft) { update in
+                if stagesSeen.last != update.stage {
+                    stagesSeen.append(update.stage)
+                    print("    · \(update.stage.headline)")
+                }
+                if update.stage == .reading, update.detail != nil { sawCommentary = true }
+                peakFindings = max(peakFindings, update.findingsSoFar)
+            }
         } catch {
             print("  FAIL the critique did not complete — \(error.localizedDescription)")
             if let failure = error as? CritiqueService.Failure,
@@ -313,6 +324,29 @@ struct CheckCritique {
         }
 
         check("the reply decoded into a report", true)
+
+        // The whole point of streaming: the wait has to be legible. A run that
+        // only ever reported one stage is a spinner with extra steps.
+        check(
+            "the run reported more than one stage",
+            stagesSeen.count >= 2,
+            "saw \(stagesSeen.map(\.headline).joined(separator: ", "))"
+        )
+        check(
+            "it reached the writing stage",
+            stagesSeen.contains(.writing),
+            "never announced writing the report"
+        )
+        check(
+            "it showed the model's own account of what it was reading",
+            sawCommentary,
+            "no commentary during the reading stage"
+        )
+        check(
+            "notes were counted as they streamed in",
+            peakFindings > 0,
+            "the count never moved off zero"
+        )
         check(
             "it read the draft's job",
             !report.jobRead.isEmpty,
@@ -478,7 +512,7 @@ func checkTheRailRenders() {
         onRerun: {}
     )
     let host = NSHostingView(rootView: rail)
-    host.frame = NSRect(x: 0, y: 0, width: 300, height: 900)
+    host.frame = NSRect(x: 0, y: 0, width: 340, height: 900)
     let window = NSWindow(
         contentRect: host.frame, styleMask: [.borderless],
         backing: .buffered, defer: false
@@ -510,8 +544,9 @@ func checkTheRailRenders() {
         "Nothing supports it.",
         "Generic opening.",
         "No running example.",
-        // The answered card names its answer where its severity used to be.
-        "Dismissed",
+        // The answered card names its answer where its severity used to be,
+        // and the rail's labels are set uppercase.
+        "DISMISSED",
     ] {
         check(
             "the rail shows \"\(expected)\"",
@@ -795,6 +830,107 @@ func checkTheSourcePaneShadesToo() {
         "and reports clicks on it",
         paneSource.contains("didClickCritiqueHighlight"),
         "SourceTextEditor never reports a click on a shaded passage"
+    )
+}
+
+/// Looking back at an earlier critique.
+///
+/// The point of keeping them is not nostalgia: an old critique read against a
+/// rewritten draft has to be honest about which of its notes still point at
+/// something. That is only answerable because the draft it was written about
+/// is kept beside it.
+@MainActor
+func checkTheHistory() {
+    print("")
+    print("Keeping earlier critiques")
+
+    let firstDraft = "Alpha paragraph.\n\nBeta paragraph with a claim in it."
+    let report = CritiqueReport(
+        jobRead: "A note.", overall: "Fine.",
+        findings: [
+            CritiqueFinding(
+                severity: .high, category: "Logic and credibility",
+                location: "paragraph 2", quote: "a claim in it",
+                why: "Nothing supports it."
+            ),
+            CritiqueFinding(
+                severity: .low, category: "Voice and tone",
+                location: "paragraph 1", quote: "Alpha paragraph.",
+                why: "Generic opening."
+            ),
+        ]
+    )
+
+    var history = CritiqueHistory()
+    history.add(CritiqueRevision(report: report, documentText: firstDraft))
+    check("a critique is kept", history.revisions.count == 1)
+
+    // A re-run over an unchanged draft replaces rather than stacks: two
+    // critiques of the same text are two opinions about one thing, and a
+    // history full of them buries the revisions that actually differ.
+    history.add(CritiqueRevision(report: report, documentText: firstDraft))
+    check(
+        "re-running on an unchanged draft does not stack a duplicate",
+        history.revisions.count == 1,
+        "\(history.revisions.count) entries"
+    )
+
+    let rewritten = "Alpha paragraph.\n\nBeta paragraph, rewritten entirely."
+    history.add(CritiqueRevision(report: report, documentText: rewritten))
+    check("a critique of a changed draft is a new entry", history.revisions.count == 2)
+    check("newest first", history.latest?.documentText == rewritten)
+
+    // The measure that matters: how much of the old critique still applies.
+    let old = history.revisions.last!
+    check(
+        "an old critique knows the draft has moved on",
+        old.isStale(against: rewritten),
+        "it thinks it is current"
+    )
+    check(
+        "and says how many of its notes still point at something",
+        old.stillApplying(to: rewritten) == 1,
+        "\(old.stillApplying(to: rewritten)) of 2 — the rewritten sentence should be gone"
+    )
+    check(
+        "all of them, against the draft it was written about",
+        old.stillApplying(to: firstDraft) == 2
+    )
+
+    // Kept, but not forever: each entry carries a copy of the draft.
+    var many = CritiqueHistory()
+    for index in 0..<(CritiqueHistory.limit + 5) {
+        many.add(
+            CritiqueRevision(report: report, documentText: "draft \(index)")
+        )
+    }
+    check(
+        "the history is bounded",
+        many.revisions.count == CritiqueHistory.limit,
+        "\(many.revisions.count) entries"
+    )
+    check("and keeps the newest", many.latest?.documentText == "draft \(CritiqueHistory.limit + 4)")
+
+    // It has to survive a relaunch, which means surviving a round trip.
+    let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+    let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+    do {
+        let data = try encoder.encode(history)
+        let reloaded = try decoder.decode(CritiqueHistory.self, from: data)
+        check("a history survives being written and read back", reloaded == history)
+    } catch {
+        check("a history survives being written and read back", false, "\(error)")
+    }
+
+    // The filename is derived from the path, and has to be the same next
+    // launch. Swift's own hashing is seeded per process, so a name built from
+    // it would be written once and never found again.
+    let once = CritiqueHistoryStore.digest("/Users/someone/Draft.md")
+    let twice = CritiqueHistoryStore.digest("/Users/someone/Draft.md")
+    check("the same document names the same file every time", once == twice)
+    check(
+        "and a different document names a different one",
+        once != CritiqueHistoryStore.digest("/Users/someone/Other.md")
     )
 }
 

@@ -27,6 +27,14 @@ cp "$ROOT/Packaging/Info.plist" "$APP_DIR/Contents/Info.plist"
 cp "$ROOT/Packaging/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns"
 cp "$ROOT/Packaging/MarkdownDocument.icns" "$APP_DIR/Contents/Resources/MarkdownDocument.icns"
 
+# Fonts the app needs and macOS does not ship. Declared in Info.plist as
+# ATSApplicationFontsPath, so they are available to this process without being
+# installed for the whole machine — nothing an editor does should add a font to
+# somebody's Font Book.
+mkdir -p "$APP_DIR/Contents/Resources/Fonts"
+cp "$ROOT/Packaging/Fonts/"*.ttf "$APP_DIR/Contents/Resources/Fonts/"
+cp "$ROOT/Packaging/Fonts/"*OFL.txt "$APP_DIR/Contents/Resources/Fonts/"
+
 # SwiftPM emits one <Package>_<Target>.bundle beside the executable for every
 # target that declares `resources:`, and `Bundle.module` looks for it in
 # Contents/Resources. No target declares any today, so this copies nothing —
