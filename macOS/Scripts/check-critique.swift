@@ -14,6 +14,7 @@
 
 import AppKit
 import Foundation
+import SwiftUI
 import MarkdownEditorCore
 import MarkdownEditorUI
 
@@ -275,6 +276,7 @@ struct CheckCritique {
         app.setActivationPolicy(.accessory)
 
         checkHighlightsAndClicking()
+        checkTheRailRenders()
 
         // The live half costs credits and half a minute. Everything above is
         // free, so it runs either way.
@@ -368,6 +370,227 @@ struct CheckCritique {
 
         finish()
     }
+}
+
+/// Renders the rail for real.
+///
+/// Everything else here checks the model behind the rail. This checks the rail
+/// itself, which otherwise has no coverage at all: a `ForEach` over a
+/// non-unique id, a missing environment value, or a layout that resolves to
+/// nothing are all runtime faults that compile perfectly and would first be
+/// seen by whoever opened the feature.
+@MainActor
+func checkTheRailRenders() {
+    print("")
+    print("Rendering the rail")
+
+    let model = CritiqueModel()
+    let source = "Alpha paragraph.\n\nBeta paragraph with a claim in it."
+    model.applyForChecking(
+        CritiqueReport(
+            jobRead: "A short note for developers.",
+            overall: "Clear, but the claim needs support.",
+            findings: [
+                CritiqueFinding(
+                    severity: .high, category: "Logic and credibility",
+                    needsVerification: true, location: "paragraph 2",
+                    quote: "a claim in it", why: "Nothing supports it.",
+                    direction: "Cite a source."
+                ),
+                CritiqueFinding(
+                    severity: .low, category: "Voice and tone",
+                    location: "paragraph 1",
+                    quote: "Alpha paragraph.", why: "Generic opening.",
+                    fix: "Name the subject."
+                ),
+                // One the model paraphrased, so it cannot be anchored. The rail
+                // has to render it too, saying so, rather than dropping it.
+                CritiqueFinding(
+                    severity: .medium, category: "Structure and pacing",
+                    location: "whole draft",
+                    quote: "words that are not in the draft",
+                    why: "No running example."
+                ),
+            ],
+            repeatedPatterns: [
+                CritiquePattern(pattern: "Unsupported claims", locations: ["paragraph 2"])
+            ],
+            keep: ["The piece is short."]
+        ),
+        for: source
+    )
+
+    let rail = CritiqueSidebar(
+        critique: model,
+        colorTheme: EditorColorTheme(color: .blue, mode: .light),
+        isStale: true,
+        onRerun: {}
+    )
+    let host = NSHostingView(rootView: rail)
+    host.frame = NSRect(x: 0, y: 0, width: 300, height: 900)
+    let window = NSWindow(
+        contentRect: host.frame, styleMask: [.borderless],
+        backing: .buffered, defer: false
+    )
+    window.contentView = host
+    window.orderBack(nil)
+    host.layoutSubtreeIfNeeded()
+
+    let size = host.fittingSize
+    check(
+        "the rail lays out to a real size",
+        size.width > 0 && size.height > 0,
+        "fitting size was \(size)"
+    )
+
+    // Read the text back out of the view tree, which is the only way to know
+    // the cards actually rendered rather than merely being asked to.
+    var shown: [String] = []
+    func collect(_ view: NSView) {
+        if let text = view as? NSTextField { shown.append(text.stringValue) }
+        if let value = view.accessibilityValue() as? String { shown.append(value) }
+        if let label = view.accessibilityLabel() { shown.append(label) }
+        view.subviews.forEach(collect)
+    }
+    collect(host)
+    let all = shown.joined(separator: "\n")
+
+    for expected in [
+        "Nothing supports it.",
+        "Generic opening.",
+        "No running example.",
+    ] {
+        check(
+            "the rail shows \"\(expected)\"",
+            all.contains(expected),
+            "not found among \(shown.count) labels"
+        )
+    }
+    check(
+        "an unanchored finding still gets a card, and says so",
+        all.contains("Not found in the document"),
+        "the unanchored card is missing or silent"
+    )
+    // Drawn to a bitmap rather than captured from the screen: this has to
+    // work on a locked machine, where every screen capture fails.
+    if let path = ProcessInfo.processInfo.environment["MDE_RAIL_PNG"],
+       let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+        host.cacheDisplay(in: host.bounds, to: rep)
+        try? rep.representation(using: .png, properties: [:])?
+            .write(to: URL(fileURLWithPath: path))
+        print("  wrote \(path)")
+    }
+    if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
+        print("---- labels ----")
+        for label in shown where !label.isEmpty { print("  · \(label)") }
+        print("----------------")
+    }
+    // The header and the stale notice are drawn by SwiftUI without a backing
+    // `NSTextField`, so the walk above cannot see them however well they
+    // render — two checks here failed while the rail was demonstrably correct.
+    // They are checked from the drawn pixels instead, which is the only thing
+    // that can tell "not rendered" from "not reachable from here".
+    guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else {
+        check("the rail can be drawn", false)
+        return
+    }
+    host.cacheDisplay(in: host.bounds, to: rep)
+    let scale = CGFloat(rep.pixelsWide) / host.bounds.width
+
+    /// How much of a band is not the background colour.
+    func inkedFraction(fromTop top: CGFloat, height: CGFloat) -> Double {
+        let firstRow = Int(top * scale)
+        let lastRow = min(rep.pixelsHigh, Int((top + height) * scale))
+        guard firstRow < lastRow else { return 0 }
+        let background = rep.colorAt(x: 4, y: firstRow)?.usingColorSpace(.sRGB)
+        var inked = 0, total = 0
+        for y in firstRow..<lastRow {
+            for x in stride(from: 0, to: rep.pixelsWide, by: 2) {
+                guard let colour = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB),
+                      let background else { continue }
+                total += 1
+                let difference = abs(colour.redComponent - background.redComponent)
+                    + abs(colour.greenComponent - background.greenComponent)
+                    + abs(colour.blueComponent - background.blueComponent)
+                if difference > 0.08 { inked += 1 }
+            }
+        }
+        return total == 0 ? 0 : Double(inked) / Double(total)
+    }
+
+    /// How many pixels in a band are clearly the theme's accent colour.
+    ///
+    /// Keyed on the accent rather than on ink, because whatever is below the
+    /// header slides up into its place when it is missing — so "something is
+    /// drawn at the top" passes either way, which it did. The sparkles mark is
+    /// the one accent-coloured thing up there.
+    func accentPixels(fromTop top: CGFloat, height: CGFloat) -> Int {
+        let firstRow = Int(top * scale)
+        let lastRow = min(rep.pixelsHigh, Int((top + height) * scale))
+        guard firstRow < lastRow else { return 0 }
+        var found = 0
+        for y in firstRow..<lastRow {
+            for x in stride(from: 0, to: rep.pixelsWide, by: 2) {
+                guard let colour = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB)
+                else { continue }
+                if colour.blueComponent - colour.redComponent > 0.30,
+                   colour.blueComponent > 0.55 {
+                    found += 1
+                }
+            }
+        }
+        return found
+    }
+
+    let accent = accentPixels(fromTop: 0, height: 34)
+    if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
+        print("  accent pixels in the header band: \(accent)")
+    }
+    check(
+        "the header is drawn, mark and all",
+        accent > 40,
+        "only \(accent) accent-coloured pixels at the top of the rail"
+    )
+    /// The widest unbroken run of non-background pixels in a band, in points.
+    ///
+    /// Text never gives a long run — it is letters with gaps. A filled panel
+    /// does. This is what tells the stale notice apart from the summary line
+    /// that moves up into its place when the notice is not there: checking for
+    /// *any* ink in the band passes either way, which it did.
+    func widestRun(fromTop top: CGFloat, height: CGFloat) -> CGFloat {
+        let firstRow = Int(top * scale)
+        let lastRow = min(rep.pixelsHigh, Int((top + height) * scale))
+        guard firstRow < lastRow else { return 0 }
+        let background = rep.colorAt(x: 2, y: firstRow)?.usingColorSpace(.sRGB)
+        var widest = 0
+        for y in firstRow..<lastRow {
+            var run = 0
+            for x in 0..<rep.pixelsWide {
+                guard let colour = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB),
+                      let background else { continue }
+                let difference = abs(colour.redComponent - background.redComponent)
+                    + abs(colour.greenComponent - background.greenComponent)
+                    + abs(colour.blueComponent - background.blueComponent)
+                if difference > 0.03 {
+                    run += 1
+                    widest = max(widest, run)
+                } else {
+                    run = 0
+                }
+            }
+        }
+        return CGFloat(widest) / scale
+    }
+
+    let noticeRun = widestRun(fromTop: 36, height: 52)
+    if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
+        print("  widest run in the notice band: \(Int(noticeRun))pt")
+    }
+    check(
+        "a stale critique says so rather than drifting quietly",
+        noticeRun > 150,
+        "widest run was \(Int(noticeRun))pt, which is text, not a panel"
+    )
 }
 
 @MainActor
