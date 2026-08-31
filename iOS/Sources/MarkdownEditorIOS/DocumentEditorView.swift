@@ -242,7 +242,27 @@ struct DocumentEditorView: View {
             text: $document.text,
             controller: controller,
             documentURL: documentURL,
-            theme: theme
+            theme: theme,
+            onResizeImage: { range, size in
+                controller.apply(
+                    { text, _ in
+                        MarkdownFormatting.setImageSize(
+                            in: text, range: range, size: size
+                        )
+                    },
+                    to: $document.text
+                )
+            },
+            onMoveImage: { range, destination in
+                controller.apply(
+                    { text, _ in
+                        MarkdownFormatting.moveImage(
+                            in: text, range: range, to: destination
+                        )
+                    },
+                    to: $document.text
+                )
+            }
         )
     }
 

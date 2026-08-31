@@ -83,8 +83,9 @@ suite that runs in a third of a second and one that needs a UI.
    it, and `documentId` is the single function that decides whether your build
    and the existing ones can see each other's documents.
 2. **Formatting.** Port `MarkdownFormatting.swift` against
-   `Contract/formatting.jsonl`. 8,180 cases; expect the astral and CRLF
-   documents to find real bugs.
+   `Contract/formatting.jsonl`. 9,471 cases; expect the astral and CRLF
+   documents to find real bugs. `moveImage` is in there too — see
+   "[Direct manipulation of pictures](#direct-manipulation-of-pictures)".
 3. **Render model.** Port `MarkdownRenderModel.swift` against
    `Contract/render-model.json`. Do not skip the `source` ranges — the reading
    view is not usable without them.
@@ -184,6 +185,132 @@ All of these are specified in
 [Contract/README.md](../Contract/README.md#the-assets-convention). It is worth
 mirroring the web build's approach of making the test double enforce the rules,
 so a write the server would reject cannot pass the suite.
+
+## Direct manipulation of pictures
+
+Selecting a picture, resizing it by a corner, and dragging it somewhere else.
+This was built on macOS first, then iOS and the web. It took far longer than it
+should have, because five separate faults each looked like the same symptom —
+"the resize cursor doesn't work". Everything below is the cost of finding them,
+written down so the Windows port does not pay it again.
+
+### What the feature is
+
+| | Behaviour |
+| --- | --- |
+| Hover / touch a picture | A faint outline, and the four corner handles appear — **without a click**. The handles are the only thing saying the picture can be resized, so requiring a click first hides the affordance behind the knowledge of it. |
+| Pointer over the body | A **hand** (`grab`), not an arrow. An arrow only says "not text"; a hand says the thing can be picked up. |
+| Pointer over a corner | The matching **diagonal resize** cursor. |
+| Drag a corner | Resizes proportionally, previewed live, committed as **one** undoable edit on release. |
+| Drag the body | Moves the picture. A **rule across the column** marks where it will land and a **gap opens** to show it fitting there. |
+| Release | One undoable edit named *Move Image*. |
+
+### The shared pieces — do not re-derive these
+
+| Where | What |
+| --- | --- |
+| `MarkdownFormatting.moveImage` | The whole text transform. Covered by `Contract/formatting.jsonl` (451 `moveImage` cases). Port it and make the fixture pass before writing any UI. |
+| `EditorImageGeometry` | Handle rects, hit rects, the corner tie-break, `draggedWidth`. Pointer *and* touch variants. |
+| `MarkdownImageTag.proportionalSize` | Turning a dragged width into a written width/height pair. |
+
+Constants, all in `EditorImageGeometry`:
+
+| Name | Value | Why |
+| --- | --- | --- |
+| `handleSide` | 9pt | The dot that is *drawn*. |
+| `handleSlop` | 12pt | How far outside it a **pointer** still counts, giving a 33pt target. It was 4pt and users could not hit it. |
+| `touchTarget` | 44pt | The minimum a **finger** target may be. |
+| `overlayInset` | `handleSide/2 + handleSlop` | The overlay clips to its own bounds, so this must cover the *target*, not the dot. |
+| `minimumSide` | 24pt | The smallest a picture may be dragged to. |
+
+**Both hit rects are capped on small pictures.** Four fixed targets meet in the
+middle of anything narrow, leaving no body to take hold of — the picture could
+then be resized but never dragged, which is worse than a target that is hard to
+hit. A third of each side stays clear at every size. Without the cap a 24pt and
+a 32pt picture become all corner.
+
+### Traps, each of which cost real time
+
+These are platform-shaped, so the Windows equivalents will differ — but the
+*shape* of each mistake is the same anywhere.
+
+1. **A drop must land on a paragraph edge, never a soft-wrap point.**
+   `NSLayoutManager` line fragments are *visual* lines, so a wrapped
+   paragraph's fragment ends mid-sentence; taking its edge as an insertion
+   point produced `Ome![photo](a.png)ga paragraph.` from a drag aimed at the
+   gap above. Use whatever your text stack calls a **paragraph**, not a laid-out
+   line. Snap in the view *and* again in `moveImage`, so neither half can
+   reintroduce it alone.
+
+2. **The destination shifts when the picture is lifted out.** It is measured
+   against the document as it stands, but the image is removed before it is
+   re-inserted, so every offset after it moves left by what was taken.
+   Uncorrected, a forward drag lands one whole image reference past the mark —
+   **and only when dragging forwards**, which is the kind of bug that survives a
+   demo. Clamp the final offset too: uncorrected it is an out-of-bounds insert,
+   so it crashes rather than misplaces.
+
+3. **Do not offer a drop you will refuse.** The blank lines either side of a
+   picture are still where that picture is. Drawing a rule there promises a move
+   that releasing then declines to make. Treat the picture's own line plus the
+   blank run around it as one settled region.
+
+4. **The gap must span the whole text column.** It is an exclusion /
+   text-wrapping region, and it must be expressed in the *text container's*
+   coordinates. Converting the x offset as well as the y shifted the band left
+   by the container inset and left an uncovered strip exactly that wide down the
+   right-hand side, which the layout engine happily wrapped text into — so the
+   picture looked inset into the paragraph instead of dropped between two lines.
+
+5. **The gap must not chase its own effect.** It is what moved the text, so
+   re-deriving it on every pointer move from a layout it is already distorting
+   walks it down the page. Rebuild it only when the target paragraph changes,
+   and measure the target with the band removed.
+
+6. **A press must stay a click until it has clearly become a drag.** 4pt on a
+   pointer. On touch, use a **long press** instead: a short drag on a touch
+   screen is how the document is scrolled, so treating travel alone as a move
+   makes a document with pictures in it impossible to read.
+
+7. **Reaching for a handle must not take the handle away.** A handle is centred
+   *on* the corner, so half of it lies outside the picture. If "hovering" means
+   "over the picture", moving onto a handle ends the hover, hides the handles,
+   and the resize cursor never appears. Extend the hover region to the corners'
+   own hit rects — not a uniform halo, which lights the picture up when the
+   pointer is plainly beside it.
+
+8. **On Win32/WinUI, check who wins the cursor.** On AppKit the text view
+   re-asserted its I-beam on *every* mouse move, while the event that would have
+   corrected it only fired when the pointer crossed a registered rect boundary
+   — 6 times in 99 moves, measured. Inside a corner target no boundary is
+   crossed, so nothing re-asked and the I-beam stayed. The fix was to set the
+   shape on every move, after the base class had had its say. Whatever your
+   framework's `WM_SETCURSOR` equivalent does, **verify the cursor on screen**,
+   not what your code decided it should be.
+
+### How to check it, and how not to
+
+The single most useful lesson: **every check that asked "what does the code think
+the cursor should be?" passed while the app was visibly wrong.** The geometry was
+never the fault. Three separate "fixes" shipped on that evidence.
+
+- Test the **text transform** against `Contract/formatting.jsonl`. Pure, fast,
+  and it catches the offset and paragraph bugs above.
+- Test the **decision** — which edge a drop chooses — as a pure function over
+  rectangles. No UI framework needed. Assert every answer is a line boundary,
+  by sweeping the pointer down the whole document rather than sampling a point
+  you chose.
+- Test the **rendered result**, not a substring. A picture is inserted with a
+  blank line either side, so splicing it into "Omega" gives
+  `Ome\n\n![photo](a.png)\n\nga` — which passes a check for `Ome![photo]`
+  while the word is in two pieces. Assert the **words survived**.
+- Drive the **real entry point** and read the cursor the OS ends up holding.
+  Asking your own geometry function proves nothing.
+- If you photograph the screen: approach along a **realistic path**, not a
+  teleport, and beware that spawning a screenshot tool can cost more time than
+  the bug you are measuring. A locked screen also refuses region captures while
+  still allowing full-screen ones, which reads as a broken app rather than an
+  unavailable check.
 
 ## Validating the port
 

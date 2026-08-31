@@ -8,6 +8,8 @@
 export const CORE_TEST_MODULES = [
   './render-model.test.js',
   './formatting.test.js',
+  './move-image.test.js',
+  './drop-edge.test.js',
   './text-difference.test.js',
   './recent-documents.test.js',
   './saved-documents.test.js',
@@ -17,6 +19,7 @@ export const CORE_TEST_MODULES = [
   './image-cache.test.js',
   './image-tag.test.js',
   './contract-render.test.js',
+  './contract-move-image.test.js',
   './storage-mode.test.js',
   './keep-focus.test.js',
   './live.test.js',

@@ -748,6 +748,35 @@ body {
   cursor: nwse-resize;
 }
 
+/* Moving a picture (WI-24).
+
+   The pointer keeps a hand over a picture's body, so it reads as something to
+   pick up rather than somewhere to type. The corners keep their resize cursors,
+   which they must: a corner is a resize, not a move. */
+.me-image { cursor: grab; }
+.me-image--moving { cursor: grabbing; opacity: 0.45; }
+
+/* While a picture is being carried the pointer may travel anywhere, so the
+   grabbing cursor has to hold for the whole gesture. */
+[data-moving-image] .me-block,
+[data-moving-image] .me-image { cursor: grabbing; }
+
+/* The rule marking where the picture would land.
+
+   Drawn across the whole column rather than as a caret between two characters,
+   because that is the promise being made: a picture goes *between* two lines. A
+   caret here invites the drop it looks like it is offering, which on macOS
+   produced `Ome![photo](a.png)ga paragraph.` from a drag aimed at the gap
+   above. */
+.me-image-drop-line {
+  position: absolute;
+  z-index: 7;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--me-accent, #2f6fed);
+  pointer-events: none;
+}
+
 /* WI-17: the size panel, anchored under the image it describes. */
 .me-image-size {
   position: absolute;

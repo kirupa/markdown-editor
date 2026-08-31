@@ -15,6 +15,13 @@
 // Dragging does not rewrite the document on every pointer move. It resizes the
 // `img` element in place and commits once, on release, so a resize is a single
 // undoable edit rather than one per pixel of travel.
+//
+// Dragging the picture's *body* moves it to somewhere else in the document,
+// the same gesture the macOS build has. A picture goes between two lines, not
+// between two characters, so the drop is snapped to a paragraph boundary, shown
+// as a rule across the column, and a gap is opened to show the picture fitting
+// there. Both promises are kept by `moveImage` in the core, which snaps again
+// on the text — so neither half can reintroduce a mid-word splice alone.
 
 import { proportionalSize } from '../core/image-tag.js';
 
@@ -25,6 +32,13 @@ const MIN_DRAG_SIZE = 24;
 /** How far one arrow key press moves a handle, and with Shift held. */
 const KEY_STEP = 10;
 const KEY_STEP_FINE = 1;
+/**
+ * How far a press has to travel before it is a move rather than a click.
+ *
+ * Selecting a picture with a slightly unsteady hand must not rewrite the
+ * document, and a touch pointer wanders further than a mouse does.
+ */
+const MOVE_THRESHOLD = 5;
 
 // `grows` is the direction along x that makes the image bigger, so one
 // expression covers all four corners.
@@ -40,14 +54,60 @@ export class ImageSelection {
    * @param {HTMLElement} host - The element the frame and panel are positioned within.
    * @param {(range: {location:number,length:number}, size:{width:number|null,height:number|null}) => void} onResize
    */
-  constructor(host, onResize) {
+  constructor(host, onResize, onMove = null) {
     this._host = host;
     this._onResize = onResize;
+    this._onMove = onMove;
     this._image = null;
     this._drag = null;
+    this._move = null;
     this._frame = this._buildFrame();
     this._panel = this._buildPanel();
-    this._host.append(this._frame, this._panel);
+    this._dropLine = this._buildDropLine();
+    this._host.append(this._frame, this._panel, this._dropLine);
+  }
+
+  /**
+   * Begin a possible move from a press on the picture's body.
+   *
+   * Called by the surface's pointerdown, because the wrapper is not editable
+   * and the press has to be claimed before the caret goes anywhere. Returns
+   * true when a move is now being tracked.
+   */
+  beginMove(event, wrapper) {
+    if (!this._onMove || event.button !== 0 || !wrapper) return false;
+    const range = {
+      location: Number(wrapper.dataset.sourceLocation),
+      length: Number(wrapper.dataset.sourceLength),
+    };
+    if (!Number.isFinite(range.location) || !Number.isFinite(range.length)) return false;
+
+    this._move = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      range,
+      wrapper,
+      active: false,
+      destination: null,
+    };
+    const target = event.currentTarget ?? this._host;
+    const move = (e) => this._continueMove(e);
+    const end = (e) => {
+      target.removeEventListener('pointermove', move);
+      target.removeEventListener('pointerup', end);
+      target.removeEventListener('pointercancel', end);
+      this._endMove(e);
+    };
+    target.addEventListener('pointermove', move);
+    target.addEventListener('pointerup', end);
+    target.addEventListener('pointercancel', end);
+    return true;
+  }
+
+  /** Whether a picture is currently being carried. */
+  get isMoving() {
+    return this._move?.active === true;
   }
 
   /**
@@ -101,6 +161,121 @@ export class ImageSelection {
   /** Keep the controls over the image when the pane scrolls or is resized. */
   reposition() {
     if (this._image && !this._frame.hidden) this._position();
+  }
+
+  // ── Moving a picture ─────────────────────────────────────────────────────
+
+  _continueMove(event) {
+    const move = this._move;
+    if (!move || event.pointerId !== move.pointerId) return;
+
+    if (!move.active) {
+      const dx = event.clientX - move.startX;
+      const dy = event.clientY - move.startY;
+      if (Math.hypot(dx, dy) <= MOVE_THRESHOLD) return;
+      move.active = true;
+      // The handles belong to a picture sitting in the text. While it is being
+      // carried they would be drawn around where it used to be.
+      this._frame.hidden = true;
+      this._panel.hidden = true;
+      move.wrapper.classList.add('me-image--moving');
+      this._host.dataset.movingImage = 'true';
+    }
+
+    const boundary = this._dropBoundary(event.clientX, event.clientY, move);
+    move.destination = boundary?.location ?? null;
+    this._showDropLine(boundary);
+  }
+
+  _endMove(event) {
+    const move = this._move;
+    this._move = null;
+    this._showDropLine(null);
+    delete this._host.dataset.movingImage;
+    move?.wrapper?.classList.remove('me-image--moving');
+    if (!move?.active) return;
+    this._frame.hidden = false;
+    this._panel.hidden = false;
+    if (move.destination === null) return;
+    this._onMove(move.range, move.destination);
+  }
+
+  /**
+   * Where the picture would land: a source offset at a paragraph boundary, and
+   * the y in host coordinates to draw the rule at.
+   *
+   * A block element is one rendered line, so its top and bottom edges are the
+   * only places a picture can go between. Choosing the nearest *character*
+   * instead is what put a picture inside a word on macOS.
+   */
+  _dropBoundary(clientX, clientY, move) {
+    const blocks = [...this._host.querySelectorAll('.me-block[data-rendered-start]')];
+    if (blocks.length === 0) return null;
+
+    const chosen = chooseDropEdge(
+      blocks.map((block) => {
+        const rect = block.getBoundingClientRect();
+        return {
+          top: rect.top,
+          bottom: rect.bottom,
+          renderedStart: Number(block.dataset.renderedStart),
+          renderedEnd: Number(block.dataset.renderedEnd),
+        };
+      }),
+      clientY
+    );
+    if (chosen === null) return null;
+    const best = { below: chosen.below, edge: chosen.edge };
+    const rendered = chosen.rendered;
+    if (!Number.isFinite(rendered)) return null;
+    const location = this._renderedToSource(rendered);
+    if (location === null) return null;
+
+    // Landing where the picture already is, is not a move. Its own line and the
+    // blank lines either side of it are all "where it already is", so offering a
+    // drop there would promise something releasing then declines to do.
+    const start = move.range.location;
+    const end = move.range.location + move.range.length;
+    if (location >= start - 2 && location <= end + 2) return null;
+
+    const hostRect = this._host.getBoundingClientRect();
+    return {
+      location,
+      y: best.edge - hostRect.top + this._host.scrollTop,
+      left: 0,
+      width: this._host.clientWidth,
+    };
+  }
+
+  /** Map a rendered offset to a source offset, via the model. */
+  _renderedToSource(rendered) {
+    if (!this._model) return null;
+    const range = this._model.sourceRange({ location: rendered, length: 0 });
+    return range?.location ?? null;
+  }
+
+  /** The model the rendered pane was built from, needed to map offsets. */
+  setModel(model) {
+    this._model = model;
+  }
+
+  _buildDropLine() {
+    const line = document.createElement('div');
+    line.className = 'me-image-drop-line';
+    line.hidden = true;
+    line.contentEditable = 'false';
+    return line;
+  }
+
+  _showDropLine(boundary) {
+    if (!boundary) {
+      this._dropLine.hidden = true;
+      return;
+    }
+    this._dropLine.hidden = false;
+    this._dropLine.style.top = `${boundary.y}px`;
+    this._dropLine.style.left = `${boundary.left}px`;
+    this._dropLine.style.width = `${boundary.width}px`;
   }
 
   // ── Private ──────────────────────────────────────────────────────────────
@@ -374,4 +549,37 @@ function labelled(text, field) {
   caption.textContent = text;
   label.append(caption, field);
   return label;
+}
+
+/**
+ * Which line edge a drop at `pointerY` belongs to.
+ *
+ * Separated from the DOM so it can be checked without a browser: this is where
+ * the macOS build went wrong twice, and neither mistake is visible in a
+ * screenshot. Blocks are whole rendered lines, so their top and bottom edges
+ * are the only places a picture can go between.
+ *
+ * @param {{top:number,bottom:number,renderedStart:number,renderedEnd:number}[]} blocks
+ * @param {number} pointerY
+ * @returns {{below:boolean, edge:number, rendered:number}|null}
+ */
+export function chooseDropEdge(blocks, pointerY) {
+  let best = null;
+  for (const block of blocks) {
+    const height = block.bottom - block.top;
+    if (height === 0) continue;
+    const below = pointerY > block.top + height / 2;
+    const edge = below ? block.bottom : block.top;
+    const distance = Math.abs(pointerY - edge);
+    if (best === null || distance < best.distance) {
+      best = {
+        below,
+        edge,
+        distance,
+        rendered: below ? block.renderedEnd : block.renderedStart,
+      };
+    }
+  }
+  if (best === null) return null;
+  return { below: best.below, edge: best.edge, rendered: best.rendered };
 }

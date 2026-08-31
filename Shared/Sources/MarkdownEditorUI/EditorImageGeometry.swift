@@ -138,6 +138,45 @@ public enum EditorImageGeometry {
         return max(0, min(handleSlop, roomInward))
     }
 
+    /// Apple's minimum comfortable tap target, and the smallest a touch build
+    /// should make any corner.
+    ///
+    /// A pointer build can use a small target because the pointer is visible
+    /// and one pixel wide. A finger is neither: it covers roughly five times
+    /// the drawn dot and hides what it is over, so a touch build has to grow
+    /// the target rather than ask for precision nobody has.
+    public static let touchTarget: CGFloat = 44
+
+    /// The region a *finger* has to land in to take hold of `corner`.
+    ///
+    /// Capped exactly as the pointer version is, and for the same reason: four
+    /// fixed targets meet in the middle of a small picture, leaving no body to
+    /// take hold of, and a picture that can be resized but never moved is a
+    /// worse fault than a target that is hard to hit.
+    public static func touchHitRect(
+        _ corner: EditorImageCorner,
+        in imageFrame: CGRect
+    ) -> CGRect {
+        let drawn = handleRect(corner, in: imageFrame)
+        let shortest = min(imageFrame.width, imageFrame.height)
+        let roomInward = max(0, shortest / 3 - drawn.width / 2)
+        let grow = min(max(0, (touchTarget - drawn.width) / 2), roomInward)
+        return drawn.insetBy(dx: -grow, dy: -grow)
+    }
+
+    /// The corner a *finger* at `point` takes hold of, or nil for the text.
+    public static func touchCorner(
+        at point: CGPoint,
+        in imageFrame: CGRect
+    ) -> EditorImageCorner? {
+        EditorImageCorner.allCases
+            .filter { touchHitRect($0, in: imageFrame).contains(point) }
+            .min {
+                distanceSquared(from: point, to: handleRect($0, in: imageFrame))
+                    < distanceSquared(from: point, to: handleRect($1, in: imageFrame))
+            }
+    }
+
     /// The corner under `point`, or nil when the point belongs to the text.
     ///
     /// Nearest wins. On a picture small enough that two widened targets

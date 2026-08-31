@@ -396,6 +396,127 @@ export function setImageSize(text, range, size) {
 }
 
 /**
+ * Move the image occupying `range` so it becomes its own block at `destination`.
+ *
+ * Ported from `MarkdownFormatting.moveImage` in the Swift core, including the
+ * two rules that are easy to get wrong and were both real macOS bugs:
+ *
+ *  - `destination` is an offset into the *original* text, but the image is
+ *    removed before it is re-inserted, so every offset after it shifts left by
+ *    what was taken. Uncorrected, a forward move lands a whole image reference
+ *    past the intended point — and only when moving forwards.
+ *  - The destination is snapped to a paragraph boundary. Inserting at the
+ *    nearest character splices the picture into the middle of a word, which is
+ *    what the first macOS version did.
+ *
+ * @param {string} text
+ * @param {{ location: number, length: number }} range - the image reference
+ * @param {number} destination - offset in `text` to move it to
+ * @returns {{ text: string, selection: { location: number, length: number } }}
+ */
+export function moveImage(text, range, destination) {
+  const sel = clampRange(range, text.length);
+  const target = Math.min(Math.max(destination, 0), text.length);
+
+  if (sel.length === 0 || readImage(text, sel) === null) {
+    return { text, selection: sel };
+  }
+  // Anywhere from the first character to the last is the image's own text;
+  // landing there means it did not go anywhere.
+  if (target >= sel.location && target <= maxRange(sel)) {
+    return { text, selection: sel };
+  }
+
+  const markdown = substringWithRange(text, sel);
+  const removal = imageBlockRange(text, sel);
+  let body = text.slice(0, removal.location) + text.slice(maxRange(removal));
+
+  let moved = shifting(target, removal);
+  const collapsed = collapseNewlineRun(body, removal.location);
+  if (collapsed !== null) {
+    body = collapsed.text;
+    moved = shifting(moved, collapsed.removed);
+  }
+
+  const insertion = Math.min(
+    Math.max(lineBoundaryNear(body, moved), 0),
+    body.length
+  );
+  const [before, after] = blockSeparators(body, insertion);
+  const out = body.slice(0, insertion) + before + markdown + after + body.slice(insertion);
+
+  return {
+    text: out,
+    // Keep the picture selected where it landed, so it can be nudged again or
+    // resized without hunting for it.
+    selection: makeRange(insertion + before.length, markdown.length),
+  };
+}
+
+/**
+ * What to remove when lifting a picture out: its whole line when the line held
+ * nothing else, otherwise just the reference. A picture in the middle of a
+ * sentence must not take the sentence with it.
+ */
+function imageBlockRange(text, imageRange) {
+  const line = paragraphRange(text, makeRange(imageRange.location, 0));
+  const leading = text.slice(line.location, imageRange.location);
+  const trailing = text.slice(maxRange(imageRange), maxRange(line));
+  if (leading.trim() !== '' || trailing.trim() !== '') return imageRange;
+  return line;
+}
+
+/** Where `offset` ends up once `removed` has been taken out. */
+function shifting(offset, removed) {
+  if (offset <= removed.location) return offset;
+  if (offset >= maxRange(removed)) return offset - removed.length;
+  return removed.location;
+}
+
+/**
+ * Reduce a run of blank lines at `offset` to what belongs there: none at the
+ * very start, one newline at the very end, one blank line in the body. Taking a
+ * picture's line out otherwise leaves the blank line above it next to the blank
+ * line below it, which reads as a paragraph break the author never typed.
+ */
+function collapseNewlineRun(text, offset) {
+  if (offset < 0 || offset > text.length) return null;
+  let start = offset;
+  while (start > 0 && text.charCodeAt(start - 1) === 0x0a) start -= 1;
+  let end = offset;
+  while (end < text.length && text.charCodeAt(end) === 0x0a) end += 1;
+
+  const keep = start === 0 ? 0 : end >= text.length ? 1 : 2;
+  if (end - start <= keep) return null;
+  const removed = makeRange(start + keep, end - start - keep);
+  return {
+    text: text.slice(0, removed.location) + text.slice(maxRange(removed)),
+    removed,
+  };
+}
+
+/** The start of the line `offset` falls in, so an insertion lands between lines. */
+function lineBoundaryNear(text, offset) {
+  if (offset >= text.length) return text.length;
+  return paragraphRange(text, makeRange(offset, 0)).location;
+}
+
+/** The newlines needed either side of `offset` to make what lands there a block. */
+function blockSeparators(text, offset) {
+  let before = '';
+  if (offset > 0) {
+    const prefix = text.slice(0, offset);
+    before = prefix.endsWith('\n\n') ? '' : prefix.endsWith('\n') ? '\n' : '\n\n';
+  }
+  let after = '';
+  if (offset < text.length) {
+    const suffix = text.slice(offset);
+    after = suffix.startsWith('\n\n') ? '' : suffix.startsWith('\n') ? '\n' : '\n\n';
+  }
+  return [before, after];
+}
+
+/**
  * Read the image reference occupying exactly `range`, in either form.
  * Returns null if that text is not one image and nothing else.
  */

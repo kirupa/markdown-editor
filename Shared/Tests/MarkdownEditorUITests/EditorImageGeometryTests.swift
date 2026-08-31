@@ -120,6 +120,77 @@ final class EditorImageGeometryTests: XCTestCase {
         )
     }
 
+    // MARK: - Touch targets
+
+    func testAFingerTargetIsAtLeastTheComfortableTapSize() {
+        // A picture large enough that the cap does not apply.
+        let frame = CGRect(x: 0, y: 0, width: 400, height: 300)
+        for corner in EditorImageCorner.allCases {
+            let rect = EditorImageGeometry.touchHitRect(corner, in: frame)
+            XCTAssertGreaterThanOrEqual(
+                rect.width, EditorImageGeometry.touchTarget - 0.001,
+                "\(corner) is smaller than a fingertip"
+            )
+            XCTAssertGreaterThanOrEqual(
+                rect.height, EditorImageGeometry.touchTarget - 0.001,
+                "\(corner) is smaller than a fingertip"
+            )
+        }
+    }
+
+    func testAFingerTargetIsBiggerThanAPointerTarget() {
+        let frame = CGRect(x: 0, y: 0, width: 400, height: 300)
+        for corner in EditorImageCorner.allCases {
+            XCTAssertGreaterThan(
+                EditorImageGeometry.touchHitRect(corner, in: frame).width,
+                EditorImageGeometry.handleHitRect(corner, in: frame).width,
+                "a finger needs more room than a pointer, not less"
+            )
+        }
+    }
+
+    func testASmallPictureKeepsAMiddleToTakeHoldOf() {
+        // Four fixed 44pt targets meet in the middle of anything narrow. A
+        // picture that cannot be grabbed in the middle can be resized but never
+        // moved, which is a worse fault than a target that is hard to hit.
+        for side in [24.0, 32.0, 48.0, 64.0] as [CGFloat] {
+            let frame = CGRect(x: 0, y: 0, width: side, height: side)
+            XCTAssertNil(
+                EditorImageGeometry.touchCorner(
+                    at: CGPoint(x: frame.midX, y: frame.midY), in: frame
+                ),
+                "the corners meet in the middle at \(side)pt"
+            )
+        }
+    }
+
+    func testASmallPictureStillHasReachableCorners() {
+        for side in [24.0, 32.0, 48.0, 64.0] as [CGFloat] {
+            let frame = CGRect(x: 0, y: 0, width: side, height: side)
+            for corner in EditorImageCorner.allCases {
+                let at = corner.position(in: frame)
+                XCTAssertNotNil(
+                    EditorImageGeometry.touchCorner(at: at, in: frame),
+                    "\(corner) is unreachable at \(side)pt"
+                )
+            }
+        }
+    }
+
+    func testAFingerTargetPrefersTheCornerBeingPointedAt() {
+        // Where two widened targets overlap, the overlap has to go to the
+        // corner actually being aimed at or one of them becomes unreachable.
+        let frame = CGRect(x: 0, y: 0, width: 60, height: 60)
+        XCTAssertEqual(
+            EditorImageGeometry.touchCorner(at: CGPoint(x: 0, y: 0), in: frame),
+            .topLeading
+        )
+        XCTAssertEqual(
+            EditorImageGeometry.touchCorner(at: CGPoint(x: 60, y: 60), in: frame),
+            .bottomTrailing
+        )
+    }
+
     func testTheOverlayIsInsetEnoughToDrawEveryHandle() {
         let frame = CGRect(
             x: EditorImageGeometry.overlayInset,

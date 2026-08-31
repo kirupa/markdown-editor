@@ -157,8 +157,44 @@ public enum ContractFixtures {
                     MarkdownFormatting.insertHorizontalRule(in: text, selection: selection)
                 }
             )
+            // Moving a picture takes a destination as well as the thing being
+            // moved, which does not fit the (text, selection) shape the rest
+            // use. The selection is read as the drop point instead, and the
+            // thing being moved is the document's first image — so the corpus
+            // and its selections still drive every case, and a document with no
+            // image contributes the "refused" case.
+            commands.append(
+                Command(name: "moveImage", argument: nil) { text, selection in
+                    let source = text as NSString
+                    let image = ContractFixtures.firstImageRange(in: source)
+                    return MarkdownFormatting.moveImage(
+                        in: text,
+                        range: image ?? NSRange(location: 0, length: 0),
+                        to: selection.location
+                    )
+                }
+            )
             return commands
         }
+    }
+
+    /// The first image reference in `source`, in either form.
+    ///
+    /// Found by asking `readImage` rather than by matching a pattern, so the
+    /// fixture and the code under test agree on what an image is.
+    static func firstImageRange(in source: NSString) -> NSRange? {
+        guard source.length > 0 else { return nil }
+        for start in 0..<source.length {
+            let character = source.character(at: start)
+            guard character == 0x21 || character == 0x3C else { continue }  // ! or <
+            for end in stride(from: source.length, to: start, by: -1) {
+                let candidate = NSRange(location: start, length: end - start)
+                if MarkdownFormatting.readImage(source, range: candidate) != nil {
+                    return candidate
+                }
+            }
+        }
+        return nil
     }
 
     /// The smallest single replacement that turns one string into the other.

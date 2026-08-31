@@ -104,7 +104,9 @@ struct ContractFixturesTests {
     func fixtureCoversEveryCommand() {
         let names = Set(ContractFixtures.Command.all.map { "\($0.name)/\($0.argument ?? "")" })
         // 5 inline styles, 7 heading levels including "none", 3 list styles,
-        // and 5 standalone commands.
-        #expect(names.count == 20)
+        // and 6 standalone commands — the sixth being `moveImage`, which is
+        // driven differently from the rest: the selection is read as the drop
+        // point and the thing moved is the document's first image.
+        #expect(names.count == 21)
     }
 }

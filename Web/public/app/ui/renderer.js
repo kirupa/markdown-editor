@@ -88,6 +88,11 @@ export function renderInto(root, model, resolveImage = () => null) {
 
     const block = document.createElement('div');
     block.className = 'me-block';
+    // Where this line begins in the Markdown. Dragging a picture needs to turn
+    // a pointer position into a source offset, and a block is the smallest
+    // thing on screen that corresponds to a whole line of the document.
+    block.dataset.renderedStart = String(start);
+    block.dataset.renderedEnd = String(end);
     const blockClass = blockClassFor(covering.map((span) => span.style));
     if (blockClass) block.classList.add(blockClass);
 

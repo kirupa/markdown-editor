@@ -20,6 +20,7 @@ import {
   insertLink,
   insertImage,
   setImageSize,
+  moveImage,
   toggleInline,
   toggleList,
   toggleQuote,
@@ -480,14 +481,23 @@ function refreshSurfaces(options = {}) {
   // A sync replaces every element in the rendered pane, so a selected image
   // has to be found again or the size panel would close on its own first
   // keystroke.
+  // The controller maps a drop position to a source offset through the model,
+  // so it needs the model the pane was just built from.
+  imageSelection.setModel(modelFor(model.source));
   imageSelection.restore();
 }
 
 // ── Selecting an image to resize (WI-17) ─────────────────────────────────────
 
-const imageSelection = new ImageSelection(element('richSurface').parentElement, (range, size) => {
-  applyResult(setImageSize(model.source, range, size));
-});
+const imageSelection = new ImageSelection(
+  element('richSurface').parentElement,
+  (range, size) => {
+    applyResult(setImageSize(model.source, range, size));
+  },
+  (range, destination) => {
+    applyResult(moveImage(model.source, range, destination));
+  }
+);
 
 element('richSurface').addEventListener('mousedown', (event) => {
   const wrapper = event.target.closest?.('.me-image');
@@ -499,6 +509,15 @@ element('richSurface').addEventListener('mousedown', (event) => {
   } else {
     imageSelection.clear();
   }
+});
+
+// A press on the picture's body may become a move. Tracked from pointerdown so
+// the same gesture works with a mouse, a trackpad and a finger; it stays a
+// click until it has travelled far enough to be meant.
+element('richSurface').addEventListener('pointerdown', (event) => {
+  const wrapper = event.target.closest?.('.me-image');
+  if (!wrapper) return;
+  imageSelection.beginMove(event, wrapper);
 });
 
 // Any edit elsewhere means the panel is describing an image the caret has
