@@ -628,6 +628,7 @@ can fail says so.
 | I-88 | A quote that appears more than once is disambiguated by the paragraph number in the finding's location, counting blank-line separated blocks as a reader would. Two findings quoting the same words take one occurrence each. |
 | I-89 | A quote that is **nowhere in the draft** — the model paraphrased — leaves its card unanchored and says so, rather than highlighting the nearest thing that looks similar. The rail reports how many could not be matched. |
 | I-90 | The critique is written about the Markdown source, while the rendered pane shows it with the syntax removed, so every range is converted through the render model before it is drawn. |
+| I-90a | **Both panes shade.** The Markdown pane needs no conversion — a critique is written about the source, so the ranges it is given are the ranges it holds — and the rendered pane translates. A rail of comments beside a pane that marks none of the passages they name is the feature half working, which is what Markdown-only mode was. |
 | I-91 | Editing after a critique marks it **stale** in the rail. A critique describes a draft at a moment; once the words move, its offsets point at whatever now sits there. |
 | I-92 | The draft is fenced inside the prompt and named as material to critique, never as instructions, so a document *about* prompts is not read as one. |
 | I-93 | Nothing is written to the document. A critique is a review, and the findings live only for as long as the rail is open. |
