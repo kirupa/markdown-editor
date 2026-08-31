@@ -295,6 +295,34 @@ These are platform-shaped, so the Windows equivalents will differ — but the
    framework's `WM_SETCURSOR` equivalent does, **verify the cursor on screen**,
    not what your code decided it should be.
 
+10. **The built-in text control's own gestures will fight yours.** On iOS the
+    text view's long press — the one that opens the selection loupe — cancelled
+    the long press used to pick a picture up. The delegate approved the touch,
+    the recogniser was attached, and the action simply never fired. The fix was
+    to make the control's own recognisers *require ours to fail first*, which is
+    safe only because ours refuses any touch that does not land on a picture.
+    Expect the same fight wherever a rich text control ships its own press,
+    drag or selection handling, and expect the symptom to be silence rather
+    than an error.
+
+11. **A committed move invalidates the cached picture rect.** The overlay
+    remembers where the picture is so it can draw the frame and place the
+    handles, and that rect is refreshed when the picture is tapped or resized —
+    not when it moves. Restoring the frame at the end of a move therefore drew
+    it around the space the picture had just left, about fifty points away from
+    it, over the text. Either recompute the rect from the new layout or drop the
+    selection; this port dropped it, because at that instant nothing knows the
+    new rect yet. A move that found no destination must still put the frame
+    back, since nothing changed.
+
+12. **Scope the "is this touch mine?" filter to the gesture that needs it.**
+    Trap 10's fix — refusing touches that miss a picture — is correct for the
+    press that moves a picture and wrong for the tap that selects one, because
+    the tap is also what *deselects*. Applying it to both left a selected
+    picture wearing its frame wherever you tapped next. The filter and its
+    scope both need a check; neither is visible to a unit test of the geometry,
+    so this port guards them by reading the source.
+
 ### How to check it, and how not to
 
 The single most useful lesson: **every check that asked "what does the code think

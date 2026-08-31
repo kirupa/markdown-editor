@@ -80,9 +80,6 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
         // MARK: - Selecting, resizing and moving a picture
 
         private var imageOverlay: MarkdownImageOverlayView?
-        /// The document grows as it is typed into and as pictures load, and the
-        /// overlay has to grow with it or its lower handles fall outside it.
-        private var contentSizeObservation: NSKeyValueObservation?
 
         /// Put the overlay over the text and attach the two gestures that
         /// belong to the *text view* rather than to a handle.
@@ -93,7 +90,16 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
         func installImageOverlay(on textView: UITextView) {
             let overlay = MarkdownImageOverlayView(textView: textView)
             overlay.isHidden = true
-            // Sized to the *content*, not the visible rectangle.
+            // Sized to the *content*, and re-sized every time it is shown.
+            //
+            // Not through KVO on contentSize: measured against the running app,
+            // a tap that found the picture at y=444 saw a contentSize of only
+            // 395, because the value changes during layout without reliably
+            // emitting a notification. The overlay was then shorter than the
+            // picture it had to cover, UIKit refused hit tests past its bounds,
+            // and the handles could be seen and never touched.
+            //
+            // Re-sizing at the moment of use costs nothing and cannot be stale.
             //
             // A UITextView is a scroll view, so its subviews live in content
             // coordinates while `bounds` is only what is on screen right now.
@@ -114,12 +120,6 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
             }
             textView.addSubview(overlay)
             imageOverlay = overlay
-            contentSizeObservation = textView.observe(\.contentSize, options: [.new]) {
-                [weak overlay] textView, _ in
-                MainActor.assumeIsolated {
-                    overlay?.frame = CGRect(origin: .zero, size: textView.contentSize)
-                }
-            }
 
             let tap = UITapGestureRecognizer(target: self, action: #selector(didTap))
             tap.delegate = self
@@ -129,15 +129,28 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
             press.minimumPressDuration = 0.35
             press.delegate = self
             textView.addGestureRecognizer(press)
+            // UITextView's own long press opens the selection loupe, and it
+            // cancels ours the moment it recognises. Measured on a device:
+            // `shouldReceive` returned true and `didLongPress` still never
+            // fired. Making the text view's recognisers wait for ours to fail
+            // is the only thing that lets a picture be picked up — and because
+            // ours only accepts touches that land on a picture, ordinary text
+            // selection is unaffected.
+            for existing in textView.gestureRecognizers ?? []
+            where existing !== press && existing !== tap {
+                existing.require(toFail: press)
+            }
         }
 
         @objc private func didTap(_ recogniser: UITapGestureRecognizer) {
             guard let textView else { return }
             let point = recogniser.location(in: textView)
-            guard let found = image(at: point, in: textView) else {
+            let found = image(at: point, in: textView)
+            guard let found else {
                 imageOverlay?.show(range: nil, rect: nil)
                 return
             }
+            imageOverlay?.frame = CGRect(origin: .zero, size: textView.contentSize)
             imageOverlay?.show(range: found.source, rect: found.rect)
         }
 
@@ -152,6 +165,7 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
             switch recogniser.state {
             case .began:
                 guard let found = image(at: point, in: textView) else { return }
+                overlay.frame = CGRect(origin: .zero, size: textView.contentSize)
                 overlay.show(range: found.source, rect: found.rect)
                 textView.isScrollEnabled = false
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -274,6 +288,28 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
             shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
         ) -> Bool {
             true
+        }
+
+        /// The long press claims only a touch that lands on a picture.
+        ///
+        /// UITextView's own long press opens the selection loupe, and it wins
+        /// the touch unless ours refuses the ones that are not its business.
+        /// Measured on a device: without this the long press never reached
+        /// `didLongPress` at all, so a picture could not be picked up.
+        ///
+        /// The tap is deliberately *not* filtered. It has nothing to fight —
+        /// and filtering it stopped a tap on text from reaching `didTap`, which
+        /// is what deselects a picture. A selected picture could then never be
+        /// deselected.
+        nonisolated func gestureRecognizer(
+            _ recogniser: UIGestureRecognizer,
+            shouldReceive touch: UITouch
+        ) -> Bool {
+            MainActor.assumeIsolated {
+                guard recogniser is UILongPressGestureRecognizer else { return true }
+                guard let textView else { return false }
+                return image(at: touch.location(in: textView), in: textView) != nil
+            }
         }
 
         @objc private func remoteImageDidLoad() {

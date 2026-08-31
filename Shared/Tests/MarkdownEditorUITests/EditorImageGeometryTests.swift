@@ -141,9 +141,76 @@ final class EditorImageGeometryTests: XCTestCase {
             source.contains("overlay.frame = CGRect(origin: .zero, size: textView.contentSize)"),
             "the iOS image overlay must be sized to the text view's contentSize"
         )
+        // Sizing it once at setup is not enough, and neither is KVO: measured
+        // against the running app, contentSize changes during layout without
+        // reliably notifying, so a tap that found the picture at y=444 saw a
+        // contentSize of 395. It has to be re-sized every time it is shown.
+        XCTAssertGreaterThanOrEqual(
+            source.components(separatedBy: "size: textView.contentSize").count - 1, 3,
+            "the overlay must be re-sized wherever it is shown, not only at setup"
+        )
         XCTAssertFalse(
             source.contains("overlay.frame = textView.bounds"),
             "sizing the overlay to bounds makes handles below the fold untouchable"
+        )
+    }
+
+    func testACommittedIOSMoveDropsTheCachedSelectionRect() throws {
+        // The overlay caches the picture's rect and only refreshes it on a tap
+        // or a resize. A committed move relays the picture out somewhere else,
+        // so putting the frame back after the drag draws it around the space
+        // the picture has just left. Seen on a device: after moving a picture
+        // above the first paragraph the frame and handles stayed about fifty
+        // points below it, sitting over the text.
+        //
+        // A move that never found a destination is a different case — nothing
+        // changed, so the frame must come back.
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()   // MarkdownEditorUITests
+            .deletingLastPathComponent()   // Tests
+            .deletingLastPathComponent()   // Shared
+            .deletingLastPathComponent()   // the repository root
+            .appendingPathComponent("iOS/Sources/MarkdownEditorIOS/MarkdownImageOverlayView.swift")
+        let source = try String(contentsOf: url, encoding: .utf8)
+        let body = try XCTUnwrap(
+            source.components(separatedBy: "func endMove()").last,
+            "MarkdownImageOverlayView must still have an endMove"
+        )
+        let committed = try XCTUnwrap(
+            body.components(separatedBy: "guard !committed else {").last
+        )
+        XCTAssertTrue(
+            committed.hasPrefix("\n            show(range: nil, rect: nil)"),
+            "a committed move must clear the selection rather than restore a stale frame"
+        )
+        XCTAssertTrue(
+            body.contains("frameLayer.isHidden = false"),
+            "a move that did not commit must put the frame back"
+        )
+    }
+
+    func testOnlyTheIOSLongPressRefusesTouchesAwayFromAPicture() throws {
+        // The long press has to refuse touches that miss a picture, or
+        // UITextView's own long press wins and a picture can never be picked
+        // up. Applying the same filter to the *tap* is a regression that is
+        // easy to write and hard to notice: the tap is what deselects, so
+        // filtering it means a selected picture keeps its frame forever, no
+        // matter where you tap. Caught on a device only because it was looked
+        // for.
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()   // MarkdownEditorUITests
+            .deletingLastPathComponent()   // Tests
+            .deletingLastPathComponent()   // Shared
+            .deletingLastPathComponent()   // the repository root
+            .appendingPathComponent("iOS/Sources/MarkdownEditorIOS/MarkdownRichTextEditor.swift")
+        let source = try String(contentsOf: url, encoding: .utf8)
+        let body = try XCTUnwrap(
+            source.components(separatedBy: "shouldReceive touch: UITouch").last,
+            "the coordinator must still decide which touches its recognisers see"
+        )
+        XCTAssertTrue(
+            body.contains("guard recogniser is UILongPressGestureRecognizer else { return true }"),
+            "only the long press may refuse a touch; filtering the tap breaks deselecting"
         )
     }
 

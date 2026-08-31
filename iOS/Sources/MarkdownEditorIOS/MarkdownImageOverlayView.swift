@@ -78,8 +78,8 @@ final class MarkdownImageOverlayView: UIView {
     /// behave exactly as they did before this view existed. The long press and
     /// tap recognisers are attached to the text view for the same reason.
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        guard !isHidden, selection != nil else { return nil }
-        return corner(at: point) == nil ? nil : self
+        let hit = !isHidden && selection != nil && corner(at: point) != nil
+        return hit ? self : nil
     }
 
     /// The corner a touch at `point` takes hold of, or nil for the text.
@@ -95,12 +95,33 @@ final class MarkdownImageOverlayView: UIView {
     // MARK: - Selection
 
     /// Show the frame around the picture at `range`, or hide it when nil.
+    ///
+    /// The view grows to cover the picture and its handles before anything is
+    /// drawn. Relying on the text view's `contentSize` alone is not enough:
+    /// measured against the running app, a tap that found a picture whose rect
+    /// reached y=444 saw a `contentSize` of only 395, because that value is
+    /// updated during layout and was still catching up. UIKit refuses hit tests
+    /// outside a view's bounds, so the handles were drawn and could never be
+    /// touched — the picture selected, showed its frame, and then ignored every
+    /// attempt to resize it.
     func show(range: NSRange?, rect: CGRect?) {
         guard let range, let rect, rect.width > 1, rect.height > 1 else {
             selection = nil
             isHidden = true
             return
         }
+        // Anchored at the origin and grown to cover the picture and its
+        // handles. Unioning with the *existing* frame instead moved the view's
+        // origin negative, and a view's own subviews and drawing are in its
+        // bounds — so everything appeared shifted by exactly that offset, which
+        // is what put the frame beside the picture rather than around it.
+        let reach = EditorImageGeometry.touchTarget
+        frame = CGRect(
+            x: 0,
+            y: 0,
+            width: max(frame.width, rect.maxX + reach),
+            height: max(frame.height, rect.maxY + reach)
+        )
         selection = (range, rect)
         isHidden = false
         layoutDecorations()
@@ -151,6 +172,7 @@ final class MarkdownImageOverlayView: UIView {
     private func buildGestures() {
         // On the overlay, because these only ever act on a handle.
         let pan = UIPanGestureRecognizer(target: self, action: #selector(handleResize))
+        pan.delegate = self
         addGestureRecognizer(pan)
     }
 
@@ -222,16 +244,35 @@ final class MarkdownImageOverlayView: UIView {
     }
 
     /// Finish the gesture, committing the move if there is somewhere to put it.
-    func endMove() {
-        defer {
-            move = nil
-            ghost.isHidden = true
-            dropLine.isHidden = true
-            frameLayer.isHidden = false
-            for layer in handleLayers.values { layer.isHidden = false }
+    ///
+    /// A committed move invalidates the cached selection rect. The picture is
+    /// about to be laid out somewhere else, and the rect is only refreshed by a
+    /// tap or by a resize — so putting the frame back would draw it around the
+    /// space the picture has just left. Observed on a device: after moving a
+    /// picture above the first paragraph, the frame and its handles stayed
+    /// roughly fifty points below it, over the text.
+    ///
+    /// Dropping the selection is the honest answer, because nothing here knows
+    /// the new rect yet. The next tap re-establishes it.
+    @discardableResult
+    func endMove() -> Bool {
+        let committed: Bool
+        if let drag = move, let destination = drag.destination {
+            onMove?(drag.range, destination)
+            committed = true
+        } else {
+            committed = false
         }
-        guard let drag = move, let destination = drag.destination else { return }
-        onMove?(drag.range, destination)
+        move = nil
+        ghost.isHidden = true
+        dropLine.isHidden = true
+        guard !committed else {
+            show(range: nil, rect: nil)
+            return true
+        }
+        frameLayer.isHidden = false
+        for layer in handleLayers.values { layer.isHidden = false }
+        return false
     }
 
     private func preview(_ size: MarkdownImageTag.Size) {
@@ -245,5 +286,36 @@ final class MarkdownImageOverlayView: UIView {
         )
         self.selection = (selection.range, previewed)
         layoutDecorations()
+    }
+}
+
+
+extension MarkdownImageOverlayView: UIGestureRecognizerDelegate {
+    /// Only begin when the touch is actually on a handle.
+    ///
+    /// Without this the pan competes with the text view's own scroll pan for
+    /// every touch on the picture, and the scroll usually wins — the handles
+    /// were drawn correctly, hit-testing was correct, and nothing happened,
+    /// because the gesture never began.
+    nonisolated override func gestureRecognizerShouldBegin(_ recogniser: UIGestureRecognizer) -> Bool {
+        MainActor.assumeIsolated {
+            corner(at: recogniser.location(in: self)) != nil
+        }
+    }
+
+    /// Run alongside the text view's recognisers rather than instead of them.
+    nonisolated func gestureRecognizer(
+        _ recogniser: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
+    ) -> Bool {
+        true
+    }
+
+    /// A touch that starts on a handle must not also scroll the document.
+    nonisolated func gestureRecognizer(
+        _ recogniser: UIGestureRecognizer,
+        shouldRequireFailureOf other: UIGestureRecognizer
+    ) -> Bool {
+        false
     }
 }
