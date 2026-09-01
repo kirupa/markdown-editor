@@ -425,6 +425,8 @@ func checkTheRailRenders() {
         CritiqueReport(
             jobRead: "A short note for developers.",
             overall: "Clear, but the claim needs support.",
+            whatWorks: ["The mechanism is described correctly."],
+            whatDoesNotWork: ["Nothing is grounded in an example."],
             findings: [
                 CritiqueFinding(
                     severity: .high, category: "Logic and credibility",
@@ -544,7 +546,10 @@ func checkTheRailRenders() {
         "Nothing supports it.",
         "Generic opening.",
         "No running example.",
-
+        // The summary note carries both halves of the read, not just one
+        // sentence about the piece.
+        "The mechanism is described correctly.",
+        "Nothing is grounded in an example.",
     ] {
         check(
             "the rail shows \"\(expected)\"",
@@ -718,7 +723,10 @@ func checkTheRailRenders() {
         return counts.sorted { $0.value > $1.value }.map { ($0.key, $0.value) }
     }
 
-    let papers = dominantPapers(fromTop: 250, height: 340)
+    // The whole pad, not a guessed band. A fixed window stops covering the
+    // notes the moment anything above them changes height — which is exactly
+    // what happened when the summary became a note of its own.
+    let papers = dominantPapers(fromTop: 200, height: host.bounds.height - 200)
     if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
         print("  dominant note papers: \(papers.prefix(3).map { "\($0.0)x\($0.1)" })")
     }

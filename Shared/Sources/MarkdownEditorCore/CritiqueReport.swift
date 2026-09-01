@@ -17,6 +17,10 @@ public struct CritiqueReport: Equatable, Sendable, Codable {
     public let jobRead: String
     /// The strongest working choice and the largest quality risk.
     public let overall: String
+    /// What the draft already does well, and should survive a revision.
+    public let whatWorks: [String]
+    /// What is holding it back, in the round rather than passage by passage.
+    public let whatDoesNotWork: [String]
     public let findings: [CritiqueFinding]
     public let repeatedPatterns: [CritiquePattern]
     /// Choices that should survive revision.
@@ -25,12 +29,19 @@ public struct CritiqueReport: Equatable, Sendable, Codable {
     public init(
         jobRead: String,
         overall: String,
+        whatWorks: [String] = [],
+        whatDoesNotWork: [String] = [],
         findings: [CritiqueFinding],
         repeatedPatterns: [CritiquePattern] = [],
         keep: [String] = []
     ) {
         self.jobRead = jobRead
         self.overall = overall
+        // `keep` is the older name for the same idea, and saved critiques
+        // still carry it. Falling back keeps a history written by an earlier
+        // build readable rather than blank.
+        self.whatWorks = whatWorks.isEmpty ? keep : whatWorks
+        self.whatDoesNotWork = whatDoesNotWork
         self.findings = findings
         self.repeatedPatterns = repeatedPatterns
         self.keep = keep
@@ -38,6 +49,7 @@ public struct CritiqueReport: Equatable, Sendable, Codable {
 
     public var isEmpty: Bool {
         findings.isEmpty && repeatedPatterns.isEmpty && keep.isEmpty
+            && whatWorks.isEmpty && whatDoesNotWork.isEmpty
             && jobRead.isEmpty && overall.isEmpty
     }
 }
@@ -233,6 +245,9 @@ public enum CritiqueReportDecoder {
         CritiqueReport(
             jobRead: string(object["jobRead"]) ?? "",
             overall: string(object["overall"]) ?? "",
+            whatWorks: (object["whatWorks"] as? [Any] ?? []).compactMap(string),
+            whatDoesNotWork: (object["whatDoesNotWork"] as? [Any] ?? [])
+                .compactMap(string),
             findings: (object["findings"] as? [Any] ?? [])
                 .compactMap { $0 as? [String: Any] }
                 .compactMap(finding(from:)),

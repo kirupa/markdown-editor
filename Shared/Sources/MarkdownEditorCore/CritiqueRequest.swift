@@ -35,6 +35,8 @@ public enum CritiqueRequest {
         {
           "jobRead": "one sentence naming the apparent reader, purpose and container",
           "overall": "one or two sentences: strongest working choice, largest quality risk",
+          "whatWorks": ["two or three things the draft already does well and should survive a revision"],
+          "whatDoesNotWork": ["two or three things holding it back, in the round rather than passage by passage"],
           "findings": [
             {
               "severity": "high" | "medium" | "low",
@@ -66,6 +68,11 @@ public enum CritiqueRequest {
         medium finding. Include low ones when they repeat or muddy the voice.
         - If the draft has no high or medium problems, return an empty \
         "findings" array and say so in "overall". Do not invent criticism.
+        - "whatWorks" is not flattery and "whatDoesNotWork" is not a list of \
+        the findings again. The first names real choices worth keeping; the \
+        second names the shape of the problem. Both are about the piece as a \
+        whole. If the draft genuinely has nothing working yet, return an empty \
+        array rather than inventing praise.
 
         \(openingFence)
         \(document)
