@@ -323,6 +323,7 @@ struct CheckCritique {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
 
+        checkTheScoreIsLegible()
         checkHighlightsAndClicking()
         checkTheSourcePaneShadesToo()
         checkTheHistory()
@@ -744,6 +745,71 @@ func checkTheRailRenders() {
         return Double(found) * 2 / Double(scale * scale)
     }
 
+    /// The contrast ratio between the score numeral and the wash behind it,
+    /// measured from the drawn pixels.
+    ///
+    /// The band is fixed rather than searched for. Hunting for the banner by
+    /// its border was tried and is worse: the severity tag on every note below
+    /// is tinted the same way, so the search bracketed the banner together
+    /// with the pad and measured everything in between.
+    ///
+    /// The ink is the 5th percentile of luminance rather than the single
+    /// darkest pixel, so a stray antialiased corner cannot stand in for the
+    /// stroke. The band stops above the progress bar, which is solid tint and
+    /// would otherwise be measured as though it were a letter, and takes only
+    /// the left of the banner, because the verdict on the right is grey on the
+    /// same wash and is a different question.
+    func scoreContrast(fromTop top: CGFloat, height: CGFloat) -> Double {
+        func luminance(_ c: NSColor) -> Double {
+            func channel(_ raw: CGFloat) -> Double {
+                let v = Double(raw)
+                return v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+            }
+            return 0.2126 * channel(c.redComponent)
+                + 0.7152 * channel(c.greenComponent)
+                + 0.0722 * channel(c.blueComponent)
+        }
+
+        let firstRow = Int(top * scale)
+        let lastRow = min(rep.pixelsHigh, Int((top + height) * scale))
+        let firstCol = Int(18 * scale)
+        let lastCol = min(rep.pixelsWide, Int(Double(rep.pixelsWide) * 0.42))
+        guard firstRow < lastRow, firstCol < lastCol else { return 0 }
+
+        var counts: [String: (n: Int, colour: NSColor)] = [:]
+        var luminances: [Double] = []
+        for y in firstRow..<lastRow {
+            for x in firstCol..<lastCol {
+                guard let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB)
+                else { continue }
+                let key = "\(Int(c.redComponent * 32))"
+                    + "-\(Int(c.greenComponent * 32))"
+                    + "-\(Int(c.blueComponent * 32))"
+                counts[key, default: (0, c)].n += 1
+                luminances.append(luminance(c))
+            }
+        }
+        guard let wash = counts.values.max(by: { $0.n < $1.n })?.colour,
+              !luminances.isEmpty
+        else { return 0 }
+        let washLuminance = luminance(wash)
+        luminances.sort()
+        let index = max(1, luminances.count / 20)
+        let inkLuminance = washLuminance > 0.5
+            ? luminances[index]
+            : luminances[luminances.count - 1 - index]
+        if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
+            print(String(
+                format: "    wash %.2f %.2f %.2f (L %.3f), ink L %.3f",
+                wash.redComponent, wash.greenComponent, wash.blueComponent,
+                washLuminance, inkLuminance
+            ))
+        }
+        let lighter = max(inkLuminance, washLuminance)
+        let darker = min(inkLuminance, washLuminance)
+        return (lighter + 0.05) / (darker + 0.05)
+    }
+
     /// The two colours the notes are most often painted in.
     ///
     /// The *most frequent* rather than the distinct count: every antialiased
@@ -805,6 +871,19 @@ func checkTheRailRenders() {
         "only \(Int(scoreInk))pt² of coloured ink where the score belongs"
     )
 
+    // The numeral occupies the upper part of the banner; the bar underneath is
+    // solid tint and would be measured as if it were a letter.
+    let contrast = scoreContrast(fromTop: 58, height: 44)
+    if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
+        print("  score contrast: \(String(format: "%.2f", contrast)):1")
+    }
+    check(
+        "and is legible against the wash behind it",
+        contrast >= 4.5,
+        "the numeral measures \(String(format: "%.2f", contrast)):1, and readable "
+            + "text wants 4.5:1"
+    )
+
     let accent = accentPixels(fromTop: 0, height: 34)
     if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
         print("  accent mark in the header band: \(Int(accent))pt²  (scale \(scale))")
@@ -824,6 +903,72 @@ func checkTheRailRenders() {
         noticeRun > 150,
         "widest run was \(Int(noticeRun))pt, which is text, not a panel"
     )
+}
+
+/// The score has to be readable, and it is set on a wash of its own colour.
+///
+/// Checked as arithmetic because that is what it is. The severity tints are
+/// chosen to look right as *fills* — a bar, a border, a tag — and a fill and a
+/// label want opposite things from a colour. Set as text on 12% of itself the
+/// amber measured 2.0:1 and the red 3.6:1, where readable text wants 4.5:1.
+///
+/// The old colours are checked as well, and are required to *fail*. Without
+/// that this is a table of numbers agreeing with itself: any threshold passes
+/// if nothing is ever measured against it that should not.
+@MainActor
+func checkTheScoreIsLegible() {
+    print("")
+    print("Reading the score")
+
+    func luminance(_ colour: NSColor) -> Double {
+        guard let c = colour.usingColorSpace(.sRGB) else { return 0 }
+        func channel(_ raw: CGFloat) -> Double {
+            let v = Double(raw)
+            return v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * channel(c.redComponent)
+            + 0.7152 * channel(c.greenComponent)
+            + 0.0722 * channel(c.blueComponent)
+    }
+    func contrast(_ ink: NSColor, on background: NSColor) -> Double {
+        let a = luminance(ink), b = luminance(background)
+        return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+    }
+    /// The banner's background: the tint at 12%, over the page.
+    func wash(_ severity: CritiqueSeverity, _ mode: EditorAppearanceMode) -> NSColor {
+        let theme = EditorColorTheme(color: .blue, mode: mode)
+        let page = theme.editorBackgroundColor.usingColorSpace(.sRGB)!
+        let tint = NSColor(severity.tint).usingColorSpace(.sRGB)!
+        return NSColor(
+            srgbRed: page.redComponent * 0.88 + tint.redComponent * 0.12,
+            green: page.greenComponent * 0.88 + tint.greenComponent * 0.12,
+            blue: page.blueComponent * 0.88 + tint.blueComponent * 0.12,
+            alpha: 1
+        )
+    }
+
+    for mode in [EditorAppearanceMode.light, .dark] {
+        for severity in [CritiqueSeverity.high, .medium, .low] {
+            let background = wash(severity, mode)
+            let reading = contrast(NSColor(severity.ink(on: mode)), on: background)
+            check(
+                "the \(severity.rawValue) score reads on its own wash in \(mode.rawValue)",
+                reading >= 4.5,
+                String(format: "%.2f:1, and readable text wants 4.5:1", reading)
+            )
+            // The colour it used to be drawn in, which is the fill.
+            let fill = contrast(NSColor(severity.tint), on: background)
+            check(
+                "and the fill colour it replaced would not have",
+                fill < 4.5,
+                String(
+                    format: "the plain %@ tint measures %.2f:1 on its own wash, "
+                        + "so this check would pass without the change",
+                    severity.rawValue, fill
+                )
+            )
+        }
+    }
 }
 
 /// The Markdown pane shades the same passages, without converting anything.

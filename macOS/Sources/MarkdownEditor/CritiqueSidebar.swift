@@ -41,6 +41,20 @@ enum CritiqueTypography {
         "SegoeMarker", "ChalkboardSE-Light",
     ]
 
+    /// The three sizes the rail sets anything at.
+    ///
+    /// One face means hierarchy is carried by size alone, and it was carried
+    /// the wrong way: every label — the category on a note, WHAT WORKS, TRY,
+    /// ANSWERED — was set at 13 against a body of 14 to 15. The signposts were
+    /// smaller than the prose they signposted, so there was nothing to scan by
+    /// and the pad had to be read end to end to find anything.
+    ///
+    /// A heading is plainly bigger than its body now, which is the only thing
+    /// that makes a stack of notes skimmable.
+    static let sectionSize: CGFloat = 17
+    static let bodySize: CGFloat = 15
+    static let captionSize: CGFloat = 13
+
     /// Faces that run large for their point size, and by how much.
     ///
     /// Type is specified in points but read at whatever size it happens to
@@ -411,23 +425,24 @@ struct CritiqueSidebar: View {
     private var scoreBanner: some View {
         let score = critique.score
         let tint = scoreTint(score)
+        let ink = scoreTintSeverity(score).ink(on: colorTheme.mode)
         return VStack(alignment: .leading, spacing: 9) {
             HStack(alignment: .lastTextBaseline, spacing: 8) {
                 Text("\(score)")
                     .font(CritiqueTypography.hand(46))
-                    .foregroundStyle(tint)
+                    .foregroundStyle(ink)
                     .contentTransition(.numericText())
                 Text("/100")
-                    .font(CritiqueTypography.hand(16))
-                    .foregroundStyle(tint.opacity(0.55))
+                    .font(CritiqueTypography.hand(CritiqueTypography.sectionSize))
+                    .foregroundStyle(ink.opacity(0.75))
                 Spacer(minLength: 0)
                 VStack(alignment: .trailing, spacing: 1) {
                     Text("AWESOMENESS")
-                        .font(CritiqueTypography.hand(12))
+                        .font(CritiqueTypography.hand(CritiqueTypography.captionSize))
                         .tracking(0.8)
                         .foregroundStyle(colorTheme.secondaryText)
                     Text(critique.verdict)
-                        .font(CritiqueTypography.hand(14))
+                        .font(CritiqueTypography.hand(CritiqueTypography.sectionSize))
                         .foregroundStyle(colorTheme.primaryText)
                         .multilineTextAlignment(.trailing)
                 }
@@ -459,7 +474,7 @@ struct CritiqueSidebar: View {
                         ? "Everything answered."
                         : "\(critique.resolvedCount) of \(critique.items.count) answered."
                 )
-                .font(CritiqueTypography.hand(12))
+                .font(CritiqueTypography.hand(CritiqueTypography.captionSize))
                 .foregroundStyle(colorTheme.secondaryText)
             }
         }
@@ -471,6 +486,16 @@ struct CritiqueSidebar: View {
                 Rectangle()
                     .fill(PixelStyle.shadow(colorTheme))
                     .offset(x: PixelStyle.shadowOffset, y: PixelStyle.shadowOffset)
+                // Opaque paper first, then the wash on top.
+                //
+                // Without the paper the banner is 12% tint over the *grid
+                // canvas*, which is a mid grey — so the wash came out a muddy
+                // khaki and the numeral on it measured 3.37:1 however dark the
+                // ink was made. Every other panel on the rail is a card; this
+                // one only looked like one.
+                Rectangle().fill(colorTheme.cardBackground)
+                // The wash and the border stay the bright colour: they are
+                // fills, and a fill is read by area rather than by edge.
                 Rectangle().fill(tint.opacity(0.12))
                 Rectangle().strokeBorder(tint, lineWidth: PixelStyle.border)
             }
@@ -479,12 +504,16 @@ struct CritiqueSidebar: View {
         .animation(.easeOut(duration: 0.3), value: score)
     }
 
-    private func scoreTint(_ score: Int) -> Color {
+    private func scoreTintSeverity(_ score: Int) -> CritiqueSeverity {
         switch score {
-        case 85...: return CritiqueSeverity.low.tint
-        case 50...: return CritiqueSeverity.medium.tint
-        default: return CritiqueSeverity.high.tint
+        case 85...: return .low
+        case 50...: return .medium
+        default: return .high
         }
+    }
+
+    private func scoreTint(_ score: Int) -> Color {
+        scoreTintSeverity(score).tint
     }
 
     /// The first answered card, so the divider can be drawn above it.
@@ -495,7 +524,7 @@ struct CritiqueSidebar: View {
     private var answeredHeading: some View {
         HStack(spacing: 6) {
             Text("ANSWERED")
-                .font(CritiqueTypography.hand(13))
+                .font(CritiqueTypography.hand(CritiqueTypography.sectionSize))
                 .tracking(0.5)
                 .foregroundStyle(colorTheme.secondaryText)
             Rectangle()
@@ -622,7 +651,7 @@ struct CritiqueSidebar: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title)
-                .font(CritiqueTypography.hand(13))
+                .font(CritiqueTypography.hand(CritiqueTypography.sectionSize))
                 .tracking(0.5)
                 .foregroundStyle(tint)
             ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
@@ -645,7 +674,7 @@ struct CritiqueSidebar: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title.uppercased())
-                .font(CritiqueTypography.hand(13))
+                .font(CritiqueTypography.hand(CritiqueTypography.sectionSize))
                 .tracking(0.5)
                 .foregroundStyle(colorTheme.secondaryText)
                 .padding(.top, 8)
@@ -888,13 +917,13 @@ private struct CritiqueCard: View {
             dimmed: isAnswered
         ) {
             VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
+            HStack(alignment: .top, spacing: 6) {
                 // The severity is the tag pinned to the top of the note, not
                 // a word in this row — see `severityTag`.
                 Text(finding.category)
-                    .font(CritiqueTypography.hand(13))
-                    .foregroundStyle(colorTheme.secondaryText)
-                    .lineLimit(1)
+                    .font(CritiqueTypography.hand(CritiqueTypography.sectionSize))
+                    .foregroundStyle(colorTheme.primaryText)
+                    .lineLimit(2)
                 Spacer(minLength: 0)
                 if finding.needsVerification {
                     Text("needs verification")
@@ -933,18 +962,18 @@ private struct CritiqueCard: View {
             }
 
             Text(finding.why)
-                .font(CritiqueTypography.hand(15))
+                .font(CritiqueTypography.hand(CritiqueTypography.bodySize))
                 .foregroundStyle(colorTheme.primaryText)
                 .fixedSize(horizontal: false, vertical: true)
 
             if let advice = finding.advice {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(finding.adviceLabel.uppercased())
-                        .font(CritiqueTypography.hand(12))
+                        .font(CritiqueTypography.hand(CritiqueTypography.captionSize))
                         .tracking(0.4)
                         .foregroundStyle(colorTheme.secondaryText)
                     Text(advice)
-                        .font(CritiqueTypography.hand(15))
+                        .font(CritiqueTypography.hand(CritiqueTypography.bodySize))
                         .foregroundStyle(colorTheme.primaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }

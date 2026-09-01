@@ -1,5 +1,6 @@
 import Foundation
 import MarkdownEditorCore
+import MarkdownEditorUI
 import SwiftUI
 
 /// The state behind AI Assisted critique: what was asked, what came back, and
@@ -325,6 +326,29 @@ final class CritiqueModel: ObservableObject {
 // MARK: - How a severity looks
 
 extension CritiqueSeverity {
+    /// The same colour, dark or light enough to *read* on a wash of itself.
+    ///
+    /// `tint` is a fill: it is chosen to look right as a solid block — a bar,
+    /// a border, a severity tag. Set as text on a 12% wash of itself it is
+    /// barely there. Measured against the score banner, the amber came out at
+    /// 2.0:1 and the red at 3.6:1, where readable body text wants 4.5:1.
+    ///
+    /// So the fills keep the bright colour and the words get this one, which
+    /// is the same hue carried to a legible lightness — down on a light
+    /// background, up on a dark one. Every pair below measures at or above
+    /// 5:1 on the wash it is used on, and `check-critique` asserts that from
+    /// the rendered pixels rather than trusting the numbers here.
+    func ink(on mode: EditorAppearanceMode) -> Color {
+        switch (self, mode) {
+        case (.high, .light): return Color(red: 0.62, green: 0.10, blue: 0.10)
+        case (.medium, .light): return Color(red: 0.52, green: 0.27, blue: 0.02)
+        case (.low, .light): return Color(red: 0.13, green: 0.32, blue: 0.60)
+        case (.high, .dark): return Color(red: 1.00, green: 0.60, blue: 0.58)
+        case (.medium, .dark): return Color(red: 1.00, green: 0.76, blue: 0.30)
+        case (.low, .dark): return Color(red: 0.62, green: 0.82, blue: 1.00)
+        }
+    }
+
     var label: String {
         switch self {
         case .high: return "High"
