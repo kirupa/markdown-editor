@@ -64,7 +64,10 @@ func checkHighlightsAndClicking() {
     let source = """
         # Understanding Caching
 
-        Caching is important because the cache stores data for later reads.
+        Caching is important because the cache stores data for later reads, \
+        and a passage this long has to wrap onto several lines so the shading \
+        can be measured on a line it covers completely — which is the case \
+        that used to run the full width of the page.
 
         Studies show that caching improves performance by 90%.
         """
@@ -108,7 +111,12 @@ func checkHighlightsAndClicking() {
         CritiqueFinding(
             severity: .low, category: "Clarity and precision",
             location: "paragraph 2",
-            quote: "the cache stores data", why: "Vague."
+            // Spans several lines, so at least one line is covered end to end.
+            // A mark measured per *fragment* rather than per glyph run swells
+            // to the container's width on exactly that line.
+            quote: "the cache stores data for later reads, and a passage this "
+                + "long has to wrap onto several lines",
+            why: "Vague."
         ),
     ]
     let anchors = CritiqueAnchoring.anchor(findings, in: source)
@@ -136,28 +144,68 @@ func checkHighlightsAndClicking() {
     }
     view.critiqueHighlights = highlights
 
-    // The shading is a *temporary* attribute, so it cannot end up in the
-    // document or in a copy. Read it back from the layout manager.
     guard let layoutManager = view.layoutManager else {
         check("the view has a layout manager", false)
         return
     }
+
+    // The shading is drawn, not attributed. An attribute fills the whole line
+    // fragment, so it ran out into the page margin and along the empty tail of
+    // every short line — marking the lines a passage was on rather than the
+    // passage. These boxes are what is actually painted.
     for (highlight, finding) in zip(highlights, findings) {
-        let colour = layoutManager.temporaryAttribute(
-            .backgroundColor,
-            atCharacterIndex: highlight.range.location,
-            effectiveRange: nil
-        ) as? NSColor
+        let boxes = view.critiqueHighlightBoxes(for: highlight.range)
         check(
             "the \(finding.severity.rawValue) passage is shaded",
-            colour != nil,
-            "no background attribute at \(highlight.range.location)"
+            !boxes.isEmpty,
+            "nothing is drawn for it"
+        )
+        // The point of the change: the mark hugs the words. *Every* box, not
+        // the first — the first version of this checked `boxes.first` and
+        // passed while the middle line of a three-line passage ran the whole
+        // width of the page, which is exactly the fault it was written for.
+        let glyphs = layoutManager.glyphRange(
+            forCharacterRange: highlight.range, actualCharacterRange: nil
+        )
+        let inked = layoutManager.boundingRect(
+            forGlyphRange: glyphs, in: view.textContainer!
+        )
+        let widest = boxes.map(\.width).max() ?? 0
+        check(
+            "and hugs the words rather than the line",
+            widest <= inked.width + 12,
+            "the widest mark is \(Int(widest))pt for \(Int(inked.width))pt of text"
+        )
+        let rightmost = boxes.map(\.maxX).max() ?? 0
+        let leftmost = boxes.map(\.minX).min() ?? 0
+        check(
+            "so it stays out of the page margin",
+            rightmost <= view.bounds.width - view.textContainerInset.width + 4
+                && leftmost >= view.textContainerInset.width - 4,
+            "it runs \(Int(leftmost))…\(Int(rightmost)) in a \(Int(view.bounds.width))pt view"
         )
     }
-    let outside = layoutManager.temporaryAttribute(
-        .backgroundColor, atCharacterIndex: 0, effectiveRange: nil
+
+    // Nothing is drawn over the heading. Written as a real comparison rather
+    // than a shape that cannot fail: the first version of this ended in
+    // `|| true`, which is a check that passes whatever happens.
+    let headingBoxAll = layoutManager.boundingRect(
+        forGlyphRange: layoutManager.glyphRange(
+            forCharacterRange: NSRange(location: 0, length: 20),
+            actualCharacterRange: nil
+        ),
+        in: view.textContainer!
+    ).offsetBy(
+        dx: view.textContainerInset.width, dy: view.textContainerInset.height
     )
-    check("the heading is left alone", outside == nil)
+    let marksOverHeading = highlights
+        .flatMap { view.critiqueHighlightBoxes(for: $0.range) }
+        .filter { $0.intersects(headingBoxAll) }
+    check(
+        "the heading is left alone",
+        marksOverHeading.isEmpty,
+        "\(marksOverHeading.count) marks overlap it"
+    )
 
     check(
         "shading never reaches the text storage",
@@ -211,16 +259,16 @@ func checkHighlightsAndClicking() {
     view.didClickCritiqueHighlight = { clicked = $0 }
 
     for (highlight, finding) in zip(highlights, findings) {
-        let box = layoutManager.boundingRect(
-            forGlyphRange: layoutManager.glyphRange(
-                forCharacterRange: highlight.range, actualCharacterRange: nil
-            ),
-            in: view.textContainer!
-        )
-        let point = CGPoint(
-            x: box.midX + view.textContainerInset.width,
-            y: box.midY + view.textContainerInset.height
-        )
+        // Aimed at a box that is really drawn, rather than at the centre of
+        // the range's overall bounds. For a passage spanning several lines
+        // that centre can fall past the end of a short line and hit nothing —
+        // a failure of the aim, not of the app.
+        guard let box = view.critiqueHighlightBoxes(for: highlight.range).first
+        else {
+            check("\(finding.severity.rawValue) passage is drawn to click on", false)
+            continue
+        }
+        let point = CGPoint(x: box.midX, y: box.midY)
         clicked = nil
         view.raiseCritiqueComment(at: point)
         check(
@@ -837,10 +885,11 @@ func checkTheSourcePaneShadesToo() {
     view.critiqueHighlights = [
         .init(id: finding.id, range: range, colour: finding.severity.highlight)
     ]
-    let shaded = view.layoutManager?.temporaryAttribute(
-        .backgroundColor, atCharacterIndex: range.location, effectiveRange: nil
+    check(
+        "the passage is shaded in the Markdown pane",
+        !view.critiqueHighlightBoxes(for: range).isEmpty,
+        "nothing is drawn for it"
     )
-    check("the passage is shaded in the Markdown pane", shaded != nil)
 
     var clicked: UUID?
     view.didClickCritiqueHighlight = { clicked = $0 }

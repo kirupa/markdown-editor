@@ -41,25 +41,62 @@ final class RichMarkdownTextView: NSTextView {
     /// raise the matching card.
     var didClickCritiqueHighlight: ((UUID) -> Void)?
 
-    /// Paints the highlights as *temporary* attributes.
-    ///
-    /// Temporary attributes are the right tool: they live on the layout
-    /// manager rather than in the text storage, so they cannot end up in the
-    /// document, cannot be picked up by a copy, and do not have to be
-    /// unpicked from the styling every time the draft is re-rendered. It is
-    /// the same mechanism the find bar uses to shade a match.
+    /// Redraw the shading. It is painted in `drawBackground(in:)`.
     func redrawCritiqueHighlights() {
-        guard let layoutManager, let textStorage else { return }
+        needsDisplay = true
+    }
+
+    /// The rounded boxes a highlight is drawn as, in view coordinates.
+    ///
+    /// Deliberately *not* the `.backgroundColor` attribute, which was the
+    /// obvious way and the wrong one: an attribute fills the whole line
+    /// fragment, so the shading ran out into the page margin and along the
+    /// empty tail of every short line. What it marked was the lines a passage
+    /// was on, not the passage.
+    ///
+    /// These boxes hug the glyphs instead — one per line the run crosses —
+    /// which is the shape the words actually make.
+    func critiqueHighlightBoxes(
+        for range: NSRange
+    ) -> [CGRect] {
+        guard let layoutManager, let textContainer, let textStorage else {
+            return []
+        }
         let whole = NSRange(location: 0, length: textStorage.length)
-        layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: whole)
-        for highlight in critiqueHighlights {
-            let clamped = NSIntersectionRange(highlight.range, whole)
-            guard clamped.length > 0 else { continue }
-            layoutManager.addTemporaryAttributes(
-                [.backgroundColor: highlight.colour],
-                forCharacterRange: clamped
+        let clamped = NSIntersectionRange(range, whole)
+        guard clamped.length > 0 else { return [] }
+        let glyphs = layoutManager.glyphRange(
+            forCharacterRange: clamped, actualCharacterRange: nil
+        )
+        // One box per line, each measured from the glyphs *on that line*.
+        //
+        // Not `enumerateEnclosingRects`, which was the first attempt and is
+        // subtly wrong: for a line the range covers completely it returns the
+        // whole line fragment, and a line fragment spans the container. So a
+        // passage of three lines came out hugging at the ends and running the
+        // full width of the page in the middle — including the margin a
+        // picture is allowed to bleed into.
+        var boxes: [CGRect] = []
+        layoutManager.enumerateLineFragments(forGlyphRange: glyphs) {
+            _, _, _, fragmentGlyphs, _ in
+            let onThisLine = NSIntersectionRange(glyphs, fragmentGlyphs)
+            guard onThisLine.length > 0 else { return }
+            let inked = layoutManager.boundingRect(
+                forGlyphRange: onThisLine, in: textContainer
+            )
+            guard inked.width > 0 else { return }
+            boxes.append(
+                inked
+                    .offsetBy(
+                        dx: self.textContainerInset.width,
+                        dy: self.textContainerInset.height
+                    )
+                    // A little air, so the ink is not touching the edge of its
+                    // own highlight.
+                    .insetBy(dx: -3, dy: -1)
             )
         }
+        return boxes
     }
 
     /// Raises the comment for the passage under `point`, if there is one.
@@ -1201,6 +1238,24 @@ final class RichMarkdownTextView: NSTextView {
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
         drawCodeBlockBackgrounds(in: rect)
+        drawCritiqueHighlights(in: rect)
+    }
+
+    /// Shade the passages a critique points at, under the text.
+    private func drawCritiqueHighlights(in rect: NSRect) {
+        guard !critiqueHighlights.isEmpty else { return }
+        for highlight in critiqueHighlights {
+            highlight.colour.setFill()
+            for box in critiqueHighlightBoxes(for: highlight.range)
+            where box.intersects(rect) {
+                // Rounded, but by no more than half the line height, so a mark
+                // on one line and a mark across three look like the same
+                // object rather than a pill and a rectangle.
+                let radius = min(5, box.height / 2)
+                NSBezierPath(roundedRect: box, xRadius: radius, yRadius: radius)
+                    .fill()
+            }
+        }
     }
 
     override func setMarkedText(
