@@ -16,6 +16,34 @@ private extension EditorColorTheme {
     var cardBackground: Color { Color(platformColor: editorBackgroundColor) }
 }
 
+/// The colours the critique feature writes in.
+///
+/// Its own rather than the theme's. The theme's text colours are chosen
+/// against the theme's page, and almost nothing here is on the page: the
+/// notes are on pale paper in a light theme and deep paper in a dark one,
+/// and the rail's own lines are on the grid canvas. The theme's grey
+/// secondary measured 4.2:1 on pale pink and 4.3:1 on the canvas.
+enum CritiqueInk {
+    /// The colour a note's own words are set in.
+    ///
+    /// A note is not on the page — it is on pale paper in a light theme and
+    /// on a deep version of the same in a dark one — so it is not written in
+    /// the page's ink.
+    static func body(on mode: EditorAppearanceMode) -> Color {
+        mode == .dark
+            ? Color(red: 0.95, green: 0.95, blue: 0.94)
+            : Color(red: 0.12, green: 0.11, blue: 0.11)
+    }
+
+    /// The quieter one, for labels and locations. Still a reading colour: it
+    /// is quieter by being lighter than the body, not by being too faint.
+    static func quiet(on mode: EditorAppearanceMode) -> Color {
+        mode == .dark
+            ? Color(red: 0.78, green: 0.77, blue: 0.76)
+            : Color(red: 0.34, green: 0.32, blue: 0.32)
+    }
+}
+
 /// The hand the comments are written in.
 ///
 /// Margin notes on a draft are handwritten, and setting them in the same face
@@ -162,7 +190,7 @@ struct CritiqueSidebar: View {
                 Button("Stop") { critique.cancel() }
                     .buttonStyle(.plain)
                     .font(CritiqueTypography.hand(13))
-                    .foregroundStyle(colorTheme.secondaryText)
+                    .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
             } else if critique.report != nil {
                 Button {
                     onRerun()
@@ -170,7 +198,7 @@ struct CritiqueSidebar: View {
                     Image(systemName: "arrow.clockwise")
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(colorTheme.secondaryText)
+                .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                 .help("Critique the document again")
             }
 
@@ -180,7 +208,7 @@ struct CritiqueSidebar: View {
                 Image(systemName: "xmark")
             }
             .buttonStyle(.plain)
-            .foregroundStyle(colorTheme.secondaryText)
+            .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
             .help("Close the critique")
         }
         .padding(.horizontal, 14)
@@ -226,7 +254,7 @@ struct CritiqueSidebar: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .foregroundStyle(colorTheme.secondaryText)
+        .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
         .help("Earlier critiques of this document")
     }
 
@@ -253,7 +281,7 @@ struct CritiqueSidebar: View {
                     .foregroundStyle(colorTheme.primaryText)
                 Text(progress.stage.explanation)
                     .font(CritiqueTypography.hand(14))
-                    .foregroundStyle(colorTheme.secondaryText)
+                    .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -266,7 +294,7 @@ struct CritiqueSidebar: View {
                         .fill(
                             stage.rawValue <= progress.stage.rawValue
                                 ? colorTheme.accent
-                                : colorTheme.secondaryText.opacity(0.18)
+                                : CritiqueInk.quiet(on: colorTheme.mode).opacity(0.18)
                         )
                         .frame(height: 5)
                 }
@@ -291,7 +319,7 @@ struct CritiqueSidebar: View {
             if let detail = progress.detail, progress.stage == .reading {
                 Text(detail)
                     .font(CritiqueTypography.hand(13))
-                    .foregroundStyle(colorTheme.secondaryText)
+                    .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.leading, 8)
                     .overlay(alignment: .leading) {
@@ -318,7 +346,7 @@ struct CritiqueSidebar: View {
             if let suggestion = failure.recoverySuggestion {
                 Text(suggestion)
                     .font(CritiqueTypography.hand(15))
-                    .foregroundStyle(colorTheme.secondaryText)
+                    .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                     .textSelection(.enabled)
             }
             Button("Try Again") { onRerun() }
@@ -334,7 +362,7 @@ struct CritiqueSidebar: View {
             Spacer()
             Text("No critique yet.")
                 .font(CritiqueTypography.hand(15))
-                .foregroundStyle(colorTheme.secondaryText)
+                .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
             Spacer()
         }
         .frame(maxWidth: .infinity)
@@ -351,7 +379,7 @@ struct CritiqueSidebar: View {
                     if critique.items.isEmpty {
                         Text("No high or medium problems found.")
                             .font(CritiqueTypography.hand(15))
-                            .foregroundStyle(colorTheme.secondaryText)
+                            .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                             .padding(.horizontal, 12)
                     }
 
@@ -386,7 +414,7 @@ struct CritiqueSidebar: View {
                                     if !pattern.locations.isEmpty {
                                         Text(pattern.locations.joined(separator: " · "))
                                             .font(CritiqueTypography.hand(12))
-                                            .foregroundStyle(colorTheme.secondaryText)
+                                            .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                                     }
                                 }
                             }
@@ -434,13 +462,13 @@ struct CritiqueSidebar: View {
                     .contentTransition(.numericText())
                 Text("/100")
                     .font(CritiqueTypography.hand(CritiqueTypography.sectionSize))
-                    .foregroundStyle(ink.opacity(0.75))
+                    .foregroundStyle(ink)
                 Spacer(minLength: 0)
                 VStack(alignment: .trailing, spacing: 1) {
                     Text("AWESOMENESS")
                         .font(CritiqueTypography.hand(CritiqueTypography.captionSize))
                         .tracking(0.8)
-                        .foregroundStyle(colorTheme.secondaryText)
+                        .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                     Text(critique.verdict)
                         .font(CritiqueTypography.hand(CritiqueTypography.sectionSize))
                         .foregroundStyle(colorTheme.primaryText)
@@ -475,7 +503,7 @@ struct CritiqueSidebar: View {
                         : "\(critique.resolvedCount) of \(critique.items.count) answered."
                 )
                 .font(CritiqueTypography.hand(CritiqueTypography.captionSize))
-                .foregroundStyle(colorTheme.secondaryText)
+                .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
             }
         }
         .padding(.horizontal, 14)
@@ -526,7 +554,7 @@ struct CritiqueSidebar: View {
             Text("ANSWERED")
                 .font(CritiqueTypography.hand(CritiqueTypography.sectionSize))
                 .tracking(0.5)
-                .foregroundStyle(colorTheme.secondaryText)
+                .foregroundStyle(colorTheme.primaryText)
             Rectangle()
                 .fill(colorTheme.separator.opacity(0.7))
                 .frame(height: 1)
@@ -556,12 +584,12 @@ struct CritiqueSidebar: View {
             : ""
         return Label(opening + survivors, systemImage: "clock.badge.exclamationmark")
         .font(CritiqueTypography.hand(15))
-        .foregroundStyle(colorTheme.secondaryText)
+        .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             ZStack {
-                Rectangle().fill(colorTheme.secondaryText.opacity(0.10))
+                Rectangle().fill(CritiqueInk.quiet(on: colorTheme.mode).opacity(0.10))
                 Rectangle().strokeBorder(
                     PixelStyle.line(colorTheme), lineWidth: PixelStyle.border
                 )
@@ -587,7 +615,7 @@ struct CritiqueSidebar: View {
                 if !report.jobRead.isEmpty {
                     Text(report.jobRead)
                         .font(CritiqueTypography.hand(13))
-                        .foregroundStyle(colorTheme.secondaryText)
+                        .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -600,7 +628,7 @@ struct CritiqueSidebar: View {
                 if !problems.isEmpty {
                     noteSection(
                         "WHAT DOESN'T WORK", problems, mark: "–",
-                        tint: CritiqueSeverity.high.tint
+                        tint: CritiqueSeverity.high.ink(on: colorTheme.mode)
                     )
                 }
 
@@ -614,7 +642,7 @@ struct CritiqueSidebar: View {
                                 Text("\(entry.count) \(entry.severity.label)")
                                     .font(CritiqueTypography.hand(13))
                                     .textCase(.uppercase)
-                                    .foregroundStyle(colorTheme.secondaryText)
+                                    .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                             }
                         }
                     }
@@ -629,7 +657,7 @@ struct CritiqueSidebar: View {
                         "\(unanchored) of \(critique.items.count) could not be matched to a passage."
                     )
                     .font(CritiqueTypography.hand(12))
-                    .foregroundStyle(colorTheme.secondaryText)
+                    .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                 }
             }
         }
@@ -641,7 +669,7 @@ struct CritiqueSidebar: View {
             ?? UUID(uuidString: "00000000-0000-0000-0000-00000000FEED")!
     }
 
-    private var worksTint: Color { Color(red: 0.16, green: 0.60, blue: 0.35) }
+    private var worksTint: Color { CritiqueCard.worksGreen(on: colorTheme.mode) }
 
     private func noteSection(
         _ title: String,
@@ -676,7 +704,7 @@ struct CritiqueSidebar: View {
             Text(title.uppercased())
                 .font(CritiqueTypography.hand(CritiqueTypography.sectionSize))
                 .tracking(0.5)
-                .foregroundStyle(colorTheme.secondaryText)
+                .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                 .padding(.top, 8)
             body()
                 .foregroundStyle(colorTheme.primaryText)
@@ -803,7 +831,10 @@ private struct ActionStamp: View {
 }
 
 /// One comment.
-private struct CritiqueCard: View {
+// Not `private`: it holds the feature's remaining colour constants, and the
+// contrast pass in `check-critique` has to be able to name them. A palette
+// nothing outside the file can see is a palette nothing can check.
+struct CritiqueCard: View {
     let item: CritiqueModel.Item
     let colorTheme: EditorColorTheme
     let isSelected: Bool
@@ -825,7 +856,7 @@ private struct CritiqueCard: View {
     private var paper: Color {
         isAnswered
             ? colorTheme.cardBackground
-            : finding.severity.notePaper
+            : finding.severity.notePaper(on: colorTheme.mode)
     }
 
     /// The tag pinned to the top of the note.
@@ -841,7 +872,9 @@ private struct CritiqueCard: View {
         return Text(answered?.label.uppercased() ?? finding.severity.label.uppercased())
             .font(CritiqueTypography.hand(12))
             .tracking(0.6)
-            .foregroundStyle(answered == nil ? Color.white : colorTheme.secondaryText)
+            .foregroundStyle(
+                answered == nil ? Color.white : CritiqueInk.body(on: colorTheme.mode)
+            )
             .padding(.horizontal, 8)
             .padding(.vertical, 2)
             .background(
@@ -852,8 +885,12 @@ private struct CritiqueCard: View {
                     Rectangle()
                         .fill(
                             answered == nil
-                                ? finding.severity.tint
-                                : colorTheme.secondaryText.opacity(0.18)
+                                // The deep member of the hue, not the bright
+                                // one. White on the bright amber measures
+                                // 2.35:1 — the tag was a colour with a word
+                                // hidden in it.
+                                ? finding.severity.ink(on: .light)
+                                : CritiqueInk.quiet(on: colorTheme.mode).opacity(0.18)
                         )
                 }
             )
@@ -876,7 +913,7 @@ private struct CritiqueCard: View {
             }
             .buttonStyle(.plain)
             .font(.system(size: 11, weight: .bold))
-            .foregroundStyle(colorTheme.secondaryText)
+            .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
             .help("Put this note back.")
         } else {
             ActionStamp(
@@ -902,8 +939,43 @@ private struct CritiqueCard: View {
     /// and at eleven points it disappears. A filled block with a white glyph
     /// reads the same on pink, yellow, blue and white, which is the whole
     /// requirement.
-    static let doneGreen = Color(red: 0.11, green: 0.55, blue: 0.24)
+    static let doneGreen = Color(red: 0.09, green: 0.46, blue: 0.20)
     static let dismissRed = Color(red: 0.80, green: 0.15, blue: 0.13)
+
+    /// The green the summary's "what works" is headed in.
+    ///
+    /// Lightened for a dark theme like every other reading colour here: the
+    /// one green measured 2.9:1 on the dark card it is set on.
+    /// The green the summary's "what works" is headed in.
+    ///
+    /// Lightened for a dark theme like every other reading colour here: the
+    /// one green measured 2.9:1 on the dark card it is set on.
+    /// The two colours a note is written in.
+    ///
+    /// A note's own, not the theme's. The theme's text colours are picked
+    /// against the theme's *page*, and a note is not on the page — it is on
+    /// pale pink or pale yellow in a light theme and on a deep version of the
+    /// same in a dark one. The theme's grey secondary measured 4.2:1 on pale
+    /// pink, which is a label you have to lean in for.
+    static func noteInk(on mode: EditorAppearanceMode) -> Color {
+        mode == .dark
+            ? Color(red: 0.95, green: 0.95, blue: 0.94)
+            : Color(red: 0.12, green: 0.11, blue: 0.11)
+    }
+
+    /// The quieter one, for labels and locations. Still a reading colour: it
+    /// is quieter by being lighter than the body, not by being too faint.
+    static func noteSubInk(on mode: EditorAppearanceMode) -> Color {
+        mode == .dark
+            ? Color(red: 0.78, green: 0.77, blue: 0.76)
+            : Color(red: 0.34, green: 0.32, blue: 0.32)
+    }
+
+    static func worksGreen(on mode: EditorAppearanceMode) -> Color {
+        mode == .dark
+            ? Color(red: 0.42, green: 0.82, blue: 0.56)
+            : Color(red: 0.13, green: 0.50, blue: 0.29)
+    }
 
     var body: some View {
         StickyNote(
@@ -922,7 +994,7 @@ private struct CritiqueCard: View {
                 // a word in this row — see `severityTag`.
                 Text(finding.category)
                     .font(CritiqueTypography.hand(CritiqueTypography.sectionSize))
-                    .foregroundStyle(colorTheme.primaryText)
+                    .foregroundStyle(CritiqueInk.body(on: colorTheme.mode))
                     .lineLimit(2)
                 Spacer(minLength: 0)
                 if finding.needsVerification {
@@ -931,9 +1003,9 @@ private struct CritiqueCard: View {
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1)
                         .background(
-                            Rectangle().fill(colorTheme.secondaryText.opacity(0.18))
+                            Rectangle().fill(CritiqueInk.quiet(on: colorTheme.mode).opacity(0.18))
                         )
-                        .foregroundStyle(colorTheme.secondaryText)
+                        .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                 }
             }
 
@@ -951,7 +1023,7 @@ private struct CritiqueCard: View {
                 // as theirs.
                 Text(finding.quote)
                     .font(CritiqueTypography.hand(13))
-                    .foregroundStyle(colorTheme.secondaryText)
+                    .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                     .lineLimit(isSelected ? nil : 2)
                     .padding(.leading, 7)
                     .overlay(alignment: .leading) {
@@ -963,7 +1035,7 @@ private struct CritiqueCard: View {
 
             Text(finding.why)
                 .font(CritiqueTypography.hand(CritiqueTypography.bodySize))
-                .foregroundStyle(colorTheme.primaryText)
+                .foregroundStyle(CritiqueInk.body(on: colorTheme.mode))
                 .fixedSize(horizontal: false, vertical: true)
 
             if let advice = finding.advice {
@@ -971,10 +1043,10 @@ private struct CritiqueCard: View {
                     Text(finding.adviceLabel.uppercased())
                         .font(CritiqueTypography.hand(CritiqueTypography.captionSize))
                         .tracking(0.4)
-                        .foregroundStyle(colorTheme.secondaryText)
+                        .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                     Text(advice)
                         .font(CritiqueTypography.hand(CritiqueTypography.bodySize))
-                        .foregroundStyle(colorTheme.primaryText)
+                        .foregroundStyle(CritiqueInk.body(on: colorTheme.mode))
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.top, 2)
@@ -985,12 +1057,12 @@ private struct CritiqueCard: View {
                     if !finding.location.isEmpty {
                         Text(finding.location)
                             .font(CritiqueTypography.hand(12))
-                            .foregroundStyle(colorTheme.secondaryText)
+                            .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                     }
                 } else {
                     Label("Not found in the document", systemImage: "questionmark.circle")
                         .font(CritiqueTypography.hand(12))
-                        .foregroundStyle(colorTheme.secondaryText)
+                        .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                 }
 
                 Spacer(minLength: 0)

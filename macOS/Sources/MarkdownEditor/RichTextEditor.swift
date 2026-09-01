@@ -333,8 +333,8 @@ struct RichTextEditor: NSViewRepresentable {
                     id: id,
                     range: rendered,
                     colour: selected
-                        ? severity.selectedHighlight
-                        : severity.highlight
+                        ? severity.selectedHighlight(on: colorTheme.mode)
+                        : severity.highlight(on: colorTheme.mode)
                 )
             }
             if highlights != shownHighlights {

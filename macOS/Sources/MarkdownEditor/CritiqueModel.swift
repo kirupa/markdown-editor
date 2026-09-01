@@ -371,11 +371,24 @@ extension CritiqueSeverity {
     /// Three colours because a pad of notes is three colours, and because it
     /// makes severity legible from across the room, before a word is read.
     /// Kept pale: the handwriting has to stay the darkest thing on it.
-    var notePaper: Color {
-        switch self {
-        case .high: return Color(red: 1.00, green: 0.85, blue: 0.84)
-        case .medium: return Color(red: 1.00, green: 0.96, blue: 0.76)
-        case .low: return Color(red: 0.85, green: 0.93, blue: 1.00)
+    /// The paper a note is written on.
+    ///
+    /// Theme-aware, and it has to be: the papers were three fixed pastels
+    /// while the writing on them followed the theme, so in a dark theme the
+    /// notes were light grey text on pale pink and pale yellow — the pad was
+    /// there, and unreadable. Paper this pale only works under dark ink.
+    ///
+    /// The dark set is the same three hues taken down to a depth the theme's
+    /// own text reads on, rather than to grey: a note should still be *the
+    /// pink one* at a glance, which is how the pad is navigated.
+    func notePaper(on mode: EditorAppearanceMode) -> Color {
+        switch (self, mode) {
+        case (.high, .light): return Color(red: 1.00, green: 0.85, blue: 0.84)
+        case (.medium, .light): return Color(red: 1.00, green: 0.96, blue: 0.76)
+        case (.low, .light): return Color(red: 0.85, green: 0.93, blue: 1.00)
+        case (.high, .dark): return Color(red: 0.30, green: 0.15, blue: 0.16)
+        case (.medium, .dark): return Color(red: 0.28, green: 0.23, blue: 0.10)
+        case (.low, .dark): return Color(red: 0.14, green: 0.21, blue: 0.32)
         }
     }
 
@@ -384,26 +397,42 @@ extension CritiqueSeverity {
     /// Faint, because it sits under the words the author is trying to read.
     /// Google Docs' comment highlight is the reference: enough to notice, not
     /// enough to fight the text.
-    var highlight: NSColor {
-        switch self {
-        case .high:
+    func highlight(on mode: EditorAppearanceMode) -> NSColor {
+        switch (self, mode) {
+        case (.high, .light):
             return NSColor(srgbRed: 0.85, green: 0.24, blue: 0.24, alpha: 0.16)
-        case .medium:
+        case (.medium, .light):
             return NSColor(srgbRed: 0.95, green: 0.66, blue: 0.13, alpha: 0.20)
-        case .low:
+        case (.low, .light):
             return NSColor(srgbRed: 0.36, green: 0.55, blue: 0.80, alpha: 0.15)
+        // Lighter and a shade stronger, because a wash darker than the page it
+        // is on is not a highlight. The red measured 1.11:1 against a dark
+        // page — a mark you cannot see is the same as no mark, and the comment
+        // beside it then points at nothing.
+        case (.high, .dark):
+            return NSColor(srgbRed: 1.00, green: 0.46, blue: 0.46, alpha: 0.22)
+        case (.medium, .dark):
+            return NSColor(srgbRed: 1.00, green: 0.76, blue: 0.30, alpha: 0.22)
+        case (.low, .dark):
+            return NSColor(srgbRed: 0.55, green: 0.76, blue: 1.00, alpha: 0.20)
         }
     }
 
     /// The wash for the passage whose card is open.
-    var selectedHighlight: NSColor {
-        switch self {
-        case .high:
+    func selectedHighlight(on mode: EditorAppearanceMode) -> NSColor {
+        switch (self, mode) {
+        case (.high, .light):
             return NSColor(srgbRed: 0.85, green: 0.24, blue: 0.24, alpha: 0.34)
-        case .medium:
+        case (.medium, .light):
             return NSColor(srgbRed: 0.95, green: 0.62, blue: 0.10, alpha: 0.42)
-        case .low:
+        case (.low, .light):
             return NSColor(srgbRed: 0.36, green: 0.55, blue: 0.80, alpha: 0.32)
+        case (.high, .dark):
+            return NSColor(srgbRed: 1.00, green: 0.46, blue: 0.46, alpha: 0.40)
+        case (.medium, .dark):
+            return NSColor(srgbRed: 1.00, green: 0.76, blue: 0.30, alpha: 0.40)
+        case (.low, .dark):
+            return NSColor(srgbRed: 0.55, green: 0.76, blue: 1.00, alpha: 0.38)
         }
     }
 }

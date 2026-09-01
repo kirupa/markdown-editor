@@ -139,7 +139,7 @@ func checkHighlightsAndClicking() {
             "rendered as \"\(shown)\""
         )
         highlights.append(
-            .init(id: finding.id, range: rendered, colour: finding.severity.highlight)
+            .init(id: finding.id, range: rendered, colour: finding.severity.highlight(on: .light))
         )
     }
     view.critiqueHighlights = highlights
@@ -324,6 +324,7 @@ struct CheckCritique {
         app.setActivationPolicy(.accessory)
 
         checkTheScoreIsLegible()
+        checkEveryColourIsLegible()
         checkHighlightsAndClicking()
         checkTheSourcePaneShadesToo()
         checkTheHistory()
@@ -905,6 +906,149 @@ func checkTheRailRenders() {
     )
 }
 
+/// Every colour the rail sets words in, against the colour behind them.
+///
+/// A pass rather than a spot check, because the failure it is here to catch is
+/// systematic: the note papers were three fixed pastels while the writing on
+/// them followed the theme, so in a dark theme the pad was light grey on pale
+/// pink and could not be read at all. One pairing being wrong is a bug; the
+/// whole family being wrong is what happens when a colour is chosen in one
+/// theme and never looked at in the other.
+///
+/// Thresholds are the WCAG ones — 4.5:1 for text, 3:1 for text at 24pt and up.
+/// The score numeral is the only large one here.
+@MainActor
+func checkEveryColourIsLegible() {
+    print("")
+    print("Reading the rail")
+
+    func srgb(_ colour: Color) -> NSColor {
+        NSColor(colour).usingColorSpace(.sRGB)!
+    }
+    func srgb(_ colour: NSColor) -> NSColor {
+        colour.usingColorSpace(.sRGB)!
+    }
+    /// `ink` laid over `background` at its own alpha, as the screen composites it.
+    func over(_ ink: NSColor, _ background: NSColor) -> NSColor {
+        let a = ink.alphaComponent
+        return NSColor(
+            srgbRed: ink.redComponent * a + background.redComponent * (1 - a),
+            green: ink.greenComponent * a + background.greenComponent * (1 - a),
+            blue: ink.blueComponent * a + background.blueComponent * (1 - a),
+            alpha: 1
+        )
+    }
+    func luminance(_ colour: NSColor) -> Double {
+        let c = srgb(colour)
+        func channel(_ raw: CGFloat) -> Double {
+            let v = Double(raw)
+            return v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * channel(c.redComponent)
+            + 0.7152 * channel(c.greenComponent)
+            + 0.0722 * channel(c.blueComponent)
+    }
+    func contrast(_ ink: NSColor, on background: NSColor) -> Double {
+        let a = luminance(over(srgb(ink), srgb(background)))
+        let b = luminance(background)
+        return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+    }
+
+    for mode in [EditorAppearanceMode.light, .dark] {
+        let theme = EditorColorTheme(color: .blue, mode: mode)
+        let primary = srgb(theme.primaryTextColor)
+        let secondary = srgb(theme.secondaryTextColor)
+        let card = srgb(theme.editorBackgroundColor)
+        let canvas = srgb(NSColor(PixelStyle.canvas(theme)))
+        // A note is not on the page, so it is not written in the page's ink.
+        let noteInk = srgb(CritiqueCard.noteInk(on: mode))
+        let noteSub = srgb(CritiqueCard.noteSubInk(on: mode))
+
+        var pairs: [(String, NSColor, NSColor, Double)] = []
+
+        for severity in [CritiqueSeverity.high, .medium, .low] {
+            let paper = srgb(severity.notePaper(on: mode))
+            let name = severity.rawValue
+            pairs += [
+                ("the category on a \(name) note", noteInk, paper, 4.5),
+                ("the comment on a \(name) note", noteInk, paper, 4.5),
+                ("the advice label on a \(name) note", noteSub, paper, 4.5),
+                ("the location on a \(name) note", noteSub, paper, 4.5),
+                ("the \(name) tag",
+                 srgb(NSColor.white), srgb(severity.ink(on: .light)), 4.5),
+                // An answered note is straightened onto the theme's own card,
+                // and its tag turns grey-on-grey.
+                // An answered note is faded to 0.62 — *the whole note*, paper and
+            // writing together, against the canvas behind it. Measuring the
+            // ink on the paper at full strength answers a question nobody is
+            // looking at.
+            ("an answered \(name) note's comment",
+             over(noteInk.withAlphaComponent(0.62), canvas),
+             over(card.withAlphaComponent(0.62), canvas), 4.5),
+                ("the answered tag", noteInk,
+                 over(noteSub.withAlphaComponent(0.18), card), 4.5),
+            ]
+            // The wash behind the score, and the number on it.
+            let wash = over(
+                srgb(severity.tint).withAlphaComponent(0.12), card
+            )
+            pairs += [
+                ("the \(name) score", srgb(severity.ink(on: mode)), wash, 3.0),
+                ("its /100", srgb(severity.ink(on: mode)), wash, 4.5),
+                ("the awesomeness caption on a \(name) banner", secondary, wash, 4.5),
+                ("the verdict on a \(name) banner", primary, wash, 4.5),
+            ]
+        }
+
+        // The summary note, which is the theme's own card in both themes.
+        pairs += [
+            ("the summary's job-read line", noteSub, card, 4.5),
+            ("the summary's WHAT WORKS heading",
+             srgb(CritiqueCard.worksGreen(on: mode)), card, 4.5),
+            ("the summary's WHAT DOESN'T WORK heading",
+             srgb(CritiqueSeverity.high.ink(on: mode)), card, 4.5),
+            ("the summary's body", primary, card, 4.5),
+            ("an answered note's body", primary, card, 4.5),
+            ("the ANSWERED divider", primary, canvas, 4.5),
+            // Text that sits straight on the rail's own background.
+            ("a plain rail line", noteSub, canvas, 4.5),
+            ("the stale notice",
+             noteSub, over(noteSub.withAlphaComponent(0.10), canvas), 4.5),
+            ("the tick stamp", srgb(NSColor.white), srgb(CritiqueCard.doneGreen), 4.5),
+            ("the cross stamp", srgb(NSColor.white), srgb(CritiqueCard.dismissRed), 4.5),
+        ]
+
+        // The shading in the document is a different question: not whether
+        // the words on it can be read — they are the theme's own text on
+        // nearly the theme's own page — but whether the mark can be *seen*.
+        // A wash tuned over white can all but vanish over a dark page.
+        for severity in [CritiqueSeverity.high, .medium, .low] {
+            let page = srgb(theme.editorBackgroundColor)
+            let shaded = over(srgb(severity.highlight(on: mode)), page)
+            let visible = contrast(shaded, on: page)
+            check(
+                "the \(severity.rawValue) shading is visible in \(mode.rawValue)",
+                visible >= 1.12,
+                String(format: "%.3f:1 against the page, which is no mark at all", visible)
+            )
+            check(
+                "and the words on it still read in \(mode.rawValue)",
+                contrast(primary, on: shaded) >= 4.5,
+                String(format: "%.2f:1", contrast(primary, on: shaded))
+            )
+        }
+
+        for (what, ink, background, threshold) in pairs {
+            let ratio = contrast(ink, on: background)
+            check(
+                "\(what) reads in \(mode.rawValue)",
+                ratio >= threshold,
+                String(format: "%.2f:1, and it wants %.1f:1", ratio, threshold)
+            )
+        }
+    }
+}
+
 /// The score has to be readable, and it is set on a wash of its own colour.
 ///
 /// Checked as arithmetic because that is what it is. The severity tints are
@@ -1028,7 +1172,7 @@ func checkTheSourcePaneShadesToo() {
     )
 
     view.critiqueHighlights = [
-        .init(id: finding.id, range: range, colour: finding.severity.highlight)
+        .init(id: finding.id, range: range, colour: finding.severity.highlight(on: .light))
     ]
     check(
         "the passage is shaded in the Markdown pane",

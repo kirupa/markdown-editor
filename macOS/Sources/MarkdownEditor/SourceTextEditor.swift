@@ -213,8 +213,8 @@ struct SourceTextEditor: NSViewRepresentable {
                     id: id,
                     range: range,
                     colour: critique.selectedFindingID == id
-                        ? severity.selectedHighlight
-                        : severity.highlight
+                        ? severity.selectedHighlight(on: colorTheme.mode)
+                        : severity.highlight(on: colorTheme.mode)
                 )
             }
             if highlights != shownHighlights {
