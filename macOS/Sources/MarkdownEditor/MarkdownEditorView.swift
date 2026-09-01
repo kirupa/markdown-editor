@@ -201,7 +201,14 @@ struct MarkdownEditorView: View {
             }
         }
         .frame(minWidth: Layout.minimumWindowWidth, minHeight: 520)
-        .background(colorTheme.canvasBackground)
+        .background {
+            // The desk the page lies on: a flat tone with a faint grid over
+            // it, drawn behind everything rather than inside the page.
+            ZStack {
+                PixelStyle.canvas(colorTheme)
+                PixelGrid(theme: colorTheme)
+            }
+        }
         .preferredColorScheme(colorTheme.colorScheme)
         .focusedSceneValue(\.markdownEditorSession, session)
         .focusedSceneValue(
@@ -334,8 +341,18 @@ struct MarkdownEditorView: View {
     }
 
     /// Start a critique of the document as it stands.
+    /// Start a critique of the document as it stands.
+    ///
+    /// A closed rail with a saved critique in it is re-opened rather than
+    /// re-run: the button says "critique this", and spending half a minute and
+    /// a fistful of credits redoing a critique somebody has already read is
+    /// not what they asked for by pressing it once.
     private func startCritique() {
         guard !critique.isRunning else { return }
+        if !critique.history.isEmpty, !critique.isPresented {
+            critique.reveal()
+            return
+        }
         critique.run(on: document.text, documentURL: fileURL)
     }
 
@@ -416,6 +433,16 @@ private struct ResizableRichTextPreview: View {
                     critique: critique
                 )
                 .frame(width: pageWidth)
+                // The top sheet of a stack.
+                //
+                // The order matters and is easy to get backwards: the paper is
+                // drawn behind the *editor*, and the insets go outside it. Pad
+                // first and the sheet grows to fill the padding, so it runs to
+                // the window edge and stops being a sheet at all.
+                .paperStack(colorTheme)
+                .padding(.top, Layout.paperInset)
+                .padding(.bottom, Layout.paperInset + CGFloat(Layout.paperDepth) * Layout.paperStep)
+                .padding(.trailing, CGFloat(Layout.paperDepth) * Layout.paperStep + PixelStyle.shadowOffset)
                 .overlay(alignment: .trailing) {
                     WidthGripper(
                         colorTheme: colorTheme,
@@ -467,7 +494,14 @@ private struct ResizableRichTextPreview: View {
                 Spacer(minLength: 0)
             }
         }
-        .background(colorTheme.canvasBackground)
+        .background {
+            // The desk the page lies on: a flat tone with a faint grid over
+            // it, drawn behind everything rather than inside the page.
+            ZStack {
+                PixelStyle.canvas(colorTheme)
+                PixelGrid(theme: colorTheme)
+            }
+        }
     }
 
     private func resizeGesture(
@@ -600,6 +634,11 @@ private enum Layout {
     /// has stopped doing its job.
     static let railWidth: CGFloat = 356
     static let keyboardResizeStep: CGFloat = 20
+    /// How much canvas shows above and below the sheet.
+    static let paperInset: CGFloat = 14
+    /// Sheets visible behind the top one.
+    static let paperDepth = 2
+    static let paperStep: CGFloat = 4
 
     /// The inset the rendered pane gives its text container, each side.
     static let textContainerInset: CGFloat = 24

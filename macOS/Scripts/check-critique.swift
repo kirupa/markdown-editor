@@ -544,9 +544,7 @@ func checkTheRailRenders() {
         "Nothing supports it.",
         "Generic opening.",
         "No running example.",
-        // The answered card names its answer where its severity used to be,
-        // and the rail's labels are set uppercase.
-        "DISMISSED",
+
     ] {
         check(
             "the rail shows \"\(expected)\"",
@@ -692,6 +690,51 @@ func checkTheRailRenders() {
         }
         return Double(found) * 2 / Double(scale * scale)
     }
+
+    /// The two colours the notes are most often painted in.
+    ///
+    /// The *most frequent* rather than the distinct count: every antialiased
+    /// edge is its own colour, so counting buckets reports sixteen either way
+    /// and passes whatever is drawn — measured at 16 against 18 for a build
+    /// with all three severities forced to one paper. The dominant colours are
+    /// the fills, and comparing those actually answers the question.
+    func dominantPapers(fromTop top: CGFloat, height: CGFloat) -> [(String, Int)] {
+        let firstRow = Int(top * scale)
+        let lastRow = min(rep.pixelsHigh, Int((top + height) * scale))
+        var counts: [String: Int] = [:]
+        guard firstRow < lastRow else { return [] }
+        for y in stride(from: firstRow, to: lastRow, by: 2) {
+            for x in stride(from: 0, to: rep.pixelsWide, by: 2) {
+                guard let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB)
+                else { continue }
+                let r = c.redComponent, g = c.greenComponent, b = c.blueComponent
+                // Pale but tinted: a note's paper, not the page and not the ink.
+                guard r > 0.78, g > 0.72, b > 0.68,
+                      max(r, max(g, b)) - min(r, min(g, b)) > 0.06
+                else { continue }
+                counts["\(Int(r * 40))-\(Int(g * 40))-\(Int(b * 40))", default: 0] += 1
+            }
+        }
+        return counts.sorted { $0.value > $1.value }.map { ($0.key, $0.value) }
+    }
+
+    let papers = dominantPapers(fromTop: 250, height: 340)
+    if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
+        print("  dominant note papers: \(papers.prefix(3).map { "\($0.0)x\($0.1)" })")
+    }
+    // A *share*, not a count. With one paper for every severity the second
+    // commonest colour is still a thousand antialiased pixels, which clears
+    // any fixed threshold — measured at 1.8% of the first, against 69% when
+    // the notes really are two colours.
+    check(
+        "notes are written on paper coloured by severity",
+        papers.count >= 2 && papers[1].1 * 4 > papers[0].1
+            && papers[0].0 != papers[1].0,
+        papers.count < 2
+            ? "only one paper colour is used"
+            : "the two commonest papers are \(papers[0].0) x\(papers[0].1) and "
+                + "\(papers[1].0) x\(papers[1].1)"
+    )
 
     let scoreInk = saturatedArea(fromTop: 58, height: 64)
     if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {

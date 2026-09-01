@@ -119,7 +119,7 @@ struct CritiqueSidebar: View {
         // and read as part of the document rather than as notes beside it.
         .padding(.leading, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(colorTheme.canvasBackground)
+        .background(PixelStyle.canvas(colorTheme))
     }
 
     private var header: some View {
@@ -241,7 +241,7 @@ struct CritiqueSidebar: View {
             // of it is behind you.
             HStack(spacing: 4) {
                 ForEach(CritiqueProgress.Stage.allCases, id: \.self) { stage in
-                    Capsule()
+                    Rectangle()
                         .fill(
                             stage.rawValue <= progress.stage.rawValue
                                 ? colorTheme.accent
@@ -431,17 +431,17 @@ struct CritiqueSidebar: View {
             // rail is a list of things to do, and this is how much is left.
             GeometryReader { bar in
                 ZStack(alignment: .leading) {
-                    Capsule()
+                    Rectangle()
                         .fill(colorTheme.secondaryText.opacity(0.16))
-                    Capsule()
-                        .fill(
-                            LinearGradient(
-                                colors: [tint.opacity(0.75), tint],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .frame(width: max(4, bar.size.width * CGFloat(score) / 100))
+                    // Stepped, not smooth: the bar reads in whole blocks, the
+                    // way a health meter does, rather than as a continuous
+                    // measurement it cannot honestly claim to be.
+                    HStack(spacing: 2) {
+                        ForEach(0..<20, id: \.self) { block in
+                            Rectangle()
+                                .fill(block * 5 < score ? tint : .clear)
+                        }
+                    }
                 }
             }
             .frame(height: 7)
@@ -460,12 +460,13 @@ struct CritiqueSidebar: View {
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(tint.opacity(0.10))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .strokeBorder(tint.opacity(0.28), lineWidth: 1)
-                )
+            ZStack {
+                Rectangle()
+                    .fill(PixelStyle.shadow(colorTheme))
+                    .offset(x: PixelStyle.shadowOffset, y: PixelStyle.shadowOffset)
+                Rectangle().fill(tint.opacity(0.12))
+                Rectangle().strokeBorder(tint, lineWidth: PixelStyle.border)
+            }
         )
         .padding(.horizontal, 12)
         .animation(.easeOut(duration: 0.3), value: score)
@@ -523,8 +524,12 @@ struct CritiqueSidebar: View {
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(colorTheme.secondaryText.opacity(0.10))
+            ZStack {
+                Rectangle().fill(colorTheme.secondaryText.opacity(0.10))
+                Rectangle().strokeBorder(
+                    PixelStyle.line(colorTheme), lineWidth: PixelStyle.border
+                )
+            }
         )
         .padding(.horizontal, 12)
     }
@@ -545,7 +550,7 @@ struct CritiqueSidebar: View {
                 HStack(spacing: 10) {
                     ForEach(critique.severityCounts, id: \.severity) { entry in
                         HStack(spacing: 4) {
-                            Circle()
+                            Rectangle()
                                 .fill(entry.severity.tint)
                                 .frame(width: 6, height: 6)
                             Text("\(entry.count) \(entry.severity.label)")
@@ -605,6 +610,52 @@ private struct CritiqueCard: View {
     private var finding: CritiqueFinding { item.finding }
     private var isAnswered: Bool { !item.isOutstanding }
 
+    /// Stable per note, so answering one does not reshuffle the pad.
+    private var angle: Double {
+        // A note that has been dealt with is straightened, which reads as
+        // "this one has been handled" without needing a word for it.
+        isAnswered ? 0 : PixelJitter.angle(for: item.id)
+    }
+
+    private var paper: Color {
+        isAnswered
+            ? colorTheme.cardBackground
+            : finding.severity.notePaper
+    }
+
+    /// The tag pinned to the top of the note.
+    ///
+    /// Severity reads twice over: the paper it is written on, and the tag
+    /// itself. That is deliberate rather than redundant — the colour is what
+    /// you take in scrolling past, and the word is what you check when it
+    /// matters. An answered note shows what was decided instead, in grey,
+    /// because the severity of something you have dealt with is no longer the
+    /// useful fact about it.
+    private var severityTag: some View {
+        let answered = item.resolution
+        return Text(answered?.label.uppercased() ?? finding.severity.label.uppercased())
+            .font(CritiqueTypography.label(11))
+            .tracking(0.6)
+            .foregroundStyle(answered == nil ? Color.white : colorTheme.secondaryText)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 2)
+            .background(
+                ZStack {
+                    Rectangle()
+                        .fill(PixelStyle.shadow(colorTheme))
+                        .offset(x: 2, y: 2)
+                    Rectangle()
+                        .fill(
+                            answered == nil
+                                ? finding.severity.tint
+                                : colorTheme.secondaryText.opacity(0.18)
+                        )
+                }
+            )
+            // Sits over the note's top edge, the way a tag does.
+            .offset(y: -9)
+    }
+
     /// Done, Dismiss, or — once answered — a way back.
     ///
     /// Always present rather than revealed on hover: a control that appears
@@ -640,17 +691,8 @@ private struct CritiqueCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Circle()
-                    .fill(isAnswered ? colorTheme.secondaryText : finding.severity.tint)
-                    .frame(width: 7, height: 7)
-                Text(
-                    item.resolution.map(\.label) ?? finding.severity.label
-                )
-                .font(CritiqueTypography.label(12))
-                .textCase(.uppercase)
-                .foregroundStyle(
-                    isAnswered ? colorTheme.secondaryText : finding.severity.tint
-                )
+                // The severity is the tag pinned to the top of the note, not
+                // a word in this row — see `severityTag`.
                 Text(finding.category)
                     .font(CritiqueTypography.label(12))
                     .foregroundStyle(colorTheme.secondaryText)
@@ -662,17 +704,24 @@ private struct CritiqueCard: View {
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1)
                         .background(
-                            Capsule().fill(colorTheme.secondaryText.opacity(0.15))
+                            Rectangle().fill(colorTheme.secondaryText.opacity(0.18))
                         )
                         .foregroundStyle(colorTheme.secondaryText)
                 }
             }
 
-            if !finding.quote.isEmpty {
-                // Deliberately *not* handwriting. This is the author's own
+            // The passage is *not* repeated here. The highlight in the
+            // document is already pointing at it, and a note that restates the
+            // sentence it is about makes you read the same words twice to
+            // learn nothing — which is not how a comment in a document behaves.
+            //
+            // The exception is a note nothing points at: when the quote could
+            // not be found, there is no highlight, and without the words the
+            // note has no subject at all.
+            if !item.isAnchored, !finding.quote.isEmpty {
+                // Deliberately not handwriting. This is the author's own
                 // sentence quoted back at them, and it has to be recognisable
-                // as theirs — re-lettering it in the reviewer's hand makes the
-                // draft look like it already says something it does not.
+                // as theirs.
                 Text(finding.quote)
                     .font(.system(size: 13))
                     .italic()
@@ -725,27 +774,40 @@ private struct CritiqueCard: View {
         }
         .textSelection(.enabled)
         .padding(10)
+        .padding(.top, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .opacity(isAnswered ? 0.62 : 1)
         .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(colorTheme.cardBackground)
-                .shadow(
-                    color: .black.opacity(isSelected ? 0.16 : 0.06),
-                    radius: isSelected ? 5 : 2,
-                    y: isSelected ? 2 : 1
-                )
+            ZStack {
+                // A block, not a blur: a blurred shadow is a gradient, and a
+                // gradient is the one thing a pixel grid cannot draw.
+                Rectangle()
+                    .fill(PixelStyle.shadow(colorTheme))
+                    .offset(
+                        x: isSelected ? PixelStyle.liftedShadowOffset : PixelStyle.shadowOffset,
+                        y: isSelected ? PixelStyle.liftedShadowOffset : PixelStyle.shadowOffset
+                    )
+                Rectangle().fill(paper)
+                Rectangle()
+                    .strokeBorder(
+                        isSelected
+                            ? finding.severity.tint
+                            : PixelStyle.line(colorTheme).opacity(0.5),
+                        lineWidth: isSelected ? 2 : PixelStyle.border
+                    )
+            }
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(
-                    isSelected
-                        ? finding.severity.tint.opacity(0.85)
-                        : colorTheme.separator.opacity(0.6),
-                    lineWidth: isSelected ? 1.5 : 1
-                )
-        )
-        .padding(.horizontal, 12)
+        // A strip of tape across the top corner, holding it on.
+        .overlay(alignment: .topLeading) {
+            severityTag.padding(.leading, 10)
+        }
+        .rotationEffect(.degrees(angle), anchor: .center)
+        .offset(x: PixelJitter.offset(for: item.id))
+        // Room for the corners to turn into. Without it a rotated note is
+        // clipped by the scroll view and the effect reads as a rendering
+        // fault rather than as a note pinned at an angle.
+        .padding(.horizontal, 16)
+        .padding(.vertical, 3)
         .contentShape(Rectangle())
         .onTapGesture(perform: onTap)
         .animation(.easeOut(duration: 0.14), value: isSelected)

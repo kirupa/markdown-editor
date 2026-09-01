@@ -49,8 +49,16 @@ final class CritiqueModel: ObservableObject {
     /// Where the decisions for the document being critiqued are kept.
     private var documentURL: URL?
 
+    /// Closed by hand, and stays closed until asked for again.
+    ///
+    /// Needed once a document can have a saved critique: without it, closing
+    /// the rail leaves it open and empty, because there is still a history to
+    /// present. The close button then does nothing anybody can see.
+    @Published private(set) var isDismissed = false
+
     var isPresented: Bool {
-        report != nil || isRunning || failure != nil || !history.isEmpty
+        guard !isDismissed else { return false }
+        return report != nil || isRunning || failure != nil || !history.isEmpty
     }
 
     /// The revision being shown, when it is not the newest.
@@ -87,6 +95,7 @@ final class CritiqueModel: ObservableObject {
         items = []
         shownRevisionID = nil
         failure = nil
+        isDismissed = false
         // Opening a document with a saved critique shows it, rather than an
         // empty panel beside a history badge saying two exist. It is anchored
         // against the draft as it is now, so it is immediately honest about
@@ -105,6 +114,11 @@ final class CritiqueModel: ObservableObject {
     /// survive still highlight, and the ones whose sentences have been
     /// rewritten say so instead of pointing at whatever now sits at that
     /// offset.
+    /// Brings the rail back after it was closed, without running anything.
+    func reveal() {
+        isDismissed = false
+    }
+
     func show(revision id: UUID?) {
         guard let id, let revision = history.revision(withID: id) else {
             shownRevisionID = nil
@@ -190,6 +204,7 @@ final class CritiqueModel: ObservableObject {
         attach(to: documentURL, text: text)
         currentText = text
         isRunning = true
+        isDismissed = false
         failure = nil
         progress = CritiqueProgress(stage: .starting)
         Task { [weak self] in
@@ -217,11 +232,9 @@ final class CritiqueModel: ObservableObject {
 
     func dismiss() {
         cancel()
-        report = nil
-        items = []
+        isDismissed = true
         failure = nil
         selectedFindingID = nil
-        criticisedText = nil
     }
 
     /// Applies a report without going through the CLI. For checks only.
@@ -326,6 +339,19 @@ extension CritiqueSeverity {
         case .high: return Color(red: 0.85, green: 0.24, blue: 0.24)
         case .medium: return Color(red: 0.90, green: 0.60, blue: 0.10)
         case .low: return Color(red: 0.36, green: 0.55, blue: 0.80)
+        }
+    }
+
+    /// The paper a note is written on.
+    ///
+    /// Three colours because a pad of notes is three colours, and because it
+    /// makes severity legible from across the room, before a word is read.
+    /// Kept pale: the handwriting has to stay the darkest thing on it.
+    var notePaper: Color {
+        switch self {
+        case .high: return Color(red: 1.00, green: 0.85, blue: 0.84)
+        case .medium: return Color(red: 1.00, green: 0.96, blue: 0.76)
+        case .low: return Color(red: 0.85, green: 0.93, blue: 1.00)
         }
     }
 
