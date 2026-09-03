@@ -63,7 +63,29 @@ final class RichMarkdownTextView: NSTextView {
             return []
         }
         let whole = NSRange(location: 0, length: textStorage.length)
-        let clamped = NSIntersectionRange(range, whole)
+        var clamped = NSIntersectionRange(range, whole)
+        guard clamped.length > 0 else { return [] }
+        // Trimmed to the words.
+        //
+        // A newline is laid out as a glyph that runs to the end of its line
+        // fragment, so a range ending in one — which is any quote reaching the
+        // end of a paragraph — measures as a band the full width of the
+        // column. A quote spanning a paragraph break shaded the empty line
+        // between them the same way.
+        let text = textStorage.string as NSString
+        let skippable = CharacterSet.whitespacesAndNewlines
+        func isSkippable(_ index: Int) -> Bool {
+            guard let scalar = Unicode.Scalar(text.character(at: index))
+            else { return false }
+            return skippable.contains(scalar)
+        }
+        while clamped.length > 0, isSkippable(clamped.location + clamped.length - 1) {
+            clamped.length -= 1
+        }
+        while clamped.length > 0, isSkippable(clamped.location) {
+            clamped.location += 1
+            clamped.length -= 1
+        }
         guard clamped.length > 0 else { return [] }
         let glyphs = layoutManager.glyphRange(
             forCharacterRange: clamped, actualCharacterRange: nil
@@ -79,8 +101,30 @@ final class RichMarkdownTextView: NSTextView {
         var boxes: [CGRect] = []
         layoutManager.enumerateLineFragments(forGlyphRange: glyphs) {
             _, _, _, fragmentGlyphs, _ in
-            let onThisLine = NSIntersectionRange(glyphs, fragmentGlyphs)
+            var onThisLine = NSIntersectionRange(glyphs, fragmentGlyphs)
             guard onThisLine.length > 0 else { return }
+            // And trimmed again per line, since the break between two lines of
+            // one wrapped passage is a newline sitting at the end of the first.
+            let onThisLineCharacters = layoutManager.characterRange(
+                forGlyphRange: onThisLine, actualGlyphRange: nil
+            )
+            var trailing = 0
+            var index = onThisLineCharacters.location + onThisLineCharacters.length - 1
+            while index >= onThisLineCharacters.location, isSkippable(index) {
+                trailing += 1
+                index -= 1
+            }
+            guard trailing < onThisLineCharacters.length else { return }
+            if trailing > 0 {
+                let kept = NSRange(
+                    location: onThisLineCharacters.location,
+                    length: onThisLineCharacters.length - trailing
+                )
+                onThisLine = layoutManager.glyphRange(
+                    forCharacterRange: kept, actualCharacterRange: nil
+                )
+                guard onThisLine.length > 0 else { return }
+            }
             let inked = layoutManager.boundingRect(
                 forGlyphRange: onThisLine, in: textContainer
             )

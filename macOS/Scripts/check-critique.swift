@@ -187,6 +187,41 @@ func checkHighlightsAndClicking() {
         )
     }
 
+    // A range that runs over a paragraph break shades the words, not the gap.
+    //
+    // A newline is laid out as a glyph reaching the end of its line fragment,
+    // so measuring one draws a band the full width of the column — which is
+    // what appeared between every pair of paragraphs, a stack of orange bars
+    // on the empty lines. Asserted directly on the drawing, because the
+    // checks above compare each box against the range's own bounding rect and
+    // a range ending in a newline has a full-width bounding rect too: the
+    // wrong answer and the yardstick were the same number.
+    if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
+        print("  rendered: " + view.string
+            .replacingOccurrences(of: "\n", with: "\\n").prefix(220))
+    }
+    // Anchored on the paragraph break itself, so the range really does contain
+    // the newlines. Aimed at the words either side of it and nothing else.
+    let text = view.string as NSString
+    let breakRange = text.range(of: "\n\n", options: [], range: NSRange(
+        location: 24, length: max(0, text.length - 24)
+    ))
+    if breakRange.location != NSNotFound, breakRange.location >= 10 {
+        let spanning = NSRange(
+            location: breakRange.location - 10,
+            length: min(10 + breakRange.length + 10, text.length - breakRange.location + 10)
+        )
+        let boxes = view.critiqueHighlightBoxes(for: spanning)
+        let widest = boxes.map(\.width).max() ?? 0
+        let container = view.textContainer?.size.width ?? view.bounds.width
+        check(
+            "a mark crossing a paragraph break shades no empty line",
+            widest < container - 40,
+            "the widest mark is \(Int(widest))pt in a \(Int(container))pt column, "
+                + "so the blank line is banded"
+        )
+    }
+
     // Nothing is drawn over the heading. Written as a real comparison rather
     // than a shape that cannot fail: the first version of this ended in
     // `|| true`, which is a check that passes whatever happens.
@@ -407,6 +442,7 @@ struct CheckCritique {
 
         checkTheHandsAreAvailable()
         checkTheDocumentFillsTheWindow()
+        checkTheFormattingBarIsABlock()
         checkTheScoreIsLegible()
         checkEveryColourIsLegible()
         checkHighlightsAndClicking()
@@ -1203,6 +1239,165 @@ func checkEveryColourIsLegible() {
     }
 }
 
+/// The formatting bar is a block: square, outlined, and dropped on the window.
+///
+/// Checked from the pixels because every part of it is visual. A control bar
+/// that quietly reverts to the platform's own look — rounded, borderless,
+/// translucent — still works perfectly and is no longer the thing that was
+/// asked for, and nothing else here would notice.
+@MainActor
+func checkTheFormattingBarIsABlock() {
+    print("")
+    print("The formatting bar")
+
+    let theme = EditorColorTheme(color: .blue, mode: .light)
+    let session = MarkdownEditorSession(fileURL: nil)
+    let bar = FormattingBar(session: session, colorTheme: theme)
+
+    // On an opaque backing. A hosting view leaves the area around the content
+    // transparent, which reads as black once flattened — so "the first dark
+    // pixel" found the edge of the image rather than the edge of the bar, and
+    // the border, width and corner checks all passed against empty space.
+    let host = NSHostingView(
+        rootView: AnyView(
+            bar.padding(20).background(PixelStyle.canvas(theme))
+        )
+    )
+    host.frame = NSRect(x: 0, y: 0, width: 700, height: 90)
+    // 660pt of bar inside a 700pt host, so there is real room to span.
+    host.layoutSubtreeIfNeeded()
+    RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+    host.layoutSubtreeIfNeeded()
+
+    guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else {
+        check("the formatting bar can be drawn", false)
+        return
+    }
+    host.cacheDisplay(in: host.bounds, to: rep)
+    let scale = CGFloat(rep.pixelsWide) / host.bounds.width
+    if let path = ProcessInfo.processInfo.environment["MDE_BAR_PNG"] {
+        try? rep.representation(using: .png, properties: [:])?
+            .write(to: URL(fileURLWithPath: path))
+        print("  wrote \(path)")
+    }
+
+    let ink = NSColor(PixelStyle.ink(theme)).usingColorSpace(.sRGB)!
+    func isInk(_ x: Int, _ y: Int) -> Bool {
+        guard let c: NSColor = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB)
+        else { return false }
+        let dr: CGFloat = abs(c.redComponent - ink.redComponent)
+        let dg: CGFloat = abs(c.greenComponent - ink.greenComponent)
+        let db: CGFloat = abs(c.blueComponent - ink.blueComponent)
+        return dr + dg + db < 0.30
+    }
+
+    // The border: a horizontal run of ink across the top of the block. A
+    // borderless bar gives nothing like it.
+    let middleRow = rep.pixelsHigh / 2
+    var left = 0
+    while left < rep.pixelsWide, !isInk(left, middleRow) { left += 1 }
+    var right = rep.pixelsWide - 1
+    while right > left, !isInk(right, middleRow) { right -= 1 }
+    let barWidth = CGFloat(right - left) / scale
+    check(
+        "the bar is drawn as an outlined block",
+        barWidth > 200,
+        "found only \(Int(barWidth))pt of outline across the middle"
+    )
+
+    // Its edge is heavy, not a hairline: count the ink at the left edge.
+    var edge = 0
+    var x = left
+    while x < rep.pixelsWide, isInk(x, middleRow) { edge += 1; x += 1 }
+    let edgeWidth = CGFloat(edge) / scale
+    if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
+        print("  bar \(Int(barWidth))pt wide, edge \(String(format: "%.1f", edgeWidth))pt")
+    }
+    check(
+        "with a heavy edge rather than a hairline",
+        edgeWidth >= 1.5,
+        "the edge measures \(String(format: "%.1f", edgeWidth))pt"
+    )
+
+    // Square corners: the pixel just inside the corner is ink too. On a
+    // rounded rectangle the corner is cut away and that pixel is background.
+    check(
+        "and square corners",
+        isInk(left + 1, middleRow) && isInk(left, middleRow),
+        "the corner is rounded off"
+    )
+
+    // The fill is the theme's, not a system material.
+    let surface = NSColor(PixelStyle.barSurface(theme)).usingColorSpace(.sRGB)!
+    let inside = rep.colorAt(
+        x: left + Int(6 * scale), y: middleRow
+    )?.usingColorSpace(.sRGB)
+    let dr: CGFloat = abs((inside?.redComponent ?? 0) - surface.redComponent)
+    let dg: CGFloat = abs((inside?.greenComponent ?? 0) - surface.greenComponent)
+    let db: CGFloat = abs((inside?.blueComponent ?? 0) - surface.blueComponent)
+    check(
+        "and the theme's own fill behind it",
+        dr + dg + db < 0.12,
+        "the fill is not the theme's bar surface"
+    )
+
+    // Given more room than its controls need, the bar spans it and centres
+    // them. Both halves are the request — full width, contents centred — and
+    // the failure mode is quiet: a bar whose leading spacer collapses looks
+    // like a normal left-aligned toolbar and nothing else notices.
+    check(
+        "the bar spans the width it is given",
+        barWidth > 560,
+        "it is \(Int(barWidth))pt wide inside a 660pt column, so it is not "
+            + "spanning it"
+    )
+
+    // The glyphs, found as ink well inside the border.
+    var firstGlyph: Int?
+    var lastGlyph = 0
+    for x in (left + Int(6 * scale))..<(right - Int(6 * scale)) {
+        var found = false
+        for y in (middleRow - Int(8 * scale))..<(middleRow + Int(8 * scale))
+        where isInk(x, y) { found = true; break }
+        if found {
+            if firstGlyph == nil { firstGlyph = x }
+            lastGlyph = x
+        }
+    }
+    if let firstGlyph {
+        // Compared as midpoints rather than as a pair of gaps.
+        //
+        // The leading control is a `Menu`, and a `Menu` label draws nothing
+        // through `cacheDisplay(in:to:)` — so the first *visible* thing is the
+        // separator after it and the measured span starts about 32pt late,
+        // which shows up as a 25pt difference between two gaps that are really
+        // equal. A midpoint carries only half that bias, and it still
+        // discriminates: left-aligned controls put the midpoint 116pt out.
+        let inkMiddle = CGFloat((firstGlyph + lastGlyph) / 2 - left) / scale
+        let barMiddle = CGFloat(right - left) / scale / 2
+        if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
+            print("  controls centre at \(Int(inkMiddle))pt, "
+                + "bar centre \(Int(barMiddle))pt")
+        }
+        check(
+            "with its controls centred in it",
+            abs(inkMiddle - barMiddle) < 24,
+            "they centre at \(Int(inkMiddle))pt where the bar centres at "
+                + "\(Int(barMiddle))pt"
+        )
+    } else {
+        check("with its controls centred in it", false, "no controls found")
+    }
+
+    // Deliberately not checked here: how the two `Menu` controls in the bar
+    // are inked. A `Menu` label draws nothing at all through
+    // `cacheDisplay(in:to:)` — measured as a blank 0.98 across the whole 30pt
+    // the heading menu occupies, with the separator either side of it at 0.18
+    // — so any assertion about their colour is an assertion about the
+    // snapshot, not about the app. It failed for a build in which they were
+    // perfectly legible.
+}
+
 /// The document is a column that fills the window, not a sheet lying on it.
 ///
 /// Checked from the drawn pixels, because every part of the claim is visual:
@@ -1257,18 +1452,46 @@ func checkTheDocumentFillsTheWindow() {
         let dr: CGFloat = abs(c.redComponent - page.redComponent)
         let dg: CGFloat = abs(c.greenComponent - page.greenComponent)
         let db: CGFloat = abs(c.blueComponent - page.blueComponent)
-        return dr + dg + db < 0.06
+        // Tight. The formatting bar's fill is the theme's sidebar tint, which
+        // in a light theme is within 0.07 of the page — at a looser tolerance
+        // the bar counts as document and the column appears to start at the
+        // top of it.
+        return dr + dg + db < 0.03
     }
 
     // Down the middle of the column, which is centred in the pane.
     let middle = rep.pixelsWide / 2
+
+    // The column starts under the formatting bar rather than at the very top
+    // of the pane. Found as the first row from which the page colour runs
+    // unbroken to the bottom — so the bar, its drop and the gap below it are
+    // all skipped without hard-coding how tall any of them are.
+    var columnTop: Int?
+    var run = 0
+    for y in stride(from: rep.pixelsHigh - 2, through: 0, by: -1) {
+        if isPage(middle, y) {
+            run += 1
+            if run > Int(40 * scale) { columnTop = y }
+        } else {
+            run = 0
+        }
+    }
+    guard let columnTop else {
+        check("the document is a column below the bar", false,
+              "no unbroken run of page colour reaching the bottom")
+        return
+    }
+    let topOffset = CGFloat(columnTop) / scale
+    if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
+        print("  column starts \(Int(topOffset))pt down")
+    }
     check(
-        "the document reaches the top of the pane",
-        isPage(middle, 1),
-        "there is canvas above it, so it is still a sheet with a margin"
+        "the document is a column below the bar",
+        topOffset < 90,
+        "it starts \(Int(topOffset))pt down, which is more than a bar and a gap"
     )
     check(
-        "and the bottom",
+        "and it reaches the bottom",
         isPage(middle, rep.pixelsHigh - 2),
         "there is canvas below it"
     )
@@ -1297,9 +1520,11 @@ func checkTheDocumentFillsTheWindow() {
         "\(Int(strayArea))pt² along the bottom edge is not the page colour"
     )
 
-    // The first line, found as the topmost row with ink in the column.
+    // The first line, found as the topmost row with ink *inside the column* —
+    // not inside the pane, which finds the formatting bar's own glyphs and
+    // reports them as the document's first line 10pt from the top.
     var firstInk: Int?
-    rows: for y in 0..<rep.pixelsHigh {
+    rows: for y in columnTop..<rep.pixelsHigh {
         for x in stride(from: Int(150 * scale), to: rep.pixelsWide - Int(150 * scale), by: 2) {
             guard let c: NSColor = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB)
             else { continue }
@@ -1312,14 +1537,15 @@ func checkTheDocumentFillsTheWindow() {
             }
         }
     }
-    let gap = firstInk.map { Double($0) / Double(scale) } ?? 0
+    let gap = firstInk.map { Double($0 - columnTop) / Double(scale) } ?? 0
     if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
-        print("  first line starts \(Int(gap))pt from the top")
+        print("  first line starts \(Int(gap))pt below the column top")
     }
     check(
         "and the writing starts clear of the top",
         gap >= 30,
-        "the first line is \(Int(gap))pt down, which reads as part of the toolbar"
+        "the first line is \(Int(gap))pt below the top of the column, which "
+            + "reads as part of the chrome above it"
     )
 }
 

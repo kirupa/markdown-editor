@@ -537,7 +537,7 @@ struct CritiqueSidebar: View {
                             tint: CritiqueSeverity.medium.ink(on: colorTheme.mode)
                         ) {
                             ForEach(report.repeatedPatterns) { pattern in
-                                VStack(alignment: .leading, spacing: 2) {
+                                VStack(alignment: .leading, spacing: 3) {
                                     Text(pattern.pattern)
                                         .font(CritiqueTypography.hand(18))
                                     if !pattern.locations.isEmpty {
@@ -816,13 +816,19 @@ struct CritiqueSidebar: View {
         mark: String,
         tint: Color
     ) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
+        // Bullets are set apart from each other, not stacked.
+        //
+        // Each of these is a separate observation about the draft, and at a
+        // three point gap a list of them ran together as one paragraph with
+        // marks in it — particularly once an entry wrapped onto a second line,
+        // where the gap inside an entry equalled the gap between two.
+        VStack(alignment: .leading, spacing: 10) {
             Text(title)
                 .font(CritiqueTypography.hand(CritiqueTypography.sectionSize))
                 .tracking(0.5)
                 .foregroundStyle(tint)
             ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                HStack(alignment: .top, spacing: 5) {
+                HStack(alignment: .top, spacing: 6) {
                     Text(mark)
                         .font(CritiqueTypography.hand(16))
                         .foregroundStyle(tint.opacity(0.8))
@@ -857,7 +863,7 @@ struct CritiqueSidebar: View {
             nudge: PixelJitter.offset(for: id),
             tag: nil as AnyView?
         ) {
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 10) {
                 Text(title.uppercased())
                     .font(CritiqueTypography.hand(CritiqueTypography.sectionSize))
                     .tracking(0.5)

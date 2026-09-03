@@ -25,6 +25,37 @@ enum PixelStyle {
     static let liftedShadowOffset: CGFloat = 5
     static let border: CGFloat = 1
 
+    /// The heavier stroke, for something that is meant to be a *block*.
+    ///
+    /// The hairline is right for a frame around something you are reading. It
+    /// is wrong for a control bar, which should read as an object sitting on
+    /// the window rather than a region marked out on it — so that gets the
+    /// weight the reference designs use: a two point edge and a solid three
+    /// point drop, no blur, square corners.
+    static let boldBorder: CGFloat = 2
+
+    /// A drop with no give in it: full-strength ink, offset, not blurred.
+    static func hardShadow(_ theme: EditorColorTheme) -> Color {
+        Color(platformColor: theme.primaryTextColor).opacity(
+            theme.mode == .dark ? 0.72 : 0.88
+        )
+    }
+
+    /// The ink an outlined block is drawn in.
+    static func ink(_ theme: EditorColorTheme) -> Color {
+        Color(platformColor: theme.primaryTextColor)
+    }
+
+    /// The fill of a control bar: the theme's own tint, kept light.
+    ///
+    /// The sidebar colour rather than the page colour, because a bar the same
+    /// colour as the document does not read as a separate object — and this
+    /// one already tracks the chosen kirupa colour, so the bar is tinted by
+    /// the theme instead of being one grey for all sixteen.
+    static func barSurface(_ theme: EditorColorTheme) -> Color {
+        Color(platformColor: theme.sidebarBackgroundColor)
+    }
+
     static func shadow(_ theme: EditorColorTheme) -> Color {
         // Tied to the text colour rather than to black, so a dark theme casts
         // a light shadow and the effect survives the palette changing.

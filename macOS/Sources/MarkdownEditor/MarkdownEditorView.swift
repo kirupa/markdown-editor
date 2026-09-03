@@ -89,12 +89,19 @@ struct MarkdownEditorView: View {
                                 hostsRail: true
                             )
                         case .source:
-                            SourceTextEditor(
-                                text: $document.text,
-                                session: session,
-                                colorTheme: colorTheme,
-                                critique: critique
-                            )
+                            VStack(spacing: Layout.barGap) {
+                                FormattingBar(
+                                    session: session, colorTheme: colorTheme
+                                )
+                                .padding(.horizontal, Layout.barGap)
+                                SourceTextEditor(
+                                    text: $document.text,
+                                    session: session,
+                                    colorTheme: colorTheme,
+                                    critique: critique
+                                )
+                            }
+                            .padding(.top, Layout.barGap)
                         case .split:
                             HSplitView {
                                 ResizableRichTextPreview(
@@ -111,6 +118,8 @@ struct MarkdownEditorView: View {
                                     maxWidth: .infinity
                                 )
 
+                                // No bar on this side: the rendered pane
+                                // carries the one bar for the document.
                                 SourceTextEditor(
                                     text: $document.text,
                                     session: session,
@@ -386,6 +395,13 @@ struct ResizableRichTextPreview: View {
     /// Markdown pane and the rail goes after that.
     var hostsRail: Bool = false
 
+    /// Whether this pane carries the formatting bar.
+    ///
+    /// Side by side there are two editors and one document, so only the
+    /// rendered pane draws it — two identical bars would be two controls for
+    /// one thing, and the same trap `hostsRail` exists for.
+    var showsFormattingBar: Bool = true
+
     @State private var dragStartWidth: CGFloat?
 
     var body: some View {
@@ -422,19 +438,23 @@ struct ResizableRichTextPreview: View {
                 Spacer(minLength: 0)
                     .frame(width: leadingInset)
 
-                RichTextEditor(
-                    text: $text,
-                    documentURL: documentURL,
-                    session: session,
-                    colorTheme: colorTheme,
-                    layoutWidth: pageWidth,
-                    page: MarkdownPageMetrics(
-                        measure: Layout.textMeasure(inPane: visibleWidth),
-                        bleed: bleed
-                    ),
-                    critique: critique
-                )
-                .frame(width: pageWidth)
+                VStack(spacing: Layout.barGap) {
+                    if showsFormattingBar {
+                        FormattingBar(session: session, colorTheme: colorTheme)
+                    }
+
+                    RichTextEditor(
+                        text: $text,
+                        documentURL: documentURL,
+                        session: session,
+                        colorTheme: colorTheme,
+                        layoutWidth: pageWidth,
+                        page: MarkdownPageMetrics(
+                            measure: Layout.textMeasure(inPane: visibleWidth),
+                            bleed: bleed
+                        ),
+                        critique: critique
+                    )
                 // A column, not a sheet.
                 //
                 // This was a stack of paper with a shadow under it, and the
@@ -444,8 +464,13 @@ struct ResizableRichTextPreview: View {
                 // the document is not, and stopped short of the window edge
                 // for no reason a reader could act on. It fills the height it
                 // is given.
-                .frame(maxHeight: .infinity)
-                .background(Color(platformColor: colorTheme.editorBackgroundColor))
+                    .frame(maxHeight: .infinity)
+                    .background(
+                        Color(platformColor: colorTheme.editorBackgroundColor)
+                    )
+                }
+                .frame(width: pageWidth)
+                .padding(.top, Layout.barGap)
                 .overlay(alignment: .trailing) {
                     WidthGripper(
                         colorTheme: colorTheme,
@@ -637,6 +662,9 @@ enum Layout {
     /// has stopped doing its job.
     static let railWidth: CGFloat = 356
     static let keyboardResizeStep: CGFloat = 20
+    /// The space around the formatting bar, above the document.
+    static let barGap: CGFloat = 10
+
     /// The gap between the top of the pane and the first line.
     ///
     /// Generous on purpose. The document runs the full height of the window
