@@ -64,15 +64,6 @@ struct MarkdownEditorView: View {
             // rather than on whatever the explorer leaves over.
             ZStack(alignment: .topLeading) {
                 VStack(spacing: 0) {
-                    // The rule under the header. A hairline separator is the
-                    // platform's answer and disappears against a tinted strip;
-                    // this is the same full-strength edge the bar and the notes
-                    // are drawn with, so the header reads as a band rather than
-                    // as the top of the page.
-                    Rectangle()
-                        .fill(PixelStyle.ink(colorTheme))
-                        .frame(height: PixelStyle.boldBorder)
-
                     ExternalChangeBanner(
                         state: session.externalChange.state,
                         colorTheme: colorTheme,
@@ -174,19 +165,22 @@ struct MarkdownEditorView: View {
                 colorTheme: colorThemeSelection
             )
             ToolbarItem(placement: .primaryAction) {
-                HeaderButton(
-                    symbol: critique.isRunning
-                        ? "sparkles.rectangle.stack"
-                        : "sparkles",
-                    colorTheme: colorTheme,
-                    isEnabled: !critique.isRunning,
-                    help: critique.isRunning
+                Button {
+                    startCritique()
+                } label: {
+                    Label(
+                        "AI Assisted Critique",
+                        systemImage: critique.isRunning
+                            ? "sparkles.rectangle.stack"
+                            : "sparkles"
+                    )
+                }
+                .disabled(critique.isRunning)
+                .help(
+                    critique.isRunning
                         ? "A critique is already running"
                         : "AI Assisted critique of this draft (⌃⌘C)"
-                ) {
-                    startCritique()
-                }
-                .accessibilityLabel("AI Assisted Critique")
+                )
             }
         }
         // The header is its own surface, not a continuation of the document.
@@ -197,7 +191,7 @@ struct MarkdownEditorView: View {
         // from the theme, so it separates from the page in all sixteen rather
         // than only in the one it was picked against.
         .toolbarBackground(
-            PixelStyle.headerStripes(colorTheme),
+            PixelStyle.header(colorTheme),
             for: .windowToolbar
         )
         .toolbarBackground(.visible, for: .windowToolbar)
@@ -421,11 +415,17 @@ struct ResizableRichTextPreview: View {
                 // for no reason a reader could act on. It fills the height it
                 // is given.
                     .frame(maxHeight: .infinity)
-                    .background(
-                        Color(platformColor: colorTheme.editorBackgroundColor)
-                    )
                 }
                 .frame(width: pageWidth)
+                // The paper runs behind the bar as well as the text.
+                //
+                // With the bar left on the canvas its icons sat on the grid,
+                // which is a busy background for a row of thin glyphs and made
+                // the controls look dropped there rather than belonging to the
+                // document. On the page they are part of it.
+                .background(
+                    Color(platformColor: colorTheme.editorBackgroundColor)
+                )
                 .padding(.top, Layout.barGap)
                 .overlay(alignment: .trailing) {
                     WidthGripper(

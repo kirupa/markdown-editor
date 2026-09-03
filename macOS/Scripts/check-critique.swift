@@ -442,7 +442,7 @@ struct CheckCritique {
 
         checkTheHandsAreAvailable()
         checkTheDocumentFillsTheWindow()
-        checkTheFormattingBarIsABlock()
+        checkTheFormattingBarIsACentredRow()
         checkTheHeaderIsItsOwnSurface()
         checkMarksFollowTheWords()
         checkTheScoreIsLegible()
@@ -1237,6 +1237,28 @@ func checkEveryColourIsLegible() {
                 String(format: "%.2f:1, and it wants %.1f:1", ratio, threshold)
             )
         }
+
+      // The point of the change, asserted directly: the strip is the chosen
+      // colour, so choosing a different one has to give a different strip.
+      // Without this the suite only notices a fixed header when it happens to
+      // collide with a page colour, which is a proxy for the claim rather than
+      // the claim.
+      var headers: Set<String> = []
+      for colour in EditorThemeColor.allCases {
+          let c = NSColor(
+              PixelStyle.header(EditorColorTheme(color: colour, mode: mode))
+          ).usingColorSpace(.sRGB)!
+          headers.insert(
+              "\(Int(c.redComponent * 255))-\(Int(c.greenComponent * 255))"
+                  + "-\(Int(c.blueComponent * 255))"
+          )
+      }
+      check(
+          "the header is the colour that was chosen in \(mode.rawValue)",
+          headers.count == EditorThemeColor.allCases.count,
+          "\(EditorThemeColor.allCases.count) themes produce only "
+              + "\(headers.count) header colours"
+      )
     }
 }
 
@@ -1339,14 +1361,13 @@ func checkMarksFollowTheWords() {
     )
 }
 
-/// The window's header is its own surface, ruled like a classic Mac title bar.
+/// The window's header carries a hint of the chosen colour.
 ///
-/// Two claims, both easy to lose silently. A header tinted from the theme can
-/// drift to within a shade of the page as the palette changes, at which point
-/// the controls are floating on the writing and nothing is obviously wrong.
-/// And the stripes are generated rather than laid out, so a scale or rounding
-/// mistake fills the image solid — which looks like a plain band, not like a
-/// bug.
+/// A normal macOS title bar, tinted. Both claims here are easy to lose
+/// silently: a tint mixed from the palette can drift to within a shade of the
+/// page as the mix changes, leaving a header that says nothing about the
+/// theme; and it can go the other way and swallow the title, which is drawn in
+/// the theme's text colour on top of it.
 @MainActor
 func checkTheHeaderIsItsOwnSurface() {
     print("")
@@ -1363,8 +1384,14 @@ func checkTheHeaderIsItsOwnSurface() {
             + 0.0722 * channel(c.blueComponent)
     }
 
+    // Every colour, not just one. The header takes the palette's own tint
+    // now, so "is it a different surface from the page" and "can the title be
+    // read on it" are eight different questions in each mode rather than one —
+    // and the tints are not equally light. A single-theme check here would say
+    // nothing about the other fifteen.
     for mode in [EditorAppearanceMode.light, .dark] {
-        let theme = EditorColorTheme(color: .blue, mode: mode)
+      for colour in EditorThemeColor.allCases {
+        let theme = EditorColorTheme(color: colour, mode: mode)
         let header = NSColor(PixelStyle.header(theme)).usingColorSpace(.sRGB)!
         let page = theme.editorBackgroundColor.usingColorSpace(.sRGB)!
         let dr: CGFloat = abs(header.redComponent - page.redComponent)
@@ -1375,51 +1402,67 @@ func checkTheHeaderIsItsOwnSurface() {
                          mode.rawValue, dr + dg + db))
         }
         check(
-            "the header is a different surface from the page in \(mode.rawValue)",
-            dr + dg + db > 0.05,
+            "the \(colour.rawValue) header is a different surface from its page "
+                + "in \(mode.rawValue)",
+            dr + dg + db > 0.03,
             String(
                 format: "they differ by %.3f, which is the same colour",
                 dr + dg + db
             )
         )
 
-        // The stripes, read out of the tile the paint is built from.
-        let paint = PixelStyle.headerStripes(theme)
-        let renderer = ImageRenderer(content: Rectangle().fill(paint).frame(
-            width: 8, height: 8
-        ))
-        renderer.scale = 2
-        guard let cg = renderer.cgImage else {
-            check("and it is ruled with hairlines in \(mode.rawValue)", false,
-                  "the stripe tile could not be drawn")
-            continue
-        }
-        let rep = NSBitmapImageRep(cgImage: cg)
-        var levels: Set<Int> = []
-        for y in 0..<rep.pixelsHigh {
-            if let c = rep.colorAt(x: 1, y: y)?.usingColorSpace(.sRGB) {
-                levels.insert(Int(luminance(c) * 200))
-            }
-        }
-        if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
-            print("  \(mode.rawValue) stripe tile has \(levels.count) levels")
-        }
+        // And the title on it. The strip carries the window title and three
+        // controls, all drawn in the theme's text colour, so a tint that is
+        // close to that colour makes the header pretty and unreadable.
+        let ink = theme.primaryTextColor.usingColorSpace(.sRGB)!
+        let a = luminance(ink), b = luminance(header)
+        let contrast = (max(a, b) + 0.05) / (min(a, b) + 0.05)
         check(
-            "and it is ruled with hairlines in \(mode.rawValue)",
-            levels.count >= 2,
-            "the tile is one flat tone, so the header is a plain band"
+            "and the \(colour.rawValue) title reads on it in \(mode.rawValue)",
+            contrast >= 4.5,
+            String(format: "%.2f:1, and readable text wants 4.5:1", contrast)
         )
+
+      }
+
+      // The point of the change, asserted directly: the strip is the chosen
+      // colour, so choosing a different one has to give a different strip.
+      // Without this the suite only notices a fixed header when it happens to
+      // collide with a page colour, which is a proxy for the claim rather than
+      // the claim.
+      var headers: Set<String> = []
+      for colour in EditorThemeColor.allCases {
+          let c = NSColor(
+              PixelStyle.header(EditorColorTheme(color: colour, mode: mode))
+          ).usingColorSpace(.sRGB)!
+          headers.insert(
+              "\(Int(c.redComponent * 255))-\(Int(c.greenComponent * 255))"
+                  + "-\(Int(c.blueComponent * 255))"
+          )
+      }
+      check(
+          "the header is the colour that was chosen in \(mode.rawValue)",
+          headers.count == EditorThemeColor.allCases.count,
+          "\(EditorThemeColor.allCases.count) themes produce only "
+              + "\(headers.count) header colours"
+      )
     }
 }
 
-/// The formatting bar is a block: square, outlined, and dropped on the window.
+/// The formatting bar is a centred row of icons and nothing else.
 ///
-/// Checked from the pixels because every part of it is visual. A control bar
-/// that quietly reverts to the platform's own look — rounded, borderless,
-/// translucent — still works perfectly and is no longer the thing that was
-/// asked for, and nothing else here would notice.
+/// It used to be an outlined block with a fill and a hard drop, and the checks
+/// here asserted exactly that — a heavy edge, square corners, the theme's own
+/// fill. Those are gone, because at the top of the page the block read as a
+/// slab of chrome competing with the writing. The checks went with it: an
+/// assertion that a bar *has* a two point border is worse than no assertion at
+/// all once the design says it must not, since it would hold the wrong thing
+/// in place.
+///
+/// What is left is what the bar is for: the controls are centred over the
+/// document, and nothing is drawn around them.
 @MainActor
-func checkTheFormattingBarIsABlock() {
+func checkTheFormattingBarIsACentredRow() {
     print("")
     print("The formatting bar")
 
@@ -1429,15 +1472,21 @@ func checkTheFormattingBarIsABlock() {
 
     // On an opaque backing. A hosting view leaves the area around the content
     // transparent, which reads as black once flattened — so "the first dark
-    // pixel" found the edge of the image rather than the edge of the bar, and
-    // the border, width and corner checks all passed against empty space.
+    // pixel" finds the edge of the image rather than anything drawn.
     let host = NSHostingView(
         rootView: AnyView(
-            bar.padding(20).background(PixelStyle.canvas(theme))
+            bar.frame(width: 660)
+                .padding(20)
+                // Filling the host, not just the content. Backing only the
+                // bar leaves the rest of the frame transparent, which
+                // flattens to black and reads as a 700pt run of ink — a
+                // frame, according to the check below, in a build that draws
+                // no frame at all.
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(platformColor: theme.editorBackgroundColor))
         )
     )
     host.frame = NSRect(x: 0, y: 0, width: 700, height: 90)
-    // 660pt of bar inside a 700pt host, so there is real room to span.
     host.layoutSubtreeIfNeeded()
     RunLoop.current.run(until: Date().addingTimeInterval(0.3))
     host.layoutSubtreeIfNeeded()
@@ -1454,121 +1503,103 @@ func checkTheFormattingBarIsABlock() {
         print("  wrote \(path)")
     }
 
-    let ink = NSColor(PixelStyle.ink(theme)).usingColorSpace(.sRGB)!
+    let page = theme.editorBackgroundColor.usingColorSpace(.sRGB)!
     func isInk(_ x: Int, _ y: Int) -> Bool {
         guard let c: NSColor = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB)
         else { return false }
-        let dr: CGFloat = abs(c.redComponent - ink.redComponent)
-        let dg: CGFloat = abs(c.greenComponent - ink.greenComponent)
-        let db: CGFloat = abs(c.blueComponent - ink.blueComponent)
-        return dr + dg + db < 0.30
+        let dr: CGFloat = abs(c.redComponent - page.redComponent)
+        let dg: CGFloat = abs(c.greenComponent - page.greenComponent)
+        let db: CGFloat = abs(c.blueComponent - page.blueComponent)
+        return dr + dg + db > 0.12
     }
 
-    // The border: a horizontal run of ink across the top of the block. A
-    // borderless bar gives nothing like it.
-    let middleRow = rep.pixelsHigh / 2
-    var left = 0
-    while left < rep.pixelsWide, !isInk(left, middleRow) { left += 1 }
-    var right = rep.pixelsWide - 1
-    while right > left, !isInk(right, middleRow) { right -= 1 }
-    let barWidth = CGFloat(right - left) / scale
-    check(
-        "the bar is drawn as an outlined block",
-        barWidth > 200,
-        "found only \(Int(barWidth))pt of outline across the middle"
-    )
-
-    // Its edge is heavy, not a hairline: count the ink at the left edge.
-    var edge = 0
-    var x = left
-    while x < rep.pixelsWide, isInk(x, middleRow) { edge += 1; x += 1 }
-    let edgeWidth = CGFloat(edge) / scale
+    // Nothing is drawn *around* the controls. A frame gives a long unbroken
+    // horizontal run; glyphs and a hairline divider never do.
+    var longestRun = 0
+    for y in 0..<rep.pixelsHigh {
+        var run = 0
+        for x in 0..<rep.pixelsWide {
+            run = isInk(x, y) ? run + 1 : 0
+            longestRun = max(longestRun, run)
+        }
+    }
+    let runWidth = CGFloat(longestRun) / scale
     if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
-        print("  bar \(Int(barWidth))pt wide, edge \(String(format: "%.1f", edgeWidth))pt")
+        print("  longest unbroken ink run: \(Int(runWidth))pt")
     }
     check(
-        "with a heavy edge rather than a hairline",
-        edgeWidth >= 1.5,
-        "the edge measures \(String(format: "%.1f", edgeWidth))pt"
+        "nothing is drawn around the controls",
+        runWidth < 60,
+        "there is a \(Int(runWidth))pt unbroken run of ink, which is a frame"
     )
 
-    // Square corners: the pixel just inside the corner is ink too. On a
-    // rounded rectangle the corner is cut away and that pixel is background.
-    check(
-        "and square corners",
-        isInk(left + 1, middleRow) && isInk(left, middleRow),
-        "the corner is rounded off"
-    )
-
-    // The fill is the theme's, not a system material.
-    let surface = NSColor(PixelStyle.barSurface(theme)).usingColorSpace(.sRGB)!
-    let inside = rep.colorAt(
-        x: left + Int(6 * scale), y: middleRow
-    )?.usingColorSpace(.sRGB)
-    let dr: CGFloat = abs((inside?.redComponent ?? 0) - surface.redComponent)
-    let dg: CGFloat = abs((inside?.greenComponent ?? 0) - surface.greenComponent)
-    let db: CGFloat = abs((inside?.blueComponent ?? 0) - surface.blueComponent)
-    check(
-        "and the theme's own fill behind it",
-        dr + dg + db < 0.12,
-        "the fill is not the theme's bar surface"
-    )
-
-    // Given more room than its controls need, the bar spans it and centres
-    // them. Both halves are the request — full width, contents centred — and
-    // the failure mode is quiet: a bar whose leading spacer collapses looks
-    // like a normal left-aligned toolbar and nothing else notices.
-    check(
-        "the bar spans the width it is given",
-        barWidth > 560,
-        "it is \(Int(barWidth))pt wide inside a 660pt column, so it is not "
-            + "spanning it"
-    )
-
-    // The glyphs, found as ink well inside the border.
+    // And the controls are centred on the document above which they sit.
     var firstGlyph: Int?
     var lastGlyph = 0
-    for x in (left + Int(6 * scale))..<(right - Int(6 * scale)) {
+    for x in 0..<rep.pixelsWide {
         var found = false
-        for y in (middleRow - Int(8 * scale))..<(middleRow + Int(8 * scale))
-        where isInk(x, y) { found = true; break }
+        for y in 0..<rep.pixelsHigh where isInk(x, y) { found = true; break }
         if found {
             if firstGlyph == nil { firstGlyph = x }
             lastGlyph = x
         }
     }
-    if let firstGlyph {
-        // Compared as midpoints rather than as a pair of gaps.
-        //
-        // The leading control is a `Menu`, and a `Menu` label draws nothing
-        // through `cacheDisplay(in:to:)` — so the first *visible* thing is the
-        // separator after it and the measured span starts about 32pt late,
-        // which shows up as a 25pt difference between two gaps that are really
-        // equal. A midpoint carries only half that bias, and it still
-        // discriminates: left-aligned controls put the midpoint 116pt out.
-        let inkMiddle = CGFloat((firstGlyph + lastGlyph) / 2 - left) / scale
-        let barMiddle = CGFloat(right - left) / scale / 2
-        if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
-            print("  controls centre at \(Int(inkMiddle))pt, "
-                + "bar centre \(Int(barMiddle))pt")
-        }
-        check(
-            "with its controls centred in it",
-            abs(inkMiddle - barMiddle) < 24,
-            "they centre at \(Int(inkMiddle))pt where the bar centres at "
-                + "\(Int(barMiddle))pt"
-        )
-    } else {
-        check("with its controls centred in it", false, "no controls found")
+    guard let firstGlyph else {
+        check("the controls are drawn", false, "nothing is drawn at all")
+        return
     }
+    let inkMiddle = CGFloat(firstGlyph + lastGlyph) / 2 / scale
+    let hostMiddle = host.bounds.width / 2
+    if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
+        print("  controls centre at \(Int(inkMiddle))pt, host centre "
+            + "\(Int(hostMiddle))pt")
+    }
+    check(
+        "and they are centred",
+        abs(inkMiddle - hostMiddle) < 24,
+        "they centre at \(Int(inkMiddle))pt where the bar centres at "
+            + "\(Int(hostMiddle))pt"
+    )
 
-    // Deliberately not checked here: how the two `Menu` controls in the bar
-    // are inked. A `Menu` label draws nothing at all through
-    // `cacheDisplay(in:to:)` — measured as a blank 0.98 across the whole 30pt
-    // the heading menu occupies, with the separator either side of it at 0.18
-    // — so any assertion about their colour is an assertion about the
-    // snapshot, not about the app. It failed for a build in which they were
-    // perfectly legible.
+    // Big enough to aim at, measured from the drawn glyphs.
+    //
+    // Measured within *clusters* of ink columns rather than over the whole
+    // image. The dividers between groups are 18pt tall and one point wide, so
+    // "the tallest ink anywhere" is a divider whatever size the icons are —
+    // that version passed against 8pt glyphs.
+    var runs: [(start: Int, end: Int)] = []
+    var runStart: Int?
+    for x in 0..<rep.pixelsWide {
+        let inked = (0..<rep.pixelsHigh).contains { isInk(x, $0) }
+        if inked, runStart == nil { runStart = x }
+        if !inked, let start = runStart {
+            runs.append((start, x))
+            runStart = nil
+        }
+    }
+    if let start = runStart { runs.append((start, rep.pixelsWide)) }
+
+    var tallest = 0
+    for run in runs where CGFloat(run.end - run.start) / scale > 6 {
+        for x in run.start..<run.end {
+            var first: Int?
+            var last = 0
+            for y in 0..<rep.pixelsHigh where isInk(x, y) {
+                if first == nil { first = y }
+                last = y
+            }
+            if let first { tallest = max(tallest, last - first) }
+        }
+    }
+    let glyphHeight = CGFloat(tallest) / scale
+    if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
+        print("  tallest glyph: \(Int(glyphHeight))pt")
+    }
+    check(
+        "and big enough to aim at",
+        glyphHeight >= 13,
+        "the tallest glyph is \(Int(glyphHeight))pt"
+    )
 }
 
 /// The document is a column that fills the window, not a sheet lying on it.
@@ -1693,11 +1724,38 @@ func checkTheDocumentFillsTheWindow() {
         "\(Int(strayArea))pt² along the bottom edge is not the page colour"
     )
 
-    // The first line, found as the topmost row with ink *inside the column* —
-    // not inside the pane, which finds the formatting bar's own glyphs and
-    // reports them as the document's first line 10pt from the top.
+    // The gap between the chrome above and the writing.
+    //
+    // Measured from the bottom of the formatting bar rather than from the top
+    // of the column, because the page runs behind the bar now — so "the first
+    // ink below the column top" is the bar's own icons, and the check reported
+    // the document's first line 12pt down in a build where the text sits 44pt
+    // below the bar.
+    //
+    // The two are told apart by the gap between them: the bar's glyphs are one
+    // band, the first line is the next, and there is clear page in between.
+    var inkRows: [Int] = []
+    for y in columnTop..<rep.pixelsHigh {
+        for x in stride(from: Int(150 * scale), to: rep.pixelsWide - Int(150 * scale), by: 2) {
+            guard let c: NSColor = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB)
+            else { continue }
+            let r: CGFloat = c.redComponent * 0.2126
+            let g: CGFloat = c.greenComponent * 0.7152
+            let b: CGFloat = c.blueComponent * 0.0722
+            if r + g + b < 0.45 { inkRows.append(y); break }
+        }
+    }
+    // The bar is the first band; anything after a clear run of page is the
+    // writing.
+    var barBottom: Int?
+    for (index, row) in inkRows.enumerated() where index + 1 < inkRows.count {
+        if inkRows[index + 1] - row > Int(12 * scale) {
+            barBottom = row
+            break
+        }
+    }
     var firstInk: Int?
-    rows: for y in columnTop..<rep.pixelsHigh {
+    rows: for y in ((barBottom ?? columnTop) + Int(4 * scale))..<rep.pixelsHigh {
         for x in stride(from: Int(150 * scale), to: rep.pixelsWide - Int(150 * scale), by: 2) {
             guard let c: NSColor = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB)
             else { continue }
@@ -1710,14 +1768,18 @@ func checkTheDocumentFillsTheWindow() {
             }
         }
     }
-    let gap = firstInk.map { Double($0 - columnTop) / Double(scale) } ?? 0
+    let anchor = barBottom ?? columnTop
+    let gap = firstInk.map { Double($0 - anchor) / Double(scale) } ?? 0
     if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
-        print("  first line starts \(Int(gap))pt below the column top")
+        print("  first line starts \(Int(gap))pt below the bar")
     }
     check(
         "and the writing starts clear of the top",
-        gap >= 30,
-        "the first line is \(Int(gap))pt below the top of the column, which "
+        // 55, not 30. The gap includes the bar's own bottom padding, so a
+        // build with no text inset at all still measured 32 — comfortably
+        // over a threshold set for a measurement that started somewhere else.
+        gap >= 55,
+        "the first line is \(Int(gap))pt below the formatting bar, which "
             + "reads as part of the chrome above it"
     )
 }

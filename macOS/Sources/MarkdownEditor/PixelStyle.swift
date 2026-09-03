@@ -45,50 +45,31 @@ enum PixelStyle {
     static func ink(_ theme: EditorColorTheme) -> Color {
         Color(platformColor: theme.primaryTextColor)
     }
-
-    /// The strip the window's controls sit on.
+    /// A hint of the chosen colour in the window's title bar.
     ///
-    /// Warmer and a shade off the page, so the header is visibly a different
-    /// surface rather than the top of the document. Mixed from the theme
-    /// rather than picked, so it holds in all sixteen colours and in both
-    /// backgrounds instead of being one cream that only works against one.
+    /// The title bar is the platform's — a normal macOS titlebar with normal
+    /// controls in it — and this only tints it. Enough that the blue theme and
+    /// the green theme are visibly different windows; not so much that the bar
+    /// becomes a band of colour with a title floating in it.
+    ///
+    /// It was the palette's header tint at full strength, over hairline
+    /// stripes, ruled off from the page with a two point edge. That was a
+    /// System 7 title bar rather than a Mac one, and it fought the document
+    /// underneath it.
+    ///
+    /// Mixed toward the page rather than picked by hand, so it stays the
+    /// palette's own hue: it is still recognisably the brown one, and the
+    /// eight tints keep whatever relationship to each other the palette gave
+    /// them.
     static func header(_ theme: EditorColorTheme) -> Color {
-        let base = theme.sidebarBackgroundColor
-        let warmed = base.blended(
-            with: PlatformColor(hex: theme.mode == .dark ? 0x2A2724 : 0xF6F1E7),
-            fraction: theme.mode == .dark ? 0.45 : 0.62
-        ) ?? base
-        return Color(platformColor: warmed)
+        let tint = theme.palette.headerBackground
+        let hinted = tint.blended(
+            with: theme.editorBackgroundColor,
+            fraction: theme.mode == .dark ? 0.45 : 0.55
+        ) ?? tint
+        return Color(platformColor: hinted)
     }
 
-    /// The classic title bar: fine horizontal lines across the strip.
-    ///
-    /// This is the detail the whole look comes from. A System 7 window was
-    /// ruled with hairlines from edge to edge, and it is what makes a title
-    /// bar read as *that* era rather than as a flat coloured band — the square
-    /// corners and hard shadows elsewhere are the same idea, but the stripes
-    /// are the part people recognise.
-    ///
-    /// Drawn at device resolution and tiled, rather than laid out as a stack
-    /// of one-point rectangles: a line every other point over a toolbar is
-    /// hundreds of views, and on a 2x screen a one-point rectangle is two
-    /// device pixels and the pattern comes out solid.
-    static func headerStripes(_ theme: EditorColorTheme) -> ImagePaint {
-        let scale = NSScreen.main?.backingScaleFactor ?? 2
-        let period = 4.0
-        let size = NSSize(width: 1, height: period)
-        let image = NSImage(size: size)
-        image.lockFocus()
-        Color.clear
-        NSColor(header(theme)).setFill()
-        NSRect(x: 0, y: 0, width: 1, height: period).fill()
-        // One device pixel of ink, so the rule stays a hairline at any scale.
-        NSColor(ink(theme)).withAlphaComponent(theme.mode == .dark ? 0.22 : 0.16)
-            .setFill()
-        NSRect(x: 0, y: 0, width: 1, height: 1 / scale).fill()
-        image.unlockFocus()
-        return ImagePaint(image: Image(nsImage: image), scale: 1)
-    }
 
     /// The fill of a control bar: the theme's own tint, kept light.
     ///

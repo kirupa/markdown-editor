@@ -1,17 +1,18 @@
 import MarkdownEditorUI
+import AppKit
 import SwiftUI
 
-/// The formatting controls, as one block the width of the document.
+/// The formatting controls, centred above the document.
 ///
-/// It sits above the column and spans it exactly, rather than floating in the
-/// window's title bar. That ties the controls to the thing they act on: the
-/// bar and the document share an edge, so it reads as this document's
-/// formatting rather than the application's. The controls themselves are
-/// centred within it.
+/// Deliberately not a *thing*. It was an outlined block with a fill and a hard
+/// drop — the same treatment as the notes and the header — and at the top of
+/// the page that read as a slab of chrome competing with the writing. The
+/// controls are the only part anybody needs to see, so what is left is the
+/// icons, a hairline between groups, and nothing else: no frame, no fill, no
+/// shadow. It sits on the page rather than on top of it.
 ///
-/// The look is the reference designs' rather than the platform's: a two point
-/// edge, a solid drop with no blur in it, square corners, and the theme's own
-/// tint as the fill. Nothing here is a rounded rectangle and nothing fades.
+/// The 8-bit treatment still belongs to the window's header and to the
+/// critique pad, which are chrome. This is not.
 struct FormattingBar: View {
     @ObservedObject var session: MarkdownEditorSession
     let colorTheme: EditorColorTheme
@@ -48,23 +49,7 @@ struct FormattingBar: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(3)
-        .background(
-            ZStack {
-                Rectangle()
-                    .fill(PixelStyle.hardShadow(colorTheme))
-                    .offset(
-                        x: PixelStyle.shadowOffset,
-                        y: PixelStyle.shadowOffset
-                    )
-                Rectangle().fill(PixelStyle.barSurface(colorTheme))
-                Rectangle()
-                    .strokeBorder(
-                        PixelStyle.ink(colorTheme),
-                        lineWidth: PixelStyle.boldBorder
-                    )
-            }
-        )
+        .padding(.vertical, 4)
         // Fills the width it is given, hugs its own height.
         //
         // Both halves matter: a plain `fixedSize()` also pins the width, so
@@ -80,11 +65,13 @@ struct FormattingBar: View {
         HStack(spacing: 0) { content() }
     }
 
+    /// A hairline between groups. Short of full height, so it reads as a
+    /// division rather than as a rule across something.
     private var separator: some View {
         Rectangle()
-            .fill(PixelStyle.ink(colorTheme))
-            .frame(width: PixelStyle.boldBorder)
-            .padding(.vertical, 1)
+            .fill(PixelStyle.ink(colorTheme).opacity(0.16))
+            .frame(width: 1, height: 18)
+            .padding(.horizontal, 7)
     }
 
     private func button(
@@ -114,8 +101,11 @@ struct FormattingBar: View {
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
-        .frame(width: PixelBarButton.side + 6, height: PixelBarButton.side)
+        .frame(width: PixelBarButton.side + 8, height: PixelBarButton.side)
         .foregroundStyle(PixelStyle.ink(colorTheme))
+        .onContinuousHover { phase in
+            if case .active = phase { NSCursor.arrow.set() }
+        }
         .help("Paragraph and heading style")
     }
 
@@ -138,28 +128,35 @@ struct FormattingBar: View {
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
-        .frame(width: PixelBarButton.side + 6, height: PixelBarButton.side)
+        .frame(width: PixelBarButton.side + 8, height: PixelBarButton.side)
         .foregroundStyle(PixelStyle.ink(colorTheme))
+        .onContinuousHover { phase in
+            if case .active = phase { NSCursor.arrow.set() }
+        }
         .help("Insert single-line or multi-line code")
     }
 }
 
-/// One square control in the bar.
+/// One control in the bar.
 ///
-/// Hovering fills the whole square and flips the glyph to the paper colour,
-/// rather than tinting it or rounding a highlight behind it. A block that
-/// inverts is the 8-bit way of saying "this is the one under the pointer", and
-/// it is legible on every one of the sixteen themes without a per-theme
-/// highlight colour.
+/// Hovering lays a faint square behind the glyph rather than inverting it. The
+/// inverting block belongs to the header and the notes, where a control is
+/// meant to look like a control; here the point is that nothing is visible
+/// until you reach for it.
 private struct PixelBarButton: View {
-    static let side: CGFloat = 26
-    /// Regular, not bold.
+    static let side: CGFloat = 32
+    /// SF Symbols, regular weight, at a size you can aim at.
     ///
-    /// The weight in this design belongs to the frame: a heavy edge with a
-    /// hard drop. Emboldening the glyphs as well made the inside of the block
-    /// as loud as its outline, and a row of thirteen shouting icons is harder
-    /// to pick a single control out of, not easier.
-    static let glyph = Font.system(size: 12, weight: .regular)
+    /// The system set rather than a bundled icon font: it is the only one
+    /// carrying every mark this bar needs — strikethrough, a task list, a
+    /// quote, a picture with a plus on it — in one weight and one optical
+    /// family, and it costs no dependency.
+    ///
+    /// 12pt was sized for a bar that had a frame around it holding it
+    /// together. Without the frame the icons *are* the bar, and they were too
+    /// small to read as controls. Regular rather than bold: thirteen shouting
+    /// icons are harder to pick one out of, not easier.
+    static let glyph = Font.system(size: 15, weight: .regular)
 
     let title: String
     let symbol: String
@@ -173,18 +170,29 @@ private struct PixelBarButton: View {
             Image(systemName: symbol)
                 .font(Self.glyph)
                 .frame(width: Self.side, height: Self.side)
-                .foregroundStyle(
-                    isHovered
-                        ? PixelStyle.barSurface(colorTheme)
-                        : PixelStyle.ink(colorTheme)
-                )
+                .foregroundStyle(PixelStyle.ink(colorTheme))
                 .background(
-                    isHovered ? PixelStyle.ink(colorTheme) : .clear
+                    PixelStyle.ink(colorTheme).opacity(isHovered ? 0.10 : 0)
                 )
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
+        // Said explicitly, because the pane around this bar is a text editor
+        // and its I-beam carries across: hovering a button showed a text
+        // cursor, which reads as "you are about to type here" over a thing you
+        // click.
+        //
+        // `set()` on every movement rather than `push()`/`pop()` on the way in
+        // and out. A push that is never popped — the exit does not fire if the
+        // window deactivates under the pointer — leaves the arrow stuck over
+        // the document, and the writer is then looking at a text editor that
+        // says it is not one. This cannot unbalance, and the text view puts
+        // its own cursor back through its cursor rects the moment the pointer
+        // leaves.
+        .onContinuousHover { phase in
+            if case .active = phase { NSCursor.arrow.set() }
+        }
         .help(title)
     }
 }
