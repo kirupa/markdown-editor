@@ -13,6 +13,7 @@
 // Built by Scripts/run-critique-checks.sh against the real app sources.
 
 import AppKit
+import CoreText
 import Foundation
 import SwiftUI
 import MarkdownEditorCore
@@ -316,6 +317,78 @@ func checkHighlightsAndClicking() {
     )
 }
 
+/// Load the fonts the app bundles, so this measures what the app draws.
+@MainActor
+func registerBundledFonts() {
+    let directory = URL(fileURLWithPath: "Packaging/Fonts")
+    let files = (try? FileManager.default.contentsOfDirectory(
+        at: directory, includingPropertiesForKeys: nil
+    )) ?? []
+    for file in files where file.pathExtension.lowercased() == "ttf" {
+        CTFontManagerRegisterFontsForURL(file as CFURL, .process, nil)
+    }
+}
+
+/// Every hand the picker offers can actually be drawn with, and the optical
+/// scales really do bring them to the same read size.
+///
+/// The first half is not busywork: the faces are referenced by PostScript
+/// name and shipped as files, so a rename or a missing file degrades silently
+/// into a fallback that still looks like handwriting. Nothing else here would
+/// notice.
+@MainActor
+func checkTheHandsAreAvailable() {
+    print("")
+    print("The hands on offer")
+
+    var readSizes: [(String, CGFloat)] = []
+    for hand in CritiqueHand.allCases {
+        let font = NSFont(name: hand.fontName, size: 100 * hand.opticalScale)
+        check(
+            "\(hand.title) is bundled and loads",
+            font != nil,
+            "\(hand.fontName) did not resolve — the rail would quietly fall "
+                + "back to another face"
+        )
+        if let font { readSizes.append((hand.title, font.xHeight)) }
+    }
+
+    // The picker's wiring: choosing a hand has to reach the type helper every
+    // label on the rail goes through. Without this the menu can look like it
+    // works — the tick moves — while the rail keeps drawing in the old face.
+    let chosen = UserDefaults.standard.string(forKey: CritiqueHand.storageKey)
+    for hand in CritiqueHand.allCases {
+        UserDefaults.standard.set(hand.rawValue, forKey: CritiqueHand.storageKey)
+        check(
+            "choosing \(hand.title) is what the rail then writes in",
+            CritiqueTypography.familyChain.first == hand.fontName,
+            "the chain still starts with "
+                + "\(CritiqueTypography.familyChain.first ?? "nothing")"
+        )
+    }
+    if let chosen {
+        UserDefaults.standard.set(chosen, forKey: CritiqueHand.storageKey)
+    } else {
+        UserDefaults.standard.removeObject(forKey: CritiqueHand.storageKey)
+    }
+
+    guard readSizes.count == CritiqueHand.allCases.count,
+          let low = readSizes.min(by: { $0.1 < $1.1 }),
+          let high = readSizes.max(by: { $0.1 < $1.1 })
+    else { return }
+    // Asking for the same size should give the same *read* size, whichever
+    // hand is chosen, or switching font silently resizes the whole rail.
+    let drift = (high.1 - low.1) / low.1
+    check(
+        "and all three read at the same size",
+        drift < 0.10,
+        String(
+            format: "%@ is %.0f%% larger than %@ at the same requested size",
+            high.0, drift * 100, low.0
+        )
+    )
+}
+
 @main
 @MainActor
 struct CheckCritique {
@@ -323,6 +396,16 @@ struct CheckCritique {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
 
+        // The app loads these through `ATSApplicationFontsPath`, which only
+        // applies to a bundle. This is a bare executable, so without doing it
+        // by hand the rail renders in whatever the chain falls through to —
+        // and it did: Architects Daughter and Caveat were unavailable here
+        // while Permanent Marker happened to be registered by the installed
+        // app, so every measurement of "the score" was a measurement of a font
+        // that is not the one shipping.
+        registerBundledFonts()
+
+        checkTheHandsAreAvailable()
         checkTheScoreIsLegible()
         checkEveryColourIsLegible()
         checkHighlightsAndClicking()
@@ -564,7 +647,11 @@ func checkTheRailRenders() {
         onRerun: {}
     )
     let host = NSHostingView(rootView: rail)
-    host.frame = NSRect(x: 0, y: 0, width: 340, height: 900)
+    // Tall enough for the whole pad. At 900 the second note fell off the
+    // bottom the moment the type grew, and the check that compares the papers
+    // could only see one of them — which reads as "the severities share a
+    // colour" when the truth is "the note is not on screen".
+    host.frame = NSRect(x: 0, y: 0, width: 340, height: 1500)
     let window = NSWindow(
         contentRect: host.frame, styleMask: [.borderless],
         backing: .buffered, defer: false
@@ -749,18 +836,19 @@ func checkTheRailRenders() {
     /// The contrast ratio between the score numeral and the wash behind it,
     /// measured from the drawn pixels.
     ///
-    /// The band is fixed rather than searched for. Hunting for the banner by
-    /// its border was tried and is worse: the severity tag on every note below
-    /// is tinted the same way, so the search bracketed the banner together
-    /// with the pad and measured everything in between.
+    /// The numeral is *found*, not assumed to be at an offset. A fixed band was
+    /// the first version and it has been wrong twice: once when the type scale
+    /// grew and once when the face changed, both times reporting a confident
+    /// number about a strip of empty paper below the number it meant to
+    /// measure. 1.10:1 is what "I am looking at the wrong pixels" reads like.
     ///
-    /// The ink is the 5th percentile of luminance rather than the single
-    /// darkest pixel, so a stray antialiased corner cannot stand in for the
-    /// stroke. The band stops above the progress bar, which is solid tint and
-    /// would otherwise be measured as though it were a letter, and takes only
-    /// the left of the banner, because the verdict on the right is grey on the
-    /// same wash and is a different question.
-    func scoreContrast(fromTop top: CGFloat, height: CGFloat) -> Double {
+    /// Found by saturation rather than by darkness, because the ink is dark on
+    /// a light theme and light on a dark one, but it is strongly coloured in
+    /// both — and the paper, the canvas and the grid never are. The border and
+    /// the progress bar are also saturated, so the numeral is taken as the
+    /// tallest unbroken block of such rows: a border is two pixels and the bar
+    /// is seven points, against the numeral's thirty-odd.
+    func scoreContrast() -> Double {
         func luminance(_ c: NSColor) -> Double {
             func channel(_ raw: CGFloat) -> Double {
                 let v = Double(raw)
@@ -770,12 +858,42 @@ func checkTheRailRenders() {
                 + 0.7152 * channel(c.greenComponent)
                 + 0.0722 * channel(c.blueComponent)
         }
+        func spread(_ c: NSColor) -> CGFloat {
+            max(c.redComponent, max(c.greenComponent, c.blueComponent))
+                - min(c.redComponent, min(c.greenComponent, c.blueComponent))
+        }
 
-        let firstRow = Int(top * scale)
-        let lastRow = min(rep.pixelsHigh, Int((top + height) * scale))
-        let firstCol = Int(18 * scale)
+        // The verdict on the right is grey on the same wash and is a different
+        // question, so only the left of the banner is considered.
         let lastCol = min(rep.pixelsWide, Int(Double(rep.pixelsWide) * 0.42))
-        guard firstRow < lastRow, firstCol < lastCol else { return 0 }
+        let firstCol = Int(18 * scale)
+        let searchTo = min(rep.pixelsHigh, Int(280 * scale))
+        guard firstCol < lastCol, searchTo > 0 else { return 0 }
+
+        var isInkRow = [Bool](repeating: false, count: searchTo)
+        for y in 0..<searchTo {
+            var found = 0
+            for x in firstCol..<lastCol {
+                guard let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB)
+                else { continue }
+                if spread(c) > 0.25 { found += 1 }
+            }
+            isInkRow[y] = found >= 4
+        }
+        var best = (start: 0, length: 0)
+        var runStart = 0, run = 0
+        for y in 0..<searchTo {
+            if isInkRow[y] {
+                if run == 0 { runStart = y }
+                run += 1
+                if run > best.length { best = (runStart, run) }
+            } else {
+                run = 0
+            }
+        }
+        guard best.length > Int(12 * scale) else { return 0 }
+        let firstRow = best.start
+        let lastRow = best.start + best.length
 
         var counts: [String: (n: Int, colour: NSColor)] = [:]
         var luminances: [Double] = []
@@ -795,15 +913,19 @@ func checkTheRailRenders() {
         else { return 0 }
         let washLuminance = luminance(wash)
         luminances.sort()
+        // The 5th percentile rather than the single darkest pixel, so a stray
+        // antialiased corner cannot stand in for the stroke.
         let index = max(1, luminances.count / 20)
         let inkLuminance = washLuminance > 0.5
             ? luminances[index]
             : luminances[luminances.count - 1 - index]
         if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
             print(String(
-                format: "    wash %.2f %.2f %.2f (L %.3f), ink L %.3f",
-                wash.redComponent, wash.greenComponent, wash.blueComponent,
-                washLuminance, inkLuminance
+                format: "    numeral rows %d-%d of %d, wash %.2f %.2f %.2f "
+                    + "(L %.3f), ink L %.3f",
+                firstRow, lastRow, rep.pixelsHigh, wash.redComponent,
+                wash.greenComponent, wash.blueComponent, washLuminance,
+                inkLuminance
             ))
         }
         let lighter = max(inkLuminance, washLuminance)
@@ -818,11 +940,14 @@ func checkTheRailRenders() {
     /// and passes whatever is drawn — measured at 16 against 18 for a build
     /// with all three severities forced to one paper. The dominant colours are
     /// the fills, and comparing those actually answers the question.
-    func dominantPapers(fromTop top: CGFloat, height: CGFloat) -> [(String, Int)] {
+    func dominantPapers(
+        fromTop top: CGFloat, height: CGFloat, excluding: NSColor?
+    ) -> [(String, Int)] {
         let firstRow = Int(top * scale)
         let lastRow = min(rep.pixelsHigh, Int((top + height) * scale))
         var counts: [String: Int] = [:]
         guard firstRow < lastRow else { return [] }
+        let skip = excluding?.usingColorSpace(.sRGB)
         for y in stride(from: firstRow, to: lastRow, by: 2) {
             for x in stride(from: 0, to: rep.pixelsWide, by: 2) {
                 guard let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB)
@@ -832,7 +957,22 @@ func checkTheRailRenders() {
                 guard r > 0.78, g > 0.72, b > 0.68,
                       max(r, max(g, b)) - min(r, min(g, b)) > 0.06
                 else { continue }
-                counts["\(Int(r * 40))-\(Int(g * 40))-\(Int(b * 40))", default: 0] += 1
+                // The score banner is a pale tinted fill too, and it is not a
+                // note. Left in, it took second place off the yellow paper the
+                // moment the type scale changed and the pad moved down.
+                if let skip {
+                    let difference = abs(r - skip.redComponent)
+                        + abs(g - skip.greenComponent)
+                        + abs(b - skip.blueComponent)
+                    if difference < 0.12 { continue }
+                }
+                // Bucketed by *hue*, not by RGB. "Coloured by severity" is a
+                // statement about hue, and an RGB bucket splits one paper
+                // across two bins when its rendered shade lands on a boundary
+                // — which halved the yellow note's count and read as the two
+                // severities sharing a colour.
+                let hue = Int(c.hueComponent * 12) % 12
+                counts["hue \(hue)", default: 0] += 1
             }
         }
         return counts.sorted { $0.value > $1.value }.map { ($0.key, $0.value) }
@@ -841,7 +981,20 @@ func checkTheRailRenders() {
     // The whole pad, not a guessed band. A fixed window stops covering the
     // notes the moment anything above them changes height — which is exactly
     // what happened when the summary became a note of its own.
-    let papers = dominantPapers(fromTop: 200, height: host.bounds.height - 200)
+    let bannerSeverity: CritiqueSeverity = model.score >= 85
+        ? .low : (model.score >= 50 ? .medium : .high)
+    let theme = EditorColorTheme(color: .blue, mode: .light)
+    let page = theme.editorBackgroundColor.usingColorSpace(.sRGB)!
+    let bannerTint = NSColor(bannerSeverity.tint).usingColorSpace(.sRGB)!
+    let bannerWash = NSColor(
+        srgbRed: page.redComponent * 0.88 + bannerTint.redComponent * 0.12,
+        green: page.greenComponent * 0.88 + bannerTint.greenComponent * 0.12,
+        blue: page.blueComponent * 0.88 + bannerTint.blueComponent * 0.12,
+        alpha: 1
+    )
+    let papers = dominantPapers(
+        fromTop: 200, height: host.bounds.height - 200, excluding: bannerWash
+    )
     if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
         print("  dominant note papers: \(papers.prefix(3).map { "\($0.0)x\($0.1)" })")
     }
@@ -874,7 +1027,7 @@ func checkTheRailRenders() {
 
     // The numeral occupies the upper part of the banner; the bar underneath is
     // solid tint and would be measured as if it were a letter.
-    let contrast = scoreContrast(fromTop: 58, height: 44)
+    let contrast = scoreContrast()
     if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
         print("  score contrast: \(String(format: "%.2f", contrast)):1")
     }

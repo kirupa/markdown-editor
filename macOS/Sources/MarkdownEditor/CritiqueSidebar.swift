@@ -44,6 +44,63 @@ enum CritiqueInk {
     }
 }
 
+/// The three hands the critique can be written in.
+///
+/// A choice rather than a decision, because this one is taste: a marker, a
+/// drafting hand and a pen are three different tones of voice for the same
+/// comment, and which one reads as "somebody wrote on my draft" rather than
+/// "a machine generated this" is not something to settle on somebody's behalf.
+///
+/// All three are bundled and OFL or Apache licensed, so the choice never
+/// depends on what happens to be installed.
+enum CritiqueHand: String, CaseIterable, Identifiable {
+    case architectsDaughter
+    case caveat
+    case permanentMarker
+
+    static let storageKey = "critiqueHandFont"
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .architectsDaughter: return "Architects Daughter"
+        case .caveat: return "Caveat"
+        case .permanentMarker: return "Permanent Marker"
+        }
+    }
+
+    var fontName: String {
+        switch self {
+        case .architectsDaughter: return "ArchitectsDaughter-Regular"
+        case .caveat: return "Caveat-Regular"
+        case .permanentMarker: return "PermanentMarker-Regular"
+        }
+    }
+
+    /// What to multiply a requested point size by so all three land at the
+    /// same *read* size. See `CritiqueTypography.opticalScale`.
+    var opticalScale: CGFloat {
+        switch self {
+        case .architectsDaughter: return 1.19
+        case .caveat: return 1.28
+        case .permanentMarker: return 0.84
+        }
+    }
+
+    /// Read straight from defaults rather than held in a view.
+    ///
+    /// `CritiqueTypography.hand` is a static called from every label on the
+    /// rail, and threading a binding through all of them to change a font is
+    /// more machinery than the feature is worth. The picker writes the same
+    /// key through `@AppStorage`, which redraws the rail, and the redraw picks
+    /// this up.
+    static var selected: CritiqueHand {
+        UserDefaults.standard.string(forKey: storageKey)
+            .flatMap(CritiqueHand.init(rawValue:)) ?? .architectsDaughter
+    }
+}
+
 /// The hand the comments are written in.
 ///
 /// Margin notes on a draft are handwritten, and setting them in the same face
@@ -64,10 +121,26 @@ enum CritiqueInk {
 /// The chain is a chain because any font can be disabled in Font Book, and a
 /// comment nobody can read is worse than one in the wrong face.
 enum CritiqueTypography {
-    static let familyChain = [
+    /// The hand the feedback is written in, whichever one is chosen.
+    ///
+    /// The chain is a chain because any font can be disabled in Font Book, and
+    /// a comment nobody can read is worse than one in the wrong face.
+    static var familyChain: [String] {
+        [CritiqueHand.selected.fontName] + fallbackChain
+    }
+
+    static let fallbackChain = [
         "PermanentMarker-Regular", "BradleyHandITCTT-Bold", "Noteworthy-Light",
         "SegoeMarker", "ChalkboardSE-Light",
     ]
+
+    /// The same hand. All three ship in one weight.
+    ///
+    /// A separate chain rather than a trait, because asking `NSFontManager` to
+    /// embolden a single-weight face returns it unchanged — the request looks
+    /// like it did something and did not. With one weight available, emphasis
+    /// here is carried by size, which is what `sectionSize` is for.
+    static var boldFamilyChain: [String] { familyChain }
 
     /// The three sizes the rail sets anything at.
     ///
@@ -79,8 +152,8 @@ enum CritiqueTypography {
     ///
     /// A heading is plainly bigger than its body now, which is the only thing
     /// that makes a stack of notes skimmable.
-    static let sectionSize: CGFloat = 17
-    static let bodySize: CGFloat = 15
+    static let sectionSize: CGFloat = 19
+    static let bodySize: CGFloat = 16
     static let captionSize: CGFloat = 13
 
     /// Faces that run large for their point size, and by how much.
@@ -90,9 +163,20 @@ enum CritiqueTypography {
     /// Marker at 15 takes half again as many lines as Bradley Hand at 15. The
     /// rail asks for an *optical* size and this is what turns that into a
     /// number each face can be given.
-    static let opticalScale: [String: CGFloat] = [
-        "PermanentMarker-Regular": 0.84,
-    ]
+    /// Anchored on x-height, not cap height.
+    ///
+    /// These three disagree about capitals far more than about lowercase:
+    /// Architects Daughter's x-height is 0.43 and Permanent Marker's is 0.61
+    /// against cap heights of 0.66 and 0.74. Almost every word here is
+    /// lowercase, so matching the capitals sets the text people actually read
+    /// as much as a fifth too small. Measured from the faces, not guessed.
+    static var opticalScale: [String: CGFloat] {
+        var scales: [String: CGFloat] = ["PermanentMarker-Regular": 0.84]
+        for hand in CritiqueHand.allCases {
+            scales[hand.fontName] = hand.opticalScale
+        }
+        return scales
+    }
 
     /// Handwriting runs small for its point size, so it is set a shade larger
     /// than the system text it sits beside. Measured against the cards: 14
@@ -101,14 +185,17 @@ enum CritiqueTypography {
     /// `bold` asks for emphasis rather than a weight. Bradley Hand has no
     /// bolder member, and `NSFontManager` answers such a request with the font
     /// it was given — so emphasis has to come from size, which the callers do.
+    /// A specific hand, for showing a face by example rather than by name.
+    static func named(_ hand: CritiqueHand, size: CGFloat) -> Font {
+        NSFont(name: hand.fontName, size: size * hand.opticalScale)
+            .map(Font.init) ?? .system(size: size)
+    }
+
     static func hand(_ size: CGFloat, bold: Bool = false) -> Font {
-        for name in familyChain {
+        for name in bold ? boldFamilyChain : familyChain {
             let scaled = size * (opticalScale[name] ?? 1)
             guard let found = NSFont(name: name, size: scaled) else { continue }
-            let face = bold
-                ? NSFontManager.shared.convert(found, toHaveTrait: .boldFontMask)
-                : found
-            return Font(face)
+            return Font(found)
         }
         return .system(size: size, weight: bold ? .semibold : .regular)
     }
@@ -146,6 +233,9 @@ enum CritiqueTypography {
 /// the passage it describes shaded in the text, and a click on either side
 /// moving the other.
 struct CritiqueSidebar: View {
+    @AppStorage(CritiqueHand.storageKey) private var hand =
+        CritiqueHand.architectsDaughter.rawValue
+
     @ObservedObject var critique: CritiqueModel
     let colorTheme: EditorColorTheme
     let isStale: Bool
@@ -176,11 +266,13 @@ struct CritiqueSidebar: View {
             Image(systemName: "sparkles")
                 .foregroundStyle(colorTheme.accent)
             Text("CRITIQUE")
-                .font(CritiqueTypography.hand(18))
+                .font(CritiqueTypography.hand(21))
                 .tracking(0.5)
                 .foregroundStyle(colorTheme.primaryText)
 
             Spacer()
+
+            handMenu
 
             if !critique.history.isEmpty, !critique.isRunning {
                 revisionMenu
@@ -189,7 +281,7 @@ struct CritiqueSidebar: View {
             if critique.isRunning {
                 Button("Stop") { critique.cancel() }
                     .buttonStyle(.plain)
-                    .font(CritiqueTypography.hand(13))
+                    .font(CritiqueTypography.hand(15))
                     .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
             } else if critique.report != nil {
                 Button {
@@ -221,6 +313,39 @@ struct CritiqueSidebar: View {
     /// what anybody is actually looking for — "the one before I rewrote the
     /// opening" — and carrying their score, so the list reads as a record of
     /// whether the draft is getting better.
+    /// Pick the hand the comments are written in.
+    ///
+    /// Each name is set in its own face, because the names mean nothing —
+    /// nobody knows what "Caveat" looks like, and a list of three words in the
+    /// same font asks you to guess and then look. Showing them is the whole
+    /// answer to the question the menu is asking.
+    private var handMenu: some View {
+        Menu {
+            ForEach(CritiqueHand.allCases) { candidate in
+                Button {
+                    hand = candidate.rawValue
+                } label: {
+                    HStack {
+                        Text(candidate.title)
+                            .font(CritiqueTypography.named(
+                                candidate, size: CritiqueTypography.bodySize
+                            ))
+                        if candidate.rawValue == hand {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "textformat")
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
+        .help("The hand the comments are written in")
+    }
+
     private var revisionMenu: some View {
         Menu {
             Button {
@@ -248,7 +373,7 @@ struct CritiqueSidebar: View {
             HStack(spacing: 3) {
                 Image(systemName: "clock.arrow.circlepath")
                 Text("\(critique.history.revisions.count)")
-                    .font(CritiqueTypography.hand(13))
+                    .font(CritiqueTypography.hand(15))
             }
         }
         .menuStyle(.borderlessButton)
@@ -276,11 +401,11 @@ struct CritiqueSidebar: View {
         return VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(progress.stage.headline.uppercased())
-                    .font(CritiqueTypography.hand(16))
+                    .font(CritiqueTypography.hand(18))
                     .tracking(0.5)
                     .foregroundStyle(colorTheme.primaryText)
                 Text(progress.stage.explanation)
-                    .font(CritiqueTypography.hand(14))
+                    .font(CritiqueTypography.hand(16))
                     .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -307,7 +432,7 @@ struct CritiqueSidebar: View {
                         ? "1 NOTE SO FAR"
                         : "\(progress.findingsSoFar) NOTES SO FAR"
                 )
-                .font(CritiqueTypography.hand(14))
+                .font(CritiqueTypography.hand(16))
                 .foregroundStyle(colorTheme.accent)
                 .contentTransition(.numericText())
                 .animation(.easeOut(duration: 0.2), value: progress.findingsSoFar)
@@ -318,7 +443,7 @@ struct CritiqueSidebar: View {
             // invent, because it is actually true.
             if let detail = progress.detail, progress.stage == .reading {
                 Text(detail)
-                    .font(CritiqueTypography.hand(13))
+                    .font(CritiqueTypography.hand(15))
                     .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.leading, 8)
@@ -341,11 +466,11 @@ struct CritiqueSidebar: View {
     private func failure(_ failure: CritiqueService.Failure) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(failure.errorDescription ?? "Something went wrong.")
-                .font(CritiqueTypography.hand(16, bold: true))
+                .font(CritiqueTypography.hand(19, bold: true))
                 .foregroundStyle(colorTheme.primaryText)
             if let suggestion = failure.recoverySuggestion {
                 Text(suggestion)
-                    .font(CritiqueTypography.hand(15))
+                    .font(CritiqueTypography.hand(18))
                     .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                     .textSelection(.enabled)
             }
@@ -361,7 +486,7 @@ struct CritiqueSidebar: View {
         VStack(spacing: 8) {
             Spacer()
             Text("No critique yet.")
-                .font(CritiqueTypography.hand(15))
+                .font(CritiqueTypography.hand(18))
                 .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
             Spacer()
         }
@@ -378,7 +503,7 @@ struct CritiqueSidebar: View {
 
                     if critique.items.isEmpty {
                         Text("No high or medium problems found.")
-                            .font(CritiqueTypography.hand(15))
+                            .font(CritiqueTypography.hand(18))
                             .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                             .padding(.horizontal, 12)
                     }
@@ -406,14 +531,18 @@ struct CritiqueSidebar: View {
                     }
 
                     if !report.repeatedPatterns.isEmpty {
-                        section("Repeated patterns") {
+                        section(
+                            "Repeated patterns",
+                            id: Self.repeatedID,
+                            tint: CritiqueSeverity.medium.ink(on: colorTheme.mode)
+                        ) {
                             ForEach(report.repeatedPatterns) { pattern in
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(pattern.pattern)
-                                        .font(CritiqueTypography.hand(15))
+                                        .font(CritiqueTypography.hand(18))
                                     if !pattern.locations.isEmpty {
                                         Text(pattern.locations.joined(separator: " · "))
-                                            .font(CritiqueTypography.hand(12))
+                                            .font(CritiqueTypography.hand(14))
                                             .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                                     }
                                 }
@@ -422,9 +551,13 @@ struct CritiqueSidebar: View {
                     }
 
                     if !report.keep.isEmpty {
-                        section("Keep") {
+                        section(
+                            "Keep",
+                            id: Self.keepID,
+                            tint: CritiqueCard.worksGreen(on: colorTheme.mode)
+                        ) {
                             ForEach(Array(report.keep.enumerated()), id: \.offset) { _, note in
-                                Text(note).font(CritiqueTypography.hand(15))
+                                Text(note).font(CritiqueTypography.hand(18))
                             }
                         }
                     }
@@ -457,7 +590,12 @@ struct CritiqueSidebar: View {
         return VStack(alignment: .leading, spacing: 9) {
             HStack(alignment: .lastTextBaseline, spacing: 8) {
                 Text("\(score)")
-                    .font(CritiqueTypography.hand(46))
+                    // The bold hand, because this one is a display numeral on
+                    // a wash of its own colour. Set in the regular weight the
+                    // strokes are thin enough that it measured 3.4:1 where the
+                    // marker face made 5.3:1 — the colour did not change, the
+                    // amount of it did.
+                    .font(CritiqueTypography.hand(48))
                     .foregroundStyle(ink)
                     .contentTransition(.numericText())
                 Text("/100")
@@ -467,10 +605,11 @@ struct CritiqueSidebar: View {
                 VStack(alignment: .trailing, spacing: 1) {
                     Text("AWESOMENESS")
                         .font(CritiqueTypography.hand(CritiqueTypography.captionSize))
-                        .tracking(0.8)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                         .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                     Text(critique.verdict)
-                        .font(CritiqueTypography.hand(CritiqueTypography.sectionSize))
+                        .font(CritiqueTypography.hand(CritiqueTypography.bodySize))
                         .foregroundStyle(colorTheme.primaryText)
                         .multilineTextAlignment(.trailing)
                 }
@@ -583,7 +722,7 @@ struct CritiqueSidebar: View {
             ? " \(applying) of \(total) notes still point at something."
             : ""
         return Label(opening + survivors, systemImage: "clock.badge.exclamationmark")
-        .font(CritiqueTypography.hand(15))
+        .font(CritiqueTypography.hand(18))
         .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -614,7 +753,7 @@ struct CritiqueSidebar: View {
             VStack(alignment: .leading, spacing: 9) {
                 if !report.jobRead.isEmpty {
                     Text(report.jobRead)
-                        .font(CritiqueTypography.hand(13))
+                        .font(CritiqueTypography.hand(15))
                         .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -640,7 +779,7 @@ struct CritiqueSidebar: View {
                                     .fill(entry.severity.tint)
                                     .frame(width: 6, height: 6)
                                 Text("\(entry.count) \(entry.severity.label)")
-                                    .font(CritiqueTypography.hand(13))
+                                    .font(CritiqueTypography.hand(15))
                                     .textCase(.uppercase)
                                     .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                             }
@@ -656,7 +795,7 @@ struct CritiqueSidebar: View {
                     Text(
                         "\(unanchored) of \(critique.items.count) could not be matched to a passage."
                     )
-                    .font(CritiqueTypography.hand(12))
+                    .font(CritiqueTypography.hand(14))
                     .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                 }
             }
@@ -685,10 +824,10 @@ struct CritiqueSidebar: View {
             ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
                 HStack(alignment: .top, spacing: 5) {
                     Text(mark)
-                        .font(CritiqueTypography.hand(14))
+                        .font(CritiqueTypography.hand(16))
                         .foregroundStyle(tint.opacity(0.8))
                     Text(line)
-                        .font(CritiqueTypography.hand(14))
+                        .font(CritiqueTypography.hand(16))
                         .foregroundStyle(colorTheme.primaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -696,23 +835,46 @@ struct CritiqueSidebar: View {
         }
     }
 
+    /// A whole-draft observation, on its own note.
+    ///
+    /// These two were the last things on the rail still drawn as bare text on
+    /// the canvas — a leftover from the list this used to be, missed when
+    /// everything else became a note. They read as a caption belonging to the
+    /// note above rather than as observations in their own right.
+    ///
+    /// White paper, like the summary: neither is a fault to be answered, so
+    /// neither takes a severity colour or a tag.
     private func section(
         _ title: String,
+        id: UUID,
+        tint: Color,
         @ViewBuilder body: () -> some View
     ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title.uppercased())
-                .font(CritiqueTypography.hand(CritiqueTypography.sectionSize))
-                .tracking(0.5)
-                .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
-                .padding(.top, 8)
-            body()
-                .foregroundStyle(colorTheme.primaryText)
+        StickyNote(
+            colorTheme: colorTheme,
+            paper: colorTheme.cardBackground,
+            angle: PixelJitter.angle(for: id),
+            nudge: PixelJitter.offset(for: id),
+            tag: nil as AnyView?
+        ) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(title.uppercased())
+                    .font(CritiqueTypography.hand(CritiqueTypography.sectionSize))
+                    .tracking(0.5)
+                    .foregroundStyle(tint)
+                body()
+                    .foregroundStyle(CritiqueInk.body(on: colorTheme.mode))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .textSelection(.enabled)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
     }
+
+    /// Fixed, so these two notes do not re-tilt on every redraw.
+    private static let repeatedID =
+        UUID(uuidString: "00000000-0000-0000-0000-0000000000A1")!
+    private static let keepID =
+        UUID(uuidString: "00000000-0000-0000-0000-0000000000A2")!
 }
 
 
@@ -775,7 +937,11 @@ private struct StickyNote<Content: View>: View {
             // fade. Scale rather than movement, so nothing below it shifts.
             .scaleEffect(isHovered ? 1.035 : 1, anchor: .center)
             .animation(
-                .spring(response: 0.28, dampingFraction: 0.42),
+                // Quick. A hover is a pointer passing over a list, and a
+                // spring long enough to watch turns skimming the pad into
+                // waiting for it: at 0.28 the note was still settling after
+                // the pointer had moved on to the next one.
+                .spring(response: 0.11, dampingFraction: 0.5),
                 value: isHovered
             )
             .zIndex(isHovered ? 1 : 0)
@@ -822,7 +988,10 @@ private struct ActionStamp: View {
                     }
                 )
                 .scaleEffect(isHovered ? 1.14 : 1)
-                .animation(.spring(response: 0.24, dampingFraction: 0.45), value: isHovered)
+                .animation(
+                    .spring(response: 0.10, dampingFraction: 0.52),
+                    value: isHovered
+                )
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
@@ -870,7 +1039,7 @@ struct CritiqueCard: View {
     private var severityTag: some View {
         let answered = item.resolution
         return Text(answered?.label.uppercased() ?? finding.severity.label.uppercased())
-            .font(CritiqueTypography.hand(12))
+            .font(CritiqueTypography.hand(14))
             .tracking(0.6)
             .foregroundStyle(
                 answered == nil ? Color.white : CritiqueInk.body(on: colorTheme.mode)
@@ -999,7 +1168,7 @@ struct CritiqueCard: View {
                 Spacer(minLength: 0)
                 if finding.needsVerification {
                     Text("needs verification")
-                        .font(CritiqueTypography.hand(11))
+                        .font(CritiqueTypography.hand(13))
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1)
                         .background(
@@ -1022,7 +1191,7 @@ struct CritiqueCard: View {
                 // sentence quoted back at them, and it has to be recognisable
                 // as theirs.
                 Text(finding.quote)
-                    .font(CritiqueTypography.hand(13))
+                    .font(CritiqueTypography.hand(15))
                     .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                     .lineLimit(isSelected ? nil : 2)
                     .padding(.leading, 7)
@@ -1056,12 +1225,12 @@ struct CritiqueCard: View {
                 if item.isAnchored {
                     if !finding.location.isEmpty {
                         Text(finding.location)
-                            .font(CritiqueTypography.hand(12))
+                            .font(CritiqueTypography.hand(14))
                             .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                     }
                 } else {
                     Label("Not found in the document", systemImage: "questionmark.circle")
-                        .font(CritiqueTypography.hand(12))
+                        .font(CritiqueTypography.hand(14))
                         .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                 }
 
