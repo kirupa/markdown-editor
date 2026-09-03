@@ -266,13 +266,11 @@ struct RichTextEditor: NSViewRepresentable {
         }
 
         func observeScrolling(in scrollView: NSScrollView) {
+            // Attached, but reporting nowhere: there is one pane, so there
+            // is no neighbour to move. The synchroniser is still what
+            // measures and restores a scroll position across a re-render,
+            // which is the "never jump" contract in `check-scroll`.
             scrollSynchronizer.attach(to: scrollView)
-            scrollSynchronizer.didScroll = { [weak self] position in
-                guard let self else {
-                    return
-                }
-                session?.synchronizeScroll(from: self, position: position)
-            }
         }
 
         func stopObservingScrolling() {
@@ -311,8 +309,11 @@ struct RichTextEditor: NSViewRepresentable {
             // panes track each other's selection.
             render(
                 sourceSelection: selection,
-                scrollToSelection: contentChanged
-                    && session?.viewMode == .split
+                // Never chases the caret on a content change. That
+                // followed the *other* pane's caret when two were tracking
+                // each other; with one pane the caret is already where the
+                // writer put it, and scrolling to it fights them.
+                scrollToSelection: false
             )
         }
 
@@ -504,10 +505,7 @@ struct RichTextEditor: NSViewRepresentable {
             // one now, so the two panes still track each other's caret and
             // the session's remembered selection is the real one.
             if hasFocus {
-                session?.synchronizeSelection(
-                    from: self,
-                    selection: selectedSourceRange
-                )
+                session?.noteSelection(selectedSourceRange)
             }
         }
 
@@ -527,10 +525,7 @@ struct RichTextEditor: NSViewRepresentable {
             }
             if hasFocus {
                 session?.activate(self)
-                session?.synchronizeSelection(
-                    from: self,
-                    selection: selectedSourceRange
-                )
+                session?.noteSelection(selectedSourceRange)
             }
         }
 

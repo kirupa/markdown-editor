@@ -271,15 +271,20 @@ is noticed and what happens next.
 
 ## 6. Editing modes
 
-### 6.1 The three modes
+### 6.1 One view
+
+Superseded by [I-142](#10a-ai-assisted-critique). The Mac app had three view
+modes — Rich Text, Markdown and Split — and now has one. The requirements below
+are kept because the shared `EditorViewMode` still carries all three and **iOS
+still offers them**; on the Mac they no longer hold.
 
 | ID | Requirement |
 | --- | --- |
-| E-1 | The editor offers exactly three view modes: **Rich Text**, **Markdown**, and **Split**. |
-| E-2 | **Split is the default mode** for a newly opened window. |
-| E-3 | In Split, the **rendered preview is on the left** and the **raw Markdown source is on the right**. |
-| E-4 | Modes are switchable from a segmented control in the toolbar and from **Markdown ▸ Editor View**. `⌘⌥M` cycles Rich Text → Markdown → Split → Rich Text. |
-| E-5 | Switching modes preserves the current selection. |
+| E-1 | *Superseded.* The editor offered exactly three view modes: **Rich Text**, **Markdown**, and **Split**. There is now one, Rich Text, and no switcher. |
+| E-2 | *Superseded.* Split was the default mode for a newly opened window. |
+| E-3 | *Superseded.* In Split, the rendered preview was on the left and the raw Markdown source on the right. |
+| E-4 | *Superseded.* Modes were switchable from a segmented control in the toolbar and from **Markdown ▸ Editor View**, and `⌘⌥M` cycled them. All three are gone. |
+| E-5 | *Superseded.* Switching modes preserved the current selection. |
 
 ### 6.2 Rich Text mode
 
@@ -293,22 +298,29 @@ is noticed and what happens next.
 | E-11 | Cut copies the Markdown, then removes the selection as a single undoable operation. |
 | E-12 | Undo and redo are registered per logical operation with descriptive action names, and multi-keystroke input method composition is committed as one undo step. |
 
-### 6.3 Split mode synchronization
+### 6.3 Split mode synchronization — removed
+
+All of this went with Split. It is kept as a record rather than deleted,
+because most of these entries are hard-won descriptions of how AppKit behaves,
+and E-22 to E-26 are still the "never jump" contract for the one remaining
+pane — those are still checked by `make check-scroll`. The cross-pane entries
+(E-13 to E-17, E-27, E-28) describe machinery that no longer exists, along with
+the 30 runtime checks in `check-session.swift` that held it.
 
 | ID | Requirement |
 | --- | --- |
-| E-13 | Scrolling either pane scrolls the other to the equivalent normalized position. |
-| E-14 | Moving the selection or caret in either pane moves it to the corresponding location in the other pane, mapped through the render model's source ↔ rendered range mapping. |
-| E-15 | Editing in either pane keeps both panes anchored at the selection and **does not cause the other pane to jump**. |
-| E-16 | Synchronization is guarded against feedback loops in both directions, and scroll adjustments smaller than 0.5 points are ignored to prevent jitter. |
-| E-17 | Synchronization is active only in Split mode. |
+| E-13 | *Removed with Split.* Scrolling either pane scrolls the other to the equivalent normalized position. |
+| E-14 | *Removed with Split.* Moving the selection or caret in either pane moves it to the corresponding location in the other pane, mapped through the render model's source ↔ rendered range mapping. |
+| E-15 | *Removed with Split.* Editing in either pane keeps both panes anchored at the selection and **does not cause the other pane to jump**. |
+| E-16 | *Removed with Split.* Synchronization is guarded against feedback loops in both directions, and scroll adjustments smaller than 0.5 points are ignored to prevent jitter. |
+| E-17 | *Removed with Split.* Synchronization is active only in Split mode. |
 | E-22 | **Typing never moves the page.** Re-styling a pane restores its exact scroll offset — not a fraction of its travel, which shifts whenever the document changes height, which is what typing does. |
 | E-23 | A pane reports a scroll position only when it has been fully laid out. Partial layout describes the part measured so far rather than the document, and publishing that threw the reader thousands of points down the page. A pane that cannot answer stays silent instead of guessing; AppKit finishes measuring in the background and it starts answering again on its own. |
-| E-24 | A pane receiving a position lays itself out fully before converting it. A newly created pane — one that has just joined a Split — has measured only the screenful it shows, so without this a reader 80% through a document lands at the very top. |
+| E-24 | *Removed with Split.* A pane receiving a position lays itself out fully before converting it. A newly created pane — one that has just joined a Split — has measured only the screenful it shows, so without this a reader 80% through a document lands at the very top. |
 | E-25 | The caret is revealed **after** the scroll offset is restored, never before, or the restore undoes the reveal and leaves the caret off screen. |
 | E-26 | Revealing the caret is skipped when it is already fully visible, so ordinary typing does not move the page. A caret straddling the edge of the viewport counts as hidden, not visible. |
-| E-27 | A pane publishes a selection change only when the writer caused it. Both panes replace their whole text storage to re-style, on every keystroke, and AppKit announces an intermediate selection part-way through that — measured 19,681 characters from the real caret. Publishing it made the other pane reveal a caret the writer had not moved, so the split lurched down the document and back on every character. Selection changes during a re-style are suppressed, and the settled selection is published once it finishes. |
-| E-28 | Catching a pane up with its neighbour happens when the pane **joins** the split, not on every update. SwiftUI calls `updateNSView` for both panes on every keystroke, and the catch-up applied the active pane's normalized *fraction* to a pane showing the same text at a different height — so 20 keystrokes moved the idle pane 40 times, dragging it a little further out of step with each character. The session now distinguishes a pane joining the split from the same pane being updated again, and owes the catch-up afresh only when the view mode changes or a pane leaves and returns. |
+| E-27 | *Removed with Split.* A pane publishes a selection change only when the writer caused it. Both panes replace their whole text storage to re-style, on every keystroke, and AppKit announces an intermediate selection part-way through that — measured 19,681 characters from the real caret. Publishing it made the other pane reveal a caret the writer had not moved, so the split lurched down the document and back on every character. Selection changes during a re-style are suppressed, and the settled selection is published once it finishes. |
+| E-28 | *Removed with Split.* Catching a pane up with its neighbour happens when the pane **joins** the split, not on every update. SwiftUI calls `updateNSView` for both panes on every keystroke, and the catch-up applied the active pane's normalized *fraction* to a pane showing the same text at a different height — so 20 keystrokes moved the idle pane 40 times, dragging it a little further out of step with each character. The session now distinguishes a pane joining the split from the same pane being updated again, and owes the catch-up afresh only when the view mode changes or a pane leaves and returns. |
 
 ### 6.4 Representative source typography
 
@@ -679,6 +691,11 @@ can fail says so.
 | I-138 | None of the three has a bold, and `NSFontManager` returns a single-weight face unchanged when asked to embolden it — so a `bold:` request looks like it did something and does not. Emphasis is size. |
 | I-139 | **The document is a column, not a page.** It fills the height of the window: no inset, no sheets behind it, no shadow. The metaphor was wrong rather than merely decorative — a Markdown document has no page size, no page breaks and no last line on a leaf, so a sheet floating on a desk promised an object the document is not, and stopped short of the window edge for no reason a reader could act on. The canvas is still a shade deeper than the column, which is what separates them now that no edge does. |
 | I-140 | The first line sits **44pt below the top**. With the column running the full height there is no margin above it any more, and without this the writing starts immediately under the toolbar and reads as part of the chrome. `NSTextView` applies its container inset top *and* bottom, so the document gets the same room at the end, which it wants anyway. |
+| I-141 | The formatting controls are **one block the width of the document**, directly above it and sharing its edges, rather than eight items spread along the window's title bar. Two point edge, solid drop, square corners, the theme's tint as the fill; the glyphs inside stay regular weight, because the weight in this design belongs to the frame and thirteen bold icons are harder to pick one out of. |
+| I-142 | **Rich Text is the only view.** Markdown and Split are gone, and with them the two-pane coordination they existed for: the scroll and selection mirroring, the catch-up for a pane joining a split, and the 30 runtime checks that held that contract. One document, one editor. |
+| I-143 | The header is **its own surface**: a warm strip mixed from the theme, ruled off from the page with the same full-strength edge as everything else. A titlebar that blends into the document leaves its controls floating on the writing. |
+| I-144 | And it is **ruled with hairlines**, the way a System 7 title bar was. This is where the rest of the look comes from — the square corners and hard shadows are the same idea, but the stripes are the part that is recognisably *that* era. Generated as a tile at device resolution rather than laid out as a stack of rectangles: a line every other point is hundreds of views, and a one-point rectangle is two device pixels on a 2x screen, which fills solid. |
+| I-145 | A critique mark is **trimmed to its words**. A newline is laid out as a glyph running to the end of its line fragment, so a range containing one drew a band the full width of the column — every blank line between two paragraphs was shaded. Trimmed at both ends and again per line. |
 
 ### 10a.1 What this sends, and where
 
@@ -938,7 +955,7 @@ make install
 | `make icons` | Regenerates `Packaging/AppIcon.icns` and `Packaging/MarkdownDocument.icns` |
 | `make test` | Runs the unit test suite |
 | `make check-scroll` | Drives real AppKit text views and asserts the "never jump" scroll rules |
-| `make check-session` | Compiles the real session against recording panes: which pane may move which, and what happens when another app rewrites the open file |
+| `make check-session` | Compiles the real session against a recording pane: what happens when another app rewrites the open file |
 | `make check-image-handles` | Renders real attachments and finds them by pixel: proves the picture rect is the drawn picture and not its line box, and guards the baseline-offset rule across seven offsets |
 | `make check-image-layout` | The same geometry through the **real** `RichMarkdownStyler`, at the app's own container inset — a bug whose size *is* the inset cannot happen in a view that has none — plus the pointer shape at each place it matters, the clicks that select a picture, dragging a picture to a new place in the document, and the four ways a resize used to go wrong: focus, reflow, a refused commit, and a cursor stranded by teardown |
 | `make check-editor-clicks` | Hosts the **real SwiftUI editor**, opens a document off disk, and asks the window which view a click on a picture would actually reach — the one check that can see a floating explorer or gripper covering the preview |
@@ -1147,17 +1164,17 @@ rather than `open -n` keeps a launch from starting a second copy of the
 
 Any script here that launches the app uses it. Use it for anything manual too.
 
-### 16.6 Split-pane coordination checks
+### 16.6 Session checks
 
-`make check-session` covers `MarkdownEditorSession` — the object that decides
-when one pane is allowed to move the other. It lives in the app's executable
-target, which no test target can import, so it went untested for a long time.
-That is how E-28 got in. `Scripts/run-session-checks.sh` compiles the real app
-sources, minus the `@main` entry point, together with
+`make check-session` covers `MarkdownEditorSession`. It lives in the app's
+executable target, which no test target can import, so it went untested for a
+long time — that is how E-28 got in. `Scripts/run-session-checks.sh` compiles
+the real app sources, minus the `@main` entry point, together with
 `Scripts/check-session.swift`, linking against the object files SPM has already
-built for the shared package. 30 checks.
+built for the shared package.
 
-Fifteen of those cover the split panes. The other fifteen cover [§5.6](#56-changes-made-by-another-app),
+It was 30 checks. Fifteen covered the split panes and went when Split did. The
+remaining fifteen cover [§5.6](#56-changes-made-by-another-app),
 against real files in a temporary directory rather than a double: the harness
 writes to them the way a real editor saves — a temporary file renamed over the
 target — because that is the case a naive watcher gets wrong. Two suites, one
@@ -1393,6 +1410,7 @@ async `@main` instead.
 | A dark theme you can read | The critique pad was unreadable in a dark theme — pale paper with the theme's light writing on it, at 1.02:1. Paper, ink, tags and the shading in the document all follow the theme now, and every pairing is checked in both. See [I-129 to I-133](#10a-ai-assisted-critique). |
 | A hand you can choose | The critique is written in Architects Daughter now, with Caveat and Permanent Marker a menu away and the choice remembered. Type is a size larger throughout, the last two sections became notes, and hovering settles in a tenth of a second. See [I-134 to I-138](#10a-ai-assisted-critique). |
 | A document, not a page | The sheet-of-paper page became a column that fills the window — no inset, no stack, no shadow — because a Markdown document has no pages, and the writing now starts clear of the toolbar. See [I-139 and I-140](#10a-ai-assisted-critique). |
+| One view, and a window that knows what year it is | The formatting controls came off the title bar and onto the document as a block its width. Rich Text is the only view now — Markdown, Split and the two-pane machinery are gone. The header is a pinstriped strip of its own, ruled off hard. See [I-141 to I-145](#10a-ai-assisted-critique). |
 | Paper, grid, and a pad of notes | The page is drawn as the top sheet of a stack — hairline edge, two sheets behind, a hard shadow — on a canvas a shade deeper than the paper with a faint grid over it. The chrome went 8-bit: square corners, hairline borders, and shadows as solid offset blocks, since a rounded rectangle and a blur are the two things a pixel grid cannot draw. Findings became notes on a pad, coloured by severity with a tag at the top and a slight rotation taken from the finding's own identifier so they sit still between redraws. Notes no longer restate the passage they are about, because the highlight already points at it. See [I-115 to I-120](#10a-ai-assisted-critique). |
 | Narrate the wait, and keep the critiques | A critique takes about half a minute, and half a minute of spinner reads as a hang. The CLI's event stream is now read as it arrives, so the rail names the stage, fills a bar of four, shows the model's own account of what it is reading, and counts the notes as they are written. Past critiques are kept across launches and reachable from a dropdown — each keeping the draft it was written about, so opening an old one re-anchors it against today's text and says how many of its notes still point at something. The rail's labels moved to Monomaniac One, bundled under the OFL, so what the reviewer wrote and what the editor says about it no longer look alike. See [I-105 to I-112](#10a-ai-assisted-critique). |
 | Answer the critique, and watch the score move | Comments moved into the document's own margin rather than the window's edge, and are set in a handwriting face so a note reads as something written *on* the draft rather than more of it — quotes excepted, because those are the author's own words. Each finding can now be marked **Done** or **Dismissed**, which stops it shading, files it under Answered, and — the point — stops a re-run raising it again, recognised across runs by the folded quote and category rather than by an identifier a fresh critique renumbers. An **awesomeness score** heads the rail, decaying with what is outstanding and returning to exactly 100 once everything is answered. See [I-96 to I-104](#10a-ai-assisted-critique). |

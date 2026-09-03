@@ -7,7 +7,6 @@ import UniformTypeIdentifiers
 
 @MainActor
 final class MarkdownEditorSession: ObservableObject {
-    @Published private(set) var viewMode: EditorViewMode = .split
 
     /// X-18: the explorer starts closed. Opening a document should put the
     /// document on screen and nothing else; a file tree is for the moments you
@@ -73,30 +72,6 @@ final class MarkdownEditorSession: ObservableObject {
         }
     }
 
-    func setViewMode(_ mode: EditorViewMode) {
-        guard mode != viewMode else {
-            return
-        }
-        if let editor = currentEditor() {
-            editor.commitPendingComposition()
-            rememberedSelection = editor.selectedSourceRange
-        }
-        viewMode = mode
-        // Panes appearing in the new layout have to catch up once more.
-        alignedEditors.removeAll()
-    }
-
-    func cycleViewMode() {
-        switch viewMode {
-        case .rich:
-            setViewMode(.source)
-        case .source:
-            setViewMode(.split)
-        case .split:
-            setViewMode(.rich)
-        }
-    }
-
     /// SwiftUI calls this from `updateNSView`, which runs on every keystroke —
     /// so it must only *register* the pane. Catching a pane up with its
     /// neighbour is a one-off for a pane that is joining the split: it applies
@@ -121,15 +96,6 @@ final class MarkdownEditorSession: ObservableObject {
             return
         }
 
-        if viewMode == .split,
-            let activeEditor,
-            !sameEditor(activeEditor, editor)
-        {
-            if let position = activeEditor.normalizedScrollPosition {
-                editor.setNormalizedScrollPosition(position)
-            }
-            editor.setSynchronizedSourceSelection(rememberedSelection)
-        }
     }
 
     func activate(_ editor: any MarkdownEditingSurface) {
@@ -138,45 +104,20 @@ final class MarkdownEditorSession: ObservableObject {
         rememberedSelection = editor.selectedSourceRange
     }
 
-    func synchronizeScroll(
-        from editor: any MarkdownEditingSurface,
-        position: CGFloat
-    ) {
-        guard viewMode == .split, !isSynchronizingScroll else {
-            return
-        }
-
-        isSynchronizingScroll = true
-        defer {
-            isSynchronizingScroll = false
-        }
-        for attachedEditor in liveEditors()
-        where !sameEditor(attachedEditor, editor) {
-            attachedEditor.setNormalizedScrollPosition(position)
-        }
-    }
-
-    func synchronizeSelection(
-        from editor: any MarkdownEditingSurface,
-        selection: NSRange
-    ) {
+    /// Records where the caret is, so it survives a re-render.
+    ///
+    /// What is left of the old two-pane synchronisation: with one editor there
+    /// is nobody to tell, but the session still has to remember the selection
+    /// because replacing the text storage moves it.
+    func noteSelection(_ selection: NSRange) {
         rememberedSelection = selection
-        guard viewMode == .split, !isSynchronizingSelection else {
-            return
-        }
-
-        isSynchronizingSelection = true
-        defer {
-            isSynchronizingSelection = false
-        }
-        for attachedEditor in liveEditors()
-        where !sameEditor(attachedEditor, editor) {
-            attachedEditor.setSynchronizedSourceSelection(selection)
-        }
     }
 
     func selectionForEditorUpdate(fallback: NSRange) -> NSRange {
-        viewMode == .split ? rememberedSelection : fallback
+        // There is one editor, so what it reports is the truth. This existed
+        // to prefer the remembered selection while two panes were writing to
+        // each other.
+        fallback
     }
 
     // MARK: - Changes made by other apps

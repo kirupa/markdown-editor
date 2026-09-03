@@ -443,10 +443,10 @@ struct CheckCritique {
         checkTheHandsAreAvailable()
         checkTheDocumentFillsTheWindow()
         checkTheFormattingBarIsABlock()
+        checkTheHeaderIsItsOwnSurface()
         checkTheScoreIsLegible()
         checkEveryColourIsLegible()
         checkHighlightsAndClicking()
-        checkTheSourcePaneShadesToo()
         checkTheHistory()
         checkTheRailRenders()
 
@@ -1239,6 +1239,79 @@ func checkEveryColourIsLegible() {
     }
 }
 
+/// The window's header is its own surface, ruled like a classic Mac title bar.
+///
+/// Two claims, both easy to lose silently. A header tinted from the theme can
+/// drift to within a shade of the page as the palette changes, at which point
+/// the controls are floating on the writing and nothing is obviously wrong.
+/// And the stripes are generated rather than laid out, so a scale or rounding
+/// mistake fills the image solid — which looks like a plain band, not like a
+/// bug.
+@MainActor
+func checkTheHeaderIsItsOwnSurface() {
+    print("")
+    print("The window header")
+
+    func luminance(_ colour: NSColor) -> Double {
+        let c = colour.usingColorSpace(.sRGB)!
+        func channel(_ raw: CGFloat) -> Double {
+            let v = Double(raw)
+            return v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * channel(c.redComponent)
+            + 0.7152 * channel(c.greenComponent)
+            + 0.0722 * channel(c.blueComponent)
+    }
+
+    for mode in [EditorAppearanceMode.light, .dark] {
+        let theme = EditorColorTheme(color: .blue, mode: mode)
+        let header = NSColor(PixelStyle.header(theme)).usingColorSpace(.sRGB)!
+        let page = theme.editorBackgroundColor.usingColorSpace(.sRGB)!
+        let dr: CGFloat = abs(header.redComponent - page.redComponent)
+        let dg: CGFloat = abs(header.greenComponent - page.greenComponent)
+        let db: CGFloat = abs(header.blueComponent - page.blueComponent)
+        if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
+            print(String(format: "  %@ header differs from the page by %.3f",
+                         mode.rawValue, dr + dg + db))
+        }
+        check(
+            "the header is a different surface from the page in \(mode.rawValue)",
+            dr + dg + db > 0.05,
+            String(
+                format: "they differ by %.3f, which is the same colour",
+                dr + dg + db
+            )
+        )
+
+        // The stripes, read out of the tile the paint is built from.
+        let paint = PixelStyle.headerStripes(theme)
+        let renderer = ImageRenderer(content: Rectangle().fill(paint).frame(
+            width: 8, height: 8
+        ))
+        renderer.scale = 2
+        guard let cg = renderer.cgImage else {
+            check("and it is ruled with hairlines in \(mode.rawValue)", false,
+                  "the stripe tile could not be drawn")
+            continue
+        }
+        let rep = NSBitmapImageRep(cgImage: cg)
+        var levels: Set<Int> = []
+        for y in 0..<rep.pixelsHigh {
+            if let c = rep.colorAt(x: 1, y: y)?.usingColorSpace(.sRGB) {
+                levels.insert(Int(luminance(c) * 200))
+            }
+        }
+        if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
+            print("  \(mode.rawValue) stripe tile has \(levels.count) levels")
+        }
+        check(
+            "and it is ruled with hairlines in \(mode.rawValue)",
+            levels.count >= 2,
+            "the tile is one flat tone, so the header is a plain band"
+        )
+    }
+}
+
 /// The formatting bar is a block: square, outlined, and dropped on the window.
 ///
 /// Checked from the pixels because every part of it is visual. A control bar
@@ -1615,112 +1688,6 @@ func checkTheScoreIsLegible() {
     }
 }
 
-/// The Markdown pane shades the same passages, without converting anything.
-///
-/// A critique is written about the source, so this pane's ranges *are* the
-/// critique's ranges. Worth checking rather than assuming: the pane opens
-/// alongside the rail in Split and on its own in Markdown mode, and a rail of
-/// comments beside a pane that highlights nothing is the feature half working.
-@MainActor
-func checkTheSourcePaneShadesToo() {
-    print("")
-    print("Shading the Markdown pane")
-
-    let source = """
-        # Understanding Caching
-
-        Caching is important because the cache stores data for later reads.
-        """
-    let view = RichMarkdownTextView(frame: NSRect(x: 0, y: 0, width: 700, height: 400))
-    view.textContainerInset = NSSize(width: 18, height: 16)
-    view.textContainer?.containerSize = NSSize(
-        width: 664, height: CGFloat.greatestFiniteMagnitude
-    )
-    view.textContainer?.widthTracksTextView = true
-    view.isVerticallyResizable = true
-    MarkdownSourceStyler.apply(
-        source, to: view, colorTheme: EditorColorTheme(color: .blue, mode: .light)
-    )
-    let window = NSWindow(
-        contentRect: view.frame, styleMask: [.borderless],
-        backing: .buffered, defer: false
-    )
-    window.contentView = view
-    window.orderBack(nil)
-    view.layoutSubtreeIfNeeded()
-    view.layoutManager?.ensureLayout(for: view.textContainer!)
-
-    check(
-        "the Markdown pane holds the source exactly",
-        view.string == source,
-        "it holds something else"
-    )
-
-    let finding = CritiqueFinding(
-        severity: .high, category: "Clarity and precision",
-        location: "paragraph 2", quote: "the cache stores data", why: "Vague."
-    )
-    guard let range = CritiqueAnchoring.range(for: finding, in: source) else {
-        check("the quote anchors in the source", false)
-        return
-    }
-    // No conversion here, unlike the rendered pane: the ranges are the same.
-    check(
-        "the range needs no conversion for this pane",
-        (view.string as NSString).substring(with: range) == finding.quote,
-        "it points somewhere else"
-    )
-
-    view.critiqueHighlights = [
-        .init(id: finding.id, range: range, colour: finding.severity.highlight(on: .light))
-    ]
-    check(
-        "the passage is shaded in the Markdown pane",
-        !view.critiqueHighlightBoxes(for: range).isEmpty,
-        "nothing is drawn for it"
-    )
-
-    var clicked: UUID?
-    view.didClickCritiqueHighlight = { clicked = $0 }
-    let box = view.layoutManager!.boundingRect(
-        forGlyphRange: view.layoutManager!.glyphRange(
-            forCharacterRange: range, actualCharacterRange: nil
-        ),
-        in: view.textContainer!
-    )
-    view.raiseCritiqueComment(
-        at: CGPoint(
-            x: box.midX + view.textContainerInset.width,
-            y: box.midY + view.textContainerInset.height
-        )
-    )
-    check(
-        "clicking it raises the comment",
-        clicked == finding.id,
-        clicked == nil ? "nothing was raised" : "the wrong comment"
-    )
-
-    // Everything above exercises the text view, which both panes share — so
-    // it would pass with the Markdown pane not wired to a critique at all.
-    // Whether the pane *asks* for any of this is only decidable by reading it.
-    let paneSource = (try? String(
-        contentsOf: URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("Sources/MarkdownEditor/SourceTextEditor.swift"),
-        encoding: .utf8
-    )) ?? ""
-    check(
-        "the Markdown pane asks for the shading on every update",
-        paneSource.contains("applyCritique(critique, to: textView)"),
-        "SourceTextEditor never applies a critique"
-    )
-    check(
-        "and reports clicks on it",
-        paneSource.contains("didClickCritiqueHighlight"),
-        "SourceTextEditor never reports a click on a shaded passage"
-    )
-}
 
 /// Looking back at an earlier critique.
 ///

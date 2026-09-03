@@ -18,11 +18,11 @@ check-critique:
 check-image-layout:
 	@./Scripts/run-image-layout-checks.sh
 
-check-scroll:
-	@swift Scripts/check-scroll.swift
-
 check-session:
 	@./Scripts/run-session-checks.sh
+
+check-scroll:
+	@swift Scripts/check-scroll.swift
 
 icons:
 	@swift Scripts/make-icons.swift Packaging

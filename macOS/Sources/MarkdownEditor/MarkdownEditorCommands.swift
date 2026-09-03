@@ -78,21 +78,6 @@ struct MarkdownEditorCommands: Commands {
 
             Divider()
 
-            Menu("Editor View") {
-                ForEach(EditorViewMode.allCases) { mode in
-                    Button {
-                        session?.setViewMode(mode)
-                    } label: {
-                        if session?.viewMode == mode {
-                            Label(mode.rawValue, systemImage: "checkmark")
-                        } else {
-                            Text(mode.rawValue)
-                        }
-                    }
-                }
-            }
-            .disabled(session == nil)
-
             Menu("Theme Color") {
                 ForEach(EditorThemeColor.allCases) { themeColor in
                     Button {
@@ -123,12 +108,6 @@ struct MarkdownEditorCommands: Commands {
                 }
                 .disabled(colorThemeSelection == nil)
             }
-
-            Button("Cycle Editor View") {
-                session?.cycleViewMode()
-            }
-            .keyboardShortcut("m", modifiers: [.command, .option])
-            .disabled(session == nil)
 
             Divider()
 

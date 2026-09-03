@@ -64,6 +64,15 @@ struct MarkdownEditorView: View {
             // rather than on whatever the explorer leaves over.
             ZStack(alignment: .topLeading) {
                 VStack(spacing: 0) {
+                    // The rule under the header. A hairline separator is the
+                    // platform's answer and disappears against a tinted strip;
+                    // this is the same full-strength edge the bar and the notes
+                    // are drawn with, so the header reads as a band rather than
+                    // as the top of the page.
+                    Rectangle()
+                        .fill(PixelStyle.ink(colorTheme))
+                        .frame(height: PixelStyle.boldBorder)
+
                     ExternalChangeBanner(
                         state: session.externalChange.state,
                         colorTheme: colorTheme,
@@ -75,87 +84,22 @@ struct MarkdownEditorView: View {
                     )
 
                     HStack(spacing: 0) {
-                    Group {
-                        switch session.viewMode {
-                        case .rich:
-                            ResizableRichTextPreview(
-                                text: $document.text,
-                                documentURL: fileURL,
-                                session: session,
-                                colorTheme: colorTheme,
-                                preferredWidth: $previewWidth,
-                                minimumWidth: Layout.minimumPreviewWidth,
-                                critique: critique,
-                                hostsRail: true
-                            )
-                        case .source:
-                            VStack(spacing: Layout.barGap) {
-                                FormattingBar(
-                                    session: session, colorTheme: colorTheme
-                                )
-                                .padding(.horizontal, Layout.barGap)
-                                SourceTextEditor(
-                                    text: $document.text,
-                                    session: session,
-                                    colorTheme: colorTheme,
-                                    critique: critique
-                                )
-                            }
-                            .padding(.top, Layout.barGap)
-                        case .split:
-                            HSplitView {
-                                ResizableRichTextPreview(
-                                    text: $document.text,
-                                    documentURL: fileURL,
-                                    session: session,
-                                    colorTheme: colorTheme,
-                                    preferredWidth: $previewWidth,
-                                    minimumWidth: Layout.minimumSplitPreviewWidth,
-                                    critique: critique
-                                )
-                                .frame(
-                                    minWidth: Layout.minimumSplitPaneWidth,
-                                    maxWidth: .infinity
-                                )
-
-                                // No bar on this side: the rendered pane
-                                // carries the one bar for the document.
-                                SourceTextEditor(
-                                    text: $document.text,
-                                    session: session,
-                                    colorTheme: colorTheme,
-                                    critique: critique
-                                )
-                                .frame(
-                                    minWidth: Layout.minimumSplitPaneWidth,
-                                    maxWidth: .infinity
-                                )
-                            }
-                        }
-                    }
+                    ResizableRichTextPreview(
+                        text: $document.text,
+                        documentURL: fileURL,
+                        session: session,
+                        colorTheme: colorTheme,
+                        preferredWidth: $previewWidth,
+                        minimumWidth: Layout.minimumPreviewWidth,
+                        critique: critique,
+                        hostsRail: true
+                    )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                    // In Rich Text the rail is laid out *inside* the preview,
-                    // in the document's own margin — see
-                    // `ResizableRichTextPreview`. Here it would be against the
-                    // window's edge, a hand's width from the sentence it is
-                    // about on a wide screen. The other two modes fill the row,
-                    // so for them the row's trailing edge *is* beside the
-                    // document.
-                    if critique.isPresented, session.viewMode != .rich {
-                        Divider()
-                        CritiqueSidebar(
-                            critique: critique,
-                            colorTheme: colorTheme,
-                            isStale: critique.isStale(against: document.text),
-                            onRerun: { critique.run(on: document.text, documentURL: fileURL) }
-                        )
-                        // The rail carries its own width. Without this it took
-                        // `maxWidth: .infinity` from its own layout and ate
-                        // half the window.
-                        .frame(width: Layout.railWidth)
-                        .transition(.move(edge: .trailing))
-                    }
+                    // The rail is laid out *inside* the preview, in the
+                    // document's own margin — see `ResizableRichTextPreview`.
+                    // Against the window's edge it would sit a hand's width
+                    // from the sentence it is about on a wide screen.
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -230,21 +174,33 @@ struct MarkdownEditorView: View {
                 colorTheme: colorThemeSelection
             )
             ToolbarItem(placement: .primaryAction) {
-                Button {
-                    startCritique()
-                } label: {
-                    Image(systemName: critique.isRunning
+                HeaderButton(
+                    symbol: critique.isRunning
                         ? "sparkles.rectangle.stack"
-                        : "sparkles")
-                }
-                .disabled(critique.isRunning)
-                .help(
-                    critique.isRunning
+                        : "sparkles",
+                    colorTheme: colorTheme,
+                    isEnabled: !critique.isRunning,
+                    help: critique.isRunning
                         ? "A critique is already running"
                         : "AI Assisted critique of this draft (⌃⌘C)"
-                )
+                ) {
+                    startCritique()
+                }
+                .accessibilityLabel("AI Assisted Critique")
             }
         }
+        // The header is its own surface, not a continuation of the document.
+        //
+        // A titlebar that blends into the page leaves the controls floating on
+        // the writing; the reference designs put them on a strip of their own
+        // and rule it off hard. `PixelStyle.header` is a warm neutral mixed
+        // from the theme, so it separates from the page in all sixteen rather
+        // than only in the one it was picked against.
+        .toolbarBackground(
+            PixelStyle.headerStripes(colorTheme),
+            for: .windowToolbar
+        )
+        .toolbarBackground(.visible, for: .windowToolbar)
         .focusedSceneValue(\.runCritique, startCritique)
         .onAppear {
             if let fileURL {
