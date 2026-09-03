@@ -15,8 +15,9 @@ final class CritiqueModel: ObservableObject {
     /// A finding together with where it points in the document.
     struct Item: Identifiable, Equatable {
         let finding: CritiqueFinding
-        /// Nil when the quoted passage could not be found in the draft.
-        let range: NSRange?
+        /// Where the passage is *now*. Nil when the quote could not be found
+        /// in the draft, or when an edit has since removed it.
+        var range: NSRange?
         /// What the author has already decided about it, if anything.
         var resolution: CritiqueResolution?
 
@@ -134,8 +135,27 @@ final class CritiqueModel: ObservableObject {
 
     /// Whether the document has been edited since the critique was written.
     /// Told the draft as it stands, so anything measured against "now" is.
+    /// The draft changed. Move the marks with the words they are about.
+    ///
+    /// Without this a critique is only correct at the instant it is anchored:
+    /// one character typed above a passage and every mark below it is off by
+    /// one, and by a paragraph after a paragraph. They drift quietly, which is
+    /// worse than being obviously wrong — the shading still looks deliberate
+    /// while pointing at the wrong sentence.
+    ///
+    /// The edit is derived from the two texts rather than observed from the
+    /// text view, so a change from anywhere moves them: a revert from disk and
+    /// another app's rewrite land here the same way typing does.
     func noteCurrentText(_ text: String) {
-        currentText = text
+        let previous = currentText
+        defer { currentText = text }
+        guard !previous.isEmpty, previous != text else { return }
+        guard let edit = CritiqueAnchorTracking.edit(from: previous, to: text)
+        else { return }
+        for index in items.indices {
+            guard let range = items[index].range else { continue }
+            items[index].range = CritiqueAnchorTracking.adjust(range, for: edit)
+        }
     }
 
     func isStale(against text: String) -> Bool {

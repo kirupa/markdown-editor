@@ -444,6 +444,7 @@ struct CheckCritique {
         checkTheDocumentFillsTheWindow()
         checkTheFormattingBarIsABlock()
         checkTheHeaderIsItsOwnSurface()
+        checkMarksFollowTheWords()
         checkTheScoreIsLegible()
         checkEveryColourIsLegible()
         checkHighlightsAndClicking()
@@ -1237,6 +1238,105 @@ func checkEveryColourIsLegible() {
             )
         }
     }
+}
+
+/// A critique's marks follow the words while the draft is edited.
+///
+/// The unit tests cover the arithmetic. This covers the wiring — that the
+/// model is actually told, and that what it is told reaches the items — which
+/// is the half that has no bearing on whether the arithmetic is right and every
+/// bearing on whether anything moves.
+@MainActor
+func checkMarksFollowTheWords() {
+    print("")
+    print("Marks that follow the words")
+
+    let original = """
+        # Understanding Caching
+
+        Caching is important because the cache stores data for later reads.
+        """
+    let model = CritiqueModel()
+    model.attach(to: nil, text: original)
+    model.applyForChecking(
+        CritiqueReport(
+            jobRead: "",
+            overall: "",
+            findings: [
+                CritiqueFinding(
+                    severity: .high, category: "Logic and credibility",
+                    location: "paragraph 1",
+                    quote: "the cache stores data", why: "Vague."
+                )
+            ]
+        ),
+        for: original
+    )
+
+    guard let anchored = model.items.first?.range else {
+        check("the passage is anchored to begin with", false)
+        return
+    }
+    let quoted = (original as NSString).substring(with: anchored)
+    check(
+        "the passage is anchored to begin with",
+        quoted == "the cache stores data",
+        "it anchored to \"\(quoted)\""
+    )
+
+    /// The words the first mark covers in a given version of the draft.
+    func marked(in text: String) -> String? {
+        guard let range = model.items.first?.range,
+              range.location + range.length <= (text as NSString).length
+        else { return nil }
+        return (text as NSString).substring(with: range)
+    }
+
+    // Typing *above* the passage. Every offset below the caret moves, and a
+    // mark that does not move with them slides off its sentence.
+    let withHeading = original.replacingOccurrences(
+        of: "# Understanding Caching",
+        with: "# Understanding Caching Properly, In Detail"
+    )
+    model.noteCurrentText(withHeading)
+    check(
+        "typing above a passage does not slide its mark off",
+        marked(in: withHeading) == "the cache stores data",
+        "the mark now covers \"\(marked(in: withHeading) ?? "nothing")\""
+    )
+
+    // Typing immediately *after* it. This is the one the feature is for: the
+    // obvious implementation grows a range by anything inserted inside it, and
+    // the end of a range counts as inside.
+    // Inserted so the edit lands on the mark's *last* character, with no
+    // shared space in between. Written the obvious way — " in memory" — the
+    // common prefix swallows the space before "for" and the edit arrives one
+    // character past the end, which is a different case and passes whatever
+    // the boundary rule says.
+    let withMore = withHeading.replacingOccurrences(
+        of: "stores data for later reads",
+        with: "stores data, which is the point, for later reads"
+    )
+    model.noteCurrentText(withMore)
+    check(
+        "and typing after it does not drag the mark over the new words",
+        marked(in: withMore) == "the cache stores data",
+        "the mark now covers \"\(marked(in: withMore) ?? "nothing")\""
+    )
+
+    // A line break inside it. The passage stops at the break rather than
+    // reaching into a paragraph that did not exist when it was written.
+    let split = withMore.replacingOccurrences(
+        of: "the cache stores data",
+        with: "the cache\n\nstores data"
+    )
+    model.noteCurrentText(split)
+    let after = marked(in: split) ?? ""
+    check(
+        "and a line break inside it ends the passage there",
+        after == "the cache" && !after.contains("\n"),
+        "the mark covers \"\(after.replacingOccurrences(of: "\n", with: "\\n"))\""
+    )
 }
 
 /// The window's header is its own surface, ruled like a classic Mac title bar.
