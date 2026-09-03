@@ -56,7 +56,9 @@ struct RichTextEditor: NSViewRepresentable {
         textView.isAutomaticTextReplacementEnabled = false
         textView.isAutomaticSpellingCorrectionEnabled = false
         textView.smartInsertDeleteEnabled = false
-        textView.textContainerInset = NSSize(width: 24, height: 20)
+        textView.textContainerInset = NSSize(
+            width: 24, height: Layout.textTopInset
+        )
         textView.setAccessibilityLabel("Rendered Markdown editor")
         scrollView.requestedDocumentWidth = layoutWidth
         textView.page = page

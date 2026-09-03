@@ -369,7 +369,9 @@ struct MarkdownEditorView: View {
     }
 }
 
-private struct ResizableRichTextPreview: View {
+// Not `private`: `check-critique` renders this pane to a bitmap to measure the
+// document column, which cannot be done through the public view.
+struct ResizableRichTextPreview: View {
     @Binding var text: String
     let documentURL: URL?
     let session: MarkdownEditorSession
@@ -433,16 +435,17 @@ private struct ResizableRichTextPreview: View {
                     critique: critique
                 )
                 .frame(width: pageWidth)
-                // The top sheet of a stack.
+                // A column, not a sheet.
                 //
-                // The order matters and is easy to get backwards: the paper is
-                // drawn behind the *editor*, and the insets go outside it. Pad
-                // first and the sheet grows to fill the padding, so it runs to
-                // the window edge and stops being a sheet at all.
-                .paperStack(colorTheme)
-                .padding(.top, Layout.paperInset)
-                .padding(.bottom, Layout.paperInset + CGFloat(Layout.paperDepth) * Layout.paperStep)
-                .padding(.trailing, CGFloat(Layout.paperDepth) * Layout.paperStep + PixelStyle.shadowOffset)
+                // This was a stack of paper with a shadow under it, and the
+                // metaphor was wrong: nothing here is a page. A Markdown
+                // document has no page size, no page breaks and no last line
+                // on a leaf — so a sheet floating on a desk promised an object
+                // the document is not, and stopped short of the window edge
+                // for no reason a reader could act on. It fills the height it
+                // is given.
+                .frame(maxHeight: .infinity)
+                .background(Color(platformColor: colorTheme.editorBackgroundColor))
                 .overlay(alignment: .trailing) {
                     WidthGripper(
                         colorTheme: colorTheme,
@@ -614,7 +617,7 @@ private struct WidthGripper: View {
     }
 }
 
-private enum Layout {
+enum Layout {
     static let minimumExplorerWidth: CGFloat = 190
     static let defaultExplorerWidth: CGFloat = 240
     static let maximumExplorerWidth: CGFloat = 420
@@ -634,11 +637,16 @@ private enum Layout {
     /// has stopped doing its job.
     static let railWidth: CGFloat = 356
     static let keyboardResizeStep: CGFloat = 20
-    /// How much canvas shows above and below the sheet.
-    static let paperInset: CGFloat = 14
-    /// Sheets visible behind the top one.
-    static let paperDepth = 2
-    static let paperStep: CGFloat = 4
+    /// The gap between the top of the pane and the first line.
+    ///
+    /// Generous on purpose. The document runs the full height of the window
+    /// now, so without this the first line starts immediately under the
+    /// toolbar and reads as part of the chrome rather than as the beginning of
+    /// the writing.
+    ///
+    /// `NSTextView` applies its container inset at the top *and* the bottom,
+    /// so this is also the trailing space — which a document wants anyway.
+    static let textTopInset: CGFloat = 44
 
     /// The inset the rendered pane gives its text container, each side.
     static let textContainerInset: CGFloat = 24

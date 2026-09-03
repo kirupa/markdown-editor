@@ -149,55 +149,6 @@ struct PixelPanel: ViewModifier {
     }
 }
 
-/// The document drawn as the top sheet of a stack of paper.
-///
-/// The sheets behind are real rectangles rather than a shadow with a wide
-/// spread: a stack has *edges*, and an edge is what says "there is more of
-/// this underneath" rather than "this is floating".
-struct PaperStack: ViewModifier {
-    let theme: EditorColorTheme
-    /// How many sheets show behind the top one. Two is a stack; more is a
-    /// filing cabinet.
-    var depth: Int = 2
-    var step: CGFloat = 4
-
-    func body(content: Content) -> some View {
-        content
-            .background(
-                ZStack {
-                    Rectangle()
-                        .fill(PixelStyle.shadow(theme))
-                        .offset(
-                            x: CGFloat(depth) * step + PixelStyle.shadowOffset,
-                            y: CGFloat(depth) * step + PixelStyle.shadowOffset
-                        )
-                    // Back to front, so each sheet's edge sits over the one
-                    // behind it.
-                    ForEach(Array(stride(from: depth, through: 1, by: -1)), id: \.self) { layer in
-                        Rectangle()
-                            .fill(Color(platformColor: theme.editorBackgroundColor))
-                            .overlay(
-                                Rectangle().strokeBorder(
-                                    PixelStyle.line(theme),
-                                    lineWidth: PixelStyle.border
-                                )
-                            )
-                            .offset(
-                                x: CGFloat(layer) * step,
-                                y: CGFloat(layer) * step
-                            )
-                    }
-                    Rectangle()
-                        .fill(Color(platformColor: theme.editorBackgroundColor))
-                    Rectangle()
-                        .strokeBorder(
-                            PixelStyle.line(theme),
-                            lineWidth: PixelStyle.border
-                        )
-                }
-            )
-    }
-}
 
 extension View {
     func pixelPanel(
@@ -209,11 +160,4 @@ extension View {
         modifier(PixelPanel(theme: theme, fill: fill, offset: offset, stroke: stroke))
     }
 
-    func paperStack(
-        _ theme: EditorColorTheme,
-        depth: Int = 2,
-        step: CGFloat = 4
-    ) -> some View {
-        modifier(PaperStack(theme: theme, depth: depth, step: step))
-    }
 }

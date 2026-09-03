@@ -406,6 +406,7 @@ struct CheckCritique {
         registerBundledFonts()
 
         checkTheHandsAreAvailable()
+        checkTheDocumentFillsTheWindow()
         checkTheScoreIsLegible()
         checkEveryColourIsLegible()
         checkHighlightsAndClicking()
@@ -1200,6 +1201,126 @@ func checkEveryColourIsLegible() {
             )
         }
     }
+}
+
+/// The document is a column that fills the window, not a sheet lying on it.
+///
+/// Checked from the drawn pixels, because every part of the claim is visual:
+/// that the page colour reaches the top and bottom edges rather than stopping
+/// short of them, that nothing casts a shadow along its bottom edge, and that
+/// the first line is clear of the top rather than tucked under the toolbar.
+@MainActor
+func checkTheDocumentFillsTheWindow() {
+    print("")
+    print("The document column")
+
+    let theme = EditorColorTheme(color: .blue, mode: .light)
+    let text = Binding.constant(
+        "# Understanding Caching\n\nCaching is important because the cache "
+            + "stores data for later reads.\n"
+    )
+    let session = MarkdownEditorSession(fileURL: nil)
+    let critique = CritiqueModel()
+    let width = Binding.constant(CGFloat(620))
+    let pane = ResizableRichTextPreview(
+        text: text,
+        documentURL: nil,
+        session: session,
+        colorTheme: theme,
+        preferredWidth: width,
+        minimumWidth: 320,
+        critique: critique
+    )
+
+    let host = NSHostingView(rootView: AnyView(pane))
+    host.frame = NSRect(x: 0, y: 0, width: 900, height: 600)
+    host.layoutSubtreeIfNeeded()
+    RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+    host.layoutSubtreeIfNeeded()
+
+    guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else {
+        check("the document pane can be drawn", false)
+        return
+    }
+    host.cacheDisplay(in: host.bounds, to: rep)
+    let scale = CGFloat(rep.pixelsWide) / host.bounds.width
+    let page = theme.editorBackgroundColor.usingColorSpace(.sRGB)!
+    if let path = ProcessInfo.processInfo.environment["MDE_PANE_PNG"] {
+        try? rep.representation(using: .png, properties: [:])?
+            .write(to: URL(fileURLWithPath: path))
+        print("  wrote \(path)")
+    }
+
+    func isPage(_ x: Int, _ y: Int) -> Bool {
+        guard let c: NSColor = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB)
+        else { return false }
+        let dr: CGFloat = abs(c.redComponent - page.redComponent)
+        let dg: CGFloat = abs(c.greenComponent - page.greenComponent)
+        let db: CGFloat = abs(c.blueComponent - page.blueComponent)
+        return dr + dg + db < 0.06
+    }
+
+    // Down the middle of the column, which is centred in the pane.
+    let middle = rep.pixelsWide / 2
+    check(
+        "the document reaches the top of the pane",
+        isPage(middle, 1),
+        "there is canvas above it, so it is still a sheet with a margin"
+    )
+    check(
+        "and the bottom",
+        isPage(middle, rep.pixelsHigh - 2),
+        "there is canvas below it"
+    )
+
+    // A stacked sheet drew its own edges and a shadow below and right of the
+    // page. Both showed up as bands of not-page colour along the bottom.
+    // Bounded to the column. Scanning to the edge of the *pane* counts the
+    // canvas beside the document, which is 574pt² of perfectly correct desk
+    // reported as a shadow.
+    var columnEnd = middle
+    while columnEnd + 1 < rep.pixelsWide, isPage(columnEnd + 1, rep.pixelsHigh / 2) {
+        columnEnd += 1
+    }
+    var strays = 0
+    for y in (rep.pixelsHigh - Int(14 * scale))..<rep.pixelsHigh {
+        for x in stride(from: middle, to: columnEnd, by: 2)
+        where !isPage(x, y) { strays += 1 }
+    }
+    let strayArea = Double(strays) * 2 / Double(scale * scale)
+    if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
+        print("  non-page area along the bottom edge: \(Int(strayArea)) sq pt")
+    }
+    check(
+        "and casts no shadow under itself",
+        strayArea < 400,
+        "\(Int(strayArea))pt² along the bottom edge is not the page colour"
+    )
+
+    // The first line, found as the topmost row with ink in the column.
+    var firstInk: Int?
+    rows: for y in 0..<rep.pixelsHigh {
+        for x in stride(from: Int(150 * scale), to: rep.pixelsWide - Int(150 * scale), by: 2) {
+            guard let c: NSColor = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB)
+            else { continue }
+            let r: CGFloat = c.redComponent * 0.2126
+            let g: CGFloat = c.greenComponent * 0.7152
+            let b: CGFloat = c.blueComponent * 0.0722
+            if r + g + b < 0.45 {
+                firstInk = y
+                break rows
+            }
+        }
+    }
+    let gap = firstInk.map { Double($0) / Double(scale) } ?? 0
+    if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
+        print("  first line starts \(Int(gap))pt from the top")
+    }
+    check(
+        "and the writing starts clear of the top",
+        gap >= 30,
+        "the first line is \(Int(gap))pt down, which reads as part of the toolbar"
+    )
 }
 
 /// The score has to be readable, and it is set on a wash of its own colour.

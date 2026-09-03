@@ -58,7 +58,9 @@ struct SourceTextEditor: NSViewRepresentable {
             ofSize: MarkdownTypography.bodyFontSize,
             weight: .regular
         )
-        textView.textContainerInset = NSSize(width: 18, height: 16)
+        textView.textContainerInset = NSSize(
+            width: 18, height: Layout.textTopInset
+        )
         textView.setAccessibilityLabel("Markdown source")
         colorTheme.apply(to: textView, in: scrollView)
         MarkdownSourceStyler.apply(
