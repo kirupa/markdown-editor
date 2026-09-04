@@ -50,6 +50,16 @@ struct FormattingBar: View {
             Spacer(minLength: 0)
         }
         .padding(.vertical, 4)
+        // The whole strip, not each icon: the gaps between the controls and
+        // the dividers are part of the bar and are not text either.
+        //
+        // An overlay rather than a background, and it matters. Behind the
+        // controls the rect loses — measured on the running app, the pointer
+        // over an icon was a pointing hand at 32x32 hot (13,8), which is
+        // something the button itself claims. Above them, with hit testing
+        // off so it never takes a click, the bar's own claim is the one that
+        // holds.
+        .overlay(ArrowCursorArea().allowsHitTesting(false))
         // Fills the width it is given, hugs its own height.
         //
         // Both halves matter: a plain `fixedSize()` also pins the width, so
@@ -103,9 +113,7 @@ struct FormattingBar: View {
         .menuIndicator(.hidden)
         .frame(width: PixelBarButton.side + 8, height: PixelBarButton.side)
         .foregroundStyle(PixelStyle.ink(colorTheme))
-        .onContinuousHover { phase in
-            if case .active = phase { NSCursor.arrow.set() }
-        }
+
         .help("Paragraph and heading style")
     }
 
@@ -130,9 +138,7 @@ struct FormattingBar: View {
         .menuIndicator(.hidden)
         .frame(width: PixelBarButton.side + 8, height: PixelBarButton.side)
         .foregroundStyle(PixelStyle.ink(colorTheme))
-        .onContinuousHover { phase in
-            if case .active = phase { NSCursor.arrow.set() }
-        }
+
         .help("Insert single-line or multi-line code")
     }
 }
@@ -178,21 +184,6 @@ private struct PixelBarButton: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
-        // Said explicitly, because the pane around this bar is a text editor
-        // and its I-beam carries across: hovering a button showed a text
-        // cursor, which reads as "you are about to type here" over a thing you
-        // click.
-        //
-        // `set()` on every movement rather than `push()`/`pop()` on the way in
-        // and out. A push that is never popped — the exit does not fire if the
-        // window deactivates under the pointer — leaves the arrow stuck over
-        // the document, and the writer is then looking at a text editor that
-        // says it is not one. This cannot unbalance, and the text view puts
-        // its own cursor back through its cursor rects the moment the pointer
-        // leaves.
-        .onContinuousHover { phase in
-            if case .active = phase { NSCursor.arrow.set() }
-        }
         .help(title)
     }
 }

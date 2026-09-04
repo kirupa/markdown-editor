@@ -443,6 +443,7 @@ struct CheckCritique {
         checkTheHandsAreAvailable()
         checkTheDocumentFillsTheWindow()
         checkTheFormattingBarIsACentredRow()
+        checkThePointerOverTheBarIsAnArrow()
         checkTheHeaderIsItsOwnSurface()
         checkMarksFollowTheWords()
         checkTheScoreIsLegible()
@@ -1452,6 +1453,93 @@ func checkTheHeaderIsItsOwnSurface() {
               + "\(headers.count) header colours"
       )
     }
+}
+
+/// The pointer over the formatting bar is an arrow, not the editor's I-beam.
+///
+/// Checked as geometry and wiring rather than by moving a real mouse. What can
+/// break here is the backing view being absent or laid out at zero size, at
+/// which point it silently claims nothing — and the mechanism itself is the one
+/// already proved for the image resize corners in `RichMarkdownTextView`.
+///
+/// It also records *why* the I-beam reaches the bar at all, which is the part I
+/// had wrong twice: whether the text view's own surface extends underneath it.
+@MainActor
+func checkThePointerOverTheBarIsAnArrow() {
+    print("")
+    print("The pointer over the bar")
+
+    let theme = EditorColorTheme(color: .blue, mode: .light)
+    let text = Binding.constant("# Title\n\nSome writing.\n")
+    let session = MarkdownEditorSession(fileURL: nil)
+    let critique = CritiqueModel()
+    let width = Binding.constant(CGFloat(620))
+    let pane = ResizableRichTextPreview(
+        text: text, documentURL: nil, session: session, colorTheme: theme,
+        preferredWidth: width, minimumWidth: 320, critique: critique
+    )
+    let host = NSHostingView(rootView: AnyView(pane))
+    host.frame = NSRect(x: 0, y: 0, width: 900, height: 600)
+    let window = NSWindow(
+        contentRect: host.frame, styleMask: [.titled], backing: .buffered,
+        defer: false
+    )
+    window.contentView = host
+    host.layoutSubtreeIfNeeded()
+    RunLoop.current.run(until: Date().addingTimeInterval(0.4))
+    host.layoutSubtreeIfNeeded()
+
+    func descendants(_ view: NSView) -> [NSView] {
+        view.subviews + view.subviews.flatMap(descendants)
+    }
+    let all = descendants(host)
+    let areas = all.compactMap { $0 as? ArrowCursorArea.Area }
+    let textViews = all.compactMap { $0 as? NSTextView }
+
+    check(
+        "the bar claims a cursor area",
+        !areas.isEmpty,
+        "no ArrowCursorArea in the pane"
+    )
+    guard let area = areas.first, let textView = textViews.first else { return }
+
+    let areaFrame = area.convert(area.bounds, to: nil)
+    let textFrame = textView.convert(textView.bounds, to: nil)
+    if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
+        print("  cursor area \(NSStringFromRect(areaFrame))")
+        print("  text view   \(NSStringFromRect(textFrame))")
+        print("  overlap: \(areaFrame.intersects(textFrame))")
+    }
+    check(
+        "and it is laid out over the controls",
+        areaFrame.width > 200 && areaFrame.height > 20,
+        "it is \(Int(areaFrame.width))x\(Int(areaFrame.height)), so it claims nothing"
+    )
+    let rects = area.cursorRects()
+    check(
+        "and the cursor it claims is the arrow",
+        rects.count == 1 && rects[0].cursor == NSCursor.arrow
+            && rects[0].rect == area.bounds,
+        "it claims \(rects.count) rect(s)"
+    )
+    // The bar is beside the editor, not on top of it.
+    //
+    // Written as a real comparison after the first version of this line was
+    // `intersects || !intersects` — a check that cannot fail, which is the
+    // shape a check takes when it is written to record a finding rather than
+    // to test one.
+    //
+    // The finding is worth keeping, though: the text view does *not* reach
+    // under the bar, so the I-beam over the controls was never the text view's
+    // rect winning a contest. Nothing claimed that region at all, and AppKit
+    // left the last cursor it had been given. That is what the arrow rect is
+    // for — to claim it.
+    check(
+        "and the editor's surface does not reach under it",
+        !areaFrame.intersects(textFrame),
+        "the text view covers the bar, so the arrow rect has to outrank it"
+    )
+
 }
 
 /// The formatting bar is a centred row of icons and nothing else.
