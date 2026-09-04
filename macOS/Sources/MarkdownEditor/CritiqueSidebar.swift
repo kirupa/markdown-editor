@@ -254,10 +254,7 @@ struct CritiqueSidebar: View {
         .background {
             // The same desk the page lies on, so the notes read as pinned to
             // the surface rather than as a panel bolted to the window.
-            ZStack {
-                PixelStyle.canvas(colorTheme)
-                PixelGrid(theme: colorTheme)
-            }
+            Color(platformColor: colorTheme.editorBackgroundColor)
         }
     }
 

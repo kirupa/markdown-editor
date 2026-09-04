@@ -1150,7 +1150,12 @@ func checkEveryColourIsLegible() {
         let primary = srgb(theme.primaryTextColor)
         let secondary = srgb(theme.secondaryTextColor)
         let card = srgb(theme.editorBackgroundColor)
-        let canvas = srgb(NSColor(PixelStyle.canvas(theme)))
+        // The rail's background *is* the page now — one colour through the
+        // whole window, with the column marked by a hairline instead of by a
+        // second surface. This measured against `PixelStyle.canvas`, which the
+        // app had stopped drawing: a legibility check against a colour nothing
+        // is set on.
+        let canvas = card
         // A note is not on the page, so it is not written in the page's ink.
         let noteInk = srgb(CritiqueCard.noteInk(on: mode))
         let noteSub = srgb(CritiqueCard.noteSubInk(on: mode))
@@ -1718,6 +1723,41 @@ func checkTheDocumentFillsTheWindow() {
     if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
         print("  non-page area along the bottom edge: \(Int(strayArea)) sq pt")
     }
+    // One colour behind everything, and a hairline where the column ends.
+    //
+    // The window used to have a deeper canvas with a grid over it, so the
+    // measure was obvious from the change of surface. It is all one tone now,
+    // which means the *only* thing saying where the writing stops is these two
+    // rules — and a faint rule is exactly the kind of thing that survives as a
+    // constant while quietly not being drawn.
+    var rules: [Int] = []
+    for x in 0..<rep.pixelsWide {
+        var run = 0
+        for y in (rep.pixelsHigh / 2)..<(rep.pixelsHigh - 4) where !isPage(x, y) {
+            run += 1
+        }
+        // A boundary is inked down its whole length; a letter is not.
+        if CGFloat(run) / scale > 80 { rules.append(x) }
+    }
+    // Bracketing the writing, not merely present.
+    //
+    // Counting them is not enough: the width gripper is a full-height rule too,
+    // and on its own it satisfied "there are at least two" — the check passed
+    // against a build with no page boundaries at all. What matters is that one
+    // is on each side of the text.
+    let textLeft = Int(160 * scale)
+    let textRight = rep.pixelsWide - Int(160 * scale)
+    let onTheLeft = rules.contains { $0 < textLeft }
+    let onTheRight = rules.contains { $0 > textRight }
+    if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
+        print("  full-height rules at \(rules.map { Int(CGFloat($0) / scale) })")
+    }
+    check(
+        "the column's edges are marked",
+        onTheLeft && onTheRight,
+        "rules at \(rules.map { Int(CGFloat($0) / scale) }) do not bracket the text"
+    )
+
     check(
         "and casts no shadow under itself",
         strayArea < 400,

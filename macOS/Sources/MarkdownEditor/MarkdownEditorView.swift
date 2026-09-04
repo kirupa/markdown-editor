@@ -148,10 +148,7 @@ struct MarkdownEditorView: View {
         .background {
             // The desk the page lies on: a flat tone with a faint grid over
             // it, drawn behind everything rather than inside the page.
-            ZStack {
-                PixelStyle.canvas(colorTheme)
-                PixelGrid(theme: colorTheme)
-            }
+            Color(platformColor: colorTheme.editorBackgroundColor)
         }
         .preferredColorScheme(colorTheme.colorScheme)
         .focusedSceneValue(\.markdownEditorSession, session)
@@ -418,14 +415,18 @@ struct ResizableRichTextPreview: View {
                 }
                 .frame(width: pageWidth)
                 // The paper runs behind the bar as well as the text.
-                //
-                // With the bar left on the canvas its icons sat on the grid,
-                // which is a busy background for a row of thin glyphs and made
-                // the controls look dropped there rather than belonging to the
-                // document. On the page they are part of it.
                 .background(
                     Color(platformColor: colorTheme.editorBackgroundColor)
                 )
+                // Where the column ends.
+                //
+                // The window is one colour now — no deeper canvas, no grid —
+                // so nothing else says where the writing measure stops. Two
+                // faint rules do it without reintroducing a second surface:
+                // the document is not a sheet lying on a desk, it is a column
+                // with an edge.
+                .overlay(alignment: .leading) { pageBoundary }
+                .overlay(alignment: .trailing) { pageBoundary }
                 .padding(.top, Layout.barGap)
                 .overlay(alignment: .trailing) {
                     WidthGripper(
@@ -481,11 +482,15 @@ struct ResizableRichTextPreview: View {
         .background {
             // The desk the page lies on: a flat tone with a faint grid over
             // it, drawn behind everything rather than inside the page.
-            ZStack {
-                PixelStyle.canvas(colorTheme)
-                PixelGrid(theme: colorTheme)
-            }
+            Color(platformColor: colorTheme.editorBackgroundColor)
         }
+    }
+
+    /// One edge of the writing measure: a hairline, and no more than that.
+    private var pageBoundary: some View {
+        Rectangle()
+            .fill(Color(platformColor: colorTheme.primaryTextColor).opacity(0.12))
+            .frame(width: 1)
     }
 
     private func resizeGesture(

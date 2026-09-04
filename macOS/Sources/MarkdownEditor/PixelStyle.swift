@@ -63,10 +63,10 @@ enum PixelStyle {
     /// them.
     static func header(_ theme: EditorColorTheme) -> Color {
         let tint = theme.palette.headerBackground
-        let hinted = tint.blended(
+        let hinted: PlatformColor = tint.blended(
             with: theme.editorBackgroundColor,
             fraction: theme.mode == .dark ? 0.45 : 0.55
-        ) ?? tint
+        )
         return Color(platformColor: hinted)
     }
 
@@ -89,59 +89,10 @@ enum PixelStyle {
         )
     }
 
-    /// The surface the page lies on.
-    ///
-    /// Deliberately deeper than the palette's own canvas, which is within a
-    /// few percent of the page colour — a sheet of paper on a background the
-    /// same colour as the paper is not a sheet of paper, it is a margin. The
-    /// tone is mixed from the palette rather than picked, so it still tracks
-    /// the theme instead of being one grey for all sixteen.
-    static func canvas(_ theme: EditorColorTheme) -> Color {
-        let base = theme.canvasBackgroundColor
-        let mixed = base.blended(
-            with: theme.primaryTextColor,
-            fraction: theme.mode == .dark ? 0.10 : 0.13
-        ) ?? base
-        return Color(platformColor: mixed)
-    }
-
     static func line(_ theme: EditorColorTheme) -> Color {
         Color(platformColor: theme.primaryTextColor).opacity(
             theme.mode == .dark ? 0.42 : 0.22
         )
-    }
-}
-
-/// A faint grid, drawn behind the page.
-///
-/// Crisp on purpose: the lines are placed on whole points and drawn one point
-/// wide, so they stay hairlines rather than blurring into grey bands. A grid
-/// that has gone soft is just texture.
-struct PixelGrid: View {
-    let theme: EditorColorTheme
-    var spacing: CGFloat = 16
-
-    var body: some View {
-        Canvas { context, size in
-            let colour = Color(platformColor: theme.primaryTextColor)
-                .opacity(theme.mode == .dark ? 0.10 : 0.055)
-            var path = Path()
-            var x = spacing
-            while x < size.width {
-                path.move(to: CGPoint(x: x.rounded(), y: 0))
-                path.addLine(to: CGPoint(x: x.rounded(), y: size.height))
-                x += spacing
-            }
-            var y = spacing
-            while y < size.height {
-                path.move(to: CGPoint(x: 0, y: y.rounded()))
-                path.addLine(to: CGPoint(x: size.width, y: y.rounded()))
-                y += spacing
-            }
-            context.stroke(path, with: .color(colour), lineWidth: 1)
-        }
-        .drawingGroup()
-        .allowsHitTesting(false)
     }
 }
 
