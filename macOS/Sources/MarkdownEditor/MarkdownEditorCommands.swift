@@ -65,7 +65,7 @@ struct MarkdownEditorCommands: Commands {
         }
 
         CommandGroup(before: .windowList) {
-            Button("Welcome to Markdown Editor") {
+            Button("Welcome to KONVO") {
                 WelcomeWindowController.shared.show()
             }
             Divider()

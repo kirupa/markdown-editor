@@ -50,7 +50,7 @@ WHY
 fi
 
 fixture="$(mktemp -d)"
-app="build/Markdown Editor.app"
+app="build/KONVO.app"
 pid=""
 
 cleanup() {

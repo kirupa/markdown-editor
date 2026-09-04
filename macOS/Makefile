@@ -34,7 +34,7 @@ uninstall:
 	@./Scripts/uninstall-app.sh
 
 run: app
-	@open "$(CURDIR)/build/Markdown Editor.app"
+	@open "$(CURDIR)/build/KONVO.app"
 
 test:
 	@./Scripts/run-tests.sh

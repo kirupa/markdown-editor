@@ -83,7 +83,7 @@ final class DocumentAutosaveController: ObservableObject {
                 code: 1,
                 userInfo: [
                     NSLocalizedDescriptionKey:
-                        "Markdown Editor couldn’t autosave "
+                        "KONVO couldn’t autosave "
                         + fileURL.lastPathComponent + ".",
                     NSLocalizedRecoverySuggestionErrorKey:
                         "Use File > Save to save the document manually."

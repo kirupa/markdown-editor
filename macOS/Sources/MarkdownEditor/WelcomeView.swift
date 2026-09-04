@@ -59,7 +59,7 @@ struct WelcomeView: View {
                 .foregroundStyle(Color(nsColor: colorTheme.accentColor))
                 .accessibilityHidden(true)
 
-            Text("Markdown Editor")
+            Text("KONVO")
                 .font(.system(size: 25, weight: .semibold))
                 .foregroundStyle(primaryText)
                 .padding(.top, 14)

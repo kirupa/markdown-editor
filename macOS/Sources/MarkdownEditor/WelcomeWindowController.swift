@@ -99,7 +99,7 @@ final class WelcomeWindowController: NSObject {
             backing: .buffered,
             defer: false
         )
-        welcomeWindow.title = "Welcome to Markdown Editor"
+        welcomeWindow.title = "Welcome to KONVO"
         welcomeWindow.titleVisibility = .hidden
         welcomeWindow.titlebarAppearsTransparent = true
         welcomeWindow.isMovableByWindowBackground = true

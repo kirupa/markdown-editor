@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-APP_NAME="Markdown Editor"
+APP_NAME="KONVO"
 DESTINATION="${INSTALL_DIR:-/Applications}"
 INSTALLED_APP="$DESTINATION/$APP_NAME.app"
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"

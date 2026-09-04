@@ -14,14 +14,47 @@ import MarkdownEditorCore
 enum CritiqueHistoryStore {
     private static let folderName = "Critiques"
 
+    /// The app used to be called Markdown Editor, and its critiques were
+    /// filed under that name.
+    private static let previousAppFolder = "Markdown Editor"
+    private static let appFolder = "KONVO"
+
     private static var directory: URL? {
         let base = FileManager.default.urls(
             for: .applicationSupportDirectory, in: .userDomainMask
         ).first
         guard let base else { return nil }
-        return base
-            .appendingPathComponent("Markdown Editor", isDirectory: true)
+        let current = base
+            .appendingPathComponent(appFolder, isDirectory: true)
             .appendingPathComponent(folderName, isDirectory: true)
+        moveCritiquesWrittenUnderTheOldName(to: current, from: base)
+        return current
+    }
+
+    /// Carry the old folder over, once.
+    ///
+    /// A rename is not a reason to lose somebody's work. Every critique ever
+    /// run is filed under the app's name, so without this the history panel
+    /// would simply come up empty on the first launch after the rename — with
+    /// no error, because an absent file is how "no critiques yet" looks.
+    ///
+    /// Moved rather than copied, and only when there is nothing at the new
+    /// path: a second run must not undo edits made since the first.
+    private static func moveCritiquesWrittenUnderTheOldName(
+        to current: URL,
+        from base: URL
+    ) {
+        let manager = FileManager.default
+        guard !manager.fileExists(atPath: current.path) else { return }
+        let previous = base
+            .appendingPathComponent(previousAppFolder, isDirectory: true)
+            .appendingPathComponent(folderName, isDirectory: true)
+        guard manager.fileExists(atPath: previous.path) else { return }
+        try? manager.createDirectory(
+            at: current.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try? manager.moveItem(at: previous, to: current)
     }
 
     /// One file per document, named by a digest of its path.

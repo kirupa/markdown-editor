@@ -5,14 +5,14 @@
 # default handler for .md and .markdown files.
 #
 # The build output under build/ is deliberately unregistered afterwards.
-# Leaving both copies registered makes Finder show "Markdown Editor" twice in
+# Leaving both copies registered makes Finder show "KONVO" twice in
 # Open With, and lets the association point at a bundle that `make clean`
 # deletes.
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_NAME="Markdown Editor"
+APP_NAME="KONVO"
 BUILT_APP="$ROOT/build/$APP_NAME.app"
 DESTINATION="${INSTALL_DIR:-/Applications}"
 INSTALLED_APP="$DESTINATION/$APP_NAME.app"

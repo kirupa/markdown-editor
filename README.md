@@ -1,4 +1,4 @@
-# Markdown Editor
+# KONVO
 
 A Markdown editor that treats the source file as the document, built for the
 Mac, for iPhone and iPad, and for the browser.

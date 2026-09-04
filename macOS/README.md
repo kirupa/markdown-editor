@@ -1,4 +1,4 @@
-# Markdown Editor — Product Requirements Document
+# KONVO — Product Requirements Document
 
 A dependency-free native macOS Markdown editor built with SwiftUI and AppKit.
 The [iOS build](../iOS/README.md) is the same product on iPhone and iPad,
@@ -44,7 +44,7 @@ app supports as of the current `main`.
 
 ## 1. Product summary
 
-Markdown Editor is a single-window-per-document macOS app for writing and
+KONVO is a single-window-per-document macOS app for writing and
 editing Markdown files. Its defining characteristic is that **the Markdown
 source is always the canonical document**. The app offers a rendered,
 directly-editable view of that source, but it never converts the document into
@@ -121,7 +121,7 @@ before anything is on screen.
 | W-1 | On a plain launch with nothing to restore, nothing opened from Finder, and no document handed over by another app, the welcome window is shown and centered. |
 | W-2 | The welcome window is **not** shown when the app is launched by opening a document, or when macOS restores previously open documents. Those launches go straight to the document, with no momentary appearance of the welcome window. |
 | W-3 | Clicking the Dock icon while the app is running with no visible windows shows the welcome window. |
-| W-4 | **Window ▸ Welcome to Markdown Editor** shows it at any time, including alongside open documents. |
+| W-4 | **Window ▸ Welcome to KONVO** shows it at any time, including alongside open documents. |
 | W-5 | A **Show this window at launch** checkbox controls W-1. Unchecking it restores the standard macOS launch behavior for document apps. The setting persists in `showsWelcomeWindowAtLaunch` and defaults to on. |
 
 Three AppKit launch paths are covered, because the system picks between them:
@@ -204,7 +204,7 @@ signal that the landing window can be shown without waiting.
 | --- | --- |
 | D-19 | The app appears in Finder's **Open With** menu for `.md` and `.markdown` files. |
 | D-20 | When it is the default handler, double-clicking a Markdown file launches it and opens that file — cold launch included, with no welcome window in the way. |
-| D-21 | **Markdown Editor ▸ Make Default Markdown Application** sets the app as the default handler. The item becomes a disabled *Default Markdown Application* once it already is, and is re-checked every time the app becomes active, because Finder's Get Info panel can change it at any time. |
+| D-21 | **KONVO ▸ Make Default Markdown Application** sets the app as the default handler. The item becomes a disabled *Default Markdown Application* once it already is, and is re-checked every time the app becomes active, because Finder's Get Info panel can change it at any time. |
 | D-22 | The welcome window offers the same action as a **Make Default Markdown App** link, shown only when the app is not already the default. |
 | D-23 | On macOS 14 and newer the change routes through `NSWorkspace.setDefaultApplication(at:toOpen:)`, which asks the user to confirm. macOS 13 falls back to `LSSetDefaultRoleHandlerForContentType`. |
 | D-24 | Failure to change the handler is reported with the manual alternative — Get Info ▸ Open with — as the recovery suggestion. |
@@ -709,6 +709,8 @@ can fail says so.
 | I-156 | The pointer over the formatting bar is an **arrow**; the I-beam belongs to the writing area alone. Claimed as a real cursor rect on a view *over* the controls. Neither `NSCursor.arrow.set()` nor `push()`/`pop()` from a SwiftUI `onHover` works — AppKit re-applies cursor rects on mouse-moved, so whatever was set is replaced before the pointer finishes arriving. The same lesson is recorded for the image resize corners in `RichMarkdownTextView.imageCursorRects`. |
 | I-157 | It is an **overlay**, not a background. Behind the controls the claim loses: measured on the running app, the pointer over an icon was a pointing hand at 32x32 hot (13,8) — the button's own claim. Above them, with hit testing off so it never takes a click, the bar's claim holds. Measured after the change: arrow at 28x40 hot (5,5) over an icon and over the gaps between icons, I-beam at 23x22 hot (12,11) in the text. |
 | I-158 | The editor's surface does **not** reach under the bar, so the I-beam there was never the text view's rect winning a contest — nothing claimed that region at all and AppKit kept the last cursor it had been given. Recorded because two attempts were aimed at the wrong cause. |
+| I-159 | The app is called **KONVO**. The bundle identifier is *not* renamed and stays `com.kirupa.markdown-editor`: it is an identifier rather than a name, and changing it would orphan every saved preference — theme, background, handwriting face — and leave Launch Services holding two registrations for the same app. |
+| I-160 | Saved critiques are **carried over** from the old name. Every critique ever run is filed under the app's name in Application Support, so without this the history panel would have come up empty on the first launch after the rename — with no error, because an absent file is exactly how "no critiques yet" looks. Moved rather than copied, and only when there is nothing at the new path, so a second run cannot undo edits made since the first. |
 
 ### 10a.1 What this sends, and where
 
@@ -873,9 +875,9 @@ Code ▸ Inline Code (Single Line), Code ▸ Fenced Code Block (Multi-Line),
 Heading ▸ Paragraph and Heading 1–6, Bulleted List, Numbered List, Task List,
 Quote, Horizontal Rule.
 
-**Window menu:** Welcome to Markdown Editor.
+**Window menu:** Welcome to KONVO.
 
-**Markdown Editor menu:** Make Default Markdown Application.
+**KONVO menu:** Make Default Markdown Application.
 
 ### 14.4 Welcome window
 
@@ -961,7 +963,7 @@ make install
 
 | Target | Effect |
 | --- | --- |
-| `make app` | Builds a release binary and assembles an ad-hoc-signed `build/Markdown Editor.app` |
+| `make app` | Builds a release binary and assembles an ad-hoc-signed `build/KONVO.app` |
 | `make run` | `make app`, then opens the app from `build/` |
 | `make install` | `make app`, then installs to `/Applications` and registers it as a Markdown handler |
 | `make uninstall` | Removes the installed app and its Launch Services registration |
@@ -1164,7 +1166,7 @@ cache at all fails 2.
 ### 16.5 Testing a build without touching real documents
 
 `MDE_DEV_BUNDLE=1 ./Scripts/build-app.sh` builds the same app under a different
-identity: `com.kirupa.markdown-editor.dev`, named **Markdown Editor (Dev)**, and
+identity: `com.kirupa.markdown-editor.dev`, named **KONVO (Dev)**, and
 with `CFBundleDocumentTypes` removed.
 
 This is not cosmetic. The installed copy and the `build/` copy otherwise share
@@ -1428,6 +1430,7 @@ async `@main` instead.
 | A Mac window again | The title bar went back to the platform's, tinted with the chosen theme rather than striped and ruled off. The formatting bar lost its frame and became a centred row of larger icons on the page, with a pointer that knows it is not text. See [I-150 to I-153](#10a-ai-assisted-critique). |
 | One colour, and an edge | The desk and its grid are gone: the window is the page colour throughout, with the writing measure marked by a hairline down each side. See [I-154 and I-155](#10a-ai-assisted-critique). |
 | A pointer that knows where it is | The toolbar claims the arrow through a real cursor rect drawn over its controls, so the I-beam is confined to the writing area. Verified by moving the pointer and reading the system cursor. See [I-156 to I-158](#10a-ai-assisted-critique). |
+| KONVO | The app took its name. Preferences and saved critiques come with it. See [I-159 and I-160](#10a-ai-assisted-critique). |
 | Paper, grid, and a pad of notes | The page is drawn as the top sheet of a stack — hairline edge, two sheets behind, a hard shadow — on a canvas a shade deeper than the paper with a faint grid over it. The chrome went 8-bit: square corners, hairline borders, and shadows as solid offset blocks, since a rounded rectangle and a blur are the two things a pixel grid cannot draw. Findings became notes on a pad, coloured by severity with a tag at the top and a slight rotation taken from the finding's own identifier so they sit still between redraws. Notes no longer restate the passage they are about, because the highlight already points at it. See [I-115 to I-120](#10a-ai-assisted-critique). |
 | Narrate the wait, and keep the critiques | A critique takes about half a minute, and half a minute of spinner reads as a hang. The CLI's event stream is now read as it arrives, so the rail names the stage, fills a bar of four, shows the model's own account of what it is reading, and counts the notes as they are written. Past critiques are kept across launches and reachable from a dropdown — each keeping the draft it was written about, so opening an old one re-anchors it against today's text and says how many of its notes still point at something. The rail's labels moved to Monomaniac One, bundled under the OFL, so what the reviewer wrote and what the editor says about it no longer look alike. See [I-105 to I-112](#10a-ai-assisted-critique). |
 | Answer the critique, and watch the score move | Comments moved into the document's own margin rather than the window's edge, and are set in a handwriting face so a note reads as something written *on* the draft rather than more of it — quotes excepted, because those are the author's own words. Each finding can now be marked **Done** or **Dismissed**, which stops it shading, files it under Answered, and — the point — stops a re-run raising it again, recognised across runs by the folded quote and category rather than by an identifier a fresh critique renumbers. An **awesomeness score** heads the rail, decaying with what is outstanding and returning to exactly 100 once everything is answered. See [I-96 to I-104](#10a-ai-assisted-critique). |
