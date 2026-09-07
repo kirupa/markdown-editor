@@ -1155,6 +1155,106 @@ struct CheckImageLayout {
         }
 
         print("")
+        print("A window laid out like the app's, dispatching its own moves")
+
+        // Everything above calls `mouseMoved` directly. That proves what the
+        // view does with an event and quietly assumes the part the whole
+        // diagnosis rests on: that the view is asked at all about a point it
+        // does not occupy. So build the app's arrangement — a bar across the
+        // top, the writing below it, neither overlapping — and let AppKit do
+        // the delivering.
+        //
+        // If this stops failing when the fix is reverted, the model of the bug
+        // is wrong and the guard is protecting against nothing.
+        let barHeight: CGFloat = 44
+        let appLike = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 500),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 600, height: 500))
+        let bar = NSView(frame: NSRect(x: 0, y: 500 - barHeight, width: 600, height: barHeight))
+        let editorScroll = NSScrollView(
+            frame: NSRect(x: 0, y: 0, width: 600, height: 500 - barHeight)
+        )
+        let editor = RichMarkdownTextView(
+            frame: NSRect(x: 0, y: 0, width: 600, height: 500 - barHeight)
+        )
+        editor.textContainer?.containerSize = NSSize(
+            width: 600, height: CGFloat.greatestFiniteMagnitude
+        )
+        editor.textContainer?.widthTracksTextView = true
+        editor.isVerticallyResizable = true
+        editor.textStorage?.setAttributedString(
+            NSAttributedString(string: "Writing that fills a few lines of the pane.")
+        )
+        editorScroll.documentView = editor
+        root.addSubview(editorScroll)
+        root.addSubview(bar)
+        appLike.contentView = root
+        appLike.orderBack(nil)
+        appLike.makeFirstResponder(editor)
+
+        check(
+            "the writing is what the window forwards its moves to",
+            appLike.firstResponder === editor,
+            "first responder is \(String(describing: appLike.firstResponder))"
+        )
+        check(
+            "and the window is forwarding them",
+            appLike.acceptsMouseMovedEvents,
+            "acceptsMouseMovedEvents is off, so nothing would be forwarded"
+        )
+        check(
+            "the bar and the writing do not overlap",
+            !bar.frame.intersects(editorScroll.frame),
+            "bar \(bar.frame) over editor \(editorScroll.frame)"
+        )
+
+        let cursorBeforeDispatch = NSCursor.current
+        for (name, location) in [
+            ("the bar", NSPoint(x: 300, y: 500 - barHeight / 2)),
+            ("the very top of the window", NSPoint(x: 80, y: 496)),
+        ] {
+            NSCursor.crosshair.set()
+            if let move = NSEvent.mouseEvent(
+                with: .mouseMoved,
+                location: location,
+                modifierFlags: [], timestamp: 0,
+                windowNumber: appLike.windowNumber,
+                context: nil, eventNumber: 0, clickCount: 0, pressure: 0
+            ) {
+                appLike.sendEvent(move)
+            }
+            check(
+                "a move over \(name) reaches the writing and is declined",
+                NSCursor.current === NSCursor.crosshair,
+                "the writing took a pointer that was over \(name) and set \(NSCursor.current)"
+            )
+        }
+
+        // The counterweight, through the same path: over the writing the
+        // window's own delivery still produces the I-beam. Without this the
+        // checks above are satisfied by an editor that never sets anything.
+        NSCursor.crosshair.set()
+        if let move = NSEvent.mouseEvent(
+            with: .mouseMoved,
+            location: NSPoint(x: 80, y: 200),
+            modifierFlags: [], timestamp: 0,
+            windowNumber: appLike.windowNumber,
+            context: nil, eventNumber: 0, clickCount: 0, pressure: 0
+        ) {
+            appLike.sendEvent(move)
+        }
+        check(
+            "a move over the writing reaches it and takes the I-beam",
+            NSCursor.current === NSCursor.iBeam,
+            "the window delivered it and the writing set \(NSCursor.current)"
+        )
+        cursorBeforeDispatch.set()
+
+        print("")
         if failures == 0 {
             print("ALL PASS (\(checks) checks)")
             exit(0)
