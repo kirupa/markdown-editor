@@ -581,6 +581,28 @@ struct CheckImageLayout {
             NSCursor.current !== NSCursor.iBeam,
             "the text cursor followed the pointer out — AppKit is holding \(NSCursor.current)"
         )
+
+        // …and hands back nothing else. Leaving here and arriving on a button
+        // are two tracking boundaries crossed by one movement of the mouse, and
+        // nothing orders them: when the exit is delivered second, an
+        // unconditional arrow overwrites the hand the button just set. That is
+        // not hypothetical — it was photographed on screen as an arrow over
+        // every toolbar icon, on a build where the icons were asking for the
+        // hand correctly and the bug looked like the hover code not running.
+        NSCursor.pointingHand.set()
+        if let exit = NSEvent.enterExitEvent(
+            with: .mouseExited,
+            location: textView.convert(NSPoint(x: 120, y: -40), to: nil),
+            modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+            context: nil, eventNumber: 0, trackingNumber: 0, userData: nil
+        ) {
+            textView.mouseExited(with: exit)
+        }
+        check(
+            "leaving does not overrule a shape something else has set",
+            NSCursor.current === NSCursor.pointingHand,
+            "the exit overwrote it with \(NSCursor.current)"
+        )
         textView.updateHover(at: nil)
         cursorBeforeMoveChecks.set()
 

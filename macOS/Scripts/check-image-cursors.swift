@@ -15,6 +15,11 @@
 // Usage: swift Scripts/check-image-cursors.swift <pid>
 
 import Cocoa
+import ApplicationServices
+
+extension CGRect {
+    var center: CGPoint { CGPoint(x: midX, y: midY) }
+}
 
 // The system cursors have to be loaded from a real application. Without this,
 // `NSCursor.arrow.image` and `NSCursor.iBeam.image` come back as empty 0x0
@@ -91,10 +96,35 @@ func documentWindowBounds(pid: Int) -> CGRect? {
 // MARK: - Mouse
 
 func move(to point: CGPoint) {
-    CGWarpMouseCursorPosition(point)
+    // Glide, do not teleport.
+    //
+    // A warp straight to the target moves the pointer without AppKit seeing it
+    // cross anything, and a cursor *rect* is claimed by crossing into it. The
+    // shapes that survived a teleport were the ones this app sets imperatively
+    // from `mouseMoved` — the picture and its corners — so the harness quietly
+    // measured one mechanism and reported on both, and read a correct pointing
+    // hand over every toolbar icon as an arrow. Confirmed by hand: glided onto
+    // an icon, the pointer is 32x32 with its hot spot at (13, 8), which is the
+    // pointing hand.
+    //
+    // A real mouse is never anywhere else: it passes through every point on the
+    // way. This is the arrangement being checked, so it is the one to imitate.
+    let flip = NSScreen.screens.first?.frame.height ?? 0
+    let start = CGPoint(x: NSEvent.mouseLocation.x, y: flip - NSEvent.mouseLocation.y)
+    let steps = max(8, Int(max(abs(point.x - start.x), abs(point.y - start.y)) / 12))
+    for step in 1...steps {
+        let progress = Double(step) / Double(steps)
+        let at = CGPoint(
+            x: start.x + (point.x - start.x) * progress,
+            y: start.y + (point.y - start.y) * progress
+        )
+        CGWarpMouseCursorPosition(at)
+        CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: at, mouseButton: .left)?
+            .post(tap: .cghidEventTap)
+        Thread.sleep(forTimeInterval: 0.012)
+    }
     CGAssociateMouseAndMouseCursorPosition(1)
-    Thread.sleep(forTimeInterval: 0.05)
-    // A warp alone does not always retrack; a real move event does.
+    CGWarpMouseCursorPosition(point)
     CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left)?
         .post(tap: .cghidEventTap)
     Thread.sleep(forTimeInterval: settleAfterMove)
@@ -452,59 +482,85 @@ check("the pointer between the handles is still a pointing hand", bodyAgain == "
 // This is the check that can actually settle it: the real pointer, over the
 // real buttons, photographed.
 
-// The toolbar sits above the first line of the document, so the first ink below
-// the title bar belongs to it. Found rather than calculated: a band worked out
-// from layout constants stops covering its target the moment the layout moves,
-// and this file cannot see those constants anyway.
-let titleBarHeight = 28.0
-let barSearch = CGRect(x: window.minX, y: window.minY + titleBarHeight,
-                       width: window.width, height: 160)
+// Where the toolbar's buttons are, asked of the app rather than guessed from
+// pixels.
+//
+// Three pixel-based attempts found three different wrong things: a hairline
+// below the title bar ("one icon"), the title bar itself ("nineteen icons",
+// which show an arrow correctly, so the app was blamed for the check's own
+// aim), and a band merged with the page's boundary rules. Each looked
+// plausible and reported a confident number.
+//
+// Accessibility knows. The buttons are buttons, they say where they are, and
+// the answer does not move when the layout does. The formatting bar is the row
+// with the most buttons sharing a y — the traffic lights are three, the title
+// bar's controls fewer still.
+func accessibleButtons(pid: Int) -> [CGRect] {
+    let app = AXUIElementCreateApplication(pid_t(pid))
+    // Only the focused window. The app can have several documents open, and
+    // their bars sit a couple of points apart on screen — close enough that
+    // grouping controls "by row" merged one window's formatting bar with
+    // another's title bar into a convincing row of nineteen, spanning the whole
+    // window, whose two ends were a traffic light and a resize edge.
+    var focused: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(
+        app, kAXFocusedWindowAttribute as CFString, &focused
+    ) == .success, let root = focused else { return [] }
+    var found: [CGRect] = []
+    func string(_ element: AXUIElement, _ attribute: String) -> String {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success
+        else { return "" }
+        return (value as? String) ?? ""
+    }
+    func rect(of element: AXUIElement) -> CGRect? {
+        var positionValue: CFTypeRef?
+        var sizeValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &positionValue) == .success,
+              AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sizeValue) == .success
+        else { return nil }
+        var origin = CGPoint.zero
+        var size = CGSize.zero
+        guard AXValueGetValue(positionValue as! AXValue, .cgPoint, &origin),
+              AXValueGetValue(sizeValue as! AXValue, .cgSize, &size) else { return nil }
+        return CGRect(origin: origin, size: size)
+    }
+    func walk(_ element: AXUIElement, depth: Int) {
+        guard depth < 24 else { return }
+        if string(element, kAXRoleAttribute as String) == kAXButtonRole as String,
+           let frame = rect(of: element),
+           // The bar's own controls and nothing else in the window: 32 points
+           // square, each carrying the tooltip the bar gives it. The traffic
+           // lights are 16 square with no help; the title bar's are 52 tall.
+           abs(frame.width - 32) < 1, abs(frame.height - 32) < 1,
+           !string(element, kAXHelpAttribute as String).isEmpty {
+            found.append(frame)
+        }
+        var children: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &children) == .success,
+              let list = children as? [AXUIElement] else { return }
+        for child in list { walk(child, depth: depth + 1) }
+    }
+    walk(root as! AXUIElement, depth: 0)
+    return found
+}
+
 var toolbar: (band: ClosedRange<Double>, buttons: [Double])?
-if let strip = capture(region: barSearch, cursor: false, to: "/tmp/mde-bar-probe.png") {
-    let scale = Double(strip.pixelsWide) / barSearch.width
-    // Glyph ink only. The page boundary rules are faint grey and the title bar
-    // is tinted; neither is anywhere near this dark. Read as components rather
-    // than `brightnessComponent`, which is only defined for colour spaces that
-    // convert to HSB and traps on the ones `screencapture` hands back.
-    func isInk(_ x: Int, _ y: Int) -> Bool {
-        guard let c = strip.colorAt(x: x, y: y) else { return false }
-        let luma = 0.299 * c.redComponent
-            + 0.587 * c.greenComponent
-            + 0.114 * c.blueComponent
-        return luma < 0.45 && c.alphaComponent > 0.5
-    }
-    var rows: [Int] = []
-    for y in 0..<strip.pixelsHigh {
-        var ink = 0
-        for x in stride(from: 0, to: strip.pixelsWide, by: 2) where isInk(x, y) { ink += 1 }
-        if ink >= 3 { rows.append(y) }
-    }
-    // The first run of inked rows, and only that run: anything after a gap is
-    // the document's first line.
-    if let first = rows.first {
-        var last = first
-        for row in rows.dropFirst() {
-            if row - last > 4 { break }
-            last = row
-        }
-        let midRow = (first + last) / 2
-        var columns: [Double] = []
-        var run: Int?
-        for x in 0...strip.pixelsWide {
-            let inked = x < strip.pixelsWide
-                && (max(first, midRow - 4)...min(last, midRow + 4)).contains(where: { isInk(x, $0) })
-            if inked, run == nil { run = x }
-            if !inked, let start = run {
-                if x - start >= 3 {
-                    columns.append(barSearch.minX + (Double(start) + Double(x - start) / 2) / scale)
-                }
-                run = nil
-            }
-        }
-        toolbar = (
-            band: (barSearch.minY + Double(first) / scale)...(barSearch.minY + Double(last) / scale),
-            buttons: columns
-        )
+var barDiagnosis = "accessibility found no 32pt buttons — is the app trusted for it?"
+let buttons = accessibleButtons(pid: pid)
+if !buttons.isEmpty {
+    // Group by row. Buttons in one bar share a y to within a point or two.
+    var rows: [Int: [CGRect]] = [:]
+    for button in buttons { rows[Int(button.midY), default: []].append(button) }
+    if let row = rows.values.max(by: { $0.count < $1.count }), row.count >= 6 {
+        let ordered = row.sorted { $0.midX < $1.midX }
+        let top: Double = ordered.map { $0.minY }.min() ?? 0
+        let bottom: Double = ordered.map { $0.maxY }.max() ?? 0
+        let centres: [Double] = ordered.map { $0.midX }
+        toolbar = (band: top...bottom, buttons: centres)
+    } else {
+        let tally = rows.values.map(\.count).sorted(by: >).prefix(4)
+        barDiagnosis = "\(buttons.count) bar-sized buttons, biggest rows \(Array(tally))"
     }
 }
 
@@ -523,19 +579,20 @@ if let toolbar, toolbar.buttons.count >= 4 {
               seen == "pointing hand",
               String(format: "saw %@ (%.2f, %d px)", seen, score, pixels))
     }
-} else {
-    check("found the formatting toolbar on screen", false,
-          "\(toolbar?.buttons.count ?? 0) icon-like clusters in the first ink band")
-}
 
-// The margin beside the column is nobody's in particular, which is the point:
-// it is plain window background and must show what plain window background
-// shows. This is also where a text cursor would end up parked if leaving the
-// writing did not hand the pointer back.
-let marginPoint = CGPoint(x: window.minX + 14, y: window.midY)
-let (marginCursor, marginScore, marginPixels) = identifyCursor(at: marginPoint)
-check("the pointer in the margin beside the column is an arrow", marginCursor == "arrow",
-      String(format: "saw %@ (%.2f, %d px)", marginCursor, marginScore, marginPixels))
+    // Beside the icons, still inside the bar's band. This is the part of the
+    // window that is plainly not the writing and plainly not a control, and it
+    // is where the I-beam had no business being at all. An icon showing a hand
+    // could be the button winning on its own; this can only be right if the
+    // text view has genuinely stopped claiming the region.
+    let besideIcons = CGPoint(x: max(window.minX + 8, toolbar.buttons.first! - 90), y: barY)
+    let (asideCursor, asideScore, asidePixels) = identifyCursor(at: besideIcons)
+    check("the pointer in the bar beside the icons is an arrow",
+          asideCursor == "arrow",
+          String(format: "saw %@ (%.2f, %d px)", asideCursor, asideScore, asidePixels))
+} else {
+    check("found the formatting toolbar on screen", false, barDiagnosis)
+}
 
 // And the writing still has to claim it, or the guard above has simply turned
 // the pointer off everywhere.

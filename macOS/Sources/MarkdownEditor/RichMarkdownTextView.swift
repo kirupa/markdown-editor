@@ -747,20 +747,25 @@ final class RichMarkdownTextView: NSTextView {
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
         updateHover(at: nil)
-        // Give the pointer back on the way out.
+        // Give the pointer back on the way out — but only what this view took.
         //
         // The shape over the writing is set imperatively rather than claimed
-        // with a cursor rect, and AppKit only undoes what it was told about —
-        // a cursor set by hand stays set until something else replaces it. So
+        // with a cursor rect, and AppKit only undoes what it was told about, so
         // without this the I-beam walks out of the document with the pointer
-        // and sits over the margin, the comment rail and the toolbar, which is
-        // the same complaint arriving by a different route. `super` does not
-        // do it: measured, it leaves the I-beam exactly where it was.
+        // and sits over the margin and the comment rail. `super` does not do
+        // it: measured, it leaves the I-beam exactly where it was.
         //
-        // The arrow specifically, because that is what an ordinary part of a
-        // window shows. Anything with its own idea — a button, a resize
-        // gripper — sets its own on entry, and entry follows this exit.
-        NSCursor.arrow.set()
+        // Conditional, because leaving here and arriving somewhere else are two
+        // tracking boundaries crossed by one movement, and nothing orders them.
+        // Setting the arrow unconditionally means that whenever the exit is
+        // delivered second it overwrites the shape the button, rail or gripper
+        // just set — measured on screen as an arrow over every toolbar icon
+        // that had correctly asked for a pointing hand. If something else has
+        // already claimed the pointer, it has said something this view has no
+        // business contradicting.
+        if NSCursor.current === NSCursor.iBeam {
+            NSCursor.arrow.set()
+        }
     }
 
     /// The picture the pointer is over.

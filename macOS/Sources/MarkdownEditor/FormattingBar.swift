@@ -174,19 +174,86 @@ private struct PixelBarButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .overlay(PointerShapeArea(cursor: .pointingHand))
         .onHover { inside in
             isHovered = inside
-            // `set`, not `push`/`pop`.
-            //
-            // The stack is process-wide and a push that never gets its pop
-            // leaves that shape over the entire app until it is relaunched.
-            // `onHover` is not guaranteed to be balanced — a window losing key
-            // while the pointer is over a button, or the bar being rebuilt
-            // under the pointer, both drop the exit — and the failure mode of
-            // an unbalanced push is far worse than the failure mode of a
-            // missed `set`, which is a stale shape that the next move fixes.
-            (inside ? NSCursor.pointingHand : NSCursor.arrow).set()
         }
         .help(title)
+    }
+}
+
+/// Claims a pointer shape over whatever it is laid on, as a real cursor rect.
+///
+/// Setting the cursor from SwiftUI's `onHover` does not work here, and it took
+/// a photograph of the screen to establish that: every icon showed an arrow
+/// while the hover code was running correctly. Arriving on a button and leaving
+/// the writing are separate tracking boundaries crossed by one movement, and
+/// nothing orders the callbacks — so whatever `onHover` sets can be overwritten
+/// immediately afterwards, by this app's own exit handling or by AppKit's.
+///
+/// A cursor rect is not in that race. AppKit resolves it from the pointer's
+/// position through the same machinery that decides every other shape in the
+/// window, which is why the pointing hand over a picture has always worked
+/// while this did not. `hitTest` returns nil so the control underneath still
+/// gets the click: cursor rects are registered per view and honoured whether or
+/// not that view accepts mouse events.
+private struct PointerShapeArea: NSViewRepresentable {
+    final class Area: NSView {
+        var cursor: NSCursor = .arrow
+
+        /// Registered, and on its own not enough — see `cursorUpdate`.
+        override func resetCursorRects() {
+            addCursorRect(bounds, cursor: cursor)
+        }
+
+        /// Ask to be told when the pointer needs a shape here.
+        ///
+        /// The cursor rect above is registered — `resetCursorRects` was
+        /// instrumented and fires, with the right 32x32 bounds, in a window —
+        /// and it is still not what decides the shape: with only the rect, the
+        /// pointer photographed over every icon was the plain arrow. A tracking
+        /// area owned by this view is delivered to `cursorUpdate` regardless,
+        /// which is the same conclusion the editor reached for pictures.
+        ///
+        /// `.activeAlways` so it works in a window that is not key, and
+        /// `.inVisibleRect` so the area stays the right size through every
+        /// resize of the bar without being rebuilt.
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            for area in trackingAreas { removeTrackingArea(area) }
+            addTrackingArea(NSTrackingArea(
+                rect: .zero,
+                options: [.cursorUpdate, .mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                owner: self
+            ))
+        }
+
+        override func cursorUpdate(with event: NSEvent) {
+            cursor.set()
+        }
+
+        /// `cursorUpdate` only arrives when a boundary is crossed, and crossing
+        /// into this one is exactly when the shape is wrong, so take both.
+        override func mouseEntered(with event: NSEvent) {
+            super.mouseEntered(with: event)
+            cursor.set()
+        }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+
+    let cursor: NSCursor
+
+    func makeNSView(context: Context) -> Area {
+        let area = Area()
+        area.cursor = cursor
+        return area
+    }
+
+    func updateNSView(_ nsView: Area, context: Context) {
+        nsView.cursor = cursor
+        // The rect is the view's bounds, so it is wrong the moment the bar is
+        // laid out again at a different size until AppKit is told to ask.
+        nsView.window?.invalidateCursorRects(for: nsView)
     }
 }

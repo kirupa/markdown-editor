@@ -90,7 +90,13 @@ Some text after the picture.
 MD
 
 before="$(ps -Ao pid=,comm= | grep "$PWD/$app" | awk '{print $1}' || true)"
-open -a "$PWD/$app" "$fixture/Cursors.md"
+# `-NSQuitAlwaysKeepsWindows NO` so the app comes up with one window: the
+# fixture's. The dev bundle has its own identifier but still gets its own state
+# restoration, so every previous run's document was being reopened alongside the
+# new one — three windows deep by the third run. The pointer checks then had
+# several formatting bars and several title bars to choose between at slightly
+# different offsets, and picked a row of controls made of two different windows.
+open -a "$PWD/$app" "$fixture/Cursors.md" --args -NSQuitAlwaysKeepsWindows NO
 
 for _ in $(seq 1 40); do
     sleep 0.5
