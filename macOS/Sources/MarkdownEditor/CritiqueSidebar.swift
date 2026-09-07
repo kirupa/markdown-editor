@@ -54,6 +54,13 @@ enum CritiqueInk {
 /// All three are bundled and OFL or Apache licensed, so the choice never
 /// depends on what happens to be installed.
 enum CritiqueHand: String, CaseIterable, Identifiable {
+    /// The system face. Not a hand at all, and the default.
+    ///
+    /// The handwriting says "somebody wrote on your draft", which is the right
+    /// tone and the wrong trade at length: a rail full of marker is slower to
+    /// read than the draft it is about. The faces are still here for anyone
+    /// who wants them.
+    case sans
     case architectsDaughter
     case caveat
     case permanentMarker
@@ -64,14 +71,18 @@ enum CritiqueHand: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .sans: return "System Sans"
         case .architectsDaughter: return "Architects Daughter"
         case .caveat: return "Caveat"
         case .permanentMarker: return "Permanent Marker"
         }
     }
 
+    /// Empty for the system face, which is asked for by weight rather than by
+    /// name — there is no one PostScript name for it across macOS versions.
     var fontName: String {
         switch self {
+        case .sans: return ""
         case .architectsDaughter: return "ArchitectsDaughter-Regular"
         case .caveat: return "Caveat-Regular"
         case .permanentMarker: return "PermanentMarker-Regular"
@@ -82,6 +93,7 @@ enum CritiqueHand: String, CaseIterable, Identifiable {
     /// same *read* size. See `CritiqueTypography.opticalScale`.
     var opticalScale: CGFloat {
         switch self {
+        case .sans: return 1.0
         case .architectsDaughter: return 1.19
         case .caveat: return 1.28
         case .permanentMarker: return 0.84
@@ -97,7 +109,7 @@ enum CritiqueHand: String, CaseIterable, Identifiable {
     /// this up.
     static var selected: CritiqueHand {
         UserDefaults.standard.string(forKey: storageKey)
-            .flatMap(CritiqueHand.init(rawValue:)) ?? .architectsDaughter
+            .flatMap(CritiqueHand.init(rawValue:)) ?? .sans
     }
 }
 
@@ -187,11 +199,18 @@ enum CritiqueTypography {
     /// it was given — so emphasis has to come from size, which the callers do.
     /// A specific hand, for showing a face by example rather than by name.
     static func named(_ hand: CritiqueHand, size: CGFloat) -> Font {
-        NSFont(name: hand.fontName, size: size * hand.opticalScale)
+        guard hand != .sans else { return .system(size: size) }
+        return NSFont(name: hand.fontName, size: size * hand.opticalScale)
             .map(Font.init) ?? .system(size: size)
     }
 
     static func hand(_ size: CGFloat, bold: Bool = false) -> Font {
+        // The system face is not in the chain: it has no stable PostScript
+        // name to look up, and it can never be missing, so it is answered
+        // directly rather than searched for.
+        if CritiqueHand.selected == .sans {
+            return .system(size: size, weight: bold ? .semibold : .regular)
+        }
         for name in bold ? boldFamilyChain : familyChain {
             let scaled = size * (opticalScale[name] ?? 1)
             guard let found = NSFont(name: name, size: scaled) else { continue }
@@ -380,6 +399,28 @@ struct CritiqueSidebar: View {
         .help("Earlier critiques of this document")
     }
 
+    /// What the rail is showing.
+    ///
+    /// Named so it can be asserted. SwiftUI draws most of this without a
+    /// backing `NSTextField`, so walking the accessibility tree finds nothing
+    /// — a check written that way passed against a rail showing the wrong
+    /// state entirely, because it could not see either one.
+    enum State: Equatable {
+        case running
+        case failed
+        case findings
+        case needsSetUp
+        case nothingYet
+    }
+
+    var state: State {
+        if critique.isRunning { return .running }
+        if critique.failure != nil { return .failed }
+        if critique.report != nil { return .findings }
+        if !isConfigured { return .needsSetUp }
+        return .nothingYet
+    }
+
     @ViewBuilder
     private var content: some View {
         if critique.isRunning {
@@ -388,9 +429,67 @@ struct CritiqueSidebar: View {
             self.failure(failure)
         } else if let report = critique.report {
             findings(in: report)
+        } else if !isConfigured {
+            // Before anything else, including "no critique yet": there is no
+            // point offering to run something that cannot run.
+            setUp
         } else {
             empty
         }
+    }
+
+    /// What a first run looks like.
+    ///
+    /// The rail is always on screen now, so for most people the first thing it
+    /// ever says is this. It names what is needed, where to get it, and opens
+    /// the one window that takes it — rather than waiting to fail after a
+    /// request that was never going to work.
+    private var setUp: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Set up a critique")
+                .font(CritiqueTypography.hand(CritiqueTypography.sectionSize))
+                .foregroundStyle(colorTheme.primaryText)
+            Text(
+                "A critique reads your draft and writes back what works, what "
+                    + "does not, and where. It needs an API key from a model "
+                    + "provider."
+            )
+            .font(CritiqueTypography.hand(CritiqueTypography.bodySize))
+            .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
+            .fixedSize(horizontal: false, vertical: true)
+
+            Button("Open Settings…") { openSettings() }
+                .controlSize(.large)
+
+            Text(
+                "\(CritiqueCredentials.provider.title) is selected. "
+                    + (CritiqueCredentials.provider.keyOrigin.map {
+                        "Keys come from \($0)."
+                    } ?? "")
+            )
+            .font(CritiqueTypography.hand(CritiqueTypography.captionSize))
+            .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
+            .fixedSize(horizontal: false, vertical: true)
+            Spacer()
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Whether a critique could run at all right now.
+    ///
+    /// Read once per redraw rather than held: the settings window writes to
+    /// the Keychain, and there is no notification to observe.
+    private var isConfigured: Bool { CritiqueCredentials.isConfigured }
+
+    /// Opens the standard settings window without a scene reference.
+    ///
+    /// `SettingsLink` needs macOS 14 and this app supports 13, so the action
+    /// is sent the way the menu item does it.
+    private func openSettings() {
+        NSApp.sendAction(
+            Selector(("showSettingsWindow:")), to: nil, from: nil
+        )
     }
 
     private var running: some View {

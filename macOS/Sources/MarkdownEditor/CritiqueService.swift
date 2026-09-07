@@ -20,6 +20,9 @@ final class CritiqueService {
         case cancelled
         case cliFailed(status: Int32, message: String)
         case unreadableReply(String)
+        case notConfigured
+        case providerUnreachable(String)
+        case providerRefused(status: Int, message: String)
 
         var errorDescription: String? {
             switch self {
@@ -33,6 +36,14 @@ final class CritiqueService {
                 return "The critique could not be completed."
             case .unreadableReply:
                 return "The critique came back in a form the editor could not read."
+            case .notConfigured:
+                return "No API key has been set."
+            case .providerUnreachable:
+                return "The provider could not be reached."
+            case .providerRefused(let status, let message):
+                return status == 401 || status == 403
+                    ? "The provider did not accept the API key."
+                    : message
             }
         }
 
@@ -58,6 +69,29 @@ final class CritiqueService {
                     The model replied, but not with a report this editor could \
                     read. \(detail)
                     """
+            case .notConfigured:
+                return """
+                    Choose a provider and enter an API key in Settings, then                     ask for a critique again.
+                    """
+            case .providerUnreachable(let detail):
+                return "The request did not complete. \(detail)"
+            case .providerRefused(let status, let message):
+                switch status {
+                case 401, 403:
+                    return """
+                        Check the API key in Settings. This is what a wrong or                         revoked key looks like.
+                        """
+                case 429:
+                    return """
+                        The provider is rate limiting or the account is out of                         credit. Wait a moment, or check the billing on it.
+                        """
+                case 404:
+                    return """
+                        The model was not found. Pick another one in Settings —                         not every account has access to every model. \(message)
+                        """
+                default:
+                    return message
+                }
             }
         }
     }
@@ -116,13 +150,25 @@ final class CritiqueService {
     ) async throws -> CritiqueReport {
         let trimmed = document.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw Failure.documentIsEmpty }
-        guard let cli = Self.locateCLI() else { throw Failure.cliNotFound }
 
-        let reply = try await run(
-            cli: cli,
-            prompt: CritiqueRequest.prompt(forDocument: document),
-            onProgress: onProgress
-        )
+        let prompt = CritiqueRequest.prompt(forDocument: document)
+        let provider = CritiqueCredentials.provider
+        let reply: String
+        if provider.needsAPIKey {
+            guard let key = CritiqueCredentials.key(for: provider) else {
+                throw Failure.notConfigured
+            }
+            reply = try await ask(
+                provider,
+                key: key,
+                model: CritiqueCredentials.model(for: provider),
+                prompt: prompt,
+                onProgress: onProgress
+            )
+        } else {
+            guard let cli = Self.locateCLI() else { throw Failure.cliNotFound }
+            reply = try await run(cli: cli, prompt: prompt, onProgress: onProgress)
+        }
         do {
             return try CritiqueReportDecoder.decode(reply)
         } catch {
@@ -140,6 +186,59 @@ final class CritiqueService {
     func cancel() {
         running?.terminate()
         running = nil
+        request?.cancel()
+        request = nil
+    }
+
+    private var request: URLSessionDataTask?
+
+    /// One request to a model API.
+    ///
+    /// No streaming. The critique is a single JSON document that is worthless
+    /// until it is complete — there is nothing to show halfway through — so
+    /// the progress here is honest about being a wait rather than pretending
+    /// to a percentage.
+    private func ask(
+        _ provider: CritiqueProvider,
+        key: String,
+        model: String,
+        prompt: String,
+        onProgress: @escaping (CritiqueProgress) -> Void
+    ) async throws -> String {
+        onProgress(CritiqueProgress(stage: .starting, detail: provider.title))
+        var urlRequest = URLRequest(url: provider.endpoint(model: model))
+        urlRequest.httpMethod = "POST"
+        for (field, value) in provider.headers(apiKey: key) {
+            urlRequest.setValue(value, forHTTPHeaderField: field)
+        }
+        urlRequest.httpBody = try JSONSerialization.data(
+            withJSONObject: provider.body(prompt: prompt, model: model)
+        )
+        // A critique of a long draft is a slow request, and the default 60
+        // seconds cuts it off mid-answer.
+        urlRequest.timeoutInterval = 180
+
+        onProgress(CritiqueProgress(stage: .reading, detail: model))
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: urlRequest)
+        } catch {
+            throw Failure.providerUnreachable(error.localizedDescription)
+        }
+        onProgress(CritiqueProgress(stage: .writing, detail: model))
+
+        do {
+            return try provider.text(fromReply: data)
+        } catch let problem as CritiqueProvider.ReplyProblem {
+            // The status code is worth carrying: 401 and 429 are the two most
+            // likely, and they mean quite different things to do next.
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            throw Failure.providerRefused(
+                status: status,
+                message: problem.errorDescription ?? "Unknown problem."
+            )
+        }
     }
 
     private func run(

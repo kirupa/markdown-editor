@@ -50,16 +50,7 @@ struct FormattingBar: View {
             Spacer(minLength: 0)
         }
         .padding(.vertical, 4)
-        // The whole strip, not each icon: the gaps between the controls and
-        // the dividers are part of the bar and are not text either.
-        //
-        // An overlay rather than a background, and it matters. Behind the
-        // controls the rect loses — measured on the running app, the pointer
-        // over an icon was a pointing hand at 32x32 hot (13,8), which is
-        // something the button itself claims. Above them, with hit testing
-        // off so it never takes a click, the bar's own claim is the one that
-        // holds.
-        .overlay(ArrowCursorArea().allowsHitTesting(false))
+
         // Fills the width it is given, hugs its own height.
         //
         // Both halves matter: a plain `fixedSize()` also pins the width, so
@@ -183,7 +174,14 @@ private struct PixelBarButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
+        .onHover { inside in
+            isHovered = inside
+            if inside {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
         .help(title)
     }
 }

@@ -23,5 +23,11 @@ struct MarkdownEditorApp: App {
         .commands {
             MarkdownEditorCommands()
         }
+
+        // The standard place: KONVO ▸ Settings, ⌘,. A reader looking for a
+        // preference looks there before anywhere else.
+        Settings {
+            CritiqueSettingsView()
+        }
     }
 }

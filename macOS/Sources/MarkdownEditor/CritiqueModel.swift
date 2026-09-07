@@ -58,10 +58,13 @@ final class CritiqueModel: ObservableObject {
     /// present. The close button then does nothing anybody can see.
     @Published private(set) var isDismissed = false
 
-    var isPresented: Bool {
-        guard !isDismissed else { return false }
-        return report != nil || isRunning || failure != nil || !history.isEmpty
-    }
+    /// The rail is always there.
+    ///
+    /// It used to appear only once there was something in it, which meant the
+    /// feature was invisible until you already knew it existed and had found
+    /// the menu item. A panel that is always present can say what it is and
+    /// what it needs — which for a first run is an API key.
+    var isPresented: Bool { !isDismissed }
 
     /// The revision being shown, when it is not the newest.
     var shownRevision: CritiqueRevision? { history.revision(withID: shownRevisionID) }

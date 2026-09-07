@@ -378,9 +378,13 @@ func checkTheHandsAreAvailable() {
 
     var readSizes: [(String, CGFloat)] = []
     for hand in CritiqueHand.allCases {
-        let font = NSFont(name: hand.fontName, size: 100 * hand.opticalScale)
+        // The system face is asked for by weight, not by name — it has no one
+        // PostScript name across macOS versions, and it cannot be missing.
+        let font = hand == .sans
+            ? NSFont.systemFont(ofSize: 100 * hand.opticalScale)
+            : NSFont(name: hand.fontName, size: 100 * hand.opticalScale)
         check(
-            "\(hand.title) is bundled and loads",
+            "\(hand.title) resolves",
             font != nil,
             "\(hand.fontName) did not resolve — the rail would quietly fall "
                 + "back to another face"
@@ -392,7 +396,7 @@ func checkTheHandsAreAvailable() {
     // label on the rail goes through. Without this the menu can look like it
     // works — the tick moves — while the rail keeps drawing in the old face.
     let chosen = UserDefaults.standard.string(forKey: CritiqueHand.storageKey)
-    for hand in CritiqueHand.allCases {
+    for hand in CritiqueHand.allCases where hand != .sans {
         UserDefaults.standard.set(hand.rawValue, forKey: CritiqueHand.storageKey)
         check(
             "choosing \(hand.title) is what the rail then writes in",
@@ -401,6 +405,24 @@ func checkTheHandsAreAvailable() {
                 + "\(CritiqueTypography.familyChain.first ?? "nothing")"
         )
     }
+    // The system face does not go through the chain at all, so it is checked
+    // by what it draws with instead.
+    UserDefaults.standard.set(
+        CritiqueHand.sans.rawValue, forKey: CritiqueHand.storageKey
+    )
+    check(
+        "choosing System Sans gives the system face",
+        CritiqueTypography.hand(15) == Font.system(size: 15, weight: .regular),
+        "it gave something else"
+    )
+    check(
+        "and it is the default when nothing has been chosen",
+        {
+            UserDefaults.standard.removeObject(forKey: CritiqueHand.storageKey)
+            return CritiqueHand.selected == .sans
+        }(),
+        "the default is \(CritiqueHand.selected.title)"
+    )
     if let chosen {
         UserDefaults.standard.set(chosen, forKey: CritiqueHand.storageKey)
     } else {
@@ -443,8 +465,8 @@ struct CheckCritique {
         checkTheHandsAreAvailable()
         checkTheDocumentFillsTheWindow()
         checkTheFormattingBarIsACentredRow()
-        checkThePointerOverTheBarIsAnArrow()
         checkTheHeaderIsItsOwnSurface()
+        checkTheRailAsksForWhatItNeeds()
         checkMarksFollowTheWords()
         checkTheScoreIsLegible()
         checkEveryColourIsLegible()
@@ -1268,6 +1290,146 @@ func checkEveryColourIsLegible() {
     }
 }
 
+/// The rail is always there, and says what it needs before it needs it.
+///
+/// The rail used to appear only once it had something in it, so the feature
+/// was invisible until you knew it existed. Now the first thing most people
+/// see is the set-up state, and that state has to name the thing it wants
+/// rather than offering a button that fails.
+@MainActor
+func checkTheRailAsksForWhatItNeeds() {
+    print("")
+    print("A rail with nothing in it yet")
+
+    let model = CritiqueModel()
+    check(
+        "the rail is on screen before there is anything in it",
+        model.isPresented,
+        "it is hidden until it has a report, which is how it went unnoticed"
+    )
+
+    let theme = EditorColorTheme(color: .blue, mode: .light)
+    let rail = CritiqueSidebar(
+        critique: model, colorTheme: theme, isStale: false, onRerun: {}
+    )
+    let host = NSHostingView(rootView: AnyView(rail))
+    host.frame = NSRect(x: 0, y: 0, width: 340, height: 600)
+    host.layoutSubtreeIfNeeded()
+    RunLoop.current.run(until: Date().addingTimeInterval(0.4))
+    host.layoutSubtreeIfNeeded()
+
+    // Asserted on the state rather than on the drawn words: SwiftUI draws
+    // these without a backing NSTextField, and the accessibility walk that
+    // other checks here use returns nothing at all for this rail — measured as
+    // two empty strings. A check keyed on that passes for every state.
+    let expected: CritiqueSidebar.State = CritiqueCredentials.isConfigured
+        ? .nothingYet
+        : .needsSetUp
+    if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
+        print("  state: \(rail.state), configured: "
+            + "\(CritiqueCredentials.isConfigured)")
+    }
+    check(
+        "and it shows \(expected) with no report and no key",
+        rail.state == expected,
+        "it shows \(rail.state)"
+    )
+
+    // And it is actually drawn — a state that renders nothing would satisfy
+    // the assertion above while showing an empty panel.
+    guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else {
+        check("and the rail draws something", false)
+        return
+    }
+    host.cacheDisplay(in: host.bounds, to: rep)
+    let page = EditorColorTheme(color: .blue, mode: .light)
+        .editorBackgroundColor.usingColorSpace(.sRGB)!
+    var inked = 0
+    for y in 0..<rep.pixelsHigh {
+        for x in stride(from: 0, to: rep.pixelsWide, by: 2) {
+            guard let c: NSColor = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB)
+            else { continue }
+            let dr: CGFloat = abs(c.redComponent - page.redComponent)
+            let dg: CGFloat = abs(c.greenComponent - page.greenComponent)
+            let db: CGFloat = abs(c.blueComponent - page.blueComponent)
+            if dr + dg + db > 0.12 { inked += 1 }
+        }
+    }
+    if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
+        print("  inked pixels: \(inked)")
+    }
+    // And it is really laid out beside the document, not merely constructed.
+    // `isPresented` returning true is not the same as the pane rendering it —
+    // the pane has its own condition, and that is where this went wrong once.
+    let paneTheme = EditorColorTheme(color: .blue, mode: .light)
+    let pane = ResizableRichTextPreview(
+        text: .constant("# Title\n\nWords.\n"),
+        documentURL: nil,
+        session: MarkdownEditorSession(fileURL: nil),
+        colorTheme: paneTheme,
+        preferredWidth: .constant(620),
+        minimumWidth: 320,
+        critique: model,
+        hostsRail: true
+    )
+    let paneHost = NSHostingView(rootView: AnyView(pane))
+    paneHost.frame = NSRect(x: 0, y: 0, width: 1200, height: 600)
+    paneHost.layoutSubtreeIfNeeded()
+    RunLoop.current.run(until: Date().addingTimeInterval(0.4))
+    paneHost.layoutSubtreeIfNeeded()
+    // The rail is a fixed-width strip in the row. Looked for by that width,
+    // because it is the one thing in the pane with it.
+    //
+    // Not "is anything narrower than the pane", which was the first version
+    // and passed on a 29pt subview while the rail was absent entirely.
+    // Looked for in the drawn pixels, not in the view tree.
+    //
+    // Only an `NSViewRepresentable` leaves an NSView behind; the rail is
+    // ordinary SwiftUI and leaves none. A check hunting the tree for a 356pt
+    // view reported the rail missing while it was on screen — the widths it
+    // could see were the scroll view's 820 and the host's 1200 and nothing
+    // else.
+    guard let paneRep = paneHost.bitmapImageRepForCachingDisplay(
+        in: paneHost.bounds
+    ) else {
+        check("the pane can be drawn", false)
+        return
+    }
+    paneHost.cacheDisplay(in: paneHost.bounds, to: paneRep)
+    let paneScale = CGFloat(paneRep.pixelsWide) / paneHost.bounds.width
+    let pagePaper = paneTheme.editorBackgroundColor.usingColorSpace(.sRGB)!
+    // The rail sits at the trailing edge of the row.
+    var railInk = 0
+    for y in 0..<paneRep.pixelsHigh {
+        for x in stride(
+            from: paneRep.pixelsWide - Int(340 * paneScale),
+            to: paneRep.pixelsWide,
+            by: 2
+        ) {
+            guard let c: NSColor = paneRep.colorAt(x: x, y: y)?
+                .usingColorSpace(.sRGB) else { continue }
+            let dr: CGFloat = abs(c.redComponent - pagePaper.redComponent)
+            let dg: CGFloat = abs(c.greenComponent - pagePaper.greenComponent)
+            let db: CGFloat = abs(c.blueComponent - pagePaper.blueComponent)
+            if dr + dg + db > 0.12 { railInk += 1 }
+        }
+    }
+    if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
+        print("  ink in the trailing band: \(railInk)")
+    }
+    check(
+        "and the pane lays it out beside the document",
+        railInk > 300,
+        "only \(railInk) pixels are drawn where the rail belongs"
+    )
+
+    check(
+        "and the rail draws something",
+        inked > 400,
+        "only \(inked) pixels differ from the page, so the panel is blank"
+    )
+}
+
 /// A critique's marks follow the words while the draft is edited.
 ///
 /// The unit tests cover the arithmetic. This covers the wiring — that the
@@ -1453,93 +1615,6 @@ func checkTheHeaderIsItsOwnSurface() {
               + "\(headers.count) header colours"
       )
     }
-}
-
-/// The pointer over the formatting bar is an arrow, not the editor's I-beam.
-///
-/// Checked as geometry and wiring rather than by moving a real mouse. What can
-/// break here is the backing view being absent or laid out at zero size, at
-/// which point it silently claims nothing — and the mechanism itself is the one
-/// already proved for the image resize corners in `RichMarkdownTextView`.
-///
-/// It also records *why* the I-beam reaches the bar at all, which is the part I
-/// had wrong twice: whether the text view's own surface extends underneath it.
-@MainActor
-func checkThePointerOverTheBarIsAnArrow() {
-    print("")
-    print("The pointer over the bar")
-
-    let theme = EditorColorTheme(color: .blue, mode: .light)
-    let text = Binding.constant("# Title\n\nSome writing.\n")
-    let session = MarkdownEditorSession(fileURL: nil)
-    let critique = CritiqueModel()
-    let width = Binding.constant(CGFloat(620))
-    let pane = ResizableRichTextPreview(
-        text: text, documentURL: nil, session: session, colorTheme: theme,
-        preferredWidth: width, minimumWidth: 320, critique: critique
-    )
-    let host = NSHostingView(rootView: AnyView(pane))
-    host.frame = NSRect(x: 0, y: 0, width: 900, height: 600)
-    let window = NSWindow(
-        contentRect: host.frame, styleMask: [.titled], backing: .buffered,
-        defer: false
-    )
-    window.contentView = host
-    host.layoutSubtreeIfNeeded()
-    RunLoop.current.run(until: Date().addingTimeInterval(0.4))
-    host.layoutSubtreeIfNeeded()
-
-    func descendants(_ view: NSView) -> [NSView] {
-        view.subviews + view.subviews.flatMap(descendants)
-    }
-    let all = descendants(host)
-    let areas = all.compactMap { $0 as? ArrowCursorArea.Area }
-    let textViews = all.compactMap { $0 as? NSTextView }
-
-    check(
-        "the bar claims a cursor area",
-        !areas.isEmpty,
-        "no ArrowCursorArea in the pane"
-    )
-    guard let area = areas.first, let textView = textViews.first else { return }
-
-    let areaFrame = area.convert(area.bounds, to: nil)
-    let textFrame = textView.convert(textView.bounds, to: nil)
-    if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
-        print("  cursor area \(NSStringFromRect(areaFrame))")
-        print("  text view   \(NSStringFromRect(textFrame))")
-        print("  overlap: \(areaFrame.intersects(textFrame))")
-    }
-    check(
-        "and it is laid out over the controls",
-        areaFrame.width > 200 && areaFrame.height > 20,
-        "it is \(Int(areaFrame.width))x\(Int(areaFrame.height)), so it claims nothing"
-    )
-    let rects = area.cursorRects()
-    check(
-        "and the cursor it claims is the arrow",
-        rects.count == 1 && rects[0].cursor == NSCursor.arrow
-            && rects[0].rect == area.bounds,
-        "it claims \(rects.count) rect(s)"
-    )
-    // The bar is beside the editor, not on top of it.
-    //
-    // Written as a real comparison after the first version of this line was
-    // `intersects || !intersects` — a check that cannot fail, which is the
-    // shape a check takes when it is written to record a finding rather than
-    // to test one.
-    //
-    // The finding is worth keeping, though: the text view does *not* reach
-    // under the bar, so the I-beam over the controls was never the text view's
-    // rect winning a contest. Nothing claimed that region at all, and AppKit
-    // left the last cursor it had been given. That is what the arrow rect is
-    // for — to claim it.
-    check(
-        "and the editor's surface does not reach under it",
-        !areaFrame.intersects(textFrame),
-        "the text view covers the bar, so the arrow rect has to outrank it"
-    )
-
 }
 
 /// The formatting bar is a centred row of icons and nothing else.
