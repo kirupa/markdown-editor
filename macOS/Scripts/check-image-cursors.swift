@@ -437,6 +437,112 @@ let (bodyAgain, bodyAgainScore, _) = identifyCursor(at: centre)
 check("the pointer between the handles is still a pointing hand", bodyAgain == "pointing hand",
       String(format: "saw %@ (%.2f)", bodyAgain, bodyAgainScore))
 
+// MARK: - Everywhere that is not the writing
+//
+// The text view is the window's first responder while anybody is writing, and
+// `viewDidMoveToWindow` turns on `acceptsMouseMovedEvents` so pictures take
+// their pointer without the window being clicked first. Between them the
+// window forwards *every* mouse moved event to the text view — including moves
+// over the toolbar, the margins and the comment rail. It used to answer all of
+// them by asking `pointerCursor`, which has no case for "not over the writing"
+// and returns the I-beam for anything it does not recognise, so every button in
+// the app showed a text cursor.
+//
+// That was reported fixed twice on reasoning alone and was wrong both times.
+// This is the check that can actually settle it: the real pointer, over the
+// real buttons, photographed.
+
+// The toolbar sits above the first line of the document, so the first ink below
+// the title bar belongs to it. Found rather than calculated: a band worked out
+// from layout constants stops covering its target the moment the layout moves,
+// and this file cannot see those constants anyway.
+let titleBarHeight = 28.0
+let barSearch = CGRect(x: window.minX, y: window.minY + titleBarHeight,
+                       width: window.width, height: 160)
+var toolbar: (band: ClosedRange<Double>, buttons: [Double])?
+if let strip = capture(region: barSearch, cursor: false, to: "/tmp/mde-bar-probe.png") {
+    let scale = Double(strip.pixelsWide) / barSearch.width
+    // Glyph ink only. The page boundary rules are faint grey and the title bar
+    // is tinted; neither is anywhere near this dark. Read as components rather
+    // than `brightnessComponent`, which is only defined for colour spaces that
+    // convert to HSB and traps on the ones `screencapture` hands back.
+    func isInk(_ x: Int, _ y: Int) -> Bool {
+        guard let c = strip.colorAt(x: x, y: y) else { return false }
+        let luma = 0.299 * c.redComponent
+            + 0.587 * c.greenComponent
+            + 0.114 * c.blueComponent
+        return luma < 0.45 && c.alphaComponent > 0.5
+    }
+    var rows: [Int] = []
+    for y in 0..<strip.pixelsHigh {
+        var ink = 0
+        for x in stride(from: 0, to: strip.pixelsWide, by: 2) where isInk(x, y) { ink += 1 }
+        if ink >= 3 { rows.append(y) }
+    }
+    // The first run of inked rows, and only that run: anything after a gap is
+    // the document's first line.
+    if let first = rows.first {
+        var last = first
+        for row in rows.dropFirst() {
+            if row - last > 4 { break }
+            last = row
+        }
+        let midRow = (first + last) / 2
+        var columns: [Double] = []
+        var run: Int?
+        for x in 0...strip.pixelsWide {
+            let inked = x < strip.pixelsWide
+                && (max(first, midRow - 4)...min(last, midRow + 4)).contains(where: { isInk(x, $0) })
+            if inked, run == nil { run = x }
+            if !inked, let start = run {
+                if x - start >= 3 {
+                    columns.append(barSearch.minX + (Double(start) + Double(x - start) / 2) / scale)
+                }
+                run = nil
+            }
+        }
+        toolbar = (
+            band: (barSearch.minY + Double(first) / scale)...(barSearch.minY + Double(last) / scale),
+            buttons: columns
+        )
+    }
+}
+
+if let toolbar, toolbar.buttons.count >= 4 {
+    let barY = (toolbar.band.lowerBound + toolbar.band.upperBound) / 2
+    check("found the formatting toolbar on screen", true,
+          "\(toolbar.buttons.count) icons at y \(Int(barY))")
+    // Not one button: the complaint was about the whole bar, and one probe
+    // could land in a gap and pass while every icon was still wrong.
+    let sampled = [toolbar.buttons.first!,
+                   toolbar.buttons[toolbar.buttons.count / 2],
+                   toolbar.buttons.last!]
+    for (index, x) in sampled.enumerated() {
+        let (seen, score, pixels) = identifyCursor(at: CGPoint(x: x, y: barY))
+        check("the pointer over toolbar icon \(index + 1) of \(sampled.count) is a pointing hand",
+              seen == "pointing hand",
+              String(format: "saw %@ (%.2f, %d px)", seen, score, pixels))
+    }
+} else {
+    check("found the formatting toolbar on screen", false,
+          "\(toolbar?.buttons.count ?? 0) icon-like clusters in the first ink band")
+}
+
+// The margin beside the column is nobody's in particular, which is the point:
+// it is plain window background and must show what plain window background
+// shows. This is also where a text cursor would end up parked if leaving the
+// writing did not hand the pointer back.
+let marginPoint = CGPoint(x: window.minX + 14, y: window.midY)
+let (marginCursor, marginScore, marginPixels) = identifyCursor(at: marginPoint)
+check("the pointer in the margin beside the column is an arrow", marginCursor == "arrow",
+      String(format: "saw %@ (%.2f, %d px)", marginCursor, marginScore, marginPixels))
+
+// And the writing still has to claim it, or the guard above has simply turned
+// the pointer off everywhere.
+let (textAgain, textAgainScore, _) = identifyCursor(at: textPoint)
+check("the pointer back over the writing is an I-beam again", textAgain == "I-beam",
+      String(format: "saw %@ (%.2f)", textAgain, textAgainScore))
+
 restoreMouse()
 
 print("")

@@ -109,7 +109,10 @@ final class CritiqueService {
     /// lives on a machine that has only ever run it through an IDE — and is
     /// exactly the case where the app would otherwise say "not installed" to
     /// somebody looking at it running in another window.
-    static func locateCLI(
+    /// Nothing here touches the service's state — it reads `PATH` and the file
+    /// system — so it does not need the main actor, and `provider` has to be
+    /// able to ask this question synchronously to answer "which provider".
+    nonisolated static func locateCLI(
         environment: [String: String] = ProcessInfo.processInfo.environment,
         fileManager: FileManager = .default
     ) -> URL? {

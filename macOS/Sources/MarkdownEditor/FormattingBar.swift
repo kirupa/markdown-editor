@@ -176,11 +176,16 @@ private struct PixelBarButton: View {
         .buttonStyle(.plain)
         .onHover { inside in
             isHovered = inside
-            if inside {
-                NSCursor.pointingHand.push()
-            } else {
-                NSCursor.pop()
-            }
+            // `set`, not `push`/`pop`.
+            //
+            // The stack is process-wide and a push that never gets its pop
+            // leaves that shape over the entire app until it is relaunched.
+            // `onHover` is not guaranteed to be balanced — a window losing key
+            // while the pointer is over a button, or the bar being rebuilt
+            // under the pointer, both drop the exit — and the failure mode of
+            // an unbalanced push is far worse than the failure mode of a
+            // missed `set`, which is a stale shape that the next move fixes.
+            (inside ? NSCursor.pointingHand : NSCursor.arrow).set()
         }
         .help(title)
     }

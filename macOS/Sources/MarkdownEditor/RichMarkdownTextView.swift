@@ -681,8 +681,25 @@ final class RichMarkdownTextView: NSTextView {
         return .iBeam
     }
 
+    /// Whether this view is the thing under the pointer at all.
+    ///
+    /// `pointerCursor` answers "which shape, over the writing" and has no case
+    /// for "the pointer is somewhere else entirely" — it falls through to the
+    /// I-beam, which is right for text and wrong for everything else. That is
+    /// only safe to ask when the pointer really is over the text, and mouse
+    /// moved events arrive when it is not: see `mouseMoved`.
+    ///
+    /// `visibleRect` and not `bounds`, because the view is as tall as the whole
+    /// document. Its bounds run far above and below the window, and a point in
+    /// the toolbar band converts into them cleanly.
+    func pointerIsOverText(at point: NSPoint) -> Bool {
+        visibleRect.contains(point)
+    }
+
     override func cursorUpdate(with event: NSEvent) {
-        pointerCursor(at: convert(event.locationInWindow, from: nil)).set()
+        let point = convert(event.locationInWindow, from: nil)
+        guard pointerIsOverText(at: point) else { return }
+        pointerCursor(at: point).set()
     }
 
     // MARK: - Hover
@@ -691,8 +708,29 @@ final class RichMarkdownTextView: NSTextView {
     private(set) var hoveredImageRect: NSRect?
 
     override func mouseMoved(with event: NSEvent) {
-        super.mouseMoved(with: event)
         let point = convert(event.locationInWindow, from: nil)
+        // The whole window's moves come through here, not just this view's.
+        //
+        // `viewDidMoveToWindow` turns on `acceptsMouseMovedEvents` so the
+        // pointer takes its shape over a picture without the window being
+        // clicked first. The cost of that switch is that the window forwards
+        // every mouse moved event to its first responder — which is this view
+        // the whole time anybody is writing — so these arrive for the toolbar,
+        // the comment rail and the margins beside the column just as much as
+        // for the text. Answering them all with `pointerCursor` is how the
+        // I-beam ended up over every button in the app: it has no case for
+        // "not over the writing" and returns the I-beam for anywhere it does
+        // not recognise, and `super` re-asserts the I-beam besides.
+        //
+        // Nothing is set when the pointer is elsewhere. Whatever owns that part
+        // of the window — a button, the rail, the plain background — is left to
+        // say what the shape should be, which is the arrangement AppKit already
+        // has for every other app.
+        guard pointerIsOverText(at: point) else {
+            updateHover(at: nil)
+            return
+        }
+        super.mouseMoved(with: event)
         updateHover(at: point)
         // Set the shape here, on every move, and not only from `cursorUpdate`.
         //
@@ -709,6 +747,20 @@ final class RichMarkdownTextView: NSTextView {
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
         updateHover(at: nil)
+        // Give the pointer back on the way out.
+        //
+        // The shape over the writing is set imperatively rather than claimed
+        // with a cursor rect, and AppKit only undoes what it was told about —
+        // a cursor set by hand stays set until something else replaces it. So
+        // without this the I-beam walks out of the document with the pointer
+        // and sits over the margin, the comment rail and the toolbar, which is
+        // the same complaint arriving by a different route. `super` does not
+        // do it: measured, it leaves the I-beam exactly where it was.
+        //
+        // The arrow specifically, because that is what an ordinary part of a
+        // window shows. Anything with its own idea — a button, a resize
+        // gripper — sets its own on entry, and entry follows this exit.
+        NSCursor.arrow.set()
     }
 
     /// The picture the pointer is over.

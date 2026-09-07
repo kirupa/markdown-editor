@@ -73,10 +73,25 @@ enum CritiqueCredentials {
 
     // MARK: - The rest of the choice
 
+    /// The provider to use, and what to assume before anybody has chosen.
+    ///
+    /// The default is not a fixed provider. Critique worked through the Copilot
+    /// CLI before any of this existed, and defaulting to OpenAI would meet
+    /// somebody who has been using it happily with "no API key has been set" —
+    /// their working setup broken by a default, with nothing to point at. So
+    /// when nothing has been chosen and the CLI is on the machine, that is the
+    /// answer, and the arrival of API keys costs those people nothing.
+    ///
+    /// Only when there is no CLI does this fall to a key-based provider, which
+    /// is the case where the set-up prompt is the useful thing to show.
     static var provider: CritiqueProvider {
         get {
-            UserDefaults.standard.string(forKey: CritiqueProvider.storageKey)
-                .flatMap(CritiqueProvider.init(rawValue:)) ?? .openAI
+            if let stored = UserDefaults.standard.string(
+                forKey: CritiqueProvider.storageKey
+            ), let chosen = CritiqueProvider(rawValue: stored) {
+                return chosen
+            }
+            return CritiqueService.locateCLI() != nil ? .copilotCLI : .openAI
         }
         set {
             UserDefaults.standard.set(

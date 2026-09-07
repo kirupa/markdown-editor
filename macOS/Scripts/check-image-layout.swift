@@ -498,6 +498,90 @@ struct CheckImageLayout {
             "after the move AppKit is holding \(NSCursor.current)"
         )
         textView.updateHover(at: nil)
+
+        // Moves arrive for the whole window, not just for this view.
+        //
+        // `viewDidMoveToWindow` sets `acceptsMouseMovedEvents`, and a window
+        // with that switch on forwards every mouse moved event to its first
+        // responder — which is this view for as long as anybody is writing. So
+        // `mouseMoved` runs for the toolbar, for the comment rail and for the
+        // margins beside the column, and it used to answer all of them with
+        // `pointerCursor`, which has no case for "not over the writing" and
+        // returns the I-beam for anywhere it does not recognise. That is the
+        // whole reason every button in the app showed a text cursor.
+        //
+        // The check is that a move to somewhere this view does not occupy
+        // leaves the shape alone: whatever owns that part of the window gets to
+        // say. Read as "did not touch it" rather than "set the arrow", because
+        // setting the arrow would be its own bug — it would fight the button
+        // that wants a hand.
+        for (name, at) in [
+            ("the toolbar band above the text", NSPoint(x: 120, y: -40)),
+            ("the margin beside the column", NSPoint(x: textView.bounds.maxX + 80, y: 200)),
+            ("below the end of the document", NSPoint(x: 120, y: textView.visibleRect.maxY + 60)),
+        ] {
+            NSCursor.crosshair.set()
+            if let move = NSEvent.mouseEvent(
+                with: .mouseMoved,
+                location: textView.convert(at, to: nil),
+                modifierFlags: [],
+                timestamp: 0,
+                windowNumber: window.windowNumber,
+                context: nil,
+                eventNumber: 0,
+                clickCount: 0,
+                pressure: 0
+            ) {
+                textView.mouseMoved(with: move)
+            }
+            check(
+                "a move over \(name) leaves the pointer to whatever owns it",
+                NSCursor.current === NSCursor.crosshair,
+                "the text view took the pointer and set \(NSCursor.current)"
+            )
+        }
+
+        // The other half of the same claim: over the writing it still answers.
+        // Without this the guard above could be satisfied by never setting a
+        // cursor at all, which would break the picture and corner shapes.
+        NSCursor.crosshair.set()
+        if let move = NSEvent.mouseEvent(
+            with: .mouseMoved,
+            location: textView.convert(NSPoint(x: 60, y: 40), to: nil),
+            modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+            context: nil, eventNumber: 0, clickCount: 0, pressure: 0
+        ) {
+            textView.mouseMoved(with: move)
+        }
+        check(
+            "a move over the writing still takes the I-beam",
+            NSCursor.current === NSCursor.iBeam,
+            "after the move AppKit is holding \(NSCursor.current)"
+        )
+
+        // Leaving has to hand the pointer back.
+        //
+        // The I-beam is set here imperatively rather than claimed with a cursor
+        // rect, so AppKit does not know to undo it and nothing else will: the
+        // shape a view sets stays set until something replaces it. The
+        // consequence, if this is missed, is a text cursor that follows the
+        // pointer out of the writing and sits over the margin and the comment
+        // rail — which is most of the bug this was meant to fix, arriving by a
+        // different route.
+        if let exit = NSEvent.enterExitEvent(
+            with: .mouseExited,
+            location: textView.convert(NSPoint(x: 120, y: -40), to: nil),
+            modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+            context: nil, eventNumber: 0, trackingNumber: 0, userData: nil
+        ) {
+            textView.mouseExited(with: exit)
+        }
+        check(
+            "leaving the writing hands the I-beam back",
+            NSCursor.current !== NSCursor.iBeam,
+            "the text cursor followed the pointer out — AppKit is holding \(NSCursor.current)"
+        )
+        textView.updateHover(at: nil)
         cursorBeforeMoveChecks.set()
 
         // The reach is for the handles, so it must not become a halo. Beside

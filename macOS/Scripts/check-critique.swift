@@ -491,6 +491,48 @@ struct CheckCritique {
         }
         check("found the Copilot CLI", true, cli.path)
 
+        // What an upgrade does to somebody who was already using this.
+        //
+        // Critique ran through the CLI before API keys existed. If the default
+        // provider is a fixed one, everybody with a working CLI setup opens the
+        // new build and is told "No API key has been set" — their working thing
+        // broken by a default, and nothing on screen explaining that it used to
+        // work a minute ago. So with nothing chosen and a CLI present, the CLI
+        // is the answer.
+        //
+        // The stored choice is put back afterwards: this is a real preference
+        // on a real machine and the checks must not spend it.
+        let storedProvider = UserDefaults.standard.string(
+            forKey: CritiqueProvider.storageKey
+        )
+        UserDefaults.standard.removeObject(forKey: CritiqueProvider.storageKey)
+        check(
+            "with nothing chosen and a CLI installed, critique still uses it",
+            CritiqueCredentials.provider == .copilotCLI,
+            "defaulted to \(CritiqueCredentials.provider.rawValue) instead"
+        )
+        check(
+            "and that default needs no key, so nothing asks for one",
+            CritiqueCredentials.isConfigured,
+            "the default provider reports itself unconfigured"
+        )
+        // An explicit choice still wins, or Settings would not do anything.
+        CritiqueCredentials.provider = .anthropic
+        check(
+            "a provider chosen in Settings outranks the default",
+            CritiqueCredentials.provider == .anthropic,
+            "read back \(CritiqueCredentials.provider.rawValue)"
+        )
+        if let storedProvider {
+            UserDefaults.standard.set(
+                storedProvider, forKey: CritiqueProvider.storageKey
+            )
+        } else {
+            UserDefaults.standard.removeObject(
+                forKey: CritiqueProvider.storageKey
+            )
+        }
+
         print("")
         print("Running a real critique (this costs credits and takes ~30s)")
         let service = CritiqueService()
