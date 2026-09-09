@@ -281,6 +281,32 @@ struct EditorPaneGeometryTests {
         )
     }
 
+    @Test("The width gripper stays where it can be grabbed")
+    func gripperIsNotBuriedUnderTheRail() {
+        // Laid out ending at the page's trailing edge and then shifted, so a
+        // positive shift pushes it past that edge. With the comments open that
+        // is underneath the rail, which is drawn over it — and the document
+        // then cannot be resized at all. This happened: removing the bleed left
+        // the old `gripperWidth - bleed` shift pointing straight into the rail.
+        #expect(
+            EditorPaneGeometry.gripperOffset(
+                gripperWidth: 12, bleed: 0, railIsOpen: true
+            ) == 0
+        )
+        #expect(
+            EditorPaneGeometry.gripperIsReachable(
+                gripperWidth: 12, bleed: 0, railIsOpen: true
+            )
+        )
+        // The shape of the bug, stated directly: the shift the closed-rail case
+        // uses would not be reachable if it were applied with the rail open.
+        #expect(
+            EditorPaneGeometry.gripperOffset(
+                gripperWidth: 12, bleed: 0, railIsOpen: false
+            ) > 0
+        )
+    }
+
     @Test("So the page ends exactly where the writing does, and the rail docks there")
     func thePageEndsAtTheColumn() {
         let column: CGFloat = 700

@@ -81,6 +81,42 @@ public enum EditorPaneGeometry {
         return min(maximumImageBleed, (availableWidth - columnWidth) / 2)
     }
 
+    /// How far the width gripper is shifted from the page's trailing edge.
+    ///
+    /// It is laid out against that edge and then moved, because what it resizes
+    /// is the *column*, which with a bleed margin ends some way short of the
+    /// page. Shifting it by `gripperWidth - bleed` puts it just outside the
+    /// column, in the margin.
+    ///
+    /// With the comments open there is no margin, and that same shift put the
+    /// whole gripper in the first twelve points of the rail — which is drawn
+    /// over it, so the document could not be resized at all. A zero offset
+    /// leaves it against the inside of the edge, where it is both visible and
+    /// grabbable, and its own rule marks the edge.
+    public static func gripperOffset(
+        gripperWidth: CGFloat,
+        bleed: CGFloat,
+        railIsOpen: Bool
+    ) -> CGFloat {
+        railIsOpen ? 0 : gripperWidth - bleed
+    }
+
+    /// Whether the gripper is somewhere a person can actually reach it.
+    ///
+    /// It is laid out ending at the page's trailing edge, so a positive offset
+    /// pushes it past that edge — which is empty desk with the comments shut,
+    /// and underneath the rail with them open.
+    public static func gripperIsReachable(
+        gripperWidth: CGFloat,
+        bleed: CGFloat,
+        railIsOpen: Bool
+    ) -> Bool {
+        guard railIsOpen else { return true }
+        return gripperOffset(
+            gripperWidth: gripperWidth, bleed: bleed, railIsOpen: railIsOpen
+        ) <= 0
+    }
+
     /// The same, but nothing at all while the comments are open.
     ///
     /// The bleed is a margin either side of the writing that a picture may

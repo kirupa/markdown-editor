@@ -485,7 +485,13 @@ struct ResizableRichTextPreview: View {
                     // the document could no longer be resized at all. Inside
                     // the edge instead, where it is both visible and grabbable,
                     // and its own rule becomes the document's edge.
-                    .offset(x: railIsOpen ? 0 : Layout.gripperWidth - bleed)
+                    .offset(
+                        x: EditorPaneGeometry.gripperOffset(
+                            gripperWidth: Layout.gripperWidth,
+                            bleed: bleed,
+                            railIsOpen: railIsOpen
+                        )
+                    )
                 }
 
                 // Only when this pane *is* the document. Side by side, the
