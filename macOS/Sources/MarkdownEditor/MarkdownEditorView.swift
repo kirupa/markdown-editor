@@ -309,7 +309,14 @@ struct MarkdownEditorView: View {
             critique.reveal()
             return
         }
-        critique.run(on: document.text, documentURL: fileURL)
+        // The menu item and ⌃⌘C follow the same default as the rail's re-run
+        // button: the changed paragraphs when there are some, the whole draft
+        // otherwise. `defaultScope` decides, so the two cannot drift apart.
+        critique.run(
+            on: document.text,
+            documentURL: fileURL,
+            scope: critique.defaultScope
+        )
     }
 
     private func clampedExplorerWidth(
@@ -470,7 +477,18 @@ struct ResizableRichTextPreview: View {
                         critique: critique,
                         colorTheme: colorTheme,
                         isStale: critique.isStale(against: text),
-                        onRerun: { critique.run(on: text, documentURL: documentURL) }
+                        onRerun: {
+                            critique.run(
+                                on: text, documentURL: documentURL, scope: .whole
+                            )
+                        },
+                        onRerunChanges: {
+                            critique.run(
+                                on: text,
+                                documentURL: documentURL,
+                                scope: critique.defaultScope
+                            )
+                        }
                     )
                     .frame(width: Layout.railWidth)
                     .transition(.move(edge: .trailing))

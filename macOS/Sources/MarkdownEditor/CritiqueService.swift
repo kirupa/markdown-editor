@@ -149,12 +149,15 @@ final class CritiqueService {
     /// then writing eleven notes" reads as work.
     func critique(
         document: String,
+        focus: String? = nil,
         onProgress: @escaping (CritiqueProgress) -> Void = { _ in }
     ) async throws -> CritiqueReport {
         let trimmed = document.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw Failure.documentIsEmpty }
 
-        let prompt = CritiqueRequest.prompt(forDocument: document)
+        let prompt = focus.map {
+            CritiqueRequest.prompt(forDocument: document, focus: $0)
+        } ?? CritiqueRequest.prompt(forDocument: document)
         let provider = CritiqueCredentials.provider
         let reply: String
         if provider.needsAPIKey {

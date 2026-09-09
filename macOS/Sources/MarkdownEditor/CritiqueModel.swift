@@ -223,21 +223,68 @@ final class CritiqueModel: ObservableObject {
             .sorted { $0.severity.rank > $1.severity.rank }
     }
 
-    func run(on text: String, documentURL: URL?) {
+    /// What a re-run would read if the author does not say otherwise.
+    ///
+    /// The changed paragraphs when there is a previous critique to keep, the
+    /// text has moved, and the change is small enough to be worth narrowing.
+    /// Otherwise everything — including, deliberately, the case where the edit
+    /// has grown to cover most of the draft, where a partial run would keep
+    /// almost nothing and cost the same.
+    var defaultScope: CritiqueScope {
+        guard report != nil, let criticisedText, criticisedText != currentText
+        else { return .whole }
+        guard
+            let changed = CritiqueChangeScope.changedParagraphs(
+                from: criticisedText, to: currentText
+            ),
+            CritiqueChangeScope.isWorthScoping(changed, in: currentText)
+        else { return .whole }
+        return .changes(changed)
+    }
+
+    /// Whether a narrowed re-run is on the table at all, for the UI to ask.
+    var canCritiqueChangesOnly: Bool {
+        if case .changes = defaultScope { return true }
+        return false
+    }
+
+    func run(on text: String, documentURL: URL?, scope: CritiqueScope = .whole) {
         guard !isRunning else { return }
         attach(to: documentURL, text: text)
+        // The notes are moved onto the new text *before* the scope is used, so
+        // that the ranges being compared against the changed passage address
+        // the same string the passage was measured in.
+        noteCurrentText(text)
         currentText = text
         isRunning = true
         isDismissed = false
         failure = nil
         progress = CritiqueProgress(stage: .starting)
+
+        let focus: String?
+        let kept: [Item]
+        switch scope {
+        case .whole:
+            focus = nil
+            kept = []
+        case .changes(let range):
+            focus = CritiqueChangeScope.passage(range, in: text)
+            let survives = CritiqueChangeScope.surviving(
+                items.map(\.range), changed: range
+            )
+            kept = zip(items, survives).filter(\.1).map(\.0)
+        }
+
         Task { [weak self] in
             guard let self else { return }
             do {
-                let report = try await service.critique(document: text) { update in
+                let report = try await service.critique(
+                    document: text,
+                    focus: focus
+                ) { update in
                     Task { @MainActor [weak self] in self?.progress = update }
                 }
-                self.apply(report, for: text)
+                self.apply(report, for: text, keeping: kept)
             } catch let error as CritiqueService.Failure {
                 self.fail(with: error)
             } catch {
@@ -266,27 +313,69 @@ final class CritiqueModel: ObservableObject {
         apply(report, for: text)
     }
 
+    /// Applies a narrowed report the way a real partial run would, so the merge
+    /// can be checked without spending a request.
+    ///
+    /// Deliberately goes through the same `keeping:` path as `run` rather than
+    /// reimplementing it — a check against a parallel copy of the merge would
+    /// pass while the real one lost notes.
+    func applyChangesForChecking(
+        _ report: CritiqueReport,
+        for text: String,
+        changed: NSRange
+    ) {
+        noteCurrentText(text)
+        currentText = text
+        let survives = CritiqueChangeScope.surviving(
+            items.map(\.range), changed: changed
+        )
+        let kept = zip(items, survives).filter(\.1).map(\.0)
+        apply(report, for: text, keeping: kept)
+    }
+
     private func apply(
         _ report: CritiqueReport,
         for text: String,
-        record: Bool = true
+        record: Bool = true,
+        keeping kept: [Item] = []
     ) {
         let anchors = CritiqueAnchoring.anchor(report.findings, in: text)
         let byID = Dictionary(
             anchors.map { ($0.findingID, $0.range) },
             uniquingKeysWith: { first, _ in first }
         )
+        let fresh = report.findings.map {
+            Item(
+                finding: $0,
+                range: byID[$0.id] ?? nil,
+                resolution: resolutions.resolution(for: $0)
+            )
+        }
+        // The report that goes into the history is the whole rail, not just
+        // what came back from this run.
+        //
+        // A narrowed run returns findings about one passage. Filing that as the
+        // revision would mean reopening the document later and seeing only
+        // those — the kept notes would be gone, having never been written down
+        // anywhere. So the stored report carries the merged set, and the
+        // summary fields come from this run, which was asked to describe the
+        // whole draft even when it only criticised part of it.
+        let merged = kept.isEmpty ? fresh : kept + fresh
+        let storedReport = kept.isEmpty
+            ? report
+            : report.replacingFindings(with: merged.map(\.finding))
+
         // A finding the author has already answered arrives answered. Without
         // this every re-run resurrects every dismissal, and the feature nags
         // at somebody who told it not to.
         if record {
-            resolutions.prune(keeping: report.findings)
+            resolutions.prune(keeping: storedReport.findings)
             CritiqueResolutionStore.save(resolutions, for: documentURL)
-            history.add(CritiqueRevision(report: report, documentText: text))
+            history.add(CritiqueRevision(report: storedReport, documentText: text))
             CritiqueHistoryStore.save(history, for: documentURL)
             shownRevisionID = nil
         }
-        self.report = report
+        self.report = storedReport
         // Ordered by where they are in the document, not by severity.
         //
         // The rail sits beside the text, and a rail beside the text that is
@@ -298,13 +387,7 @@ final class CritiqueModel: ObservableObject {
         //
         // A finding whose quote was not found has no position, so it goes last
         // rather than to the top, which is where an unset offset would put it.
-        items = report.findings.map {
-            Item(
-                finding: $0,
-                range: byID[$0.id] ?? nil,
-                resolution: resolutions.resolution(for: $0)
-            )
-        }
+        items = merged
         reorder()
         criticisedText = record
             ? text

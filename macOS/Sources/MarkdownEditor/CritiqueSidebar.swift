@@ -219,30 +219,24 @@ enum CritiqueTypography {
         return .system(size: size, weight: bold ? .semibold : .regular)
     }
 
-    // MARK: - The labels
-
-    /// The face the rail's own words are set in — the score, the severities,
-    /// the section headings, the field names.
+    /// The face the app speaks in.
     ///
-    /// Monomaniac One: condensed, technical, and nothing like handwriting,
-    /// which is the point. The rail says two kinds of thing and they should
-    /// not look alike — what the reviewer wrote is in their hand, and what the
-    /// editor is telling you *about* that note is in the editor's voice.
+    /// The rail says two different kinds of thing and they were set in one
+    /// face, so they read as one voice. What a reviewer wrote about your
+    /// sentence is theirs; "AWESOMENESS", "62/100", "WHAT WORKS", "Stop",
+    /// "3 of 5 notes still point at something" are the app talking *about*
+    /// that — furniture, not commentary. Handwriting on the furniture makes
+    /// the rail look like a novelty and, worse, makes a score and a criticism
+    /// carry the same weight when only one of them is somebody's judgement.
     ///
-    /// Bundled rather than assumed, under the SIL Open Font License, because
-    /// macOS does not ship it. Loaded from the app's own `Fonts` directory via
-    /// `ATSApplicationFontsPath`, so it is available to this process without
-    /// being installed into anybody's Font Book.
-    static let labelFamily = "MonomaniacOne-Regular"
-
-    static func label(_ size: CGFloat) -> Font {
-        if let font = NSFont(name: labelFamily, size: size) {
-            return Font(font)
-        }
-        // Condensed and heavy is the shape that matters, so the fallback is
-        // the nearest the system has rather than the plain body face.
-        return .system(size: size, weight: .heavy).width(.condensed)
+    /// The same numbers as `hand`, deliberately. Those sizes are already what
+    /// the rail draws whenever the chosen hand is `.sans` — which is the
+    /// default — so this is the arrangement that has been on screen all along
+    /// for most people, not a new scale to re-tune.
+    static func chrome(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        .system(size: size, weight: weight)
     }
+
 }
 
 /// The rail of comments down the right-hand side.
@@ -258,7 +252,13 @@ struct CritiqueSidebar: View {
     @ObservedObject var critique: CritiqueModel
     let colorTheme: EditorColorTheme
     let isStale: Bool
+    /// Re-read the whole draft.
     let onRerun: () -> Void
+    /// Re-read only the paragraphs that changed, keeping the notes about the
+    /// rest. Required rather than defaulted: a default of "do nothing" is a
+    /// button that silently does nothing, and a default of "re-read
+    /// everything" is the expensive thing this exists to avoid.
+    let onRerunChanges: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -282,7 +282,7 @@ struct CritiqueSidebar: View {
             Image(systemName: "sparkles")
                 .foregroundStyle(colorTheme.accent)
             Text("CRITIQUE")
-                .font(CritiqueTypography.hand(21))
+                .font(CritiqueTypography.chrome(21))
                 .tracking(0.5)
                 .foregroundStyle(colorTheme.primaryText)
 
@@ -297,17 +297,26 @@ struct CritiqueSidebar: View {
             if critique.isRunning {
                 Button("Stop") { critique.cancel() }
                     .buttonStyle(.plain)
-                    .font(CritiqueTypography.hand(15))
+                    .font(CritiqueTypography.chrome(15))
                     .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
             } else if critique.report != nil {
+                // The header's re-run follows the default: the changed
+                // paragraphs when there are any worth narrowing to, and
+                // otherwise the whole draft. The stale notice is where the
+                // choice is spelled out; this is the same action without the
+                // explanation, so it must not quietly mean the expensive one.
                 Button {
-                    onRerun()
+                    onRerunChanges()
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
-                .help("Critique the document again")
+                .help(
+                    critique.canCritiqueChangesOnly
+                        ? "Critique what has changed"
+                        : "Critique the document again"
+                )
             }
 
             Button {
@@ -389,7 +398,7 @@ struct CritiqueSidebar: View {
             HStack(spacing: 3) {
                 Image(systemName: "clock.arrow.circlepath")
                 Text("\(critique.history.revisions.count)")
-                    .font(CritiqueTypography.hand(15))
+                    .font(CritiqueTypography.chrome(15))
             }
         }
         .menuStyle(.borderlessButton)
@@ -441,24 +450,25 @@ struct CritiqueSidebar: View {
     /// What a first run looks like.
     ///
     /// The rail is always on screen now, so for most people the first thing it
-    /// ever says is this. It names what is needed, where to get it, and opens
-    /// the one window that takes it — rather than waiting to fail after a
-    /// request that was never going to work.
+    /// ever says is this. It names what is needed and offers the same button
+    /// the rail always offers — pressing it here opens the window that takes
+    /// the key, because that is what stands between you and a critique. The
+    /// sentence above sets that expectation, so the button is not a surprise.
     private var setUp: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Set up a critique")
-                .font(CritiqueTypography.hand(CritiqueTypography.sectionSize))
+                .font(CritiqueTypography.chrome(CritiqueTypography.sectionSize))
                 .foregroundStyle(colorTheme.primaryText)
             Text(
                 "A critique reads your draft and writes back what works, what "
                     + "does not, and where. It needs an API key from a model "
                     + "provider."
             )
-            .font(CritiqueTypography.hand(CritiqueTypography.bodySize))
+            .font(CritiqueTypography.chrome(CritiqueTypography.bodySize))
             .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
             .fixedSize(horizontal: false, vertical: true)
 
-            Button("Open Settings…") { openSettings() }
+            Button("Run critique") { beginCritique() }
                 .controlSize(.large)
 
             Text(
@@ -467,7 +477,7 @@ struct CritiqueSidebar: View {
                         "Keys come from \($0)."
                     } ?? "")
             )
-            .font(CritiqueTypography.hand(CritiqueTypography.captionSize))
+            .font(CritiqueTypography.chrome(CritiqueTypography.captionSize))
             .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
             .fixedSize(horizontal: false, vertical: true)
             Spacer()
@@ -497,11 +507,11 @@ struct CritiqueSidebar: View {
         return VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(progress.stage.headline.uppercased())
-                    .font(CritiqueTypography.hand(18))
+                    .font(CritiqueTypography.chrome(18))
                     .tracking(0.5)
                     .foregroundStyle(colorTheme.primaryText)
                 Text(progress.stage.explanation)
-                    .font(CritiqueTypography.hand(16))
+                    .font(CritiqueTypography.chrome(16))
                     .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -528,7 +538,7 @@ struct CritiqueSidebar: View {
                         ? "1 NOTE SO FAR"
                         : "\(progress.findingsSoFar) NOTES SO FAR"
                 )
-                .font(CritiqueTypography.hand(16))
+                .font(CritiqueTypography.chrome(16))
                 .foregroundStyle(colorTheme.accent)
                 .contentTransition(.numericText())
                 .animation(.easeOut(duration: 0.2), value: progress.findingsSoFar)
@@ -539,7 +549,7 @@ struct CritiqueSidebar: View {
             // invent, because it is actually true.
             if let detail = progress.detail, progress.stage == .reading {
                 Text(detail)
-                    .font(CritiqueTypography.hand(15))
+                    .font(CritiqueTypography.chrome(15))
                     .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.leading, 8)
@@ -562,11 +572,11 @@ struct CritiqueSidebar: View {
     private func failure(_ failure: CritiqueService.Failure) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(failure.errorDescription ?? "Something went wrong.")
-                .font(CritiqueTypography.hand(19, bold: true))
+                .font(CritiqueTypography.chrome(19, weight: .semibold))
                 .foregroundStyle(colorTheme.primaryText)
             if let suggestion = failure.recoverySuggestion {
                 Text(suggestion)
-                    .font(CritiqueTypography.hand(18))
+                    .font(CritiqueTypography.chrome(18))
                     .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                     .textSelection(.enabled)
             }
@@ -579,14 +589,49 @@ struct CritiqueSidebar: View {
     }
 
     private var empty: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 12) {
             Spacer()
-            Text("No critique yet.")
-                .font(CritiqueTypography.hand(18))
+            Text("Nothing read yet.")
+                .font(CritiqueTypography.chrome(18))
                 .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
+            Button("Run critique") { beginCritique() }
+                .controlSize(.large)
             Spacer()
         }
         .frame(maxWidth: .infinity)
+        .padding(.horizontal, 16)
+    }
+
+    /// What pressing the rail's button will do.
+    ///
+    /// Named and exposed for the same reason `State` is: SwiftUI draws this
+    /// rail without backing views, so the accessibility walk other checks use
+    /// comes back empty and a check written against the drawn words passes for
+    /// every state. The decision is worth asserting on its own.
+    enum Action: Equatable {
+        case run
+        case askForKey
+    }
+
+    var buttonAction: Action {
+        CritiqueCredentials.isConfigured ? .run : .askForKey
+    }
+
+    /// The rail's one action, wherever it is offered.
+    ///
+    /// "Run critique" is what somebody wants; needing a key first is an
+    /// obstacle in the way of it, not a separate errand to go and do. So the
+    /// button is the same in both states and this decides what pressing it
+    /// means: run if it can, and otherwise open the window that takes the key.
+    /// Read at the moment of the press rather than when the view was drawn,
+    /// because the settings window writes to the Keychain and there is no
+    /// notification to redraw on — so a key entered a second ago would
+    /// otherwise still be treated as missing.
+    private func beginCritique() {
+        switch buttonAction {
+        case .run: onRerun()
+        case .askForKey: openSettings()
+        }
     }
 
     private func findings(in report: CritiqueReport) -> some View {
@@ -599,7 +644,7 @@ struct CritiqueSidebar: View {
 
                     if critique.items.isEmpty {
                         Text("No high or medium problems found.")
-                            .font(CritiqueTypography.hand(18))
+                            .font(CritiqueTypography.chrome(18))
                             .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                             .padding(.horizontal, 12)
                     }
@@ -638,7 +683,7 @@ struct CritiqueSidebar: View {
                                         .font(CritiqueTypography.hand(18))
                                     if !pattern.locations.isEmpty {
                                         Text(pattern.locations.joined(separator: " · "))
-                                            .font(CritiqueTypography.hand(14))
+                                            .font(CritiqueTypography.chrome(14))
                                             .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                                     }
                                 }
@@ -691,21 +736,21 @@ struct CritiqueSidebar: View {
                     // strokes are thin enough that it measured 3.4:1 where the
                     // marker face made 5.3:1 — the colour did not change, the
                     // amount of it did.
-                    .font(CritiqueTypography.hand(48))
+                    .font(CritiqueTypography.chrome(48))
                     .foregroundStyle(ink)
                     .contentTransition(.numericText())
                 Text("/100")
-                    .font(CritiqueTypography.hand(CritiqueTypography.sectionSize))
+                    .font(CritiqueTypography.chrome(CritiqueTypography.sectionSize))
                     .foregroundStyle(ink)
                 Spacer(minLength: 0)
                 VStack(alignment: .trailing, spacing: 1) {
                     Text("AWESOMENESS")
-                        .font(CritiqueTypography.hand(CritiqueTypography.captionSize))
+                        .font(CritiqueTypography.chrome(CritiqueTypography.captionSize))
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                         .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                     Text(critique.verdict)
-                        .font(CritiqueTypography.hand(CritiqueTypography.bodySize))
+                        .font(CritiqueTypography.chrome(CritiqueTypography.bodySize))
                         .foregroundStyle(colorTheme.primaryText)
                         .multilineTextAlignment(.trailing)
                 }
@@ -737,7 +782,7 @@ struct CritiqueSidebar: View {
                         ? "Everything answered."
                         : "\(critique.resolvedCount) of \(critique.items.count) answered."
                 )
-                .font(CritiqueTypography.hand(CritiqueTypography.captionSize))
+                .font(CritiqueTypography.chrome(CritiqueTypography.captionSize))
                 .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
             }
         }
@@ -787,7 +832,7 @@ struct CritiqueSidebar: View {
     private var answeredHeading: some View {
         HStack(spacing: 6) {
             Text("ANSWERED")
-                .font(CritiqueTypography.hand(CritiqueTypography.sectionSize))
+                .font(CritiqueTypography.chrome(CritiqueTypography.sectionSize))
                 .tracking(0.5)
                 .foregroundStyle(colorTheme.primaryText)
             Rectangle()
@@ -817,9 +862,37 @@ struct CritiqueSidebar: View {
         let survivors = total > 0
             ? " \(applying) of \(total) notes still point at something."
             : ""
-        return Label(opening + survivors, systemImage: "clock.badge.exclamationmark")
-        .font(CritiqueTypography.hand(18))
-        .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
+        return VStack(alignment: .leading, spacing: 10) {
+            Label(opening + survivors, systemImage: "clock.badge.exclamationmark")
+                .font(CritiqueTypography.chrome(18))
+                .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
+                .fixedSize(horizontal: false, vertical: true)
+
+            // Two ways to re-read, and the cheap one is first.
+            //
+            // Reading the whole draft again to find out what one new paragraph
+            // broke costs a whole request and throws away every note the author
+            // has not dealt with yet — a re-run replaces the report, so an
+            // untouched finding comes back with a new identity, a new place in
+            // the rail, and any "answered" mark on it gone. Most edits are
+            // local. The default should be too.
+            //
+            // Both are offered because "only the changes" is a judgement about
+            // the draft that the app is not entitled to make alone: a new
+            // opening paragraph can invalidate a note about the ending, and
+            // only the author knows they have just done that.
+            HStack(spacing: 8) {
+                if critique.canCritiqueChangesOnly {
+                    Button("Critique the changes") { onRerunChanges() }
+                    Button("Everything") { onRerun() }
+                        .buttonStyle(.plain)
+                        .font(CritiqueTypography.chrome(16))
+                        .foregroundStyle(colorTheme.accent)
+                } else {
+                    Button("Critique again") { onRerun() }
+                }
+            }
+        }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
@@ -875,7 +948,7 @@ struct CritiqueSidebar: View {
                                     .fill(entry.severity.tint)
                                     .frame(width: 6, height: 6)
                                 Text("\(entry.count) \(entry.severity.label)")
-                                    .font(CritiqueTypography.hand(15))
+                                    .font(CritiqueTypography.chrome(15))
                                     .textCase(.uppercase)
                                     .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                             }
@@ -891,7 +964,7 @@ struct CritiqueSidebar: View {
                     Text(
                         "\(unanchored) of \(critique.items.count) could not be matched to a passage."
                     )
-                    .font(CritiqueTypography.hand(14))
+                    .font(CritiqueTypography.chrome(14))
                     .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                 }
             }
@@ -920,13 +993,13 @@ struct CritiqueSidebar: View {
         // where the gap inside an entry equalled the gap between two.
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
-                .font(CritiqueTypography.hand(CritiqueTypography.sectionSize))
+                .font(CritiqueTypography.chrome(CritiqueTypography.sectionSize))
                 .tracking(0.5)
                 .foregroundStyle(tint)
             ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
                 HStack(alignment: .top, spacing: 6) {
                     Text(mark)
-                        .font(CritiqueTypography.hand(16))
+                        .font(CritiqueTypography.chrome(16))
                         .foregroundStyle(tint.opacity(0.8))
                     Text(line)
                         .font(CritiqueTypography.hand(16))
@@ -961,7 +1034,7 @@ struct CritiqueSidebar: View {
         ) {
             VStack(alignment: .leading, spacing: 10) {
                 Text(title.uppercased())
-                    .font(CritiqueTypography.hand(CritiqueTypography.sectionSize))
+                    .font(CritiqueTypography.chrome(CritiqueTypography.sectionSize))
                     .tracking(0.5)
                     .foregroundStyle(tint)
                 body()
@@ -1141,7 +1214,7 @@ struct CritiqueCard: View {
     private var severityTag: some View {
         let answered = item.resolution
         return Text(answered?.label.uppercased() ?? finding.severity.label.uppercased())
-            .font(CritiqueTypography.hand(14))
+            .font(CritiqueTypography.chrome(14))
             .tracking(0.6)
             .foregroundStyle(
                 answered == nil ? Color.white : CritiqueInk.body(on: colorTheme.mode)
@@ -1264,13 +1337,13 @@ struct CritiqueCard: View {
                 // The severity is the tag pinned to the top of the note, not
                 // a word in this row — see `severityTag`.
                 Text(finding.category)
-                    .font(CritiqueTypography.hand(CritiqueTypography.sectionSize))
+                    .font(CritiqueTypography.chrome(CritiqueTypography.sectionSize))
                     .foregroundStyle(CritiqueInk.body(on: colorTheme.mode))
                     .lineLimit(2)
                 Spacer(minLength: 0)
                 if finding.needsVerification {
                     Text("needs verification")
-                        .font(CritiqueTypography.hand(13))
+                        .font(CritiqueTypography.chrome(13))
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1)
                         .background(
@@ -1312,7 +1385,7 @@ struct CritiqueCard: View {
             if let advice = finding.advice {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(finding.adviceLabel.uppercased())
-                        .font(CritiqueTypography.hand(CritiqueTypography.captionSize))
+                        .font(CritiqueTypography.chrome(CritiqueTypography.captionSize))
                         .tracking(0.4)
                         .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                     Text(advice)
@@ -1327,12 +1400,12 @@ struct CritiqueCard: View {
                 if item.isAnchored {
                     if !finding.location.isEmpty {
                         Text(finding.location)
-                            .font(CritiqueTypography.hand(14))
+                            .font(CritiqueTypography.chrome(14))
                             .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                     }
                 } else {
                     Label("Not found in the document", systemImage: "questionmark.circle")
-                        .font(CritiqueTypography.hand(14))
+                        .font(CritiqueTypography.chrome(14))
                         .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                 }
 

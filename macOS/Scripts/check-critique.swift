@@ -415,6 +415,63 @@ func checkTheHandsAreAvailable() {
         CritiqueTypography.hand(15) == Font.system(size: 15, weight: .regular),
         "it gave something else"
     )
+
+    // The rail speaks in two voices and they must not merge.
+    //
+    // A reviewer's note is somebody's judgement about your sentence. "62/100",
+    // "AWESOMENESS", "WHAT WORKS", "Stop" are the app talking about that note.
+    // Setting both in the same hand makes the furniture look like commentary
+    // and gives a score the same weight as a criticism.
+    //
+    // Checked by counting the call sites rather than by looking at pixels:
+    // which face a given label draws in is exactly the thing that regresses
+    // one `.font(...)` at a time, and a pixel check can only see the few
+    // labels that happen to be on screen in the state it rendered.
+    let sidebarSource = (try? String(
+        contentsOfFile: "Sources/MarkdownEditor/CritiqueSidebar.swift",
+        encoding: .utf8
+    )) ?? ""
+    let handSites = sidebarSource.components(separatedBy: "CritiqueTypography.hand(").count - 1
+    let chromeSites = sidebarSource.components(separatedBy: "CritiqueTypography.chrome(").count - 1
+    check(
+        "the reviewer's hand is reserved for the notes themselves",
+        handSites > 0 && handSites <= 8,
+        "\(handSites) places set text in the hand — the notes are the quote, "
+            + "the reason, the advice, the summary, the list entries and the "
+            + "patterns, and nothing else"
+    )
+    check(
+        "and the rail's own words are set in the system face",
+        chromeSites >= 25,
+        "only \(chromeSites) places use the app's own voice"
+    )
+    // The specific labels that were handwriting and should not be. Named, so
+    // that a count staying the same while the wrong lines move cannot pass.
+    for furniture in ["Text(\"CRITIQUE\")", "Text(\"AWESOMENESS\")", "Text(\"/100\")"] {
+        guard let at = sidebarSource.range(of: furniture) else {
+            check("\(furniture) is still in the rail", false, "it was not found")
+            continue
+        }
+        let following = sidebarSource[at.upperBound...].prefix(220)
+        check(
+            "\(furniture) is set in the app's voice",
+            following.contains("CritiqueTypography.chrome("),
+            "it is still handwritten"
+        )
+    }
+    // And the other way: the criticism itself must stay handwritten.
+    for note in ["Text(finding.why)", "Text(finding.quote)", "Text(advice)"] {
+        guard let at = sidebarSource.range(of: note) else {
+            check("\(note) is still in the rail", false, "it was not found")
+            continue
+        }
+        let following = sidebarSource[at.upperBound...].prefix(160)
+        check(
+            "\(note) is still in the reviewer's hand",
+            following.contains("CritiqueTypography.hand("),
+            "the note itself lost its handwriting"
+        )
+    }
     check(
         "and it is the default when nothing has been chosen",
         {
@@ -467,6 +524,7 @@ struct CheckCritique {
         checkTheFormattingBarIsACentredRow()
         checkTheHeaderIsItsOwnSurface()
         checkTheRailAsksForWhatItNeeds()
+        checkPartialCritiqueKeepsTheOtherNotes()
         checkMarksFollowTheWords()
         checkTheScoreIsLegible()
         checkEveryColourIsLegible()
@@ -747,7 +805,7 @@ func checkTheRailRenders() {
         critique: model,
         colorTheme: EditorColorTheme(color: .blue, mode: .light),
         isStale: true,
-        onRerun: {}
+        onRerun: {}, onRerunChanges: {}
     )
     let host = NSHostingView(rootView: rail)
     // Tall enough for the whole pad. At 900 the second note fell off the
@@ -1352,7 +1410,8 @@ func checkTheRailAsksForWhatItNeeds() {
 
     let theme = EditorColorTheme(color: .blue, mode: .light)
     let rail = CritiqueSidebar(
-        critique: model, colorTheme: theme, isStale: false, onRerun: {}
+        critique: model, colorTheme: theme, isStale: false,
+        onRerun: {}, onRerunChanges: {}
     )
     let host = NSHostingView(rootView: AnyView(rail))
     host.frame = NSRect(x: 0, y: 0, width: 340, height: 600)
@@ -1399,6 +1458,50 @@ func checkTheRailAsksForWhatItNeeds() {
     }
     if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
         print("  inked pixels: \(inked)")
+    }
+
+    // The rail offers the thing you came for.
+    //
+    // It used to say "No critique yet." and stop there — a statement of fact
+    // with nothing to do about it, in a panel whose whole purpose is one
+    // action. The action is now on screen in both empty states.
+    check(
+        "pressing the rail's button with a usable provider runs a critique",
+        CritiqueCredentials.isConfigured ? rail.buttonAction == .run : true,
+        "it would \(rail.buttonAction) instead"
+    )
+
+    // And with no key it asks for one rather than running into a failure that
+    // was certain before the request was made. Checked by taking the key away
+    // for the length of the check — the provider is a real preference on a
+    // real machine, so it is put back.
+    let storedProvider = UserDefaults.standard.string(
+        forKey: CritiqueProvider.storageKey
+    )
+    UserDefaults.standard.set(
+        CritiqueProvider.openAI.rawValue, forKey: CritiqueProvider.storageKey
+    )
+    let hadKey = CritiqueCredentials.key(for: .openAI)
+    _ = CritiqueCredentials.remove(for: .openAI)
+    let unconfigured = CritiqueSidebar(
+        critique: CritiqueModel(), colorTheme: theme, isStale: false,
+        onRerun: {}, onRerunChanges: {}
+    )
+    check(
+        "with a provider that needs a key and none set, it asks for the key",
+        unconfigured.buttonAction == .askForKey,
+        "it would \(unconfigured.buttonAction), which fails after the request"
+    )
+    check(
+        "and that is the state the rail draws",
+        unconfigured.state == .needsSetUp,
+        "it shows \(unconfigured.state)"
+    )
+    if let hadKey { _ = CritiqueCredentials.store(hadKey, for: .openAI) }
+    if let storedProvider {
+        UserDefaults.standard.set(storedProvider, forKey: CritiqueProvider.storageKey)
+    } else {
+        UserDefaults.standard.removeObject(forKey: CritiqueProvider.storageKey)
     }
     // And it is really laid out beside the document, not merely constructed.
     // `isPresented` returning true is not the same as the pane rendering it —
@@ -2206,4 +2309,136 @@ func finish() -> Never {
     }
     print("\(failures) of \(checks) checks failed")
     exit(1)
+}
+
+/// Re-reading only what changed has to keep the notes about everything else.
+///
+/// The failure this exists to catch is silent and looks like good news: a
+/// partial re-run that drops the notes it was told not to re-examine leaves a
+/// rail with fewer criticisms in it, which reads exactly like a draft that got
+/// better. Nothing on screen says the notes were deleted rather than fixed.
+@MainActor
+func checkPartialCritiqueKeepsTheOtherNotes() {
+    print("")
+    print("Critiquing only what changed")
+
+    let before = """
+    # Caching
+
+    Studies show that caching improves performance by 90%.
+
+    The tradeoff is staleness.
+    """
+
+    let model = CritiqueModel()
+    let stale = CritiqueFinding(
+        severity: .high, category: "Logic and credibility",
+        location: "paragraph 2",
+        quote: "Studies show that caching improves performance by 90%.",
+        why: "No citation."
+    )
+    model.applyForChecking(
+        CritiqueReport(
+            jobRead: "a developer", overall: "needs sources", findings: [stale]
+        ),
+        for: before
+    )
+    check(
+        "the first critique anchored its note",
+        model.items.count == 1 && model.items[0].range != nil,
+        "\(model.items.count) items, range \(String(describing: model.items.first?.range))"
+    )
+
+    // A new paragraph at the end: the old note is nowhere near it.
+    let after = before + "\n\nCache invalidation is genuinely the hard part.\n"
+    // What the editor does on every keystroke. Without it the model has not
+    // been told the draft moved, and this check would be asking about a state
+    // the app is never in.
+    model.noteCurrentText(after)
+    let changed = CritiqueChangeScope.changedParagraphs(from: before, to: after)
+    guard let changed else {
+        check("the edit was detected", false, "no change found")
+        return
+    }
+    check(
+        "the changed passage is the new paragraph only",
+        CritiqueChangeScope.passage(changed, in: after)
+            .contains("Cache invalidation")
+            && !CritiqueChangeScope.passage(changed, in: after).contains("Studies show"),
+        "passage: \(CritiqueChangeScope.passage(changed, in: after))"
+    )
+    check(
+        "and that is what the model would default to reading",
+        model.canCritiqueChangesOnly,
+        "it would re-read the whole draft instead"
+    )
+
+    let fresh = CritiqueFinding(
+        severity: .medium, category: "Clarity and precision",
+        location: "paragraph 4",
+        quote: "Cache invalidation is genuinely the hard part.",
+        why: "Asserted without saying why."
+    )
+    model.applyChangesForChecking(
+        CritiqueReport(
+            jobRead: "a developer", overall: "still needs sources", findings: [fresh]
+        ),
+        for: after,
+        changed: changed
+    )
+
+    check(
+        "the untouched note survived the partial re-run",
+        model.items.contains { $0.finding.quote == stale.quote },
+        "it was dropped — the rail now shows \(model.items.count) notes"
+    )
+    check(
+        "the new paragraph's note was added",
+        model.items.contains { $0.finding.quote == fresh.quote },
+        "the new finding is missing"
+    )
+    check(
+        "and the surviving note still points at its sentence",
+        model.items.first { $0.finding.quote == stale.quote }?.range != nil,
+        "it lost its anchor"
+    )
+
+    // The stored revision has to carry both, or reopening the document later
+    // shows only what the last partial run happened to look at.
+    check(
+        "the saved revision carries the whole rail, not just this run",
+        model.report?.findings.count == 2,
+        "the report holds \(model.report?.findings.count ?? -1) findings"
+    )
+
+    // Rewriting the criticised sentence must supersede its note rather than
+    // leaving a criticism of text that is gone.
+    let rewritten = after.replacingOccurrences(
+        of: "Studies show that caching improves performance by 90%.",
+        with: "Caching cut our median response time from 400ms to 20ms."
+    )
+    model.noteCurrentText(rewritten)
+    guard let secondChange = CritiqueChangeScope.changedParagraphs(
+        from: after, to: rewritten
+    ) else {
+        check("the rewrite was detected", false, "no change found")
+        return
+    }
+    model.applyChangesForChecking(
+        CritiqueReport(
+            jobRead: "a developer", overall: "better", findings: []
+        ),
+        for: rewritten,
+        changed: secondChange
+    )
+    check(
+        "rewriting a criticised sentence retires its note",
+        !model.items.contains { $0.finding.quote == stale.quote },
+        "the note about the deleted sentence is still in the rail"
+    )
+    check(
+        "while the note about the untouched paragraph stays",
+        model.items.contains { $0.finding.quote == fresh.quote },
+        "an unrelated note was dropped by a rewrite elsewhere"
+    )
 }

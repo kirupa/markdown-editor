@@ -52,6 +52,24 @@ public struct CritiqueReport: Equatable, Sendable, Codable {
             && whatWorks.isEmpty && whatDoesNotWork.isEmpty
             && jobRead.isEmpty && overall.isEmpty
     }
+
+    /// The same report about the same draft, carrying a different set of
+    /// findings.
+    ///
+    /// For a critique that re-read only part of the draft: the summary is this
+    /// run's, because it was asked about the whole thing either way, while the
+    /// findings are the surviving notes plus the new ones.
+    public func replacingFindings(with findings: [CritiqueFinding]) -> CritiqueReport {
+        CritiqueReport(
+            jobRead: jobRead,
+            overall: overall,
+            whatWorks: whatWorks,
+            whatDoesNotWork: whatDoesNotWork,
+            findings: findings,
+            repeatedPatterns: repeatedPatterns,
+            keep: keep
+        )
+    }
 }
 
 /// How much a finding costs the reader.
