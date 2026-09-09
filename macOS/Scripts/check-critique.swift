@@ -435,10 +435,10 @@ func checkTheHandsAreAvailable() {
     let chromeSites = sidebarSource.components(separatedBy: "CritiqueTypography.chrome(").count - 1
     check(
         "the reviewer's hand is reserved for the notes themselves",
-        handSites > 0 && handSites <= 8,
-        "\(handSites) places set text in the hand — the notes are the quote, "
-            + "the reason, the advice, the summary, the list entries and the "
-            + "patterns, and nothing else"
+        handSites > 0 && handSites <= 5,
+        "\(handSites) places set text in the hand — a note is the quote, the "
+            + "reason and the advice on a finding, plus the repeated-pattern "
+            + "and keep observations, and nothing else"
     )
     check(
         "and the rail's own words are set in the system face",
@@ -447,7 +447,15 @@ func checkTheHandsAreAvailable() {
     )
     // The specific labels that were handwriting and should not be. Named, so
     // that a count staying the same while the wrong lines move cannot pass.
-    for furniture in ["Text(\"CRITIQUE\")", "Text(\"AWESOMENESS\")", "Text(\"/100\")"] {
+    // The summary card is a digest of the notes, not one of them, so the whole
+    // card is typeset — the reader's-impression line and both bullet lists.
+    // Half-converting it was worse than not converting it: the heading said
+    // one thing in the app's voice and the bullets under it answered in the
+    // reviewer's.
+    for furniture in [
+        "Text(\"CRITIQUE\")", "Text(\"AWESOMENESS\")", "Text(\"/100\")",
+        "Text(report.jobRead)",
+    ] {
         guard let at = sidebarSource.range(of: furniture) else {
             check("\(furniture) is still in the rail", false, "it was not found")
             continue
@@ -459,6 +467,36 @@ func checkTheHandsAreAvailable() {
             "it is still handwritten"
         )
     }
+    // The bullets of WHAT WORKS / WHAT DOESN'T WORK, found through the one
+    // function that draws them.
+    if let at = sidebarSource.range(of: "ForEach(Array(lines.enumerated())") {
+        let following = sidebarSource[at.upperBound...].prefix(320)
+        check(
+            "the What Works and What Doesn't Work entries are typeset too",
+            following.contains("CritiqueTypography.chrome(")
+                && !following.contains("CritiqueTypography.hand("),
+            "an entry in the summary card is still handwritten"
+        )
+    } else {
+        check("the summary card's bullet list was found", false, "not found")
+    }
+
+    // The furniture must recede rather than compete: these sizes were chosen
+    // against handwriting, which draws small for its point size, so handing
+    // the same number to the system face makes a label louder than the note it
+    // labels.
+    check(
+        "the app's voice is set smaller than the number asks for",
+        CritiqueTypography.chromeScale < 1,
+        "chromeScale is \(CritiqueTypography.chromeScale)"
+    )
+    check(
+        "but not so much smaller that it stops being readable",
+        CritiqueTypography.chromeScale >= 0.8,
+        "chromeScale is \(CritiqueTypography.chromeScale), which would set the "
+            + "13pt captions under 11"
+    )
+
     // And the other way: the criticism itself must stay handwritten.
     for note in ["Text(finding.why)", "Text(finding.quote)", "Text(advice)"] {
         guard let at = sidebarSource.range(of: note) else {

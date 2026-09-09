@@ -229,12 +229,15 @@ enum CritiqueTypography {
     /// the rail look like a novelty and, worse, makes a score and a criticism
     /// carry the same weight when only one of them is somebody's judgement.
     ///
-    /// The same numbers as `hand`, deliberately. Those sizes are already what
-    /// the rail draws whenever the chosen hand is `.sans` — which is the
-    /// default — so this is the arrangement that has been on screen all along
-    /// for most people, not a new scale to re-tune.
+    /// Set a little smaller than the number asks for. These sizes were chosen
+    /// against handwriting, which runs small for its point size — Architects
+    /// Daughter is drawn at 0.62 of the size it is given — so handing the same
+    /// number to the system face makes the furniture louder than the writing
+    /// it is supposed to be labelling. The furniture should recede.
+    static let chromeScale: CGFloat = 0.88
+
     static func chrome(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
-        .system(size: size, weight: weight)
+        .system(size: (size * chromeScale).rounded(), weight: weight)
     }
 
 }
@@ -922,7 +925,7 @@ struct CritiqueSidebar: View {
             VStack(alignment: .leading, spacing: 9) {
                 if !report.jobRead.isEmpty {
                     Text(report.jobRead)
-                        .font(CritiqueTypography.hand(15))
+                        .font(CritiqueTypography.chrome(15))
                         .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1002,7 +1005,7 @@ struct CritiqueSidebar: View {
                         .font(CritiqueTypography.chrome(16))
                         .foregroundStyle(tint.opacity(0.8))
                     Text(line)
-                        .font(CritiqueTypography.hand(16))
+                        .font(CritiqueTypography.chrome(16))
                         .foregroundStyle(colorTheme.primaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
