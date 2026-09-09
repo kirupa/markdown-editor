@@ -2350,7 +2350,14 @@ func checkPartialCritiqueKeepsTheOtherNotes() {
     )
 
     // A new paragraph at the end: the old note is nowhere near it.
-    let after = before + "\n\nCache invalidation is genuinely the hard part.\n"
+    // The trailing newline matters and is not decoration: every real file ends
+    // with one, and appending after it is what broke. The insertion then
+    // carries the blank line with it, and widening to paragraph boundaries
+    // started inside the *previous* paragraph's trailing newline and swallowed
+    // it — retiring a note about a sentence nobody had touched. Checked here
+    // rather than only in the unit tests because this is the shape a document
+    // on disk actually has.
+    let after = before + "\n" + "\nCache invalidation is genuinely the hard part.\n"
     // What the editor does on every keystroke. Without it the model has not
     // been told the draft moved, and this check would be asking about a state
     // the app is never in.
@@ -2363,8 +2370,7 @@ func checkPartialCritiqueKeepsTheOtherNotes() {
     check(
         "the changed passage is the new paragraph only",
         CritiqueChangeScope.passage(changed, in: after)
-            .contains("Cache invalidation")
-            && !CritiqueChangeScope.passage(changed, in: after).contains("Studies show"),
+            == "Cache invalidation is genuinely the hard part.",
         "passage: \(CritiqueChangeScope.passage(changed, in: after))"
     )
     check(
