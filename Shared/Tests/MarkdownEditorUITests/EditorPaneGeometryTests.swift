@@ -251,4 +251,55 @@ struct EditorPaneGeometryTests {
             ) == EditorPaneGeometry.centeringInset(measure: 700, totalWidth: 1_600)
         )
     }
+
+    // MARK: - Where the page ends when the comments are open
+
+    @Test("A picture may spread into the margins while the comments are shut")
+    func bleedsWithoutTheRail() {
+        #expect(
+            EditorPaneGeometry.imageBleed(
+                around: 700, within: 1_600, railIsOpen: false
+            ) == EditorPaneGeometry.imageBleed(around: 700, within: 1_600)
+        )
+        #expect(
+            EditorPaneGeometry.imageBleed(
+                around: 700, within: 1_600, railIsOpen: false
+            ) > 0
+        )
+    }
+
+    @Test("With the comments open there is no margin to spread into")
+    func noBleedWithTheRail() {
+        // The right-hand margin is where the notes are. Bleeding on the left
+        // alone would set every wide picture off-centre against its own text,
+        // and a page that ends past its column puts a second faint rule and a
+        // strip of empty page between the writing and the notes about it.
+        #expect(
+            EditorPaneGeometry.imageBleed(
+                around: 700, within: 1_600, railIsOpen: true
+            ) == 0
+        )
+    }
+
+    @Test("So the page ends exactly where the writing does, and the rail docks there")
+    func thePageEndsAtTheColumn() {
+        let column: CGFloat = 700
+        let bleed = EditorPaneGeometry.imageBleed(
+            around: column, within: 1_600, railIsOpen: true
+        )
+        let page = column + 2 * bleed
+        #expect(page == column)
+
+        // And the rail's leading edge is that same point, at any width — which
+        // is what "docked" means: resize the column and the notes come with it.
+        for width in [CGFloat(520), 700, 900] {
+            let pageWidth = width + 2 * EditorPaneGeometry.imageBleed(
+                around: width, within: 1_600, railIsOpen: true
+            )
+            let inset = EditorPaneGeometry.documentInsetWithRail(
+                documentWidth: pageWidth, railWidth: 356, totalWidth: 1_600
+            )
+            #expect(inset + pageWidth == inset + width)
+        }
+    }
 }

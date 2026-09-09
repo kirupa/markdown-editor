@@ -369,16 +369,25 @@ struct ResizableRichTextPreview: View {
             // into. `visibleWidth` stays the column, so the gripper still
             // resizes what the reader sees as the document and a width saved
             // by an older build still means the same thing.
+            //
+            // Except with the comments open, when there is no margin to spread
+            // into on the right — the rail is in it. Bleeding on one side only
+            // would put every wide picture off-centre against its own text, and
+            // keeping the right-hand bleed put a second faint rule and a strip
+            // of empty page between the writing and the notes about it, which
+            // read as a gutter between two panes rather than as one document.
+            let railIsOpen = hostsRail && critique.isPresented
             let bleed = EditorPaneGeometry.imageBleed(
                 around: visibleWidth,
-                within: geometry.size.width
+                within: geometry.size.width,
+                railIsOpen: railIsOpen
             )
             let pageWidth = visibleWidth + 2 * bleed
 
             // With comments open the document stops being centred and is
             // placed so the rail lands in its right margin — but only as far
             // as it has to move. On a wide window it does not move at all.
-            let railWidth = hostsRail && critique.isPresented ? Layout.railWidth : 0
+            let railWidth = railIsOpen ? Layout.railWidth : 0
             let leadingInset = EditorPaneGeometry.documentInsetWithRail(
                 documentWidth: pageWidth,
                 railWidth: railWidth,
@@ -433,7 +442,12 @@ struct ResizableRichTextPreview: View {
                 // the document is not a sheet lying on a desk, it is a column
                 // with an edge.
                 .overlay(alignment: .leading) { pageBoundary }
-                .overlay(alignment: .trailing) { pageBoundary }
+                // The trailing edge is drawn by the gripper when the comments
+                // are open — see the offset below. Two rules six points apart
+                // is what a doubled edge looks like.
+                .overlay(alignment: .trailing) {
+                    if !railIsOpen { pageBoundary }
+                }
                 .padding(.top, Layout.barGap)
                 .overlay(alignment: .trailing) {
                     WidthGripper(
@@ -464,7 +478,14 @@ struct ResizableRichTextPreview: View {
                     )
                     // At the column's trailing edge, not the page's: it
                     // resizes the column, so that is where it has to be.
-                    .offset(x: Layout.gripperWidth - bleed)
+                    //
+                    // With the comments open there is no bleed margin to sit
+                    // in, and the unshifted offset put the whole gripper in the
+                    // first twelve points of the rail — which draws over it, so
+                    // the document could no longer be resized at all. Inside
+                    // the edge instead, where it is both visible and grabbable,
+                    // and its own rule becomes the document's edge.
+                    .offset(x: railIsOpen ? 0 : Layout.gripperWidth - bleed)
                 }
 
                 // Only when this pane *is* the document. Side by side, the
@@ -490,6 +511,15 @@ struct ResizableRichTextPreview: View {
                             )
                         }
                     )
+                    // A fixed width, docked against the document.
+                    //
+                    // Those are two separate things and only the second one was
+                    // ever in question: the rail's leading edge is the
+                    // document's trailing edge, so resizing the column moves the
+                    // notes with it. Its *width* does not need to follow —
+                    // letting it take the whole remainder made the cards as wide
+                    // as the window allowed, and a note is a note whatever room
+                    // is going spare.
                     .frame(width: Layout.railWidth)
                     .transition(.move(edge: .trailing))
                 }

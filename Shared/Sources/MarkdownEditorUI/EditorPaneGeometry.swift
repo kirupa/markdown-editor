@@ -81,6 +81,28 @@ public enum EditorPaneGeometry {
         return min(maximumImageBleed, (availableWidth - columnWidth) / 2)
     }
 
+    /// The same, but nothing at all while the comments are open.
+    ///
+    /// The bleed is a margin either side of the writing that a picture may
+    /// spread into. With the rail open there is no such margin on the right —
+    /// the notes are in it — so bleeding on the left alone would set every wide
+    /// picture off-centre against its own text.
+    ///
+    /// It also decides where the document's edge is, and therefore where the
+    /// rail docks. With a bleed the page ends some way past the column, so the
+    /// page's rule and the column's gripper draw two faint lines with a strip
+    /// of empty page between them, and the notes end up separated from the
+    /// writing they are about by what reads as a gutter between two panes.
+    /// Without it there is one edge, and the rail sits against it.
+    public static func imageBleed(
+        around columnWidth: CGFloat,
+        within availableWidth: CGFloat,
+        railIsOpen: Bool
+    ) -> CGFloat {
+        guard !railIsOpen else { return 0 }
+        return imageBleed(around: columnWidth, within: availableWidth)
+    }
+
     /// Where the document's leading edge goes when a margin rail is open.
     ///
     /// Comments belong beside the passage they are about, so the rail sits in

@@ -435,10 +435,10 @@ func checkTheHandsAreAvailable() {
     let chromeSites = sidebarSource.components(separatedBy: "CritiqueTypography.chrome(").count - 1
     check(
         "the reviewer's hand is reserved for the notes themselves",
-        handSites > 0 && handSites <= 5,
-        "\(handSites) places set text in the hand — a note is the quote, the "
-            + "reason and the advice on a finding, plus the repeated-pattern "
-            + "and keep observations, and nothing else"
+        handSites > 0 && handSites <= 7,
+        "\(handSites) places set text in the hand — a note is its category, "
+            + "the reason and the advice, plus the repeated-pattern and keep "
+            + "observations, and nothing else"
     )
     check(
         "and the rail's own words are set in the system face",
@@ -453,8 +453,11 @@ func checkTheHandsAreAvailable() {
     // one thing in the app's voice and the bullets under it answered in the
     // reviewer's.
     for furniture in [
-        "Text(\"CRITIQUE\")", "Text(\"AWESOMENESS\")", "Text(\"/100\")",
-        "Text(report.jobRead)",
+        "Text(\"AWESOMENESS\")", "Text(\"/100\")", "Text(report.jobRead)",
+        // The author's own sentence quoted back at them. It has to stay
+        // recognisable as theirs, which is what the comment beside it has
+        // always claimed while the code set it in the reviewer's hand.
+        "Text(finding.quote)",
     ] {
         guard let at = sidebarSource.range(of: furniture) else {
             check("\(furniture) is still in the rail", false, "it was not found")
@@ -497,8 +500,47 @@ func checkTheHandsAreAvailable() {
             + "13pt captions under 11"
     )
 
+    // The two kinds of heading pull in opposite directions, on purpose.
+    //
+    // A rail heading — CRITIQUE, WHAT WORKS — has white space around it and a
+    // divider under it, so weight is enough and size would only make the
+    // signpost compete with the writing it points at. Inside a note there is
+    // no such space, so the category has to earn its place by being plainly
+    // bigger than the criticism underneath it.
+    check(
+        "the rail's headings are set below its body and carry bold instead",
+        CritiqueTypography.headingSize < CritiqueTypography.bodySize,
+        "heading \(CritiqueTypography.headingSize) against body "
+            + "\(CritiqueTypography.bodySize)"
+    )
+    check(
+        "and they really are bold",
+        CritiqueTypography.heading() == CritiqueTypography.chrome(
+            CritiqueTypography.headingSize, weight: .bold
+        ),
+        "the heading face is not bold"
+    )
+    check(
+        "a note's heading is larger than the criticism under it",
+        CritiqueTypography.noteHeadingSize > CritiqueTypography.noteBodySize,
+        "\(CritiqueTypography.noteHeadingSize) against "
+            + "\(CritiqueTypography.noteBodySize)"
+    )
+    check(
+        "and its TRY/DIRECTION label sits between the two",
+        CritiqueTypography.noteLabelSize > CritiqueTypography.noteBodySize
+            && CritiqueTypography.noteLabelSize < CritiqueTypography.noteHeadingSize,
+        "label \(CritiqueTypography.noteLabelSize)"
+    )
+    check(
+        "the writing in a note is smaller than it was",
+        CritiqueTypography.noteBodySize < CritiqueTypography.bodySize,
+        "note body \(CritiqueTypography.noteBodySize) against rail body "
+            + "\(CritiqueTypography.bodySize)"
+    )
+
     // And the other way: the criticism itself must stay handwritten.
-    for note in ["Text(finding.why)", "Text(finding.quote)", "Text(advice)"] {
+    for note in ["Text(finding.why)", "Text(finding.category)", "Text(advice)"] {
         guard let at = sidebarSource.range(of: note) else {
             check("\(note) is still in the rail", false, "it was not found")
             continue
@@ -1605,6 +1647,67 @@ func checkTheRailAsksForWhatItNeeds() {
         railInk > 300,
         "only \(railInk) pixels are drawn where the rail belongs"
     )
+
+    // Docked, not floating beside it.
+    //
+    // The notes are about the text they sit next to, so the rail's leading edge
+    // is the document's trailing edge. It used to be a 16pt gutter past a page
+    // that itself ended some way past the writing, which drew two faint rules
+    // with a strip of empty page between them and read as a divider between two
+    // panes rather than as a margin on one document.
+    //
+    // Measured as the distance from the document's edge to the first ink in the
+    // rail. That has to be small — a card's own padding — and the check is that
+    // it is not a gutter's worth on top of it.
+    //
+    // The document's edge is found from the page colour: the writing column and
+    // the rail are the same paper, so the boundary is where the *rules* are, and
+    // those are the only near-full-height columns of non-paper pixels.
+    func fullHeightRule(nearestTo target: Int, in rep: NSBitmapImageRep) -> Int? {
+        var best: (x: Int, run: Int)?
+        for x in stride(from: rep.pixelsWide - 1, through: 0, by: -1) {
+            var run = 0
+            for y in stride(from: 0, to: rep.pixelsHigh, by: 4) {
+                guard let c: NSColor = rep.colorAt(x: x, y: y)?
+                    .usingColorSpace(.sRGB) else { continue }
+                let dr: CGFloat = abs(c.redComponent - pagePaper.redComponent)
+                let dg: CGFloat = abs(c.greenComponent - pagePaper.greenComponent)
+                let db: CGFloat = abs(c.blueComponent - pagePaper.blueComponent)
+                if dr + dg + db > 0.02 { run += 1 }
+            }
+            if run > (rep.pixelsHigh / 4) * 8 / 10 {
+                if best == nil || abs(x - target) < abs(best!.x - target) {
+                    best = (x, run)
+                }
+            }
+        }
+        return best?.x
+    }
+    // The first ink to the right of the document's edge.
+    if let edge = fullHeightRule(nearestTo: paneRep.pixelsWide / 2, in: paneRep) {
+        var firstInk: Int?
+        outer: for x in (edge + 2)..<paneRep.pixelsWide {
+            for y in stride(from: 0, to: paneRep.pixelsHigh, by: 3) {
+                guard let c: NSColor = paneRep.colorAt(x: x, y: y)?
+                    .usingColorSpace(.sRGB) else { continue }
+                let dr: CGFloat = abs(c.redComponent - pagePaper.redComponent)
+                let dg: CGFloat = abs(c.greenComponent - pagePaper.greenComponent)
+                let db: CGFloat = abs(c.blueComponent - pagePaper.blueComponent)
+                if dr + dg + db > 0.12 { firstInk = x; break outer }
+            }
+        }
+        let gap = firstInk.map { Double($0 - edge) / Double(paneScale) } ?? .infinity
+        if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
+            print("  document edge at \(edge)px, first rail ink \(String(describing: firstInk)), gap \(gap)pt")
+        }
+        check(
+            "the rail is docked against the document, not floating beside it",
+            gap < 30,
+            "there are \(Int(gap))pt between the document's edge and the rail"
+        )
+    } else {
+        check("the document's edge can be found", false, "no full-height rule")
+    }
 
     check(
         "and the rail draws something",

@@ -240,6 +240,37 @@ enum CritiqueTypography {
         .system(size: (size * chromeScale).rounded(), weight: weight)
     }
 
+    /// A heading in the app's voice — CRITIQUE, WHAT WORKS, ANSWERED, KEEP.
+    ///
+    /// Small and bold, rather than large and regular. A heading earns its place
+    /// by weight and by the space around it; making it big *as well* means the
+    /// signpost competes with the thing it is pointing at, and a rail of
+    /// oversized labels is harder to skim than one where the labels sit back
+    /// and the writing carries the size.
+    static let headingSize: CGFloat = 15
+
+    static func heading(_ size: CGFloat = headingSize) -> Font {
+        chrome(size, weight: .bold)
+    }
+
+    // MARK: - Inside a note
+
+    /// The criticism itself. The smallest of the three, because it is the only
+    /// one there is a lot of.
+    static let noteBodySize: CGFloat = 14
+
+    /// What the note is about — the category, at the top of the card.
+    ///
+    /// Larger than the body it introduces, and in the reviewer's hand rather
+    /// than the app's: it is part of what they wrote on the note, not a label
+    /// the app has stuck on top of it. This is the opposite call from the rail's
+    /// own headings, and for the opposite reason — inside a card there is no
+    /// surrounding space to give a heading weight, so it has to come from size.
+    static let noteHeadingSize: CGFloat = 19
+
+    /// TRY and DIRECTION: a sub-heading within the note, so between the two.
+    static let noteLabelSize: CGFloat = 16
+
 }
 
 /// The rail of comments down the right-hand side.
@@ -269,9 +300,14 @@ struct CritiqueSidebar: View {
             Divider()
             content
         }
-        // A gutter, then the rail. Without it the cards touch the page edge
-        // and read as part of the document rather than as notes beside it.
-        .padding(.leading, 16)
+        // Docked against the document, not floating beside it.
+        //
+        // There was a 16pt gutter here to keep the cards off the page edge.
+        // What it actually did was leave the rail unattached to anything: the
+        // notes are *about* the text they sit next to, and a gap plus a rule
+        // read as a divider between two panes rather than as a margin on one
+        // document. The cards have their own inset, so they still do not touch
+        // the edge.
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
             // The same desk the page lies on, so the notes read as pinned to
@@ -285,7 +321,7 @@ struct CritiqueSidebar: View {
             Image(systemName: "sparkles")
                 .foregroundStyle(colorTheme.accent)
             Text("CRITIQUE")
-                .font(CritiqueTypography.chrome(21))
+                .font(CritiqueTypography.heading(16))
                 .tracking(0.5)
                 .foregroundStyle(colorTheme.primaryText)
 
@@ -683,7 +719,7 @@ struct CritiqueSidebar: View {
                             ForEach(report.repeatedPatterns) { pattern in
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(pattern.pattern)
-                                        .font(CritiqueTypography.hand(18))
+                                        .font(CritiqueTypography.hand(CritiqueTypography.noteBodySize))
                                     if !pattern.locations.isEmpty {
                                         Text(pattern.locations.joined(separator: " · "))
                                             .font(CritiqueTypography.chrome(14))
@@ -701,7 +737,8 @@ struct CritiqueSidebar: View {
                             tint: CritiqueCard.worksGreen(on: colorTheme.mode)
                         ) {
                             ForEach(Array(report.keep.enumerated()), id: \.offset) { _, note in
-                                Text(note).font(CritiqueTypography.hand(18))
+                                Text(note)
+                                    .font(CritiqueTypography.hand(CritiqueTypography.noteBodySize))
                             }
                         }
                     }
@@ -835,7 +872,7 @@ struct CritiqueSidebar: View {
     private var answeredHeading: some View {
         HStack(spacing: 6) {
             Text("ANSWERED")
-                .font(CritiqueTypography.chrome(CritiqueTypography.sectionSize))
+                .font(CritiqueTypography.heading())
                 .tracking(0.5)
                 .foregroundStyle(colorTheme.primaryText)
             Rectangle()
@@ -996,7 +1033,7 @@ struct CritiqueSidebar: View {
         // where the gap inside an entry equalled the gap between two.
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
-                .font(CritiqueTypography.chrome(CritiqueTypography.sectionSize))
+                .font(CritiqueTypography.heading())
                 .tracking(0.5)
                 .foregroundStyle(tint)
             ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
@@ -1037,7 +1074,7 @@ struct CritiqueSidebar: View {
         ) {
             VStack(alignment: .leading, spacing: 10) {
                 Text(title.uppercased())
-                    .font(CritiqueTypography.chrome(CritiqueTypography.sectionSize))
+                    .font(CritiqueTypography.heading())
                     .tracking(0.5)
                     .foregroundStyle(tint)
                 body()
@@ -1340,7 +1377,7 @@ struct CritiqueCard: View {
                 // The severity is the tag pinned to the top of the note, not
                 // a word in this row — see `severityTag`.
                 Text(finding.category)
-                    .font(CritiqueTypography.chrome(CritiqueTypography.sectionSize))
+                    .font(CritiqueTypography.hand(CritiqueTypography.noteHeadingSize))
                     .foregroundStyle(CritiqueInk.body(on: colorTheme.mode))
                     .lineLimit(2)
                 Spacer(minLength: 0)
@@ -1367,9 +1404,9 @@ struct CritiqueCard: View {
             if !item.isAnchored, !finding.quote.isEmpty {
                 // Deliberately not handwriting. This is the author's own
                 // sentence quoted back at them, and it has to be recognisable
-                // as theirs.
+                // as theirs — the comment said so long before the code did.
                 Text(finding.quote)
-                    .font(CritiqueTypography.hand(15))
+                    .font(CritiqueTypography.chrome(CritiqueTypography.noteBodySize))
                     .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                     .lineLimit(isSelected ? nil : 2)
                     .padding(.leading, 7)
@@ -1381,18 +1418,18 @@ struct CritiqueCard: View {
             }
 
             Text(finding.why)
-                .font(CritiqueTypography.hand(CritiqueTypography.bodySize))
+                .font(CritiqueTypography.hand(CritiqueTypography.noteBodySize))
                 .foregroundStyle(CritiqueInk.body(on: colorTheme.mode))
                 .fixedSize(horizontal: false, vertical: true)
 
             if let advice = finding.advice {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(finding.adviceLabel.uppercased())
-                        .font(CritiqueTypography.chrome(CritiqueTypography.captionSize))
+                        .font(CritiqueTypography.hand(CritiqueTypography.noteLabelSize))
                         .tracking(0.4)
                         .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                     Text(advice)
-                        .font(CritiqueTypography.hand(CritiqueTypography.bodySize))
+                        .font(CritiqueTypography.hand(CritiqueTypography.noteBodySize))
                         .foregroundStyle(CritiqueInk.body(on: colorTheme.mode))
                         .fixedSize(horizontal: false, vertical: true)
                 }
