@@ -141,23 +141,26 @@ public enum EditorPaneGeometry {
 
     /// Where the document's leading edge goes when a margin rail is open.
     ///
-    /// Comments belong beside the passage they are about, so the rail sits in
-    /// the document's right margin rather than against the window's edge —
-    /// pinned to the edge it is a panel that happens to contain comments, and
-    /// on a wide screen the note ends up a hand's width from the sentence.
+    /// The document and its comments are **one object**, and it is that object
+    /// which is centred. The rail is docked to the document's edge, so with the
+    /// comments open the thing on screen is a wide block of writing-plus-notes;
+    /// centring only the writing half leaves the block visibly shoved to the
+    /// right, with a broad empty margin on the left and the notes crowding the
+    /// window's edge.
     ///
-    /// The document does not move while the margin can hold the rail, which is
-    /// the usual case and the one that matters: opening comments should not
-    /// reflow what you are reading. Only when the margin is too narrow does the
-    /// document give way, and then by the least it can.
+    /// This replaces a rule that held the document still while its right margin
+    /// was wide enough to hold the rail. The intent there was that opening the
+    /// comments should not reflow what you are reading, which is a real cost
+    /// and is what this gives up: the text now slides left when the rail
+    /// appears. That is the better trade, because the old arrangement was wrong
+    /// every moment the rail was open, while the reflow is a single movement at
+    /// the moment you ask for it.
     public static func documentInsetWithRail(
         documentWidth: CGFloat,
         railWidth: CGFloat,
         totalWidth: CGFloat
     ) -> CGFloat {
-        let centred = max(0, (totalWidth - documentWidth) / 2)
-        guard centred < railWidth else { return centred }
-        return max(0, totalWidth - documentWidth - railWidth)
+        max(0, (totalWidth - documentWidth - railWidth) / 2)
     }
 
     /// The widest a picture may be drawn: the full page.

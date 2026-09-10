@@ -203,28 +203,33 @@ struct EditorPaneGeometryTests {
 
     // MARK: - A rail in the document's margin
 
-    @Test("A wide window keeps the document still and puts the rail in the margin")
-    func aWideWindowDoesNotMoveTheDocument() {
-        // 1600 wide, 700 of document: 450 of margin each side, and the rail
-        // needs 320. The document must not move — opening comments should not
-        // reflow what you are reading.
+    @Test("The document and its comments are centred together, not the document alone")
+    func theDocumentAndRailAreCentredAsOneBlock() {
+        // 1600 wide, 700 of document, 320 of rail: 1020 of content, so 290 of
+        // margin each side.
         let inset = EditorPaneGeometry.documentInsetWithRail(
             documentWidth: 700, railWidth: 320, totalWidth: 1_600
         )
-        #expect(inset == 450)
-        // And the rail lands clear of the window's edge, in the margin.
-        #expect(1_600 - inset - 700 == 450)
+        #expect(inset == 290)
+        // Stated as the thing that was actually wrong: the space left of the
+        // writing equals the space right of the notes. Centring the document
+        // alone gave 450 and 130, which reads as the whole block shoved right.
+        let trailing = 1_600 - inset - 700 - 320
+        #expect(inset == trailing)
     }
 
-    @Test("A tight window gives way by the least it can")
-    func aTightWindowShiftsTheDocumentOnlyAsFarAsNeeded() {
-        // 1200 wide, 700 of document: 250 each side, and the rail needs 320.
-        // The document shifts left, but only enough to fit the rail.
-        let inset = EditorPaneGeometry.documentInsetWithRail(
-            documentWidth: 700, railWidth: 320, totalWidth: 1_200
-        )
-        #expect(inset == 180)
-        #expect(inset < 250, "it has to move")
+    @Test("The balance holds at any window width that fits both")
+    func balancedAtEveryWidth() {
+        for total in [CGFloat(1_100), 1_200, 1_600, 2_000, 2_560] {
+            let inset = EditorPaneGeometry.documentInsetWithRail(
+                documentWidth: 700, railWidth: 320, totalWidth: total
+            )
+            let trailing = total - inset - 700 - 320
+            #expect(
+                abs(inset - trailing) < 0.5,
+                "at \(total) the block sits \(inset) from the left and \(trailing) from the right"
+            )
+        }
     }
 
     @Test("A window too narrow for both puts the document at the leading edge")
