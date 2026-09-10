@@ -383,20 +383,128 @@ func checkTheHandsAreAvailable() {
         let font = hand == .sans
             ? NSFont.systemFont(ofSize: 100 * hand.opticalScale)
             : NSFont(name: hand.fontName, size: 100 * hand.opticalScale)
-        check(
-            "\(hand.title) resolves",
-            font != nil,
-            "\(hand.fontName) did not resolve — the rail would quietly fall "
-                + "back to another face"
-        )
+        // A *bundled* face has to resolve: the app ships the file, so a failure
+        // here means the enum and the Fonts directory have drifted apart.
+        //
+        // A system face is allowed to be missing — macOS makes several optional
+        // downloads — which is exactly why the picker filters. Asserting it
+        // resolves would fail on a machine that simply does not have it, and
+        // the app is correct on that machine.
+        if hand.isBundled || hand == .sans {
+            check(
+                "\(hand.title) resolves",
+                font != nil,
+                "\(hand.fontName) did not resolve — it is bundled, so either "
+                    + "the file is missing from Packaging/Fonts or the "
+                    + "PostScript name in CritiqueHand is wrong"
+            )
+        }
         if let font { readSizes.append((hand.title, font.xHeight)) }
     }
+
+    // The enum and the shipped files have to agree, in both directions.
+    //
+    // Adding a case without the file gives a picker entry that silently draws
+    // something else; shipping a file no case names is dead weight in the
+    // bundle. Both have happened here — Monomaniac One sat in the bundle
+    // uncalled for weeks.
+    let fontsDir = "Packaging/Fonts"
+    let shipped = Set(
+        ((try? FileManager.default.contentsOfDirectory(atPath: fontsDir)) ?? [])
+            .filter { $0.hasSuffix(".ttf") }
+            .map { String($0.dropLast(4)) }
+    )
+    let named = Set(CritiqueHand.allCases.filter(\.isBundled).map(\.fontName))
+    check(
+        "every bundled face names a file the app actually ships",
+        named.subtracting(shipped).isEmpty,
+        "named but not shipped: \(named.subtracting(shipped).sorted())"
+    )
+    check(
+        "and every shipped file is a face somebody can choose",
+        shipped.subtracting(named).isEmpty,
+        "shipped but unreachable: \(shipped.subtracting(named).sorted())"
+    )
+    // Each one carries its licence, which is the condition they are bundled
+    // under. A font shipped without its OFL text is a licence violation.
+    for name in named.sorted() {
+        let stem = name.replacingOccurrences(of: "-Regular", with: "")
+        let hasLicence = ((try? FileManager.default.contentsOfDirectory(
+            atPath: fontsDir
+        )) ?? []).contains { $0.hasPrefix(stem) && $0.hasSuffix(".txt") }
+        check(
+            "\(name) ships its licence",
+            hasLicence,
+            "no licence file beginning \(stem) in \(fontsDir)"
+        )
+    }
+    // One default, not three.
+    //
+    // The rail's menu defaulted to Architects Daughter while Settings and the
+    // drawing code both defaulted to the system face, so with nothing stored
+    // the menu ticked a hand the rail was not writing in. A control lying
+    // about its own state is the worst kind of wrong a picker can be, and it
+    // is invisible to anyone who has ever chosen a font.
+    let storedHand = UserDefaults.standard.string(forKey: CritiqueHand.storageKey)
+    UserDefaults.standard.removeObject(forKey: CritiqueHand.storageKey)
+    check(
+        "with nothing chosen, the rail draws in the face it says it does",
+        CritiqueHand.selected == CritiqueHand.initial,
+        "it draws \(CritiqueHand.selected.rawValue) but both pickers start at "
+            + "\(CritiqueHand.initial.rawValue)"
+    )
+    check(
+        "and that face is one this machine can actually draw",
+        CritiqueHand.initial.isAvailable,
+        "\(CritiqueHand.initial.rawValue) does not resolve"
+    )
+    if let storedHand {
+        UserDefaults.standard.set(storedHand, forKey: CritiqueHand.storageKey)
+    }
+
+    // And the agreement is structural, not a coincidence somebody has to keep
+    // up. Each `@AppStorage` for this key must take its default *from*
+    // `CritiqueHand.initial` rather than naming a face: the check above
+    // compares the drawing code with `initial` and cannot see a literal
+    // written into a view, which is exactly where the disagreement was.
+    for file in [
+        "Sources/MarkdownEditor/CritiqueSidebar.swift",
+        "Sources/MarkdownEditor/CritiqueSettingsView.swift",
+    ] {
+        let source = (try? String(contentsOfFile: file, encoding: .utf8)) ?? ""
+        guard let at = source.range(of: "@AppStorage(CritiqueHand.storageKey)")
+        else {
+            check("\(file) stores the chosen hand", false, "no @AppStorage found")
+            continue
+        }
+        let declaration = source[at.upperBound...].prefix(120)
+        check(
+            "\((file as NSString).lastPathComponent) takes its default from CritiqueHand.initial",
+            declaration.contains("CritiqueHand.initial"),
+            "it names a face directly, so it can drift from what the rail draws"
+        )
+    }
+
+    check(
+        "the picker offers a real choice of hands",
+        CritiqueHand.available.count >= 8,
+        "only \(CritiqueHand.available.count) faces are on offer"
+    )
+    // The filter has to actually filter — a picker that lists a face macOS has
+    // not downloaded means choosing it silently draws something else.
+    check(
+        "and never offers one this machine cannot draw",
+        CritiqueHand.available.allSatisfy { hand in
+            hand == .sans || NSFont(name: hand.fontName, size: 12) != nil
+        },
+        "the picker is offering a face that does not resolve"
+    )
 
     // The picker's wiring: choosing a hand has to reach the type helper every
     // label on the rail goes through. Without this the menu can look like it
     // works — the tick moves — while the rail keeps drawing in the old face.
     let chosen = UserDefaults.standard.string(forKey: CritiqueHand.storageKey)
-    for hand in CritiqueHand.allCases where hand != .sans {
+    for hand in CritiqueHand.available where hand != .sans {
         UserDefaults.standard.set(hand.rawValue, forKey: CritiqueHand.storageKey)
         check(
             "choosing \(hand.title) is what the rail then writes in",
@@ -566,15 +674,25 @@ func checkTheHandsAreAvailable() {
         UserDefaults.standard.removeObject(forKey: CritiqueHand.storageKey)
     }
 
-    guard readSizes.count == CritiqueHand.allCases.count,
-          let low = readSizes.min(by: { $0.1 < $1.1 }),
+    // A silent `return` here would be worse than a failure: this used to skip
+    // itself whenever the count came up short, so a machine missing one system
+    // face would quietly stop checking the sizes of all the others.
+    guard let low = readSizes.min(by: { $0.1 < $1.1 }),
           let high = readSizes.max(by: { $0.1 < $1.1 })
-    else { return }
+    else {
+        check("the hands can be measured at all", false, "none resolved")
+        return
+    }
+    check(
+        "every face that resolved was measured",
+        readSizes.count == CritiqueHand.available.count,
+        "measured \(readSizes.count) of \(CritiqueHand.available.count) available faces"
+    )
     // Asking for the same size should give the same *read* size, whichever
     // hand is chosen, or switching font silently resizes the whole rail.
     let drift = (high.1 - low.1) / low.1
     check(
-        "and all three read at the same size",
+        "and every hand reads at the same size",
         drift < 0.10,
         String(
             format: "%@ is %.0f%% larger than %@ at the same requested size",

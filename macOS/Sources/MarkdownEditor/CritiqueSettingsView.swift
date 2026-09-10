@@ -13,7 +13,7 @@ struct CritiqueSettingsView: View {
     @AppStorage(CritiqueProvider.storageKey) private var providerRaw =
         CritiqueProvider.openAI.rawValue
     @AppStorage(CritiqueHand.storageKey) private var handRaw =
-        CritiqueHand.sans.rawValue
+        CritiqueHand.initial.rawValue
 
     /// Held here rather than read from the Keychain on every redraw: a
     /// Keychain lookup per keystroke is both slow and pointless.
@@ -102,12 +102,36 @@ struct CritiqueSettingsView: View {
 
             Section("Appearance") {
                 Picker("Comments are written in", selection: $handRaw) {
-                    ForEach(CritiqueHand.allCases) { candidate in
-                        // Shown in its own face, because the names mean
-                        // nothing: nobody knows what "Caveat" looks like.
-                        Text(candidate.title)
-                            .font(CritiqueTypography.named(candidate, size: 13))
-                            .tag(candidate.rawValue)
+                    // `available`, not `allCases`: macOS makes several of the
+                    // system faces optional downloads and any face can be
+                    // switched off in Font Book. Offering one that is not there
+                    // means picking it silently draws something else, which
+                    // looks like the app ignoring you.
+                    //
+                    // Shown in its own face, because the names mean nothing:
+                    // nobody knows what "Caveat" looks like.
+                    Text(CritiqueHand.sans.title)
+                        .font(CritiqueTypography.named(.sans, size: 13))
+                        .tag(CritiqueHand.sans.rawValue)
+                    Divider()
+                    Section("Bundled") {
+                        ForEach(CritiqueHand.available.filter(\.isBundled)) { candidate in
+                            Text(candidate.title)
+                                .font(CritiqueTypography.named(candidate, size: 13))
+                                .tag(candidate.rawValue)
+                        }
+                    }
+                    let system = CritiqueHand.available.filter {
+                        !$0.isBundled && $0 != .sans
+                    }
+                    if !system.isEmpty {
+                        Section("From your Mac") {
+                            ForEach(system) { candidate in
+                                Text(candidate.title)
+                                    .font(CritiqueTypography.named(candidate, size: 13))
+                                    .tag(candidate.rawValue)
+                            }
+                        }
                     }
                 }
                 Text(

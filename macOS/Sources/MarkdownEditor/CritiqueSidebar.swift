@@ -61,9 +61,27 @@ enum CritiqueHand: String, CaseIterable, Identifiable {
     /// read than the draft it is about. The faces are still here for anyone
     /// who wants them.
     case sans
+
+    // Bundled, under the SIL Open Font License. Shipped rather than assumed
+    // because macOS carries none of them, and a picker offering a face that
+    // is not there is worse than not offering it.
     case architectsDaughter
     case caveat
+    case indieFlower
+    case patrickHand
+    case shadowsIntoLight
+    case gloriaHallelujah
+    case kalam
     case permanentMarker
+
+    // Already on the machine. Free to offer, and genuinely good — but macOS
+    // makes some faces optional downloads and any face can be switched off in
+    // Font Book, so these are filtered by what actually resolves. See
+    // `available`.
+    case bradleyHand
+    case markerFelt
+    case noteworthy
+    case chalkboard
 
     static let storageKey = "critiqueHandFont"
 
@@ -74,7 +92,16 @@ enum CritiqueHand: String, CaseIterable, Identifiable {
         case .sans: return "System Sans"
         case .architectsDaughter: return "Architects Daughter"
         case .caveat: return "Caveat"
+        case .indieFlower: return "Indie Flower"
+        case .patrickHand: return "Patrick Hand"
+        case .shadowsIntoLight: return "Shadows Into Light"
+        case .gloriaHallelujah: return "Gloria Hallelujah"
+        case .kalam: return "Kalam"
         case .permanentMarker: return "Permanent Marker"
+        case .bradleyHand: return "Bradley Hand"
+        case .markerFelt: return "Marker Felt"
+        case .noteworthy: return "Noteworthy"
+        case .chalkboard: return "Chalkboard"
         }
     }
 
@@ -85,18 +112,73 @@ enum CritiqueHand: String, CaseIterable, Identifiable {
         case .sans: return ""
         case .architectsDaughter: return "ArchitectsDaughter-Regular"
         case .caveat: return "Caveat-Regular"
+        case .indieFlower: return "IndieFlower-Regular"
+        case .patrickHand: return "PatrickHand-Regular"
+        case .shadowsIntoLight: return "ShadowsIntoLight"
+        case .gloriaHallelujah: return "GloriaHallelujah"
+        case .kalam: return "Kalam-Regular"
         case .permanentMarker: return "PermanentMarker-Regular"
+        case .bradleyHand: return "BradleyHandITCTT-Bold"
+        case .markerFelt: return "MarkerFelt-Thin"
+        case .noteworthy: return "Noteworthy-Light"
+        case .chalkboard: return "ChalkboardSE-Light"
         }
     }
 
-    /// What to multiply a requested point size by so all three land at the
+    /// What to multiply a requested point size by so every face lands at the
     /// same *read* size. See `CritiqueTypography.opticalScale`.
+    ///
+    /// Measured, not guessed, and measured from **x-height** — the ratio of the
+    /// system face's x-height to this one's. Almost every word in the rail is
+    /// lowercase, and these faces disagree about capitals far more than about
+    /// lowercase: Gloria Hallelujah's cap height is 0.88 against Bradley Hand's
+    /// 0.54, while their x-heights are 0.57 and 0.49. Matching capitals would
+    /// set the text people actually read as much as a third too small.
     var opticalScale: CGFloat {
         switch self {
         case .sans: return 1.0
         case .architectsDaughter: return 1.19
         case .caveat: return 1.28
+        case .indieFlower: return 1.12
+        case .patrickHand: return 1.09
+        case .shadowsIntoLight: return 0.84
+        case .gloriaHallelujah: return 0.90
+        case .kalam: return 0.97
         case .permanentMarker: return 0.84
+        case .bradleyHand: return 1.03
+        case .markerFelt: return 0.88
+        case .noteworthy: return 0.94
+        case .chalkboard: return 1.01
+        }
+    }
+
+    /// Whether this face can actually be drawn on this machine.
+    ///
+    /// The bundled ones always can. The system ones usually can and sometimes
+    /// cannot: macOS makes several faces optional downloads, and any face at
+    /// all can be switched off in Font Book — which the fallback chain in
+    /// `CritiqueTypography` has always allowed for. A picker is where that
+    /// matters most, because choosing an entry that silently draws something
+    /// else looks like the app ignoring you.
+    var isAvailable: Bool {
+        guard self != .sans else { return true }
+        return NSFont(name: fontName, size: 12) != nil
+    }
+
+    /// The faces to offer, in the order they should be offered.
+    static var available: [CritiqueHand] { allCases.filter(\.isAvailable) }
+
+    /// Whether this face is one the app ships, as opposed to one it found.
+    ///
+    /// Only used to group the picker: a list of thirteen faces is a wall, and
+    /// "these came with the app / these came with your Mac" is the one division
+    /// a reader can act on.
+    var isBundled: Bool {
+        switch self {
+        case .sans, .bradleyHand, .markerFelt, .noteworthy, .chalkboard:
+            return false
+        default:
+            return true
         }
     }
 
@@ -109,8 +191,18 @@ enum CritiqueHand: String, CaseIterable, Identifiable {
     /// this up.
     static var selected: CritiqueHand {
         UserDefaults.standard.string(forKey: storageKey)
-            .flatMap(CritiqueHand.init(rawValue:)) ?? .sans
+            .flatMap(CritiqueHand.init(rawValue:)) ?? .initial
     }
+
+    /// The face to use before anybody has chosen one.
+    ///
+    /// Named once and read everywhere, because it was written out three times
+    /// and two of them disagreed: the rail's menu defaulted to Architects
+    /// Daughter while Settings and the drawing code both defaulted to the
+    /// system face. With nothing stored the menu therefore ticked a hand the
+    /// rail was not writing in — the control lying about its own state, which
+    /// is the worst kind of wrong a picker can be.
+    static let initial: CritiqueHand = .sans
 }
 
 /// The hand the comments are written in.
@@ -281,7 +373,7 @@ enum CritiqueTypography {
 /// moving the other.
 struct CritiqueSidebar: View {
     @AppStorage(CritiqueHand.storageKey) private var hand =
-        CritiqueHand.architectsDaughter.rawValue
+        CritiqueHand.initial.rawValue
 
     @ObservedObject var critique: CritiqueModel
     let colorTheme: EditorColorTheme
@@ -385,19 +477,22 @@ struct CritiqueSidebar: View {
     /// answer to the question the menu is asking.
     private var handMenu: some View {
         Menu {
-            ForEach(CritiqueHand.allCases) { candidate in
-                Button {
-                    hand = candidate.rawValue
-                } label: {
-                    HStack {
-                        Text(candidate.title)
-                            .font(CritiqueTypography.named(
-                                candidate, size: CritiqueTypography.bodySize
-                            ))
-                        if candidate.rawValue == hand {
-                            Image(systemName: "checkmark")
-                        }
-                    }
+            // Grouped, because a flat list of thirteen faces is a wall. The
+            // system face first and alone: it is not a hand, and it is the
+            // default and the most legible at length.
+            handChoice(.sans)
+            Divider()
+            Section("Bundled") {
+                ForEach(CritiqueHand.available.filter { $0.isBundled }) { candidate in
+                    handChoice(candidate)
+                }
+            }
+            let system = CritiqueHand.available.filter {
+                !$0.isBundled && $0 != .sans
+            }
+            if !system.isEmpty {
+                Section("From your Mac") {
+                    ForEach(system) { candidate in handChoice(candidate) }
                 }
             }
         } label: {
@@ -408,6 +503,23 @@ struct CritiqueSidebar: View {
         .fixedSize()
         .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
         .help("The hand the comments are written in")
+    }
+
+    /// One face in the menu, set in itself.
+    private func handChoice(_ candidate: CritiqueHand) -> some View {
+        Button {
+            hand = candidate.rawValue
+        } label: {
+            HStack {
+                Text(candidate.title)
+                    .font(CritiqueTypography.named(
+                        candidate, size: CritiqueTypography.bodySize
+                    ))
+                if candidate.rawValue == hand {
+                    Image(systemName: "checkmark")
+                }
+            }
+        }
     }
 
     private var revisionMenu: some View {
