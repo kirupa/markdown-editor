@@ -21,6 +21,7 @@ struct CritiqueSettingsView: View {
     @State private var model = ""
     @State private var savedKeyExists = false
     @State private var justSaved = false
+    @StateObject private var skill = KonvoSkillModel()
 
     private var provider: CritiqueProvider {
         CritiqueProvider(rawValue: providerRaw) ?? .openAI
@@ -143,6 +144,8 @@ struct CritiqueSettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
+
+            konvoSkillSection
         }
         .formStyle(.grouped)
         .frame(width: 460)
@@ -150,7 +153,97 @@ struct CritiqueSettingsView: View {
         .onAppear(perform: load)
     }
 
+    /// Which copy of the skill the critique is actually running against.
+    ///
+    /// The critique's whole shape — the severities, the categories, the rule
+    /// that quotes come back character for character, which every highlight in
+    /// the document depends on — comes from the skill rather than from this
+    /// app. When a critique starts returning something the rail cannot draw,
+    /// this is the first thing worth knowing, and there was nowhere to look.
+    @ViewBuilder
+    private var konvoSkillSection: some View {
+        Section("KONVO Skill") {
+            switch skill.state {
+            case .unread, .reading:
+                Text("Reading…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+            case .installed(let installed):
+                LabeledContent("Version") {
+                    Text(KonvoSkill.summary(for: installed))
+                        .monospacedDigit()
+                        .textSelection(.enabled)
+                }
+                if !installed.subject.isEmpty {
+                    Text(installed.subject)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if installed.isModified {
+                    // Said plainly, because an update will refuse rather than
+                    // discard the edits — and "the button did nothing" is a
+                    // worse answer than knowing why.
+                    Text(
+                        "This checkout has local edits. An update will stop "
+                            + "rather than overwrite them."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+
+            case .missing(let absence):
+                Text(absence.summary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack {
+                Button("Update") { skill.update() }
+                    .disabled(skill.isUpdating || !canUpdateSkill)
+                if skill.isUpdating {
+                    ProgressView().controlSize(.small)
+                }
+                if let outcome = skill.lastUpdate {
+                    Text(outcome.summary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Text(
+                "Pulls the latest konvo skill from its git remote into "
+                    + "~/\(KonvoSkill.relativePath)."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// Only when there is a checkout to pull into. Offering the button
+    /// otherwise is offering something that cannot work.
+    private var canUpdateSkill: Bool {
+        if case .installed = skill.state { return true }
+        return false
+    }
+
     private func load() {
+        skill.read()
+        // The picker has to show the provider the critique will actually use.
+        //
+        // `@AppStorage` cannot express this default because it is not a
+        // constant — with nothing chosen it is the Copilot CLI when the CLI is
+        // installed, and OpenAI when it is not. Left to the literal above, the
+        // picker said "OpenAI" while every critique went through the CLI, which
+        // is the same bug the hand picker had: a control describing a state the
+        // app is not in.
+        if UserDefaults.standard.string(forKey: CritiqueProvider.storageKey) == nil {
+            providerRaw = CritiqueCredentials.provider.rawValue
+        }
         savedKeyExists = CritiqueCredentials.key(for: provider) != nil
         // Never read back into the field: showing a stored secret buys nothing
         // and puts it on screen. The line beside it says one is held.

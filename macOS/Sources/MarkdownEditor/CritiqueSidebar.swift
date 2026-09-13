@@ -419,6 +419,19 @@ struct CritiqueSidebar: View {
 
             Spacer()
 
+            // The key and the model live behind this, not behind the font
+            // menu. They were only reachable from the app's Settings window or
+            // from the rail's first-run state, so once a key was entered there
+            // was no way back to change the model without going looking for it.
+            Button {
+                openSettings()
+            } label: {
+                Image(systemName: "gearshape")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
+            .help("Provider, API key, model and the konvo skill")
+
             handMenu
 
             if !critique.history.isEmpty, !critique.isRunning {

@@ -723,6 +723,7 @@ struct CheckCritique {
         checkTheHeaderIsItsOwnSurface()
         checkTheRailAsksForWhatItNeeds()
         checkPartialCritiqueKeepsTheOtherNotes()
+        await checkTheKonvoSkillIsReported()
         checkMarksFollowTheWords()
         checkTheScoreIsLegible()
         checkEveryColourIsLegible()
@@ -2706,4 +2707,182 @@ func checkPartialCritiqueKeepsTheOtherNotes() {
         model.items.contains { $0.finding.quote == fresh.quote },
         "an unrelated note was dropped by a rewrite elsewhere"
     )
+}
+
+
+/// The skill's version, read from the copy actually installed on this machine.
+///
+/// The unit tests cover the parsing against fixed strings. This is the other
+/// half: that the strings the tests assume are the strings git really produces
+/// here, and that the path the app looks in is where the skill really is. A
+/// format that changed under us would pass every unit test and show "Reading…"
+/// for ever.
+@MainActor
+func checkTheKonvoSkillIsReported() async {
+    print("")
+    print("The konvo skill's version")
+
+    let directory = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(KonvoSkill.relativePath)
+    // A machine without the Copilot CLI has no skills directory at all, and
+    // skipping there is honest. A skills directory *without* konvo in it is a
+    // different thing: either the skill is genuinely absent, or the path this
+    // app looks in is wrong — and a wrong path would otherwise skip the whole
+    // check silently, which is how a typo ships.
+    let skillsRoot = directory.deletingLastPathComponent()
+    guard FileManager.default.fileExists(atPath: skillsRoot.path) else {
+        print("  ..   no Copilot skills directory on this machine, so there is "
+            + "nothing to read")
+        return
+    }
+    let installedSkills = (try? FileManager.default.contentsOfDirectory(
+        atPath: skillsRoot.path
+    )) ?? []
+    guard installedSkills.contains(where: {
+        $0.caseInsensitiveCompare("konvo") == .orderedSame
+    }) else {
+        print("  ..   konvo is not among the installed skills "
+            + "(\(installedSkills.sorted().joined(separator: ", ")))")
+        return
+    }
+    check(
+        "the path the app looks in is the one the skill is installed at",
+        FileManager.default.fileExists(atPath: directory.path),
+        "konvo is in \(skillsRoot.path) but the app looks at \(directory.path)"
+    )
+    check(
+        "the app looks where the skill actually is",
+        FileManager.default.fileExists(
+            atPath: directory.appendingPathComponent("SKILL.md").path
+        ),
+        "no SKILL.md at \(directory.path)"
+    )
+
+    let model = KonvoSkillModel()
+    model.read()
+    // Polled rather than slept through: a fixed wait is either too short on a
+    // slow machine or wasted on a fast one.
+    for _ in 0..<60 {
+        if case .reading = model.state {} else if case .unread = model.state {} else { break }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+    }
+
+    switch model.state {
+    case .installed(let installed):
+        check(
+            "it reports a commit",
+            installed.commit.count >= 7,
+            "got '\(installed.commit)'"
+        )
+        check(
+            "and a date",
+            installed.date != nil,
+            "the date did not parse — git's --format=%cI output has changed"
+        )
+        check(
+            "and says so in one line",
+            !KonvoSkill.summary(for: installed).isEmpty,
+            "the summary is empty"
+        )
+        print("       \(KonvoSkill.summary(for: installed)) — \(installed.subject)")
+
+        // And it reaches the screen. A version read into a model that never
+        // draws is a version nobody can see, which is the whole point of it.
+        let settings = NSHostingView(rootView: AnyView(CritiqueSettingsView()))
+        settings.frame = NSRect(x: 0, y: 0, width: 460, height: 900)
+        settings.layoutSubtreeIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.6))
+        settings.layoutSubtreeIfNeeded()
+        let labels = accessibleStrings(in: settings)
+        check(
+            "the settings window draws the version it read",
+            labels.contains { $0.contains(installed.commit) },
+            "the commit is not on screen; it shows: "
+                + "\(labels.prefix(24).joined(separator: " | "))"
+        )
+        // The section heading and the button are SwiftUI's own drawing rather
+        // than AppKit controls, so the walk above cannot see them — it finds
+        // the version because `LabeledContent` puts its value in a real text
+        // field. Checked in the source instead, which is weaker but honest,
+        // and paired with the unit tests that cover what pressing it does.
+        let settingsSource = (try? String(
+            contentsOfFile: "Sources/MarkdownEditor/CritiqueSettingsView.swift",
+            encoding: .utf8
+        )) ?? ""
+        check(
+            "settings has a KONVO Skill section",
+            settingsSource.contains("Section(\"KONVO Skill\")"),
+            "no such section"
+        )
+        check(
+            "with an Update button wired to the pull",
+            settingsSource.contains("Button(\"Update\") { skill.update() }"),
+            "the Update button is missing or wired elsewhere"
+        )
+        check(
+            "that is disabled when there is nothing to update",
+            settingsSource.contains("skill.isUpdating || !canUpdateSkill"),
+            "the button is offered even when it cannot work"
+        )
+        // And the rail's header opens all of this, which is the ask: the key
+        // and the model were reachable only from the app's Settings menu or
+        // from the rail's first-run state.
+        let railSource = (try? String(
+            contentsOfFile: "Sources/MarkdownEditor/CritiqueSidebar.swift",
+            encoding: .utf8
+        )) ?? ""
+        if let at = railSource.range(of: "Image(systemName: \"gearshape\")") {
+            let around = railSource[
+                railSource.index(at.lowerBound, offsetBy: -260)..<at.upperBound
+            ]
+            check(
+                "the rail's header has a settings control that opens settings",
+                around.contains("openSettings()"),
+                "the gear is there but does not open settings"
+            )
+        } else {
+            check(
+                "the rail's header has a settings control",
+                false,
+                "no gear in the header"
+            )
+        }
+    case .missing(let absence):
+        check(
+            "the installed skill can be read",
+            false,
+            absence.summary
+        )
+    case .reading, .unread:
+        check("reading the skill finishes", false, "still reading after 3s")
+    }
+}
+
+
+/// Every label a rendered SwiftUI view exposes.
+///
+/// The rail's own cards expose nothing this way — measured earlier in this
+/// file, and the reason the rail's state is asserted through `CritiqueSidebar.State`
+/// instead. A `Form`, though, is built from real AppKit controls, so its labels
+/// are there to be read, and that is what makes this check possible at all.
+@MainActor
+func accessibleStrings(in view: NSView) -> [String] {
+    var found: [String] = []
+    func walk(_ node: Any, _ depth: Int) {
+        guard depth < 30 else { return }
+        if let v = node as? NSView {
+            // Concrete types only. Reading arbitrary objects through KVC
+            // raises `NSUnknownKeyException` on the first one that does not
+            // have the key, which aborted the whole run.
+            if let button = v as? NSButton, !button.title.isEmpty {
+                found.append(button.title)
+            }
+            if let field = v as? NSTextField, !field.stringValue.isEmpty {
+                found.append(field.stringValue)
+            }
+            for child in v.subviews { walk(child, depth + 1) }
+        }
+    }
+    walk(view, 0)
+    return found
 }
