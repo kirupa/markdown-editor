@@ -26,7 +26,7 @@ public struct CritiqueProgress: Equatable, Sendable {
         public var headline: String {
             switch self {
             case .starting: return "Starting up"
-            case .loadingSkill: return "Loading the konvo skill"
+            case .loadingSkill: return "Loading the KONVO critique pass"
             case .reading: return "Reading the whole draft"
             case .writing: return "Writing the notes"
             }
@@ -36,7 +36,7 @@ public struct CritiqueProgress: Equatable, Sendable {
         public var explanation: String {
             switch self {
             case .starting:
-                return "Opening a session with the Copilot CLI."
+                return "Getting ready."
             case .loadingSkill:
                 return "The editorial rules the critique follows."
             case .reading:

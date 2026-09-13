@@ -430,7 +430,7 @@ struct CritiqueSidebar: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
-            .help("Provider, API key, model and the konvo skill")
+            .help("Provider, API key, model and the KONVO skill")
 
             handMenu
 
@@ -656,14 +656,9 @@ struct CritiqueSidebar: View {
     /// the Keychain, and there is no notification to observe.
     private var isConfigured: Bool { CritiqueCredentials.isConfigured }
 
-    /// Opens the standard settings window without a scene reference.
-    ///
-    /// `SettingsLink` needs macOS 14 and this app supports 13, so the action
-    /// is sent the way the menu item does it.
+    /// Opens the settings window. See `CritiqueSettingsWindow`.
     private func openSettings() {
-        NSApp.sendAction(
-            Selector(("showSettingsWindow:")), to: nil, from: nil
-        )
+        CritiqueSettingsWindow.open()
     }
 
     private var running: some View {

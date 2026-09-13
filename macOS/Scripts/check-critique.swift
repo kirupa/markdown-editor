@@ -2786,6 +2786,75 @@ func checkTheKonvoSkillIsReported() async {
         )
         print("       \(KonvoSkill.summary(for: installed)) — \(installed.subject)")
 
+        // The UI talks about the critique, not about the plumbing.
+        //
+        // Which tool carries the request is an implementation detail, and the
+        // skill is sent with every request now, so naming a CLI or a vendor in
+        // a label tells the reader nothing they can act on and dates the app to
+        // whatever it happened to shell out to.
+        //
+        // Checked against the string literals in the views and the provider,
+        // which is where labels live. The comments are exempt — this file's own
+        // reasoning is full of these words on purpose.
+        let forbidden = ["Copilot CLI", "GitHub Copilot", "npm install", "@github/copilot"]
+        for file in [
+            "Sources/MarkdownEditor/CritiqueSettingsView.swift",
+            "Sources/MarkdownEditor/CritiqueSidebar.swift",
+            "Sources/MarkdownEditor/CritiqueService.swift",
+            "../Shared/Sources/MarkdownEditorCore/CritiqueProvider.swift",
+            "../Shared/Sources/MarkdownEditorCore/CritiqueProgress.swift",
+        ] {
+            let source = (try? String(contentsOfFile: file, encoding: .utf8)) ?? ""
+            // Literals only: every run of text between double quotes, with the
+            // comment lines dropped first.
+            let code = source
+                .split(separator: "\n", omittingEmptySubsequences: false)
+                .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
+                .joined(separator: "\n")
+            let literals = code.split(separator: "\"")
+                .enumerated()
+                .filter { $0.offset % 2 == 1 }
+                .map { String($0.element) }
+                .joined(separator: " ")
+            for word in forbidden {
+                check(
+                    "\((file as NSString).lastPathComponent) does not put "
+                        + "\"\(word)\" on screen",
+                    !literals.contains(word),
+                    "a label still names the tool"
+                )
+            }
+        }
+
+        // The skill is not just reported, it is used.
+        //
+        // The prompt used to *name* the skill and hope the thing answering had
+        // it — true for one provider and false for the rest, so the same draft
+        // got a KONVO critique or a generic one depending on a setting nobody
+        // would connect to it. It is sent now, and this is the check that it
+        // really comes off this machine's disk and into the request.
+        let pass = CritiqueService.loadedSkillPass()
+        check(
+            "the installed skill's critique pass can be read",
+            pass != nil,
+            "SKILL.md has no '\(KonvoSkill.critiqueHeading)' section"
+        )
+        if let pass {
+            check(
+                "and it is the critique pass rather than the whole file",
+                pass.count > 2_000 && pass.count < 60_000,
+                "\(pass.count) characters — the whole file is about 110,000"
+            )
+            let prompt = CritiqueRequest.prompt(
+                forDocument: "A draft.", skill: pass
+            )
+            check(
+                "and it reaches the request the model is sent",
+                prompt.contains(pass),
+                "the prompt does not carry the pass"
+            )
+        }
+
         // And it reaches the screen. A version read into a model that never
         // draws is a version nobody can see, which is the whole point of it.
         let settings = NSHostingView(rootView: AnyView(CritiqueSettingsView()))

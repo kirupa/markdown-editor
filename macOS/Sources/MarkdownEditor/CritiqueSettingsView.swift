@@ -92,9 +92,8 @@ struct CritiqueSettingsView: View {
                     .foregroundStyle(.secondary)
                 } else {
                     Text(
-                        "Uses the GitHub Copilot CLI already signed in on this "
-                            + "Mac. No key is stored and nothing is billed to "
-                            + "an API account."
+                        "Uses a model already available on this Mac. No key is "
+                            + "stored and nothing is billed to an API account."
                     )
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -215,8 +214,8 @@ struct CritiqueSettingsView: View {
                 }
             }
             Text(
-                "Pulls the latest konvo skill from its git remote into "
-                    + "~/\(KonvoSkill.relativePath)."
+                "KONVO critiques your draft using this skill. Update pulls the "
+                    + "latest version of it."
             )
             .font(.caption)
             .foregroundStyle(.secondary)

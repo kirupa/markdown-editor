@@ -27,7 +27,7 @@ final class CritiqueService {
         var errorDescription: String? {
             switch self {
             case .cliNotFound:
-                return "The GitHub Copilot CLI was not found."
+                return "No critique provider is set up."
             case .documentIsEmpty:
                 return "There is nothing to critique yet."
             case .cancelled:
@@ -50,11 +50,12 @@ final class CritiqueService {
         var recoverySuggestion: String? {
             switch self {
             case .cliNotFound:
+                // Points at the one thing the reader can act on — choosing a
+                // provider and giving it a key — rather than at the plumbing
+                // behind the key-free option.
                 return """
-                    A critique is written by the konvo skill running in the \
-                    GitHub Copilot CLI, which the editor runs on your behalf. \
-                    Install it with `npm install -g @github/copilot`, sign in \
-                    once with `copilot`, and try again.
+                    Open Settings, choose a provider and enter an API key, \
+                    then ask for a critique again.
                     """
             case .documentIsEmpty:
                 return "Write a paragraph or two, then ask for a critique."
@@ -62,7 +63,7 @@ final class CritiqueService {
                 return nil
             case .cliFailed(_, let message):
                 return message.isEmpty
-                    ? "The Copilot CLI stopped without explaining why."
+                    ? "The critique stopped without explaining why."
                     : message
             case .unreadableReply(let detail):
                 return """
@@ -155,9 +156,13 @@ final class CritiqueService {
         let trimmed = document.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw Failure.documentIsEmpty }
 
-        let prompt = focus.map {
-            CritiqueRequest.prompt(forDocument: document, focus: $0)
-        } ?? CritiqueRequest.prompt(forDocument: document)
+        // The skill travels with the request, so the critique is KONVO's
+        // whichever model answers it.
+        let prompt = CritiqueRequest.prompt(
+            forDocument: document,
+            focus: focus,
+            skill: Self.loadedSkillPass()
+        )
         let provider = CritiqueCredentials.provider
         let reply: String
         if provider.needsAPIKey {
@@ -187,6 +192,24 @@ final class CritiqueService {
                 .map(String.init) ?? ""
             throw Failure.unreadableReply(firstLine)
         }
+    }
+
+    /// The critique pass from the skill installed on this machine.
+    ///
+    /// Read on every request rather than cached: the skill can be updated from
+    /// Settings while the app is running, and a cached copy would mean the
+    /// version the window reports and the version actually being applied could
+    /// disagree — which is the one thing the version display exists to prevent.
+    /// It is a 110KB file read once per critique, against a request that takes
+    /// tens of seconds.
+    nonisolated static func loadedSkillPass() -> String? {
+        let url = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(KonvoSkill.relativePath)
+            .appendingPathComponent("SKILL.md")
+        guard let markdown = try? String(contentsOf: url, encoding: .utf8) else {
+            return nil
+        }
+        return KonvoSkill.critiquePass(fromSkill: markdown)
     }
 
     func cancel() {

@@ -65,6 +65,38 @@ public enum KonvoSkill {
         }
     }
 
+    /// The heading that opens the part of the skill this app uses.
+    public static let critiqueHeading = "## Critique"
+
+    /// The skill's critique pass, pulled out of `SKILL.md`.
+    ///
+    /// The app sends this with every request, so the critique is the skill's
+    /// rather than the model's own idea of what a critique is. Sending the
+    /// whole file would be wasteful and mostly irrelevant — it is 110KB, and
+    /// all but this section is about *writing* rather than about reading
+    /// somebody else's draft.
+    ///
+    /// Taken as "from `## Critique` up to the next heading at the same level",
+    /// which is how the file is organised. A `##` inside a fenced code block
+    /// would end the section early; the skill has none in this section today,
+    /// and the check that measures the extracted length would catch it if one
+    /// arrived.
+    public static func critiquePass(fromSkill markdown: String) -> String? {
+        guard let start = markdown.range(of: critiqueHeading) else { return nil }
+        let rest = markdown[start.lowerBound...]
+        // The next top-level section, found by looking for a line that begins
+        // "## " after the first one.
+        var end = rest.endIndex
+        var searchFrom = rest.index(rest.startIndex, offsetBy: critiqueHeading.count)
+        while let next = rest.range(of: "\n## ", range: searchFrom..<rest.endIndex) {
+            end = next.lowerBound
+            break
+        }
+        let section = String(rest[rest.startIndex..<end])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return section.isEmpty ? nil : section
+    }
+
     /// Parses `git log -1 --format=%h%n%cI%n%s` plus a porcelain status.
     ///
     /// Separated from running git so the parsing can be checked without a

@@ -23,7 +23,12 @@ public enum CritiqueProvider: String, CaseIterable, Identifiable, Sendable {
         case .openAI: return "OpenAI"
         case .anthropic: return "Anthropic"
         case .gemini: return "Google Gemini"
-        case .copilotCLI: return "GitHub Copilot CLI"
+        // Named for what it is to the reader — a model already on their Mac
+        // that costs them nothing — rather than for the tool underneath. The
+        // tool is plumbing, and the KONVO critique pass is sent with every
+        // request now, so which pipe carries it is not something the reader
+        // has to reason about.
+        case .copilotCLI: return "Built in · no API key"
         }
     }
 

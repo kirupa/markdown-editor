@@ -66,6 +66,96 @@ struct KonvoSkillTests {
         #expect(KonvoSkill.summary(for: installed) == "abc1234")
     }
 
+    // MARK: - The critique pass the app sends
+
+    private let skillFixture = """
+        # KONVO
+
+        Some preamble about writing.
+
+        ## Before You Write Anything
+
+        Ask about audience.
+
+        ## Critique
+
+        **Job read:** one sentence.
+
+        ### Priority findings
+
+        1. **High · Logic and credibility**
+           > quote
+
+        ## Short-Form and Social
+
+        A different section entirely.
+        """
+
+    @Test("Only the critique pass is taken out of the skill")
+    func extractsTheCritiquePass() {
+        let pass = try! #require(
+            KonvoSkill.critiquePass(fromSkill: skillFixture)
+        )
+        #expect(pass.hasPrefix("## Critique"))
+        #expect(pass.contains("Priority findings"))
+        // Sending the whole file would be wasteful and mostly irrelevant —
+        // all but this section is about writing rather than about reading
+        // somebody else's draft.
+        #expect(!pass.contains("Short-Form and Social"))
+        #expect(!pass.contains("Before You Write Anything"))
+    }
+
+    @Test("A skill with no critique section yields nothing rather than everything")
+    func refusesASkillWithoutTheSection() {
+        // Returning the whole file would quietly send 110KB on every request.
+        #expect(KonvoSkill.critiquePass(fromSkill: "# KONVO\n\nNo sections.") == nil)
+    }
+
+    @Test("A critique section that runs to the end of the file is taken whole")
+    func handlesTheLastSection() {
+        let pass = try! #require(
+            KonvoSkill.critiquePass(
+                fromSkill: "# KONVO\n\n## Critique\n\nThe last word."
+            )
+        )
+        #expect(pass.contains("The last word."))
+    }
+
+    @Test("The skill travels with the request, fenced as instructions")
+    func promptCarriesTheSkill() {
+        let prompt = CritiqueRequest.prompt(
+            forDocument: "A draft.",
+            skill: "## Critique\n\nDo it this way."
+        )
+        #expect(prompt.contains("Do it this way."))
+        #expect(prompt.contains("KONVO CRITIQUE PASS"))
+        // Fenced from the opposite direction to the draft: the draft must
+        // never be read as instructions, and the skill must never be read as
+        // something to critique.
+        #expect(prompt.contains("instructions for you, not material to critique"))
+    }
+
+    @Test("Without a skill the request still works and claims nothing")
+    func promptWithoutTheSkill() {
+        let prompt = CritiqueRequest.prompt(forDocument: "A draft.", skill: nil)
+        #expect(!prompt.contains("KONVO CRITIQUE PASS"))
+        // And it must not name a skill it has not sent, which is what the old
+        // prompt did: it said "use the konvo skill" and hoped the model had it.
+        #expect(!prompt.localizedCaseInsensitiveContains("konvo skill"))
+        #expect(prompt.contains("Critique the draft"))
+    }
+
+    @Test("A narrowed request carries the skill too")
+    func focusedPromptCarriesTheSkill() {
+        let prompt = CritiqueRequest.prompt(
+            forDocument: "A draft.\n\nAnd more.",
+            focus: "And more.",
+            skill: "## Critique\n\nDo it this way."
+        )
+        #expect(prompt.contains("Do it this way."))
+        #expect(prompt.contains("CHANGED PASSAGE"))
+    }
+
     // MARK: - Updating
 
     @Test("Git's own phrasing is translated")
