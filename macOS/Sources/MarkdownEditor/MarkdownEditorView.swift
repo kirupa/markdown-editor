@@ -94,6 +94,20 @@ struct MarkdownEditorView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Zoom sizes the window to the writing plus its comments.
+                //
+                // `previewWidth` unclamped rather than the value the pane is
+                // currently drawing at: a window too narrow to hold the column
+                // clamps it down, and zooming from there would ask for the
+                // squeezed width and so never grow past it — the button would
+                // do nothing on exactly the window that needs it most.
+                .zoomsToFitContent(
+                    EditorPaneGeometry.idealContentWidth(
+                        columnWidth: previewWidth,
+                        railWidth: Layout.railWidth,
+                        railIsOpen: critique.isPresented
+                    )
+                )
 
                 if session.isExplorerVisible {
                     HStack(spacing: 0) {

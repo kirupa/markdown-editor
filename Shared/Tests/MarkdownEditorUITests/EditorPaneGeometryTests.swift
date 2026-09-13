@@ -286,6 +286,129 @@ struct EditorPaneGeometryTests {
         )
     }
 
+    // MARK: - What the window should zoom to
+
+    @Test("Zooming with the comments open makes room for them")
+    func idealWidthCountsTheRail() {
+        #expect(
+            EditorPaneGeometry.idealContentWidth(
+                columnWidth: 700, railWidth: 356, railIsOpen: true
+            ) == 1_056
+        )
+    }
+
+    @Test("Zooming with the comments shut leaves the page its bleed margins")
+    func idealWidthKeepsTheBleed() {
+        // Not the column alone: the bleed is the room a wide picture is
+        // allowed to spread into, so zooming to 700 would leave every
+        // full-page picture in the document with nowhere to go.
+        #expect(
+            EditorPaneGeometry.idealContentWidth(
+                columnWidth: 700, railWidth: 356, railIsOpen: false
+            ) == 700 + 2 * EditorPaneGeometry.maximumImageBleed
+        )
+    }
+
+    @Test("Opening the comments always asks for a wider window")
+    func openingTheRailNeverShrinksTheTarget() {
+        // Stated as the property rather than as two numbers, because the
+        // numbers are tunable and this is the part that must hold: the rail is
+        // 356 wide against 200 of bleed, so it cannot be paid for out of the
+        // margins the page gives up.
+        for column in [CGFloat(360), 520, 700, 900, 1_100] {
+            let shut = EditorPaneGeometry.idealContentWidth(
+                columnWidth: column, railWidth: 356, railIsOpen: false
+            )
+            let open = EditorPaneGeometry.idealContentWidth(
+                columnWidth: column, railWidth: 356, railIsOpen: true
+            )
+            #expect(open > shut, "at a column of \(column)")
+        }
+    }
+
+    @Test("The zoom target grows with the column, at every width")
+    func idealWidthFollowsTheColumn() {
+        var previous: CGFloat = 0
+        for column in [CGFloat(360), 520, 700, 900, 1_100] {
+            let width = EditorPaneGeometry.idealContentWidth(
+                columnWidth: column, railWidth: 356, railIsOpen: true
+            )
+            #expect(width > previous)
+            previous = width
+        }
+    }
+
+    // MARK: - Double-clicking the title bar
+
+    /// The bar and its controls, at the geometry measured from the running app:
+    /// a 52pt bar, the traffic lights at the left, the file explorer at 96–132,
+    /// and the theme and critique buttons at 735–812.
+    private let titleBar = CGRect(x: 0, y: 648, width: 820, height: 52)
+    private var titleBarControls: [CGRect] {
+        [
+            CGRect(x: 18, y: 664, width: 16, height: 16),
+            CGRect(x: 41, y: 664, width: 16, height: 16),
+            CGRect(x: 64, y: 664, width: 16, height: 16),
+            CGRect(x: 96, y: 648, width: 36, height: 52),
+            CGRect(x: 735, y: 648, width: 40, height: 52),
+            CGRect(x: 775, y: 648, width: 37, height: 52),
+        ]
+    }
+
+    @Test("Double-clicking empty title bar zooms")
+    func emptyTitleBarZooms() {
+        #expect(
+            EditorPaneGeometry.titleBarClickZooms(
+                at: CGPoint(x: 440, y: 674),
+                titleBar: titleBar,
+                controls: titleBarControls
+            )
+        )
+    }
+
+    @Test("Double-clicking a toolbar button does not zoom")
+    func aControlDoesNotZoom() {
+        // The theme button. This is the case the first implementation got
+        // wrong: it hit-tested, SwiftUI answered with the one hosting view it
+        // draws the whole bar through, and the window zoomed out from under
+        // the popover the button had just opened.
+        for control in titleBarControls {
+            #expect(
+                !EditorPaneGeometry.titleBarClickZooms(
+                    at: CGPoint(x: control.midX, y: control.midY),
+                    titleBar: titleBar,
+                    controls: titleBarControls
+                ),
+                "a click at \(control.midX) should not zoom"
+            )
+        }
+    }
+
+    @Test("The document's title is not a control, so it zooms")
+    func theTitleZooms() {
+        // Between the traffic lights and the explorer button is where the
+        // filename is drawn, and double-clicking a window's title zooms it in
+        // every other Mac application.
+        #expect(
+            EditorPaneGeometry.titleBarClickZooms(
+                at: CGPoint(x: 200, y: 674),
+                titleBar: titleBar,
+                controls: titleBarControls
+            )
+        )
+    }
+
+    @Test("A click below the title bar is not a title bar click")
+    func theDocumentDoesNotZoom() {
+        #expect(
+            !EditorPaneGeometry.titleBarClickZooms(
+                at: CGPoint(x: 440, y: 300),
+                titleBar: titleBar,
+                controls: titleBarControls
+            )
+        )
+    }
+
     @Test("The width gripper stays where it can be grabbed")
     func gripperIsNotBuriedUnderTheRail() {
         // Laid out ending at the page's trailing edge and then shifted, so a

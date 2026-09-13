@@ -81,6 +81,55 @@ public enum EditorPaneGeometry {
         return min(maximumImageBleed, (availableWidth - columnWidth) / 2)
     }
 
+    /// The width the window wants in order to show everything it has to show.
+    ///
+    /// What the green button and a double-click on the title bar should zoom
+    /// to. The point of zooming is "make this big enough", and with the
+    /// comments open the thing being read is the writing *and* the notes
+    /// beside it — a window sized to the writing alone clips the rail or, once
+    /// the layout centres the pair, leaves it hanging off the edge.
+    ///
+    /// The file explorer is deliberately not counted. It floats over the
+    /// document rather than taking part in the row, precisely so that opening
+    /// it does not move the text, and widening the window for it would undo
+    /// that the other way round.
+    ///
+    /// With the comments shut the page still wants its bleed margins, which
+    /// are the room a wide picture is allowed to spread into. That is content,
+    /// not padding: zoom to the column alone and every full-page picture in the
+    /// document has nowhere to go.
+    public static func idealContentWidth(
+        columnWidth: CGFloat,
+        railWidth: CGFloat,
+        railIsOpen: Bool
+    ) -> CGFloat {
+        guard railIsOpen else { return columnWidth + 2 * maximumImageBleed }
+        return columnWidth + railWidth
+    }
+
+    /// Whether a double-click at `point` should zoom the window.
+    ///
+    /// Pure, and separated from the window for one reason: the decision cannot
+    /// be made by hit-testing. SwiftUI draws the whole title bar through a
+    /// single hosting view, so a hit test at the theme button, at the document
+    /// title and at empty space between them all return the same view — the
+    /// first version trusted that and zoomed the window every time the theme
+    /// button was double-clicked. The controls have to be named by their own
+    /// frames instead, and once they are, this is arithmetic and can be checked
+    /// without a screen.
+    ///
+    /// `controls` are the toolbar's items and the traffic lights. The document
+    /// title is deliberately not among them: it is not a control, and
+    /// double-clicking it zooms in every other Mac application.
+    public static func titleBarClickZooms(
+        at point: CGPoint,
+        titleBar: CGRect,
+        controls: [CGRect]
+    ) -> Bool {
+        guard titleBar.contains(point) else { return false }
+        return !controls.contains { $0.contains(point) }
+    }
+
     /// How far the width gripper is shifted from the page's trailing edge.
     ///
     /// It is laid out against that edge and then moved, because what it resizes
