@@ -185,6 +185,9 @@ Two things to know before relying on it:
 | WV-6 | A "Show this window at launch" checkbox persists the preference; when off, the editor opens straight into an untitled document. |
 | WV-7 | `File ▸ Open Recent…` reopens the welcome overlay at any time, and it can be dismissed without choosing anything. |
 | WV-8 | The overlay is themed like the rest of the app. |
+| WV-9 | The identity block is **the app icon and the app's name**, and nothing else. The tagline under the name is gone, for the reason the Mac build dropped its version line: a landing screen says what this is, and the name does that. |
+| WV-10 | The icon shown is `icon.svg` — the same file the page links as its favicon, so the tab, the landing screen and a home-screen bookmark cannot show three different marks. It replaces an inline SVG that was drawn by hand in `welcome.js`: a second copy of the artwork that had already gone stale, and which was **rendering 52 × 5** — measured — because an inline `<svg>` in this flex column takes no intrinsic height. |
+| WV-11 | `icon.svg` is **generated** by `../macOS/Scripts/make-icons.swift` from `Packaging/Logo.svg`, with the same plate geometry and the same measured placement as the Mac and iOS icons. Checked by rendering it: the plate is 0.828 of the canvas and the mark's circle 0.660 of the plate, centred to the pixel — the same three numbers the `.icns` reports. It is self-contained rather than referencing the logo, because a browser renders an SVG favicon in a restricted mode that fetches nothing external. |
 
 ---
 
@@ -582,7 +585,7 @@ sheets in place of menus.
 | WB-8 | The **save for later** checkbox adds the open document to a list that is separate from recents. Recents reorder and age out, so simply using the editor would lose whatever you meant to return to; this list only changes when asked, is not capped, and keeps its order. |
 | WB-9 | The checkbox is disabled for an untitled document, which has no path to remember. |
 | WB-10 | A saved document that is renamed or moved keeps its place in the list; one that is deleted, or whose folder is deleted, is dropped from it. |
-| WB-11 | Saved documents appear as their own section above Recent Documents on the welcome screen, and the welcome panel — a fixed 760 × 470 two-column card — stacks into one column on a narrow or short viewport instead of squeezing the document list off-screen. |
+| WB-11 | Saved documents appear as their own section above Recent Documents on the welcome screen, and the welcome panel — a fixed 760 × 600 two-column card — stacks into one column on a narrow or short viewport instead of squeezing the document list off-screen. It grew from 560 when the identity block started drawing a real icon: the old inline mark collapsed to 5px tall, so the column had been getting that space for free, and at 560 the **Show this window at launch** checkbox fell below the fold. Measured either way — the side column's scroll height against its client height, which is 0 over at 600. |
 | WB-12 | The file explorer becomes an overlay drawer opened from the Files button and dismissed by tapping outside it. Its state is transient and does not overwrite the desktop sidebar preference. |
 | WB-13 | Side by Side is unavailable, since a phone has no room for two columns; entering the mobile layout switches to Rich Text and leaving it restores Side by Side. |
 | WB-14 | Every control is at least 36 × 36px, and buttons do not take focus, so a formatting tap acts on the live selection and does not dismiss the keyboard. |

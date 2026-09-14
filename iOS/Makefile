@@ -5,7 +5,8 @@ app:
 
 icons:
 	@swift ../macOS/Scripts/make-icons.swift ../macOS/Packaging \
-		Resources/Assets.xcassets/AppIcon.appiconset
+		Resources/Assets.xcassets/AppIcon.appiconset \
+		../Web/public
 
 open:
 	@open MarkdownEditor.xcodeproj

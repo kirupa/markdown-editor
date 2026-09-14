@@ -636,6 +636,39 @@ Reference: `Shared/Sources/MarkdownEditorUI/EditorPaneGeometry.swift`
 `Layout` at the foot of `MarkdownEditorView.swift`. The macOS README records the
 reasoning as I-225 to I-228.
 
+### The mark, and where it comes from
+
+There is one application icon and every build shows it: the kirupa mark on a
+white plate. It is **generated**, not drawn by hand per platform —
+`macOS/Scripts/make-icons.swift` reads `macOS/Packaging/Logo.svg` and writes the
+Mac `.icns`, the iOS PNG and the web `icon.svg` in one pass, from one set of
+measurements. A port should add its output to that script rather than start a
+second copy of the artwork, which is the mistake this arrangement was built to
+undo: the web build carried a hand-written blue plate for months after the Mac
+icon had stopped being blue, and the landing screen carried a *third* mark that
+matched neither.
+
+Three things a port has to get right, each measured rather than assumed:
+
+- **Centre on the mark's circle, not on its bounding box.** The leaves stick out
+  of the circle at one corner and nothing balances them, so the box's centre
+  sits at (0.489, 0.484) of the artwork against the circle's (0.539, 0.520) —
+  about a twentieth of the icon, and plainly visible as a lean. The circle is
+  found as ink that is dark *and* near-neutral; brightness alone catches the
+  `#008000` leaves, which are darker than the `#333333` ring.
+- **Size to the platform's own plate.** 0.66 of the plate where the platform
+  gives the icon an inset plate of its own (macOS), 0.51 of the square where it
+  rounds the corners off the artwork instead (iOS). The same fraction in both
+  places puts the mark against the visible edge on one of them.
+- **Show the same file on the landing screen.** macOS reads
+  `NSImage.applicationIconName`; the web points an `<img>` at the same
+  `icon.svg` it links as a favicon. Neither redraws the mark, so the Dock or
+  tab, the file manager and the landing screen cannot disagree.
+
+The artwork stays vector. The generator renders ten sizes from 16 to 1024
+pixels, and a vector redrawn at each of them is sharp where one bitmap resampled
+ten times is not.
+
 ### What is deliberately per-platform
 
 Not everything is a requirement. These differ between the existing builds on

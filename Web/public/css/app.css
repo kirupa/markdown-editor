@@ -934,7 +934,11 @@ body {
 .me-welcome {
   display: flex;
   width: 760px;
-  height: 560px;
+  /* 600 rather than 560 because the identity block now draws a real icon.
+     The old inline mark collapsed to 5px tall — measured — so the column had
+     been getting the space for free. The side column still scrolls on a short
+     screen; this is only about not making it scroll on a normal one. */
+  height: 600px;
   max-width: calc(100vw - 32px);
   max-height: calc(100vh - 32px);
   overflow: hidden;
@@ -954,9 +958,12 @@ body {
   background: var(--me-sidebar-background);
 }
 
-.me-welcome__mark { width: 52px; height: 52px; color: var(--me-accent); }
-.me-welcome__title { font-size: 25px; font-weight: 700; margin: 16px 0 4px; }
-.me-welcome__subtitle { color: var(--me-secondary-text); margin: 0 0 22px; }
+/* The icon carries its own white plate now, and the plate is inset inside the
+   box — so this is the canvas, and the mark a reader sees is about 70px of it.
+   84 against a 25px name is the ratio the Mac's landing screen uses, and the
+   two screens show the same icon at the same size as each other. */
+.me-welcome__mark { width: 84px; height: 84px; }
+.me-welcome__title { font-size: 25px; font-weight: 700; margin: 8px 0 22px; }
 
 .me-welcome__actions { display: flex; flex-direction: column; gap: 8px; }
 
@@ -1121,9 +1128,8 @@ body {
     padding: max(22px, env(safe-area-inset-top)) 20px 16px;
   }
 
-  .me-welcome__mark { width: 40px; height: 40px; }
-  .me-welcome__title { font-size: 22px; margin: 12px 0 2px; }
-  .me-welcome__subtitle { margin: 0 0 16px; }
+  .me-welcome__mark { width: 64px; height: 64px; }
+  .me-welcome__title { font-size: 22px; margin: 6px 0 16px; }
   /* Nothing left to push against once the column is content-height. */
   .me-welcome__footer { margin-top: 16px; }
 
