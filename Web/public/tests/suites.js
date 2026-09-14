@@ -24,6 +24,7 @@ export const CORE_TEST_MODULES = [
   './keep-focus.test.js',
   './live.test.js',
   './new-document.test.js',
+  './critique.test.js',
 ];
 
 /** Needs a real DOM, so these run only in the browser page. */

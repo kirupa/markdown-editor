@@ -30,6 +30,10 @@ export const ICONS = {
   rule: '<path d="M2.2 8h11.6"/><path d="M3.5 4.4h9M3.5 11.6h9" opacity="0.4"/>',
   theme:
     '<circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" class="me-fill"/>',
+  // A pen over the page, not a robot or a spark: what this does is write in
+  // the margin, and the mark should say which of the two it is.
+  critique:
+    '<path d="M12.6 2.4a1.45 1.45 0 0 1 0 2.1L6 11.1l-2.8.8.8-2.8 6.6-6.6a1.45 1.45 0 0 1 2 0z"/><path d="M2.6 14h10.8" opacity="0.45"/>',
 
   // The three editor views. Each says what you would be looking at: a laid-out
   // document, the same document beside its source, and the Markdown mark.
@@ -176,7 +180,10 @@ export function buildToolbar(root, commands) {
       iconButton('rule', 'Horizontal Rule (⌃⌘H)', () => commands.horizontalRule())
     ),
     spacer,
-    group(themeButton)
+    group(
+      iconButton('critique', 'AI Assisted Critique (⌃⌘C)', () => commands.critique()),
+      themeButton
+    )
   );
 
   return {

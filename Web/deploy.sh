@@ -72,7 +72,9 @@ trap 'rm -rf "$stage"' EXIT
 mkdir -p "$stage/public" "$stage/private"
 cp -R "$here/public/." "$stage/public/"
 rm -rf "$stage/public/tests"
-cp -R "$here/src" "$here/seed" "$here/bootstrap.php" "$stage/private/"
+# `skill/` goes with the private half: it is the KONVO critique pass the server
+# sends with every request, and nothing should be able to fetch it by URL.
+cp -R "$here/src" "$here/seed" "$here/skill" "$here/bootstrap.php" "$stage/private/"
 
 # Put the assets in a directory named after their contents.
 #
@@ -83,6 +85,12 @@ cp -R "$here/src" "$here/seed" "$here/bootstrap.php" "$stage/private/"
 # relative imports inherit the new directory without a build step. The hash is
 # of the contents, so an unchanged deploy re-uses the same directory and
 # nothing has to be re-downloaded.
+#
+# `fonts/` and `hands.css` are deliberately *not* in here. A stylesheet moved
+# into v/<hash>/css/ resolves its url() from three folders deep instead of one,
+# so a font path that is right in the repository is a 404 once deployed. They
+# stay put, versioned by a query string, which is enough for a file with no
+# imports to break.
 #
 # The hash is computed from *inside* the staging directory on purpose. `shasum`
 # prints the file's path next to its digest, and the staging directory is a

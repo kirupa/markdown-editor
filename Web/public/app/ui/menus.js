@@ -322,6 +322,23 @@ function menuDefinitions(commands, state) {
         },
         separator,
         {
+          // ⌃⌘C, matching the macOS build's Markdown ▸ AI Assisted Critique.
+          // There is no Markdown menu here, and adding one for a single item
+          // would be a menu that exists to hold a shortcut.
+          title: 'AI Assisted Critique',
+          shortcut: { command: true, control: true, key: 'c' },
+          action: commands.critique,
+        },
+        {
+          // ⇧⌘C, not ⌃⌘C: that one runs the critique, and not ⌃⌘K either,
+          // which is already Strikethrough.
+          title: 'Show Critique',
+          shortcut: { command: true, shift: true, key: 'c' },
+          checked: state.critiqueVisible(),
+          action: commands.toggleCritique,
+        },
+        separator,
+        {
           title: 'Mobile Layout',
           shortcut: { command: true, control: true, key: 'm' },
           checked: state.mobileLayout(),

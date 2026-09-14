@@ -16,6 +16,7 @@ with every image still resolving.
 | Get started | `cd macOS && make install` | open `iOS/MarkdownEditor.xcodeproj` | `Web/serve.sh` |
 | Publish it | — | — | `Web/deploy.sh` to any PHP host |
 | On a phone | — | native, iPhone and iPad | a thumb-first layout, `⌃⌘M` or automatic |
+| AI critique | yes, key in the Keychain | — | yes, key on the server |
 | Requirements | macOS 13+, Swift toolchain | iOS 17+, Xcode | PHP 8.1+ |
 
 ## What it does

@@ -1628,3 +1628,510 @@ body {
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
+
+/* ---------------------------------------------------------------------------
+   AI assisted critique (WA-*)
+
+   A rail of comments down the right-hand side, mirroring the macOS build's.
+   Modelled on the one place this interaction is already familiar: a comment
+   thread beside a document. A card per finding, the open one raised and
+   tinted, the passage it describes shaded in the text, and a click on either
+   side moving the other.
+   --------------------------------------------------------------------------- */
+
+
+:root {
+  --me-critique-hand: var(--me-ui-font);
+  --me-critique-hand-scale: 1;
+
+  /* The colours the critique writes in. Its own rather than the theme's: the
+     theme's text colours are chosen against the theme's page, and almost
+     nothing here is on the page. The notes are on pale paper in a light theme
+     and deep paper in a dark one. */
+  --me-note-ink: #1f1c1c;
+  --me-note-quiet: #57524f;
+
+  --me-note-high-paper: #ffd9d7;
+  --me-note-medium-paper: #fff5c2;
+  --me-note-low-paper: #d9edff;
+
+  /* The same hue carried to a legible lightness. `tint` is a fill, chosen to
+     look right as a solid block; set as text on a wash of itself it is barely
+     there, so the words get this one instead. */
+  --me-note-high-ink: #9e1a1a;
+  --me-note-medium-ink: #854505;
+  --me-note-low-ink: #21529a;
+
+  --me-note-high-tint: #d93d3d;
+  --me-note-medium-tint: #e69919;
+  --me-note-low-tint: #5c8ccc;
+
+  --me-note-works: #217f4a;
+}
+
+[data-appearance="dark"] {
+  --me-note-ink: #f2f2f0;
+  --me-note-quiet: #c7c5c2;
+
+  --me-note-high-paper: #4d2628;
+  --me-note-medium-paper: #47391a;
+  --me-note-low-paper: #23354f;
+
+  --me-note-high-ink: #ff9995;
+  --me-note-medium-ink: #ffc24d;
+  --me-note-low-ink: #9ed1ff;
+
+  --me-note-works: #6bd18f;
+}
+
+/* Docked against the document, not floating beside it.
+
+   A gutter here would leave the rail unattached to anything: the notes are
+   *about* the text they sit next to, and a gap plus a rule read as a divider
+   between two panes rather than as a margin on one document. The cards have
+   their own inset, so they still do not touch the edge.
+
+   A fixed width, so the rail does not eat whatever the window has spare --
+   a comment column that grows with the window stops looking like margin
+   notes somewhere around the second screenful. */
+.me-critique {
+  flex: 0 0 340px;
+  width: 340px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid var(--me-separator);
+  background: var(--me-canvas-background);
+  font-family: var(--me-ui-font);
+  color: var(--me-primary-text);
+}
+
+.me-critique[hidden] { display: none; }
+
+.me-critique__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--me-separator);
+}
+
+.me-critique__mark { display: flex; color: var(--me-accent); }
+.me-critique__mark svg { width: 16px; height: 16px; }
+
+/* Small and bold, rather than large and regular. A heading earns its place by
+   weight and by the space around it; making it big *as well* means the
+   signpost competes with the thing it is pointing at. */
+.me-critique__title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.me-critique__spacer { flex: 1; }
+
+.me-critique__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--me-note-quiet);
+  cursor: pointer;
+}
+
+.me-critique__icon svg { width: 15px; height: 15px; }
+.me-critique__icon:hover { background: color-mix(in srgb, var(--me-primary-text) 10%, transparent); }
+
+.me-critique__text-button {
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--me-note-quiet);
+  cursor: pointer;
+}
+
+.me-critique__hand-menu { display: flex; align-items: center; gap: 3px; color: var(--me-note-quiet); }
+.me-critique__hand-glyph { display: flex; }
+.me-critique__hand-glyph svg { width: 14px; height: 14px; }
+
+.me-critique__hand-select {
+  max-width: 96px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--me-note-quiet);
+  cursor: pointer;
+}
+
+.me-critique__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 0 32px;
+}
+
+/* --- The states the rail can be in ---------------------------------------- */
+
+.me-critique__state {
+  padding: 18px 16px;
+  text-align: left;
+}
+
+.me-critique__state-note {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--me-primary-text);
+}
+
+.me-critique__state-detail {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--me-secondary-text);
+}
+
+.me-critique__state--failed .me-critique__state-note { color: var(--me-note-high-ink); }
+
+.me-critique__button {
+  padding: 5px 12px;
+  border: 1px solid var(--me-separator);
+  border-radius: 6px;
+  background: var(--me-page-background);
+  font: inherit;
+  font-size: 13px;
+  color: var(--me-primary-text);
+  cursor: pointer;
+}
+
+.me-critique__button:hover { border-color: var(--me-accent); color: var(--me-accent); }
+
+.me-critique__spinner {
+  width: 18px;
+  height: 18px;
+  margin-bottom: 10px;
+  border: 2px solid var(--me-separator);
+  border-top-color: var(--me-accent);
+  border-radius: 50%;
+  animation: me-critique-spin 0.8s linear infinite;
+}
+
+@keyframes me-critique-spin { to { transform: rotate(360deg); } }
+
+/* --- The score ------------------------------------------------------------ */
+
+.me-critique__score {
+  margin: 0 12px 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--me-score-tint);
+  background:
+    linear-gradient(color-mix(in srgb, var(--me-score-tint) 12%, transparent),
+                    color-mix(in srgb, var(--me-score-tint) 12%, transparent)),
+    var(--me-page-background);
+  box-shadow: 2px 2px 0 var(--me-separator);
+}
+
+.me-critique__score--low { --me-score-tint: var(--me-note-low-tint); --me-score-ink: var(--me-note-low-ink); }
+.me-critique__score--medium { --me-score-tint: var(--me-note-medium-tint); --me-score-ink: var(--me-note-medium-ink); }
+.me-critique__score--high { --me-score-tint: var(--me-note-high-tint); --me-score-ink: var(--me-note-high-ink); }
+
+.me-critique__score-top {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.me-critique__score-number {
+  font-size: 42px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--me-score-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.me-critique__score-outof { font-size: 16px; font-weight: 600; color: var(--me-score-ink); }
+
+.me-critique__score-verdict {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+}
+
+.me-critique__score-caption {
+  font-size: 11px;
+  letter-spacing: 0.6px;
+  color: var(--me-note-quiet);
+}
+
+.me-critique__score-word { font-size: 13px; color: var(--me-primary-text); }
+
+/* Stepped, not smooth: the bar reads in whole blocks, the way a health meter
+   does, rather than as a continuous measurement it cannot honestly claim to
+   be. */
+.me-critique__bar {
+  display: flex;
+  gap: 2px;
+  height: 7px;
+  margin-top: 9px;
+}
+
+.me-critique__bar-block { flex: 1; background: color-mix(in srgb, var(--me-secondary-text) 16%, transparent); }
+.me-critique__bar-block.is-filled { background: var(--me-score-tint); }
+
+.me-critique__score-answered {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--me-note-quiet);
+}
+
+/* --- The stale notice ----------------------------------------------------- */
+
+.me-critique__stale {
+  margin: 0 12px 14px;
+  padding: 10px;
+  border: 1px solid var(--me-separator);
+  background: color-mix(in srgb, var(--me-note-quiet) 10%, transparent);
+}
+
+.me-critique__stale-text {
+  margin: 0 0 9px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--me-note-quiet);
+}
+
+/* --- A note on the pad ---------------------------------------------------- */
+
+/* The tilt and the nudge are what make a stack of these read as paper rather
+   than as a list of rows. Stable per note, so answering one does not reshuffle
+   the pad. */
+.me-critique__note {
+  position: relative;
+  margin: 0 12px 16px;
+  margin-left: calc(12px + var(--me-note-nudge, 0px));
+  padding: 14px 12px 10px;
+  background: var(--me-note-paper, var(--me-page-background));
+  box-shadow: 2px 2px 0 var(--me-separator);
+  transform: rotate(var(--me-note-angle, 0deg));
+  cursor: default;
+  transition: transform 0.14s ease-out, box-shadow 0.14s ease-out;
+}
+
+.me-critique__note--high { --me-note-paper: var(--me-note-high-paper); --me-note-tint: var(--me-note-high-tint); --me-note-severity-ink: var(--me-note-high-ink); }
+.me-critique__note--medium { --me-note-paper: var(--me-note-medium-paper); --me-note-tint: var(--me-note-medium-tint); --me-note-severity-ink: var(--me-note-medium-ink); }
+.me-critique__note--low { --me-note-paper: var(--me-note-low-paper); --me-note-tint: var(--me-note-low-tint); --me-note-severity-ink: var(--me-note-low-ink); }
+
+/* Straightened and faded once it has been dealt with, which reads as "this one
+   has been handled" without needing a word for it. */
+.me-critique__note.is-answered {
+  --me-note-paper: var(--me-page-background);
+  opacity: 0.62;
+}
+
+.me-critique__note.is-selected {
+  box-shadow: 0 0 0 2px var(--me-note-tint, var(--me-accent)), 3px 3px 0 var(--me-separator);
+  transform: rotate(0deg) translateX(-2px);
+}
+
+/* The summary is the only white note, because it is not a finding -- it is the
+   reader's impression of the whole draft. Colour on this one would file it
+   alongside the problems, which is exactly what it is not. */
+.me-critique__note--summary { --me-note-paper: var(--me-page-background); }
+
+.me-critique__note-body { display: flex; flex-direction: column; gap: 6px; }
+
+/* Sits over the note's top edge, the way a tag does. */
+.me-critique__tag {
+  position: absolute;
+  top: -9px;
+  left: 10px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  color: #ffffff;
+  /* The deep member of the hue, not the bright one: white on bright amber
+     measures 2.35:1, which is a colour with a word hidden in it. */
+  background: var(--me-note-severity-ink);
+  box-shadow: 2px 2px 0 var(--me-separator);
+}
+
+.me-critique__tag--answered {
+  color: var(--me-note-ink);
+  background: color-mix(in srgb, var(--me-note-quiet) 22%, transparent);
+}
+
+.me-critique__note-head { display: flex; align-items: flex-start; gap: 6px; }
+
+/* Larger than the body it introduces, and in the reviewer's hand rather than
+   the app's: it is part of what they wrote on the note, not a label the app
+   has stuck on top of it. Inside a card there is no surrounding space to give
+   a heading weight, so it has to come from size. */
+.me-critique__note-category {
+  margin: 0;
+  flex: 1;
+  font-family: var(--me-critique-hand);
+  font-size: calc(17px * var(--me-critique-hand-scale));
+  font-weight: 400;
+  line-height: 1.25;
+  color: var(--me-note-ink);
+}
+
+.me-critique__flag {
+  padding: 1px 5px;
+  font-size: 11px;
+  color: var(--me-note-quiet);
+  background: color-mix(in srgb, var(--me-note-quiet) 18%, transparent);
+}
+
+/* The author's own sentence quoted back at them, so it has to be recognisable
+   as theirs. Deliberately not the hand. */
+.me-critique__quote {
+  margin: 0;
+  padding-left: 7px;
+  border-left: 2px solid color-mix(in srgb, var(--me-note-tint) 55%, transparent);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--me-note-quiet);
+}
+
+/* The criticism itself. The smallest of the three, because it is the only one
+   there is a lot of. */
+.me-critique__why {
+  margin: 0;
+  font-family: var(--me-critique-hand);
+  font-size: calc(13px * var(--me-critique-hand-scale));
+  line-height: 1.45;
+  color: var(--me-note-ink);
+}
+
+.me-critique__advice { display: flex; flex-direction: column; gap: 2px; padding-top: 2px; }
+
+/* A sub-heading within the note, so between the two. */
+.me-critique__advice-label {
+  font-family: var(--me-critique-hand);
+  font-size: calc(15px * var(--me-critique-hand-scale));
+  letter-spacing: 0.4px;
+  color: var(--me-note-quiet);
+}
+
+.me-critique__advice-text {
+  margin: 0;
+  font-family: var(--me-critique-hand);
+  font-size: calc(13px * var(--me-critique-hand-scale));
+  line-height: 1.45;
+  color: var(--me-note-ink);
+}
+
+.me-critique__note-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 3px;
+}
+
+.me-critique__location { font-size: 11px; color: var(--me-note-quiet); }
+
+/* Deep enough to carry white, on any of the four papers. A tinted glyph on
+   tinted paper is the version that does not work: a green tick on a pale
+   yellow note is two washes of the same lightness. */
+.me-critique__stamp { width: 20px; height: 20px; color: #ffffff; border-radius: 0; }
+.me-critique__stamp svg { width: 12px; height: 12px; }
+.me-critique__stamp--done { background: #17752f; }
+.me-critique__stamp--dismiss { background: #cc2621; }
+.me-critique__stamp:hover { filter: brightness(1.15); background: var(--me-stamp-hover, inherit); }
+.me-critique__stamp--done:hover { background: #17752f; }
+.me-critique__stamp--dismiss:hover { background: #cc2621; }
+
+/* --- The summary note ----------------------------------------------------- */
+
+/* Entirely in the app's own face rather than the hand: it is a summary *of*
+   the handwritten notes rather than one of them. */
+.me-critique__job {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--me-note-quiet);
+}
+
+.me-critique__summary-section { display: flex; flex-direction: column; gap: 3px; }
+
+.me-critique__section-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--me-primary-text);
+}
+
+.me-critique__summary-section--works .me-critique__section-title { color: var(--me-note-works); }
+.me-critique__summary-section--problems .me-critique__section-title { color: var(--me-note-high-ink); }
+
+.me-critique__summary-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; }
+
+.me-critique__summary-list li {
+  display: flex;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--me-note-ink);
+}
+
+.me-critique__summary-mark { flex: 0 0 auto; color: var(--me-note-quiet); }
+.me-critique__summary-section--works .me-critique__summary-mark { color: var(--me-note-works); }
+.me-critique__summary-section--problems .me-critique__summary-mark { color: var(--me-note-high-ink); }
+
+.me-critique__counts { display: flex; flex-wrap: wrap; gap: 10px; padding-top: 1px; }
+
+.me-critique__count { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--me-note-quiet); }
+.me-critique__count-swatch { width: 6px; height: 6px; }
+.me-critique__count--high .me-critique__count-swatch { background: var(--me-note-high-tint); }
+.me-critique__count--medium .me-critique__count-swatch { background: var(--me-note-medium-tint); }
+.me-critique__count--low .me-critique__count-swatch { background: var(--me-note-low-tint); }
+
+.me-critique__answered-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px 6px;
+}
+
+.me-critique__rule { flex: 1; height: 1px; background: color-mix(in srgb, var(--me-separator) 70%, transparent); }
+
+/* --- The shading in the document ------------------------------------------ */
+
+/* Painted with the Custom Highlight API rather than by wrapping the passage in
+   an element. The surfaces are contenteditable, and inserting a <mark> into
+   one moves every offset after it, corrupts the mapping the editor reads
+   selections through, and lands in the undo stack as though the author had
+   typed it. A highlight paints over the text without touching the tree.
+
+   Where the API is missing the cards still work and say so; nothing silently
+   half-happens. */
+::highlight(me-critique-high) { background-color: rgba(217, 61, 61, 0.26); }
+::highlight(me-critique-medium) { background-color: rgba(230, 153, 25, 0.30); }
+::highlight(me-critique-low) { background-color: rgba(92, 140, 204, 0.26); }
+::highlight(me-critique-selected-high) { background-color: rgba(217, 61, 61, 0.48); }
+::highlight(me-critique-selected-medium) { background-color: rgba(230, 153, 25, 0.55); }
+::highlight(me-critique-selected-low) { background-color: rgba(92, 140, 204, 0.48); }
+
+/* The rail is a desktop affordance. On the mobile layout there is no room
+   beside the document for a column of comments, so it becomes the whole view
+   when it is open rather than a sliver of one. */
+.me-app[data-layout="mobile"] .me-critique {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  width: auto;
+  flex: 1;
+  border-left: 0;
+}

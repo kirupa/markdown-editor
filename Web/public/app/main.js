@@ -44,6 +44,11 @@ import {
   showPrompt,
 } from './ui/dialogs.js';
 import { theme, openThemePopover } from './ui/theme.js';
+import { CritiqueRail } from './ui/critique.js';
+import {
+  clearCritiqueHighlights,
+  paintCritiqueHighlights,
+} from './ui/critique-highlights.js';
 
 const MODE_KEY = 'markdown-editor.mode';
 const SIDEBAR_KEY = 'markdown-editor.sidebarVisible';
@@ -390,7 +395,20 @@ const commands = {
     }
     applySidebarVisibility();
   },
-  setMobileLayout: (enabled) => setMobileLayout(enabled),
+  /**
+   * WA-1: read the draft and write notes on it.
+   *
+   * Opening the rail and running are the same command deliberately. A rail
+   * that opens empty and waits for a second press is two steps for one
+   * intention, and the empty state already explains itself for anyone who
+   * opens it another way.
+   */
+  critique() {
+    critique.run();
+  },
+  toggleCritique() {
+    critique.toggle();
+  },  setMobileLayout: (enabled) => setMobileLayout(enabled),
   toggleMobileLayout: () => setMobileLayout(!mobileLayout),
   setSavedForLater(wanted) {
     if (!model.path) return;
@@ -406,12 +424,36 @@ const commands = {
   },
 };
 
+// ── AI assisted critique (WA-*) ──────────────────────────────────────────────
+
+/**
+ * The rail of comments, and the shading it points at.
+ *
+ * The document is read from the model rather than handed in, so the rail is
+ * always looking at the same text the surfaces are — including after a reload
+ * from the server, which is a change the author did not make and which still
+ * has to move the marks.
+ *
+ * Constructed here, above the toolbar and the menu bar, because both of them
+ * *describe* it: the View menu reads `critique.isVisible` while it is being
+ * built, not when it is opened, so a rail declared further down is a rail that
+ * does not exist yet and the whole module fails to evaluate.
+ */
+const critique = new CritiqueRail({
+  root: element('critiqueRail'),
+  text: () => model.source,
+  documentPath: () => model.path ?? null,
+  onHighlightsChanged: () => repaintCritique(),
+  onReveal: (range) => revealSourceRange(range),
+});
+
 const toolbar = buildToolbar(element('toolbar'), commands);
 buildMenus(element('menubar'), commands, {
   canUndo: () => model.canUndo,
   canRedo: () => model.canRedo,
   mode: () => mode,
   sidebarVisible: () => sidebarVisible,
+  critiqueVisible: () => critique.isVisible,
   mobileLayout: () => mobileLayout,
   isCloud: () => isCloud(),
 });
@@ -540,13 +582,50 @@ model.addEventListener('change', () => {
   refreshSurfaces();
   refreshActiveStyles();
   updateStatus();
+  // The marks move onto the new text before anything is redrawn, so a
+  // highlight never spends a frame pointing at where its sentence used to be.
+  critique.noteCurrentText(model.source);
+  repaintCritique();
 });
 model.addEventListener('selection', refreshActiveStyles);
+
+function repaintCritique() {
+  paintCritiqueHighlights({
+    highlights: critique.highlights,
+    selectedID: critique.selectedID,
+    surfaces: [
+      { root: element('richSurface'), map: (range) => richProjection.toSurface(model.source, range) },
+      { root: element('sourceSurface'), map: (range) => range },
+    ],
+  });
+}
+
+/** Brings a finding's passage into view without stealing the caret. */
+function revealSourceRange(range) {
+  const surface = activeSurface();
+  const mapped = surface.projection.toSurface(model.source, range);
+  const node = surface.element;
+  const position = positionForOffset(node, mapped.location);
+  if (!position) return;
+  const probe = document.createRange();
+  probe.setStart(position.node, position.offset);
+  probe.collapse(true);
+  const rect = probe.getBoundingClientRect();
+  const bounds = node.parentElement.getBoundingClientRect();
+  if (rect.top < bounds.top || rect.bottom > bounds.bottom) {
+    node.parentElement.scrollTop += rect.top - bounds.top - bounds.height / 3;
+  }
+}
 
 // E-16: moving the caret in one pane moves it in the other, so Side by Side
 // always shows the same place twice.
 function mirrorSelection(source) {
   refreshActiveStyles();
+  // A click in the *text* opens the card for the passage under it, which is
+  // the other half of the two-way link: without it the rail can point into the
+  // document but the document cannot point back.
+  const caret = source.currentSourceSelection();
+  if (caret) critique.selectAtOffset(caret.location);
   if (mode !== 'split') return;
   const other = source === richSurface ? sourceSurface : richSurface;
   const range = other.projection.toSurface(model.source, model.selection);
@@ -573,6 +652,9 @@ model.addEventListener('open', () => {
   richSurface.renderedSource = null;
   sourceSurface.renderedSource = null;
   refreshSurfaces({ force: true });
+  // So is a critique. Keeping one across an open would leave notes about a
+  // document nobody is looking at, anchored to offsets in a different text.
+  critique.documentChanged();
 });
 model.addEventListener('autosaved', () => flashStatus('Autosaved'));
 model.addEventListener('saved', () => flashStatus('Saved'));
@@ -1045,8 +1127,14 @@ async function start() {
     showError(error);
   }
 
-  if (storage.reason === 'signed-out') {
-    showError(new ApiError(
+  // Asked for once at launch rather than when somebody presses the button:
+  // what the server is set up with decides what the rail may offer, and
+  // finding that out after the press means a button that looked available and
+  // was not. Deliberately not awaited -- a slow answer must not hold up the
+  // editor, and the rail redraws when it arrives.
+  critique.loadConfig();
+
+  if (storage.reason === 'signed-out') {    showError(new ApiError(
       'You were signed out of your cloud workspace.',
       'Reconnect your Google account from the welcome screen to reach those documents.'
     ));

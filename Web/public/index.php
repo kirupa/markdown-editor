@@ -49,6 +49,11 @@ $asset = static fn (string $path): string => $assetBase === '' ? $path : "$asset
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="<?= htmlspecialchars($asset('css/themes.css'), ENT_QUOTES) ?>">
 <link rel="stylesheet" href="<?= htmlspecialchars($asset('css/app.css'), ENT_QUOTES) ?>">
+<!-- The critique's typefaces. Outside the versioned asset tree on purpose: a
+     stylesheet inside it resolves url() from wherever the deploy put it, which
+     is a different depth from the repository layout, so the font paths would be
+     right in one and a 404 in the other. See hands.css. -->
+<link rel="stylesheet" href="hands.css?v=<?= htmlspecialchars($assetBase === '' ? '0' : $assetBase, ENT_QUOTES) ?>">
 </head>
 <body>
 <?php if ($startupError !== null): ?>
@@ -130,6 +135,12 @@ $asset = static fn (string $path): string => $assetBase === '' ? $path : "$asset
         </div>
       </div>
     </main>
+
+    <!-- WA-*: the critique rail. Docked against the document rather than
+         floating beside it, because the notes are *about* the text they sit
+         next to. `hidden` from the start: an empty rail on a first visit is a
+         column of nothing taking a third of the window. -->
+    <aside class="me-critique" id="critiqueRail" aria-label="Critique" hidden></aside>
   </div>
 
   <div class="me-statusbar" id="statusbar">

@@ -1,0 +1,69 @@
+/* The hands the critique can be written in.
+ *
+ * A stylesheet of its own, and deliberately not part of app.css.
+ *
+ * A deploy moves app/ and css/ into a directory named after their contents, so
+ * that a cache holding a new main.js against a stale module cannot serve a
+ * broken module graph. A stylesheet inside that directory resolves url() from
+ * wherever it has landed, which is one folder deep locally and three deep once
+ * deployed — so a font path that is right in one layout is a 404 in the other.
+ *
+ * Splitting them out keeps this file at a fixed depth beside the fonts it
+ * names, and keeps 1.4MB of typefaces out of every deploy that changes a line
+ * of JavaScript. The versioned directory exists for the module graph; fonts
+ * have no imports and cannot break that way.
+ *
+ * A browser downloads one of these only when something on the page is actually
+ * set in it, so declaring all eight costs nothing until a reader picks one.
+ *
+ * All eight are SIL Open Font License or Apache 2.0, and the licences are
+ * shipped beside them in fonts/.
+ */
+
+@font-face {
+  font-family: "Architects Daughter";
+  src: url("fonts/ArchitectsDaughter-Regular.ttf") format("truetype");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Caveat";
+  src: url("fonts/Caveat-Regular.ttf") format("truetype");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Indie Flower";
+  src: url("fonts/IndieFlower-Regular.ttf") format("truetype");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Patrick Hand";
+  src: url("fonts/PatrickHand-Regular.ttf") format("truetype");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Shadows Into Light";
+  src: url("fonts/ShadowsIntoLight.ttf") format("truetype");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Gloria Hallelujah";
+  src: url("fonts/GloriaHallelujah.ttf") format("truetype");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Kalam";
+  src: url("fonts/Kalam-Regular.ttf") format("truetype");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Permanent Marker";
+  src: url("fonts/PermanentMarker-Regular.ttf") format("truetype");
+  font-display: swap;
+}

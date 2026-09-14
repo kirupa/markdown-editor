@@ -41,4 +41,17 @@ class WorkspaceError extends \RuntimeException
         }
         return $payload;
     }
+
+    /**
+     * A critique that could not be run, or could not be understood.
+     *
+     * 502 rather than 400 or 500: nothing is wrong with what the browser
+     * asked for, and nothing is wrong with this server either. The failure is
+     * upstream, and saying so is the difference between "try again" and "fix
+     * your document".
+     */
+    public static function critique(string $message, string $recovery = ''): self
+    {
+        return new self($message, $recovery, 502);
+    }
 }

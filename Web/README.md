@@ -31,6 +31,7 @@ nothing installed on the host but PHP itself.
 11. [File explorer](#11-file-explorer)
 11a. [Managing files and folders](#11a-managing-files-and-folders)
 11b. [Cloud storage and accounts](#11b-cloud-storage-and-accounts)
+11c. [AI assisted critique](#11c-ai-assisted-critique)
 12. [Themes, typography, and layout](#12-themes-typography-and-layout)
 13. [Keyboard shortcut reference](#13-keyboard-shortcut-reference)
 14. [Architecture](#14-architecture)
@@ -108,6 +109,8 @@ JavaScript — so its parity is *demonstrated* rather than assumed.
 | WX-3 | The ports were validated by differential testing against the compiled Swift: 14,148 formatting cases (every command against a corpus of documents and selections) and 41 documents through the render model, comparing rendered text, every style span, and every source ↔ rendered range mapping. Zero mismatches. |
 | WX-4 | `themes.css` is **generated** by compiling the app's real `EditorColorTheme.swift` and printing the resulting colors, so derived values — blends, WCAG-contrast text picks — cannot drift. See `tools/generate-theme-css.swift`. That file now lives in `../Shared`; moving it was verified by regenerating this CSS and confirming it came out byte-identical. |
 | WX-13 | The generated blends are AppKit's, which are computed in Apple's Generic RGB space rather than sRGB — black halfway to white is `0.573`, not `0.5`. This is a property of the palette, not of macOS, so the CSS is correct for every build. |
+| WX-14 | The critique is ported the same way, in both languages. `critique-report.js`, `critique-anchoring.js`, `critique-score.js`, `critique-model.js` and `critique-anchor-tracking.js` are ports of their Swift originals; `CritiqueRequest.php`, `CritiqueProvider.php` and `KonvoSkill.php` are ports of theirs. The prompt is built on the server because the skill pass is 21KB and is a set of instructions a client should not be able to edit before sending. |
+| WX-15 | The anchoring port relies on WX-2 as much as the formatting one does: a quote is found by UTF-16 offsets in both builds, so the same critique shades the same characters. What it cannot share is the *fold* -- Swift's `Character.lowercased()` and JavaScript's `String.toLowerCase()` are both full Unicode case folding, which is why the two agree, and that is an assumption worth writing down rather than an accident worth relying on. |
 | WX-5 | The JavaScript suites assert the same expectations as the Swift suites, and both builds' tests must pass before a change ships. |
 
 ### Deliberate differences
@@ -539,6 +542,65 @@ Honest limits on the testing behind this section:
 
 ---
 
+## 11c. AI assisted critique
+
+A rail of comments down the right-hand side of the document: a model reads the
+draft through the KONVO critique pass and writes notes on the passages that
+prove each point, each one shaded in the text beside the card that describes it.
+
+The macOS build's feature, brought over. It is the same shape, the same
+severities, the same score and the same two actions, because it is the same
+critique -- but where the key lives had to change, and that change is visible
+enough to be worth stating before the requirements rather than after them.
+
+| ID | Requirement |
+| --- | --- |
+| WA-1 | **AI Assisted Critique** (⌃⌘C, the toolbar's pen, or the rail's own button) reads the whole draft and returns findings. |
+| WA-2 | Each finding carries a severity, a category, the passage it is about, the reader consequence, and either a fix or a direction. |
+| WA-3 | Each finding's quoted passage is found again in the document and shaded in both editing surfaces. A quote that cannot be found is still shown as a card, saying so, rather than shaded onto something that merely looks similar. |
+| WA-4 | Clicking a card selects its passage; putting the caret in a shaded passage opens its card. |
+| WA-5 | A finding can be marked **Done** or **Dismissed**. Either removes its shading, straightens and fades its card, and sinks it below the outstanding ones under an **ANSWERED** heading. |
+| WA-6 | A score out of 100 counts only what is outstanding, so answering everything returns exactly 100. It decays rather than subtracting, so every fix is worth something and no draft reaches zero. |
+| WA-7 | The rail is in **reading order**, not severity order. Severity is the colour, the tag and the count at the top; it decides how a finding looks, not where it sits. |
+| WA-8 | The marks follow the words as the draft is edited beneath them, including changes this browser did not make. A line break typed inside a passage ends the passage there. |
+| WA-9 | Once the draft has moved, the rail says so and says how many notes still point at something. |
+| WA-10 | Answering a note is remembered by what the note *says*, not by its identity, so a re-run does not resurrect a dismissal. |
+| WA-11 | The comments can be set in any of thirteen hands, eight bundled and the rest offered only where they resolve. Each name in the picker is shown in its own face. |
+| WA-12 | The first card is the summary -- what the piece is, what works, what does not -- and is entirely in the system face, because it is a summary *of* the handwritten notes rather than one of them. |
+| WA-13 | Nothing about the critique fails silently. A provider that is not configured, a refused key, an unreachable model and a reply that is not a critique are four different messages, each with what to do about it. |
+
+### Where the key lives
+
+| ID | Requirement |
+| --- | --- |
+| WA-14 | The API key is the **server's**, read from the environment, and is never sent to the browser. A browser cannot hold a secret: anything it can send, anyone reading the page can send. |
+| WA-15 | It follows that **whoever can reach this app can spend the key behind it.** The deploy script's optional `.htpasswd` ([§15](#15-run-deploy-and-test)) is what that is for. This is stated here rather than left to be discovered on a bill. |
+| WA-16 | The rail's settings therefore *report* the provider and model rather than asking for them, and offer a test that asks the model for one word over the same path a critique uses. |
+| WA-17 | `MDE_CRITIQUE_PROVIDER`, `MDE_CRITIQUE_MODEL`, `MDE_CRITIQUE_KEY` and `MDE_CRITIQUE_BASE_URL` configure it; with none set, `OPENAI_API_KEY` is used, which a host doing anything else with a model usually already has. |
+| WA-18 | `MDE_CRITIQUE_BASE_URL` exists because the OpenAI request shape is spoken by rather more than OpenAI -- Azure, OpenRouter, a proxy, a model on the same machine. It is also how this build is exercised end to end without spending a request on a live account. |
+| WA-19 | The macOS build's fourth provider -- a model already installed on the reader's machine, needing no key -- is deliberately absent. A server has no such thing, and offering it would put an option in a menu that could never work. |
+
+### The KONVO skill
+
+| ID | Requirement |
+| --- | --- |
+| WA-20 | The skill's `## Critique` section is sent with every request, so the critique is KONVO's whichever model answers rather than that model's own idea of what a critique is. |
+| WA-21 | It is **vendored** into `Web/skill/` by `tools/vendor-konvo-skill.sh` and deployed with the private half of the app, out of reach of the web. The Mac reads a git checkout in the reader's home directory; a web server has neither that nor a way to pull one, and fetching it at request time would make every critique depend on GitHub being reachable and leave nothing to review in a diff. |
+| WA-22 | The consequence is stated rather than implied: the web build's skill updates when that script is run and the result deployed, **not** when anybody presses something. The version panel names the commit that actually went out. |
+| WA-23 | The pass is fenced and introduced as instructions; the draft is fenced and introduced as material. Both are fenced for the same reason from opposite directions -- a draft must never be read as instructions, and the skill must never be read as something to critique. |
+| WA-24 | With no skill deployed the critique still runs, and says on screen that it is running without it. Refusing the whole request over a missing file would turn a degraded critique into no critique at all. |
+
+### Deliberate differences from the Mac
+
+| ID | Difference |
+| --- | --- |
+| WA-25 | The shading is painted with the **CSS Custom Highlight API** rather than by wrapping each passage in an element. Both surfaces are `contenteditable`: inserting a `<mark>` moves every offset after it, corrupts the mapping selections are read through, and lands in the browser's undo stack as though the author had typed it. A highlight paints over the text without touching the tree. |
+| WA-26 | Where that API is missing -- Firefox before 140 -- the cards work and nothing is shaded. Degrading is correct here; the notes are still readable, and the alternative is an editor that corrupts documents on one browser. |
+| WA-27 | No revision history yet. The Mac keeps every critique of a document and lets you page back through them; here a critique lasts until the document is closed. |
+| WA-28 | No narrowed re-run yet. The Mac can re-read only the paragraphs that changed and keep the notes about the rest; here a re-run reads the whole draft. The server and the prompt already take a focus passage, so what is missing is the client half. |
+
+---
+
 ## 12. Themes, typography, and layout
 
 | ID | Requirement |
@@ -631,6 +693,8 @@ sheets in place of menus.
 | `⌃⌘Q` | Block Quote |
 | `⌃⌘1` / `⌃⌘2` / `⌃⌘3` | Rich Text / Side by Side / Markdown |
 | `⌃⌘S` | Show File Explorer |
+| `⌃⌘C` | AI Assisted Critique |
+| `⇧⌘C` | Show Critique |
 | `⌃⌘M` | Mobile Layout |
 
 ---
@@ -650,11 +714,22 @@ Web/
 │   ├── FileTree.php           One directory level, sorted, filtered
 │   ├── FileManager.php        Create, rename, move, duplicate, delete
 │   ├── ImageImporter.php      Upload validation, assets folder, collisions
+│   ├── Critique.php           Runs a critique; the API key never leaves here
+│   ├── CritiqueProvider.php   Port of CritiqueProvider.swift: URL, headers, body
+│   ├── CritiqueRequest.php    Port of CritiqueRequest.swift: the prompt
+│   ├── KonvoSkill.php         Port of KonvoSkill.swift: the vendored pass
 │   └── Api.php                One dispatch table for every action
+├── skill/                     The KONVO critique pass, vendored and deployed
+│   ├── critique-pass.md       The skill's ## Critique section, 21KB
+│   └── version.txt            The commit it came from, so the app can say so
+├── tools/
+│   └── vendor-konvo-skill.sh  Re-vendors the pass from a skill checkout
 ├── public/                    The document root
 │   ├── index.php              The only page
 │   ├── api.php                The only endpoint
 │   ├── icon.svg
+│   ├── hands.css              @font-face only; outside the versioned tree
+│   ├── fonts/                 The eight bundled hands, OFL and Apache
 │   ├── css/
 │   │   ├── themes.css         Generated from EditorColorTheme.swift
 │   │   └── app.css            Layout, typography, components
@@ -729,7 +804,20 @@ If you control the document root, there is almost nothing to do:
 4. There is no step 4. No build, no install, no configuration file.
 
 Only `Web/public` needs to be reachable. `Web/src`, `Web/bootstrap.php`,
-`Web/seed`, and `Web/tests` are read by PHP but never served.
+`Web/seed`, `Web/skill`, and `Web/tests` are read by PHP but never served.
+
+To run critiques, the server also needs a key. It is read from the environment
+so that it is never a file somebody can accidentally commit, serve, or back up:
+
+```apache
+SetEnv MDE_CRITIQUE_KEY sk-...
+```
+
+`OPENAI_API_KEY` is used when that is unset, which a host already doing
+something else with a model usually has. Without either, the editor works
+exactly as before and the rail says plainly that critiques are not set up
+([WA-13](#11c-ai-assisted-critique)). **Anyone who can reach the app can spend
+that key** — see [WA-15](#where-the-key-lives) and `MDE_HTPASSWD` below.
 
 #### On shared hosting, where you cannot move the document root
 
@@ -739,9 +827,9 @@ everything else — including the documents — goes above it, where the web ser
 will not serve it however it is asked.
 
 ```
-~/markdown-editor/        bootstrap.php, src/, seed/     ← above the document root
-~/kirupaMarkdown/         the documents                  ← above the document root
-~/public_html/markdown/   index.php, api.php, app/, css/ ← served, at /markdown/
+~/markdown-editor/        bootstrap.php, src/, seed/, skill/  ← above the document root
+~/kirupaMarkdown/         the documents                       ← above the document root
+~/public_html/markdown/   index.php, api.php, app/, css/      ← served, at /markdown/
 ```
 
 Two `SetEnv` lines in `.htaccess` are the whole configuration:
@@ -768,6 +856,8 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 | WS-9 | A deploy places `app/` and `css/` under `v/<content-hash>/` and writes `asset-base.php` beside `index.php`, so every module URL changes together. A query string only versions the URLs the page writes; the imports *inside* a module are static paths no query string reaches, and a cache holding a new `main.js` against a stale `welcome.js` loads a module graph that fails outright. Relative imports inherit the versioned directory, so this needs no build step. |
 | WS-10 | The hash is of the contents, so an unchanged deploy re-uses the directory and nothing is re-downloaded, and `mirror --delete` removes the previous one. |
 | WS-11 | `.htaccess` marks `.php` no-cache — the page naming the assets must never outlive them — and denies `asset-base.php`, which is data for `index.php` rather than a page. |
+| WS-12 | `skill/` is deployed with the private half, so the KONVO critique pass is readable by PHP and not by URL. |
+| WS-13 | `fonts/` and `hands.css` stay *outside* the versioned asset tree. A stylesheet moved into `v/<hash>/css/` resolves its `url()` from three folders deep rather than one, so a font path that is right in the repository is a 404 on the deployed build — and only there. It also keeps 1.4MB of typefaces out of every deploy that changes a line of JavaScript; the versioned directory exists for the module graph, and a font has no imports to break. |
 | WS-8 | Whether or not there is a password, the deployment still contains itself: the classes, the starter documents, and every document live above the document root, `.htaccess` refuses `.md` files and directory listings under the served folder, and the workspace boundary ([§5](#5-the-workspace)) is enforced on every request. An open install can be edited by anyone; it still cannot be read *around*. |
 
 ### Tests
@@ -805,6 +895,8 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 | WY-20 | **Live updates are verified between two independent clients.** `watchChildren` and `watchNode` had only ever run against a double that announces changes synchronously from the object that stored them, which is not evidence that anything is delivered. The checks open a second Firebase app with its own Firestore instance and its own cache, signed in as the same account, so a write through it reaches the first client the way a phone reaches a laptop — through the server. Attach snapshot, a new document, an edit, and a deletion are each waited for. This closes the gap [§11b](#what-has-not-been-verified) recorded as unverifiable. |
 | WY-21 | The app imports Firebase from a pinned CDN URL, which node will not resolve, so the checks map that one prefix onto a fetched copy with a resolve hook (`sdk-boot.mjs`) rather than changing the app or reimplementing its loader. The app's own modules are what run, including `loadFirebase`'s caching and `openFirestore`'s fallback when persistence is unavailable — which in node it always is, so [WR-25](#working-offline)'s fallback is exercised on every run rather than only reasoned about. |
 | WY-22 | **The stylesheet is checked against the markup it styles.** `tests/stylesheet.test.js` reads `app.css`, `themes.css`, and `index.php` and fails when they stop agreeing. Every `var(--me-*)` written without a fallback must be defined somewhere — in a theme, in `app.css`, or by `setProperty` in the app — because an undefined one is not a warning but an invalid declaration. And anything the app hides through the `hidden` attribute must not have a class that sets a `display`, unless the class also carries an explicit `[hidden] { display: none }`; `hidden` is only a UA-stylesheet rule and any author rule beats it. Elements built in JavaScript are covered by pairing a `x.className =` with an `x.hidden =` on the same receiver, which is how every builder here is written. |
+| WY-24 | **The critique's ported logic is tested against the same expectations as the Swift.** Forty JavaScript tests over the decoder, the anchoring, the score, the ordering and the anchor tracking, and nineteen PHP tests over the prompt, the skill extraction, each provider's envelope, and what `describe` is allowed to reveal. The ones that matter most are the ones about failure, because these fail quietly: a brace inside a quoted passage must not end the JSON object early, an exact match must beat a relaxed one, an edit *at* the end of a marked passage must not drag the mark over what follows, and a resolution must be keyed by what a finding says rather than by its identity or every re-run resurrects every dismissal. |
+| WY-25 | **What the tests could not have caught was caught by running it.** Three faults, all of them invisible to a unit test and two of them invisible locally: the View menu reads `critique.isVisible` while it is being *built*, so a rail declared later in the module put the whole app in the temporal dead zone and the page rendered blank; `curl_close()` is deprecated in PHP 8.5 and the notice is printed before the JSON body, so any host with `display_errors` on would have failed every critique with a parse error on a reply that was perfectly good; and the deploy moves stylesheets three folders deeper than the repository puts them, so the `url()` in eight `@font-face` rules would have 404'd on the live site and nowhere else. The end-to-end run used `MDE_CRITIQUE_BASE_URL` against a stand-in model, which is why it cost nothing to do. |
 | WY-23 | **A full-window layer that paints must start hidden in the markup.** The narrow rule that would have caught the 28% dim: a class that is `position: fixed`/`absolute`, `inset: 0`, and carries a non-transparent background is the shape of element that covers everything, so the element wearing it has to be written with `hidden` rather than left for the code to switch off later. All four guards were mutation-checked by reintroducing the real bugs — the missing attribute, the missing override, the undefined variable, and the explorer rejoining the flow — with a green control either side. |
 
 ---
@@ -813,6 +905,7 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 
 | Change | What shipped |
 | --- | --- |
+| The critique rail, on the web | The macOS build's AI assisted critique, brought over whole: a rail of notes down the right-hand side, each shaded onto the passage it is about, with a decaying score, Done and Dismiss, and thirteen hands to write in ([§11c](#11c-ai-assisted-critique)). The pure logic is ported line by line from the Swift and tested against the same expectations — the decoder, the anchoring, the score, the ordering and the anchor tracking, forty tests. Two things had to be decided rather than copied. The **key is the server's**, because a browser cannot hold a secret, which means whoever can reach the app can spend the key behind it and the PRD says so ([WA-14](#where-the-key-lives), [WA-15](#where-the-key-lives)); and the **skill is vendored and deployed** rather than pulled, because a web server has no checkout to pull into, so the version panel names the commit that actually went out instead of implying it is current ([WA-21](#the-konvo-skill), [WA-22](#the-konvo-skill)). The shading is painted with the CSS Custom Highlight API: both surfaces are `contenteditable`, so wrapping a passage in a `<mark>` would move every offset after it and land in the undo stack as though the author had typed it ([WA-25](#deliberate-differences-from-the-mac)). Running it end to end against a stand-in model found three faults no unit test would have: the View menu reads the rail's state *while it is being built*, so a rail declared further down the module left the whole app blank; `curl_close()` is deprecated in PHP 8.5 and its notice is printed **before** the JSON body, so a host with `display_errors` on would have failed every request with a parse error; and a stylesheet moved into `v/<hash>/` resolves `url()` from three folders deep instead of one, so the eight typefaces would have 404'd on the deployed build and only there — the faces now live in their own unversioned `hands.css` ([WA-11](#11c-ai-assisted-critique)). |
 | Give a picture the run of the page | The page is now wider than the column the text is set in, and a picture may spread up to 100px into the margin on each side while prose stays at the column ([WI-26](#10-images-and-assets)…[WI-29](#10-images-and-assets)). Matches the Mac, including the arithmetic. Measured in a real browser: a 842px picture in a 652px column overhung 95px each side with both centres at 732. Building it turned up a fault a unit test could not have: the ceiling was read from a custom property, and `getComputedStyle` hands those back unresolved, so `clamp( 0px, (100vw - 700px) / 2, 100px )` parsed as `NaN` and the ceiling silently collapsed to the column. |
 | A calmer page | Four changes with one aim: put the document on its own. A selected image now has four corner drag handles and resizes proportionally from any of them, as one undo step rather than one per pointer move ([WI-22](#10-images-and-assets)). The explorer starts closed and floats over the document instead of taking part in the layout, so opening it no longer shoves the text sideways, and the rendered measure is centered on the page rather than in whatever the explorer leaves over ([WT-13](#12-themes-typography-and-layout), [WT-15](#12-themes-typography-and-layout)). The menu bar, toolbar, and status bar gave up their tinted bands and group rules for the page's own background ([WT-14](#12-themes-typography-and-layout)). Writing the styles turned up two bugs that had been shipping unnoticed. `#alertLayer` — fixed, inset 0, `rgb(0 0 0 / 0.28)`, the dimming behind a dialog — was written into the markup **without** the `hidden` attribute, and the dialog code only ever *unsets* it, so every page load was dimmed 28% until some dialog happened to open and close; a theme claiming `#ffffff` measured `rgb(184, 184, 184)` on screen, which is exactly 255 × 0.72. And `--me-border` and `--me-text` were used six times but defined nowhere, which does not warn — an undefined custom property makes the whole declaration invalid, so those borders were `currentColor` and that background was transparent. Neither is the kind of bug a behavioural test can see, so both are now guarded by reading the files ([WY-22](#tests), [WY-23](#tests)), and the handles by real trusted pointer input, since a synthetic event never exercises pointer capture. |
 | Notice a change made outside this browser | Two gaps closed. Local storage pushes nothing at all by design ([WC-7](#live-updates)), so a document edited on the server's disk while it was open here went unnoticed until the next save quietly overwrote it; the open document is now re-read whenever the tab comes back to the front ([WC-9](#live-updates)) — one request per return, not the polling WC-7 rejected — which also covers cloud tabs the browser suspended in the background. And a revision that arrived while there were unsaved edits was announced in a status flash and then dropped, though this browser held the only copy of it; it is now kept and offered in a bar above the document, **Show Newest** or **Keep Mine** ([WC-10](#live-updates)). The tab-return trigger is injectable so `live.js` stays free of the DOM and testable under node; seven tests, mutation-checked (removing the trigger turns three red). |

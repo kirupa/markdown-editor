@@ -82,6 +82,28 @@ export function showError(error) {
   });
 }
 
+/**
+ * States something that is not a failure.
+ *
+ * `showError` puts "Markdown Editor" at the top and treats its second string
+ * as a recovery suggestion, which is exactly wrong for a panel reporting what
+ * is configured -- it would read as though the configuration were the problem.
+ */
+export function showMessage({ title, lines = [] }) {
+  return present((alert, close) => {
+    const buttons = document.createElement('div');
+    buttons.className = 'me-alert__buttons';
+    buttons.append(button('OK', 'me-button--default', () => close(null)));
+
+    alert.append(heading(title));
+    for (const [index, line] of lines.entries()) {
+      if (line === '') continue;
+      alert.append(paragraph(line, index === 0 ? 'me-alert__message' : 'me-alert__recovery'));
+    }
+    alert.append(buttons);
+  });
+}
+
 /** @returns {Promise<string|null>} the entered text, or null when cancelled. */
 export function showPrompt({ title, message = '', value = '', confirmLabel = 'OK' }) {
   return present((alert, close) => {

@@ -114,12 +114,50 @@ final class Api
                 $this->requiredString($_POST, 'path'),
                 $this->requiredUpload($files)
             ),
+            // The critique's three actions. The key never leaves the server,
+            // so unlike every other action here these do work on the browser's
+            // behalf rather than merely reading and writing what it asked for.
+            'critiqueConfig' => Critique::describe(),
+            'critique' => $this->requirePost($isPost) ?? $this->runCritique(
+                (string) ($body['text'] ?? ''),
+                isset($body['focus']) && is_string($body['focus']) ? $body['focus'] : null
+            ),
+            'critiqueTest' => $this->requirePost($isPost) ?? $this->testCritique(),
             default => throw new WorkspaceError(
                 'Unknown request: ' . $action,
                 'This build of the editor does not support that action.',
                 404
             ),
         };
+    }
+
+    /**
+     * Runs a critique, or explains why it cannot.
+     *
+     * The "not configured" case is a 502 with a sentence a person can act on
+     * rather than an empty result, because an app that shrugs is
+     * indistinguishable from an app that is broken.
+     */
+    private function runCritique(string $text, ?string $focus): array
+    {
+        return $this->critiqueService()->run($text, $focus);
+    }
+
+    private function testCritique(): array
+    {
+        return $this->critiqueService()->test();
+    }
+
+    private function critiqueService(): Critique
+    {
+        $critique = Critique::fromEnvironment();
+        if ($critique === null) {
+            throw WorkspaceError::critique(
+                'This server is not set up to run critiques.',
+                'Set MDE_CRITIQUE_KEY (or OPENAI_API_KEY) in the server environment.'
+            );
+        }
+        return $critique;
     }
 
     /**
