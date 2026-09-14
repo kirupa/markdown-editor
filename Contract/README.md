@@ -650,12 +650,21 @@ matched neither.
 
 Three things a port has to get right, each measured rather than assumed:
 
-- **Centre on the mark's circle, not on its bounding box.** The leaves stick out
+- **Size by the mark's circle, not by its bounding box.** The leaves stick out
   of the circle at one corner and nothing balances them, so the box's centre
-  sits at (0.489, 0.484) of the artwork against the circle's (0.539, 0.520) —
+  sits at (0.489, 0.484) of the artwork against the circle's (0.540, 0.520) —
   about a twentieth of the icon, and plainly visible as a lean. The circle is
   found as ink that is dark *and* near-neutral; brightness alone catches the
   `#008000` leaves, which are darker than the `#333333` ring.
+- **Centre by the ink the circle encloses, not by the circle's geometry.** The
+  ring is not closed — the leaves cross it, leaving a 40° gap — so the dark
+  shape is a C, and a C weighs more on the side away from its opening. Centred
+  on its geometry it measures perfect and still looks pushed off. Correcting all
+  the way to the ring's own centre of mass overshoots, badly enough to see: the
+  leaves crowd the plate corner and an empty quarter opens opposite. Balancing
+  what the circle holds — the ring and what is inside it — lands about a quarter
+  of the way there, and is the version that reads straight. Settle this by
+  rendering the candidates side by side; it is not decidable by argument.
 - **Size to the platform's own plate.** 0.66 of the plate where the platform
   gives the icon an inset plate of its own (macOS), 0.51 of the square where it
   rounds the corners off the artwork instead (iOS). The same fraction in both

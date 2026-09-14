@@ -40,25 +40,40 @@ func makeBitmap(size: Int, draw: (CGContext, CGFloat) -> Void) -> NSBitmapImageR
     return representation
 }
 
-/// The kirupa mark, and the circle a reader centres it by.
+/// The kirupa mark: the circle that sizes it, and the point it balances on.
 struct Logo {
     let image: NSImage
     /// The circular outline's bounds as fractions of the image, y measured
-    /// from the bottom. What the icon is sized and centred on.
+    /// from the bottom. What the icon is **sized** by.
     let anchor: NSRect
+    /// The dark mark's centre of gravity, in the same fractions. What the icon
+    /// is **centred** by.
+    let opticalCentre: CGPoint
 
-    /// Draws the mark so its **circle** is centred in `rect` and that circle's
-    /// diameter is `fill` of the rect.
+    /// Draws the mark so it balances on `rect`'s centre, with the circle's
+    /// diameter `fill` of the rect.
     ///
-    /// The circle rather than the artwork, because the circle is what a reader
-    /// sees as the mark: the leaves are an accent that sticks out of it at one
-    /// corner, and sizing or centring by them makes the round part — the part
-    /// the eye settles on — sit small and off to one side.
+    /// Sized by the circle and centred by what the circle holds, because those
+    /// are two different questions and one answer does not serve both.
+    ///
+    /// Centring on the circle's *geometry* measures perfect and still looks
+    /// wrong. The ring is not closed — the leaves cross it and leave a 40° gap
+    /// from 9 to 11 o'clock — so the dark shape on screen is a C rather than an
+    /// O, and a C weighs more on the side away from its opening. The eye reads
+    /// the weight, not the bounding box.
+    ///
+    /// Correcting all the way to the dark ring's own centre of mass overshoots:
+    /// it drags the whole mark up and left until the leaves crowd the plate's
+    /// corner and a visibly empty quarter opens opposite. Rendered side by side
+    /// that reads worse than the error it fixes. What balances is the ink the
+    /// circle *encloses* — the ring and the fruit inside it, which is the round
+    /// object being centred — while the leaves stay an accent that is allowed
+    /// to overhang. An accent that drags the composition is not an accent.
     func draw(in rect: NSRect, fill: CGFloat) {
         let side = rect.width * fill / max(anchor.width, anchor.height)
         let origin = NSPoint(
-            x: rect.midX - anchor.midX * side,
-            y: rect.midY - anchor.midY * side
+            x: rect.midX - opticalCentre.x * side,
+            y: rect.midY - opticalCentre.y * side
         )
         image.draw(
             in: NSRect(origin: origin, size: NSSize(width: side, height: side)),
@@ -104,10 +119,16 @@ func loadLogo(from directory: URL) throws -> Logo {
             userInfo: [NSLocalizedDescriptionKey: "No logo at \(url.path)"]
         )
     }
-    return Logo(image: image, anchor: anchorBounds(of: image))
+    let mark = measureMark(in: image)
+    return Logo(
+        image: image,
+        anchor: mark.outline,
+        opticalCentre: mark.centreOfGravity
+    )
 }
 
-/// Where the mark's circular outline sits inside its own square, as fractions.
+/// The mark's circular outline and its centre of gravity, both as fractions of
+/// the artwork's own square, y measured from the bottom.
 ///
 /// Measured rather than written down. The artwork is neither centred in its
 /// viewBox nor filling it, so every number here would otherwise be a constant
@@ -120,16 +141,16 @@ func loadLogo(from directory: URL) throws -> Logo {
 /// top-left corner. Saturation is what separates a drawn outline from coloured
 /// artwork.
 ///
-/// Measured on this logo the circle comes back 0.713 square, centred at
-/// (0.539, 0.520) — against (0.489, 0.484) for the bounding box of everything
-/// drawn. That gap of about a twentieth of the icon is the visible lean this
-/// exists to remove.
+/// Measured on this logo the circle comes back 0.713 square with its bounds
+/// centred at (0.540, 0.520), while the ink it encloses balances at (0.545,
+/// 0.535). Both numbers are needed: the bounds size the mark, the balance
+/// point places it.
 ///
 /// Falls back to every non-white pixel when a mark has no such outline. White
 /// is not ink either way: this logo carries a white halo and a white disc that
 /// are invisible on a white plate, and counting them reserves room for
 /// something nobody can see.
-func anchorBounds(of image: NSImage) -> NSRect {
+func measureMark(in image: NSImage) -> (outline: NSRect, centreOfGravity: CGPoint) {
     let probe = 512
     let rep = makeBitmap(size: probe) { _, size in
         image.draw(
@@ -143,6 +164,7 @@ func anchorBounds(of image: NSImage) -> NSRect {
     }
 
     var outline = Box(), ink = Box()
+    var inkPixels: [(x: Int, y: Int)] = []
     for y in 0..<probe {
         for x in 0..<probe {
             guard let colour = rep.colorAt(x: x, y: y), colour.alphaComponent > 0.5
@@ -151,6 +173,7 @@ func anchorBounds(of image: NSImage) -> NSRect {
             let lowest = min(colour.redComponent, min(colour.greenComponent, colour.blueComponent))
             guard highest < 0.97 || lowest < 0.97 else { continue }
             ink.add(x: x, y: y)
+            inkPixels.append((x, y))
 
             let saturation = highest > 0 ? (highest - lowest) / highest : 0
             if saturation < 0.25, highest < 0.45 {
@@ -160,18 +183,52 @@ func anchorBounds(of image: NSImage) -> NSRect {
     }
 
     let box = outline.isEmpty ? ink : outline
-    return box.normalized(in: probe)
+    let bounds = box.normalized(in: probe)
+
+    // The circle inscribed in those bounds, in pixels, and the ink inside it.
+    let side = CGFloat(probe)
+    let centreX = bounds.midX * side
+    let centreY = (1 - bounds.midY) * side
+    let radius = max(bounds.width, bounds.height) * side / 2
+    var enclosed = Box()
+    for pixel in inkPixels {
+        let dx = CGFloat(pixel.x) + 0.5 - centreX
+        let dy = CGFloat(pixel.y) + 0.5 - centreY
+        if (dx * dx + dy * dy).squareRoot() <= radius {
+            enclosed.add(x: pixel.x, y: pixel.y)
+        }
+    }
+
+    let balance = enclosed.isEmpty ? box : enclosed
+    return (bounds, balance.centreOfGravity(in: probe))
 }
 
-/// A bounding box accumulated a pixel at a time, in top-down image rows.
+/// Ink accumulated a pixel at a time, in top-down image rows: both the box
+/// around it and where its weight falls.
 struct Box {
     private var minX = Int.max, minY = Int.max, maxX = -1, maxY = -1
+    private var sumX = 0, sumY = 0, count = 0
 
     var isEmpty: Bool { maxX < minX }
 
     mutating func add(x: Int, y: Int) {
         minX = min(minX, x); maxX = max(maxX, x)
         minY = min(minY, y); maxY = max(maxY, y)
+        sumX += x; sumY += y; count += 1
+    }
+
+    /// The mean position of the ink, in the same fractions `normalized` uses.
+    ///
+    /// Every pixel counts once. That is the point: a gap in the outline is
+    /// pixels that are not there, and their absence is exactly what shifts the
+    /// shape's weight off the centre its geometry claims.
+    func centreOfGravity(in side: Int) -> CGPoint {
+        guard count > 0 else { return CGPoint(x: 0.5, y: 0.5) }
+        let side = CGFloat(side)
+        return CGPoint(
+            x: (CGFloat(sumX) / CGFloat(count) + 0.5) / side,
+            y: (side - 1 - CGFloat(sumY) / CGFloat(count) + 0.5) / side
+        )
     }
 
     /// As fractions of a `side`-pixel square, with y flipped to run from the
@@ -414,13 +471,13 @@ func writeWebIcon(into directory: URL, logo: Logo, source: URL) throws {
         x: inset, y: inset, width: canvas - inset * 2, height: canvas - inset * 2
     )
 
-    // The arithmetic `Logo.draw` does, in SVG user units. `anchor` measures y
-    // from the bottom and SVG measures it from the top, which is the one
-    // place the two coordinate systems have to be reconciled by hand.
+    // The arithmetic `Logo.draw` does, in SVG user units. `opticalCentre`
+    // measures y from the bottom and SVG measures it from the top, which is
+    // the one place the two coordinate systems have to be reconciled by hand.
     let side = plate.width * 0.66 / max(logo.anchor.width, logo.anchor.height)
     let scale = side / logo.image.size.width
-    let anchorX = logo.anchor.midX * logo.image.size.width
-    let anchorY = (1 - logo.anchor.midY) * logo.image.size.height
+    let anchorX = logo.opticalCentre.x * logo.image.size.width
+    let anchorY = (1 - logo.opticalCentre.y) * logo.image.size.height
     let x = canvas / 2 - anchorX * scale
     let y = canvas / 2 - anchorY * scale
 
