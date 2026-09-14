@@ -650,21 +650,24 @@ matched neither.
 
 Three things a port has to get right, each measured rather than assumed:
 
-- **Size by the mark's circle, not by its bounding box.** The leaves stick out
-  of the circle at one corner and nothing balances them, so the box's centre
-  sits at (0.489, 0.484) of the artwork against the circle's (0.540, 0.520) —
-  about a twentieth of the icon, and plainly visible as a lean. The circle is
-  found as ink that is dark *and* near-neutral; brightness alone catches the
-  `#008000` leaves, which are darker than the `#333333` ring.
-- **Centre by the ink the circle encloses, not by the circle's geometry.** The
-  ring is not closed — the leaves cross it, leaving a 40° gap — so the dark
-  shape is a C, and a C weighs more on the side away from its opening. Centred
-  on its geometry it measures perfect and still looks pushed off. Correcting all
-  the way to the ring's own centre of mass overshoots, badly enough to see: the
-  leaves crowd the plate corner and an empty quarter opens opposite. Balancing
-  what the circle holds — the ring and what is inside it — lands about a quarter
-  of the way there, and is the version that reads straight. Settle this by
-  rendering the candidates side by side; it is not decidable by argument.
+- **Place the mark by its round body, not by its bounding box.** Size *and*
+  centre on it, as though any accent were not there. On this mark the leaves
+  stick out of the body at one corner and nothing balances them, so the full
+  ink box's centre sits at (0.489, 0.484) of the artwork against the body's
+  (0.540, 0.520) — about a twentieth of the icon, and plainly visible as a
+  lean. The body is found as ink that is dark *and* near-neutral; brightness
+  alone catches the `#008000` leaves, which are darker than the `#333333` ring.
+  Measured, that outline bounds the whole body: the ring and the orange inside
+  it are concentric to within a one-pixel antialiased fringe, so there is no
+  third measurement to reconcile.
+- **Do not "optically" correct for a broken outline.** This mark's ring is open
+  — the leaves cross it, leaving a 40° gap — so its dark pixels weigh to the
+  lower right, and it is tempting to shift the mark until that weight is
+  centred. Two versions of that idea were built and both looked worse than what
+  they fixed: the full correction crowds the accent into the plate's corner and
+  opens an empty quarter opposite, and the gentler one still lifts the mark off
+  centre. The gap is where the accent sits, not an error. Centre the body and
+  let the accent overhang.
 - **Size to the platform's own plate.** 0.66 of the plate where the platform
   gives the icon an inset plate of its own (macOS), 0.51 of the square where it
   rounds the corners off the artwork instead (iOS). The same fraction in both
