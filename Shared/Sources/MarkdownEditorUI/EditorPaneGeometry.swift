@@ -107,6 +107,34 @@ public enum EditorPaneGeometry {
         return columnWidth + railWidth
     }
 
+    /// The content size a document window should open at when nothing has been
+    /// saved for it yet.
+    ///
+    /// `ideal` is what the window wants — on this app that is the writing
+    /// column plus the comments rail docked beside it, because the rail starts
+    /// open, so a window sized to the writing alone opens with the notes
+    /// already squeezing the column they dock to. `available` is what the
+    /// screen can actually show, so a default worked out from constants does
+    /// not open a window taller or wider than the desk it lands on.
+    ///
+    /// The minimum wins over the ceiling, for the same reason it does in
+    /// `explorerWidth(_:totalWidth:minimum:maximum:)`: on a display too small
+    /// for the window's own minimum, a window that overflows is better than one
+    /// asked to be smaller than its content will go.
+    ///
+    /// This is the *default*, not a rule. A window whose size was restored or
+    /// set by hand keeps it; this only answers the first run.
+    public static func defaultWindowContentSize(
+        ideal: CGSize,
+        minimum: CGSize,
+        available: CGSize
+    ) -> CGSize {
+        CGSize(
+            width: max(minimum.width, min(ideal.width, available.width)),
+            height: max(minimum.height, min(ideal.height, available.height))
+        )
+    }
+
     /// Whether a double-click at `point` should zoom the window.
     ///
     /// Pure, and separated from the window for one reason: the decision cannot
