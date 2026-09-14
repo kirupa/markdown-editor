@@ -5,13 +5,32 @@
 // build does not need to run this.
 //
 // Everything is drawn with Core Graphics and packed by `iconutil`, both of
-// which ship with macOS, so no asset pipeline or design tool is required.
+// which ship with macOS, so no asset pipeline or design tool is required. The
+// one piece of artwork, the kirupa mark, is vendored beside this script's
+// output as an SVG rather than read from wherever it happens to live on one
+// Mac, so that regenerating the icons does not depend on a path only one
+// person has.
 
 import AppKit
 import Foundation
 
 let brand = NSColor(srgbRed: 0x07 / 255, green: 0x98 / 255, blue: 0xFF / 255, alpha: 1)
-let brandDark = NSColor(srgbRed: 0x00 / 255, green: 0x66 / 255, blue: 0xAF / 255, alpha: 1)
+
+let destination = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
+
+/// The kirupa mark, as vectors, so every size in the iconset is rendered at
+/// that size rather than resampled from one bitmap. The 16pt entries in a
+/// `.icns` are small enough that resampling shows.
+let logo: NSImage = {
+    let file = destination.appendingPathComponent("kirupa-logo.svg")
+    guard let image = NSImage(contentsOf: file) else {
+        FileHandle.standardError.write(
+            Data("cannot read \(file.path)\n".utf8)
+        )
+        exit(1)
+    }
+    return image
+}()
 
 func makeBitmap(size: Int, draw: (CGContext, CGFloat) -> Void) -> NSBitmapImageRep {
     let representation = NSBitmapImageRep(
@@ -39,41 +58,63 @@ func makeBitmap(size: Int, draw: (CGContext, CGFloat) -> Void) -> NSBitmapImageR
     return representation
 }
 
-/// Draws `symbol` centered in `rect`, scaled to fit while keeping its aspect.
-func drawSymbol(
-    _ symbol: String,
-    in rect: NSRect,
-    weight: NSFont.Weight,
-    color: NSColor
-) {
-    let configuration = NSImage.SymbolConfiguration(
-        pointSize: rect.height,
-        weight: weight
-    )
-    guard let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
-        .withSymbolConfiguration(configuration)
-    else {
-        FileHandle.standardError.write(Data("missing symbol \(symbol)\n".utf8))
+/// Where the mark's visible ink sits inside its own square, as a fraction of
+/// that square, measured rather than guessed.
+///
+/// The artwork is not centered in its canvas: the leaves push it up and to the
+/// left, and its white backing circle — invisible against a white plate, but
+/// perfectly real to anything counting pixels — extends further still.
+/// Centering the canvas would therefore leave the fruit sitting visibly low
+/// and right of the middle of the icon. Measuring against white asks the same
+/// question the eye asks, which is where the ink starts and stops.
+let inkBounds: NSRect = {
+    let side = 512
+    let rendered = makeBitmap(size: side) { _, size in
+        NSColor.white.setFill()
+        NSRect(x: 0, y: 0, width: size, height: size).fill()
+        logo.draw(in: NSRect(x: 0, y: 0, width: size, height: size))
+    }
+
+    var minX = side, maxX = -1, minRow = side, maxRow = -1
+    for row in 0..<side {
+        for column in 0..<side {
+            guard let pixel = rendered.colorAt(x: column, y: row) else { continue }
+            let isPaper =
+                pixel.redComponent > 0.99 && pixel.greenComponent > 0.99
+                && pixel.blueComponent > 0.99
+            if isPaper { continue }
+            minX = min(minX, column)
+            maxX = max(maxX, column)
+            minRow = min(minRow, row)
+            maxRow = max(maxRow, row)
+        }
+    }
+    guard maxX >= minX, maxRow >= minRow else {
+        FileHandle.standardError.write(Data("the mark rendered blank\n".utf8))
         exit(1)
     }
 
-    // System symbols are template images. Tinting has to happen in a scratch
-    // image, where `sourceAtop` can only touch the glyph's own alpha rather
-    // than everything already drawn underneath.
-    let natural = image.size
-    let tinted = NSImage(size: natural)
-    tinted.lockFocus()
-    image.draw(in: NSRect(origin: .zero, size: natural))
-    color.set()
-    NSRect(origin: .zero, size: natural).fill(using: .sourceAtop)
-    tinted.unlockFocus()
+    // `colorAt` counts rows from the top; NSRect counts up from the bottom.
+    let edge = CGFloat(side)
+    return NSRect(
+        x: CGFloat(minX) / edge,
+        y: CGFloat(side - 1 - maxRow) / edge,
+        width: CGFloat(maxX - minX + 1) / edge,
+        height: CGFloat(maxRow - minRow + 1) / edge
+    )
+}()
 
-    let scale = min(rect.width / natural.width, rect.height / natural.height)
-    let drawn = NSSize(width: natural.width * scale, height: natural.height * scale)
-    tinted.draw(
+/// Draws the mark so that its *ink* — not its canvas — is centered in `rect`
+/// and fills it, keeping the artwork's aspect ratio.
+func drawLogo(in rect: NSRect) {
+    let edge = min(rect.width / inkBounds.width, rect.height / inkBounds.height)
+    let ink = NSSize(width: inkBounds.width * edge, height: inkBounds.height * edge)
+    logo.draw(
         in: NSRect(
-            origin: NSPoint(x: rect.midX - drawn.width / 2, y: rect.midY - drawn.height / 2),
-            size: drawn
+            x: rect.midX - ink.width / 2 - inkBounds.minX * edge,
+            y: rect.midY - ink.height / 2 - inkBounds.minY * edge,
+            width: edge,
+            height: edge
         ),
         from: .zero,
         operation: .sourceOver,
@@ -83,35 +124,37 @@ func drawSymbol(
     )
 }
 
-/// The rounded-rectangle app icon: a blue gradient squircle with a white
-/// document glyph, inset to match the macOS icon grid.
+/// The rounded-rectangle app icon: the kirupa mark on a white squircle, inset
+/// to match the macOS icon grid.
+///
+/// White rather than a colored plate because the mark carries its own color and
+/// was drawn to sit on paper — the orange against a blue gradient reads as two
+/// brands stacked. It also means the Dock entry is a white tile, which is what
+/// separates it from the rest of the row at a glance.
 func drawAppIcon(_ context: CGContext, _ size: CGFloat) {
     let inset = size * 0.086
     let plate = NSRect(x: inset, y: inset, width: size - inset * 2, height: size - inset * 2)
     let radius = plate.width * 0.2237
     let path = NSBezierPath(roundedRect: plate, xRadius: radius, yRadius: radius)
 
-    context.saveGState()
-    path.addClip()
-    let gradient = NSGradient(
-        colors: [
-            NSColor(srgbRed: 0x4F / 255, green: 0xB8 / 255, blue: 0xFF / 255, alpha: 1),
-            brand,
-            brandDark,
-        ],
-        atLocations: [0, 0.55, 1],
-        colorSpace: .sRGB
-    )!
-    gradient.draw(in: plate, angle: -90)
-    context.restoreGState()
+    NSColor.white.setFill()
+    path.fill()
 
-    let glyph = NSRect(
-        x: plate.midX - plate.width * 0.30,
-        y: plate.midY - plate.height * 0.30,
-        width: plate.width * 0.60,
-        height: plate.height * 0.60
+    // A hairline, because a white tile on the light Dock has no edge of its own
+    // and dissolves into the background it is sitting on.
+    NSColor(white: 0.86, alpha: 1).setStroke()
+    path.lineWidth = max(1, size * 0.004)
+    path.stroke()
+
+    let side = plate.width * 0.72
+    drawLogo(
+        in: NSRect(
+            x: plate.midX - side / 2,
+            y: plate.midY - side / 2,
+            width: side,
+            height: side
+        )
     )
-    drawSymbol("doc.richtext", in: glyph, weight: .regular, color: .white)
 }
 
 /// The document icon: a white page with a folded corner, a few text rules, and
@@ -271,7 +314,6 @@ func writeIconSet(
     print("Wrote \(directory.appendingPathComponent("\(name).icns").path)")
 }
 
-let destination = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
 try writeIconSet(named: "AppIcon", into: destination, draw: drawAppIcon)
 try writeIconSet(named: "MarkdownDocument", into: destination, draw: drawDocumentIcon)
 
@@ -279,30 +321,27 @@ try writeIconSet(named: "MarkdownDocument", into: destination, draw: drawDocumen
 ///
 /// Full-bleed and square: iOS applies its own rounded-rectangle mask and
 /// shadow, so an icon that draws its own rounded plate the way the macOS one
-/// does ends up with a visible double edge inside the system's corners.
+/// does ends up with a visible double edge inside the system's corners. That
+/// also rules out the macOS icon's hairline, and there is no need for it —
+/// the home screen puts a shadow under every icon, so a white tile has an edge
+/// whatever it is sitting on.
 func drawIOSAppIcon(_ context: CGContext, _ size: CGFloat) {
     let plate = NSRect(x: 0, y: 0, width: size, height: size)
 
-    context.saveGState()
-    let gradient = NSGradient(
-        colors: [
-            NSColor(srgbRed: 0x4F / 255, green: 0xB8 / 255, blue: 0xFF / 255, alpha: 1),
-            brand,
-            brandDark,
-        ],
-        atLocations: [0, 0.55, 1],
-        colorSpace: .sRGB
-    )!
-    gradient.draw(in: plate, angle: -90)
-    context.restoreGState()
+    NSColor.white.setFill()
+    plate.fill()
 
-    let glyph = NSRect(
-        x: plate.midX - plate.width * 0.28,
-        y: plate.midY - plate.height * 0.28,
-        width: plate.width * 0.56,
-        height: plate.height * 0.56
+    // Smaller than the macOS mark relative to its plate, since iOS's mask
+    // takes a larger bite out of the corners than the squircle above does.
+    let side = size * 0.62
+    drawLogo(
+        in: NSRect(
+            x: plate.midX - side / 2,
+            y: plate.midY - side / 2,
+            width: side,
+            height: side
+        )
     )
-    drawSymbol("doc.richtext", in: glyph, weight: .regular, color: .white)
 }
 
 /// Writes the single 1024×1024 PNG an iOS asset catalog expects.
