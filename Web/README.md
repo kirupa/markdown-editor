@@ -74,7 +74,7 @@ touch survives byte for byte.
 
 | ID | Non-goal |
 | --- | --- |
-| WNG-1 | Multi-user editing, accounts, or authentication. One workspace, and whoever can reach it. Accounts are planned by way of Firebase rather than built here. |
+| WNG-1 | Multi-user editing, accounts, or authentication. One workspace, and whoever can reach it. Accounts are built by way of Firebase and are currently **switched off** ([§11b](#11b-cloud-storage-and-accounts)). |
 | WNG-2 | Real-time collaboration or conflict resolution. |
 | WNG-3 | A database. State is the filesystem plus `localStorage`. |
 | WNG-4 | A JavaScript framework or a CSS framework. |
@@ -365,7 +365,31 @@ workspace is a folder nobody can reorganize without leaving the app.
 
 ## 11b. Cloud storage and accounts
 
-Documents can live in one of two places, and the editor never guesses which.
+> **Switched off.** The whole of this section is behind `CLOUD_ENABLED` in
+> `storage.js`, and it is `false`. Nothing below is reachable in the shipped
+> build. The requirements stay because the code stays: this is a feature that
+> is not finished, not a feature that was wrong.
+
+### Why it is hidden
+
+The cloud path is written and tested against an emulated Firestore, and it is
+not finished — the two console steps it needs are still outstanding
+([§Setup steps](#setup-steps-that-cannot-be-done-from-this-repository)). A
+half-present integration is worse than an absent one. It offers a door that
+does not open, and every visitor pays for a Firebase SDK download from a CDN to
+be told so.
+
+| ID | Requirement |
+| --- | --- |
+| WR-39 | `CLOUD_ENABLED` is **one flag**, in the module that already owns which storage is in use. Everything downstream asks `cloudIsAvailable()` rather than testing for the cloud itself, so turning it on turns all of it on at once: the welcome screen's option, the File menu's two items, the status bar's indicator, and the session restore. |
+| WR-40 | The flag is checked **before anything is loaded**, so a disabled cloud costs no Firebase SDK download and makes no request to a third party. Verified on screen: zero requests matching firebase, googleapis, gstatic or google. |
+| WR-41 | With one place documents can go there is no choice to present, so the welcome screen shows one option rather than a list of one. **The reachability warning survives** — "anyone who can open this page can read and change these documents" is the more important half of that screen and is about the option that is left. |
+| WR-42 | The File menu loses both storage items rather than showing them disabled. A menu item naming the only option available tells the reader nothing. |
+| WR-43 | The status bar's storage indicator is hidden, and is written `hidden` in the markup rather than switched off by script ([WY-23](#tests)). It exists to answer "where is this going", and a badge that has said the same thing on every document anybody has opened stops being read long before it becomes wrong. |
+| WR-44 | `storageChoices` takes `cloudAvailable` as a **parameter defaulting to the flag**, so the shape it returns with the cloud switched on stays under test while it is switched off. A hidden feature whose tests were deleted is a feature that comes back broken. |
+| WR-45 | `useCloud()` throws if it is somehow reached with the flag off, rather than opening a sign-in window for a feature that is not on offer. |
+
+### The requirements, for when it returns
 
 | ID | Requirement |
 | --- | --- |
@@ -987,6 +1011,7 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 
 | Change | What shipped |
 | --- | --- |
+| Firebase put away | Cloud storage is behind one flag and the flag is off ([§11b](#11b-cloud-storage-and-accounts)). The path is written and tested against an emulated Firestore, and the two console steps it needs are still outstanding — so it offered a door that did not open, and charged every visitor a Firebase SDK download from a CDN to find out. The flag is read before anything loads, so a disabled cloud now makes **zero** third-party requests, measured on screen rather than assumed. The welcome screen shows one option rather than a list of one, and keeps the reachability warning, which is the half that matters and is about the option that is left ([WR-41](#why-it-is-hidden)). The File menu loses both items rather than showing them disabled, and the status-bar indicator is hidden in the markup rather than by script. `storageChoices` takes the flag as a parameter defaulting to itself, so the switched-on shape stays under test — a hidden feature whose tests were deleted is a feature that comes back broken ([WR-44](#why-it-is-hidden)). |
 | Bring your own key, and one view | Two changes the critique made necessary. The API key is now the **reader's**, entered in the app and kept in their browser rather than held by the server ([§Whose key](#whose-key)). A page open to anyone that critiques on the owner's key is a page whose running cost is set by whoever visits, and the failure is quiet and somebody else's until the bill arrives. The key still travels through the server, because two of the three providers refuse a cross-origin request outright, but it is spent and forgotten — not stored, not logged. The trade is written down rather than implied: `localStorage` is readable by any script on this origin, which is the least-bad option a page has ([WA-30](#whose-key)). A server key is still possible for a private install, behind an explicit `MDE_CRITIQUE_ALLOW_SERVER_KEY`, because a host with `OPENAI_API_KEY` already set for something else would otherwise opt in by accident ([WA-17](#whose-key)). And the provider and model are validated server-side, since a model name is otherwise a string from a page that ends up inside a request URL ([WA-32](#whose-key)). Separately, and following the Mac, there is now **one view** ([§8.1](#81-one-view)). Side by Side, the Markdown pane, the divider, the scroll link, the selection mirror, the three toolbar icons, `⌃⌘1`/`⌃⌘2`/`⌃⌘3` and `source-renderer.js` are all gone. A rendered view that is genuinely editable makes a second pane showing the same document a second place to look rather than a second thing to see. |
 | The critique rail, on the web | The macOS build's AI assisted critique, brought over whole: a rail of notes down the right-hand side, each shaded onto the passage it is about, with a decaying score, Done and Dismiss, and thirteen hands to write in ([§11c](#11c-ai-assisted-critique)). The pure logic is ported line by line from the Swift and tested against the same expectations — the decoder, the anchoring, the score, the ordering and the anchor tracking, forty tests. Two things had to be decided rather than copied. The **key is the server's**, because a browser cannot hold a secret, which means whoever can reach the app can spend the key behind it and the PRD says so ([WA-14](#whose-key), [WA-15](#whose-key)); and the **skill is vendored and deployed** rather than pulled, because a web server has no checkout to pull into, so the version panel names the commit that actually went out instead of implying it is current ([WA-21](#the-konvo-skill), [WA-22](#the-konvo-skill)). The shading is painted with the CSS Custom Highlight API: both surfaces are `contenteditable`, so wrapping a passage in a `<mark>` would move every offset after it and land in the undo stack as though the author had typed it ([WA-25](#deliberate-differences-from-the-mac)). Running it end to end against a stand-in model found three faults no unit test would have: the View menu reads the rail's state *while it is being built*, so a rail declared further down the module left the whole app blank; `curl_close()` is deprecated in PHP 8.5 and its notice is printed **before** the JSON body, so a host with `display_errors` on would have failed every request with a parse error; and a stylesheet moved into `v/<hash>/` resolves `url()` from three folders deep instead of one, so the eight typefaces would have 404'd on the deployed build and only there — the faces now live in their own unversioned `hands.css` ([WA-11](#11c-ai-assisted-critique)). Run for real against kirupa.com afterwards, which found three more things. A 5xx status was the wrong way to carry an application error: **Cloudflare replaces a 5xx body from the origin with its own page**, so a carefully worded explanation of a bad key arrived as the string `error code: 502` — an app promising that nothing fails silently cannot use a status whose body is thrown away in transit, so these are 424 now ([WA-13](#11c-ai-assisted-critique)). The Gemini models the app has been offering since the feature shipped had been **retired**, which the API reports as `is not found`, reading like a typo rather than a model that no longer exists; fixed in the shared provider so all three builds moved together ([WA-29](#whose-key)). And the live keys tell their own story: OpenAI's is rejected, Anthropic's account is out of credit, and Gemini answers — so [§What has been verified](#what-has-been-verified) says which of the three has actually written a critique. |
 | Give a picture the run of the page | The page is now wider than the column the text is set in, and a picture may spread up to 100px into the margin on each side while prose stays at the column ([WI-26](#10-images-and-assets)…[WI-29](#10-images-and-assets)). Matches the Mac, including the arithmetic. Measured in a real browser: a 842px picture in a 652px column overhung 95px each side with both centres at 732. Building it turned up a fault a unit test could not have: the ceiling was read from a custom property, and `getComputedStyle` hands those back unresolved, so `clamp( 0px, (100vw - 700px) / 2, 100px )` parsed as `NaN` and the ceiling silently collapsed to the column. |

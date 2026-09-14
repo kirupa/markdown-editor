@@ -20,6 +20,27 @@ const MODE_KEY = 'markdown-editor.storageMode';
 export const LOCAL = 'local';
 export const CLOUD = 'cloud';
 
+/**
+ * Whether documents may live in a Google account at all.
+ *
+ * **Off.** The cloud path is written, tested against an emulated Firestore and
+ * not finished: the console steps it needs are outstanding, and a half-present
+ * integration is worse than an absent one -- it offers a door that does not
+ * open, and every visitor pays for a Firebase SDK download to be told so.
+ *
+ * One flag rather than deleted code, because the work is real and the way back
+ * should be a line rather than a revert. Everything downstream asks this rather
+ * than testing for the cloud itself, so turning it on turns all of it on: the
+ * welcome screen's option, the File menu's two items, the storage indicator,
+ * and the session restore that loads the SDK in the first place.
+ */
+export const CLOUD_ENABLED = false;
+
+/** Whether the cloud is on offer. Read this; never test the flag directly. */
+export function cloudIsAvailable() {
+  return CLOUD_ENABLED;
+}
+
 const listeners = new Set();
 let mode = LOCAL;
 
@@ -38,7 +59,7 @@ export function storageMode() {
 }
 
 export function isCloud() {
-  return mode === CLOUD;
+  return CLOUD_ENABLED && mode === CLOUD;
 }
 
 export function observeStorage(listener) {
@@ -93,8 +114,32 @@ export function rememberedMode() {
  * deployments: served from a laptop it means only you, and served from a
  * public address it means anybody at all. Both follow from the same sentence.
  */
-export function storageChoices({ mode: current = mode, account = currentAccount(), workspaceName } = {}) {
-  const cloudActive = current === CLOUD;
+export function storageChoices({
+  mode: current = mode,
+  account = currentAccount(),
+  workspaceName,
+  // A parameter with a default rather than a read of the flag, so the shape
+  // this returns with the cloud switched back on stays under test while it is
+  // switched off. A hidden feature whose tests were deleted is a feature that
+  // comes back broken.
+  cloudAvailable = CLOUD_ENABLED,
+} = {}) {
+  const cloudActive = cloudAvailable && current === CLOUD;
+  // With the cloud off there is one place documents can live, and a list of one
+  // is not a choice. The warning still has to be shown, though -- it is the
+  // more important half and it is about the option that is left.
+  if (!cloudAvailable) {
+    return [
+      {
+        id: LOCAL,
+        active: true,
+        recommended: false,
+        title: workspaceName ? `On this server — ${workspaceName}` : 'On this server',
+        detail: 'Anyone who can open this page can read and change these documents.',
+        label: null,
+      },
+    ];
+  }
   return [
     {
       id: CLOUD,
@@ -143,6 +188,12 @@ export function useLocal({ remember = true } = {}) {
 
 /** Signs in if necessary, then switches to the account's documents. */
 export async function useCloud() {
+  // A last line rather than a redundant one: nothing should reach here with
+  // the cloud off, and if something does it must fail with a sentence rather
+  // than open a sign-in window for a feature that is not on offer.
+  if (!CLOUD_ENABLED) {
+    throw new Error('Cloud storage is not available in this build.');
+  }
   const account = currentAccount() ?? (await restoreAccount()) ?? (await signIn());
   await activateCloud(account.uid);
   rememberMode(CLOUD);
@@ -173,6 +224,13 @@ export async function signOutAndUseLocal() {
  * than present a decision that looks already made.
  */
 export async function restoreStorage() {
+  // Answered before anything is loaded, so a disabled cloud costs no Firebase
+  // SDK download and no request to a third party.
+  if (!CLOUD_ENABLED) {
+    useLocal({ remember: false });
+    return { mode: LOCAL, account: null, reason: null, chosen: true };
+  }
+
   const remembered = rememberedMode();
 
   if (remembered === null) {

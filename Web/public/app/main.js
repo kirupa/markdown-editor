@@ -13,6 +13,7 @@
 import { api, ApiError } from './api.js';
 import {
   restoreStorage, storageMode, isCloud, currentAccount, useCloud, signOutAndUseLocal,
+  cloudIsAvailable,
 } from './storage.js';
 import { MarkdownDocumentModel } from './document.js';
 import { startLiveUpdates } from './live.js';
@@ -228,10 +229,22 @@ function restartLiveUpdates() {
   });
 }
 
-/** Says which storage is in use, so it is never a guess (WR-5). */
+/**
+ * Says which storage is in use, so it is never a guess (WR-5).
+ *
+ * Hidden while there is only one. The indicator exists to answer "where is
+ * this going", and a badge that has said the same thing on every document
+ * anybody has ever opened stops being read long before it becomes wrong.
+ */
 function updateStorageIndicator() {
   const indicator = document.getElementById('storageIndicator');
   if (!indicator) return;
+  if (!cloudIsAvailable()) {
+    indicator.hidden = true;
+    indicator.textContent = '';
+    return;
+  }
+  indicator.hidden = false;
   const account = currentAccount();
   indicator.textContent = isCloud()
     ? `Cloud · ${account?.email || account?.name || 'signed in'}`
@@ -433,6 +446,7 @@ buildMenus(element('menubar'), commands, {
   critiqueVisible: () => critique.isVisible,
   mobileLayout: () => mobileLayout,
   isCloud: () => isCloud(),
+  cloudAvailable: () => cloudIsAvailable(),
 });
 
 const mobileUI = buildMobileUI({
@@ -1052,6 +1066,11 @@ async function start() {
   // they would otherwise land in silently is a workspace anyone reaching this
   // page can edit. Turning the preference off says "don't show me this again",
   // which is not the same as "decide for me".
+  //
+  // With one place documents can go there is nothing to choose, so
+  // `restoreStorage` reports the choice as made and the preference is obeyed
+  // as written. The warning is still on the welcome screen for anyone who
+  // opens it.
   const requested = new URLSearchParams(window.location.search).get('path');
   if (requested) {
     await openDocument(requested);

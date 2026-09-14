@@ -16,7 +16,7 @@ with every image still resolving.
 | Get started | `cd macOS && make install` | open `iOS/MarkdownEditor.xcodeproj` | `Web/serve.sh` |
 | Publish it | — | — | `Web/deploy.sh` to any PHP host |
 | On a phone | — | native, iPhone and iPad | a thumb-first layout, `⌃⌘M` or automatic |
-| AI critique | yes, key in the Keychain | — | yes, key on the server |
+| AI critique | yes, key in the Keychain | — | yes, bring your own key |
 | Requirements | macOS 13+, Swift toolchain | iOS 17+, Xcode | PHP 8.1+ |
 
 ## What it does
@@ -83,12 +83,13 @@ This is a direction, not a description. Where it actually stands today:
 
 | Build | Talks to Firestore | Offline copy |
 | --- | --- | --- |
-| Web | Yes, but as an opt-in alternative to the PHP workspace, which is still the default | Yes, for documents opened on the device |
+| Web | Built and **switched off** behind one flag, because the console steps it needs are outstanding and a door that does not open is worse than no door. See [Web/README.md §11b](Web/README.md#11b-cloud-storage-and-accounts) | Yes, once it is switched back on |
 | macOS | Not from the interface yet. The cloud core and the Firebase adapter are built and compile into the app's package | Yes, once wired up — the on-disk cache is switched on in `FirebaseConfiguration` |
 | iOS | Same as macOS | Same as macOS |
 
-So one of three builds can reach a cloud document from its interface, and it is
-the one that is not the default. What the native side has now is the layer
+So **no build can reach a cloud document from its interface today.** The web
+build could, and it is switched off until the console work is done; the native
+builds never could. What the native side has now is the layer
 underneath: `Shared/Sources/MarkdownEditorCloud/` holds every cloud decision
 with no Firebase in it at all — 49 tests, run by `run-tests.sh` in a third of a
 second with no network — and `Shared/Firebase/` holds the adapter that puts

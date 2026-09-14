@@ -30,8 +30,13 @@ suite('Storage modes', () => {
  * assert, in both directions.
  */
 suite('Storage choices', () => {
-  const local = (options) => storageChoices(options).find((choice) => choice.id === LOCAL);
-  const cloud = (options) => storageChoices(options).find((choice) => choice.id === CLOUD);
+  // Asked for with the cloud switched on, because that is the shape these
+  // describe. It is off in the shipped build ([WR-39]); the tests below keep
+  // the on shape honest so that turning it back on is a line rather than a
+  // rediscovery, and the off shape has tests of its own further down.
+  const withCloud = (options) => storageChoices({ ...options, cloudAvailable: true });
+  const local = (options) => withCloud(options).find((choice) => choice.id === LOCAL);
+  const cloud = (options) => withCloud(options).find((choice) => choice.id === CLOUD);
   const both = [
     { mode: LOCAL, account: null, workspaceName: 'kirupaMarkdown' },
     { mode: CLOUD, account: { email: 'someone@example.com' }, workspaceName: 'kirupaMarkdown' },
@@ -81,5 +86,35 @@ suite('Storage choices', () => {
   test('the workspace is still named when the server has not answered yet', () => {
     expectEqual(local({ mode: LOCAL, account: null }).title, 'On this server');
     expectEqual(local(both[0]).title, 'On this server — kirupaMarkdown');
+  });
+});
+
+suite('With cloud storage switched off', () => {
+  test('there is one place documents can go, so there is no choice to present', () => {
+    const choices = storageChoices({ cloudAvailable: false, workspaceName: 'Notes' });
+    expectEqual(choices.length, 1);
+    expectEqual(choices[0].id, LOCAL);
+    expect(choices[0].active, 'the only option must read as the one in use');
+  });
+
+  test('the warning survives, because it is about the option that is left', () => {
+    // The sharing warning is the more important half of this screen: served
+    // from a public address, "anyone who can open this page" is the whole
+    // security model. Hiding the cloud must not take it with it.
+    const [only] = storageChoices({ cloudAvailable: false, workspaceName: 'Notes' });
+    expect(
+      only.detail.includes('Anyone who can open this page'),
+      `the reachability warning must survive: ${only.detail}`
+    );
+  });
+
+  test('no button is offered, because there is nothing to switch to', () => {
+    const [only] = storageChoices({ cloudAvailable: false });
+    expectEqual(only.label, null);
+  });
+
+  test('the workspace is still named', () => {
+    const [only] = storageChoices({ cloudAvailable: false, workspaceName: 'kirupaMarkdown' });
+    expect(only.title.includes('kirupaMarkdown'), only.title);
   });
 });

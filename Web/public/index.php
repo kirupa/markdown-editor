@@ -144,7 +144,11 @@ $asset = static fn (string $path): string => $assetBase === '' ? $path : "$asset
   <div class="me-statusbar" id="statusbar">
     <span id="statusDocument">No document</span>
     <span class="me-statusbar__spacer"></span>
-    <span class="me-statusbar__storage" id="storageIndicator"></span>
+    <!-- Hidden from the start: with one place documents can go there is
+         nothing for this to say, and it is only unhidden when the cloud
+         is switched back on. An element the code only ever *unsets*
+         hidden on has to be written hidden (WY-23). -->
+    <span class="me-statusbar__storage" id="storageIndicator" hidden></span>
     <span id="statusSaved"></span>
   </div>
 

@@ -180,17 +180,24 @@ function menuDefinitions(commands, state) {
         },
         separator,
         { title: 'Close', shortcut: { command: true, key: 'w' }, action: commands.close },
-        separator,
-        // Storage lives in File because it decides where Save goes (WR-6).
-        {
-          title: state.isCloud() ? 'Cloud Storage (Connected)' : 'Connect Google Account…',
-          action: commands.connectCloud,
-        },
-        {
-          title: 'Use Files On This Device',
-          disabled: !state.isCloud(),
-          action: commands.useLocalStorage,
-        },
+        // Storage lives in File because it decides where Save goes (WR-6), and
+        // is absent entirely while there is only one place documents can go.
+        // A menu item that names the one option available is a menu item that
+        // tells you nothing.
+        ...(state.cloudAvailable()
+          ? [
+            separator,
+            {
+              title: state.isCloud() ? 'Cloud Storage (Connected)' : 'Connect Google Account…',
+              action: commands.connectCloud,
+            },
+            {
+              title: 'Use Files On This Device',
+              disabled: !state.isCloud(),
+              action: commands.useLocalStorage,
+            },
+          ]
+          : []),
       ],
     },
     {
