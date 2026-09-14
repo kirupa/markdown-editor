@@ -185,6 +185,8 @@ signal that the landing window can be shown without waiting.
 | W-25 | Hovering a recent entry fills it with the theme accent and switches its text to whichever of black or white has the higher measured contrast against that accent. |
 | W-26 | The window is 760 × 470 points with a hidden title and full-size content view. |
 | W-27 | A **Make Default Markdown App** link appears below the actions only while the app is not already the default handler for Markdown files. It is re-evaluated whenever the app becomes active. |
+| W-28 | The identity panel shows **the logo and the word KONVO**, and nothing else. It used to show a generic `doc.richtext` symbol and a version line under the name. The symbol was a stand-in for the logo rather than the logo: the icon is drawn by `Scripts/make-icons.swift` and is the mark in the Dock, in Finder and on every document, so a landing screen showing something else was the one place the app did not look like itself. It is read from the bundle through `NSImage.applicationIconName` rather than drawn again here, so the artwork keeps one home and a regenerated icon reaches this screen for free. |
+| W-29 | The **version is not shown**, and neither is a tagline. A version number is not identity — nobody opens an editor to be told its build number — and it was the only line on the landing screen that dated the app. `Bundle.main` still carries it for the About panel and for a crash report, which is where somebody looking for it would look. |
 
 ---
 
@@ -1486,6 +1488,7 @@ async `@main` instead.
 
 | Change | Summary |
 | --- | --- |
+| Just KONVO | The landing screen shows the app's own logo and its name, and nothing else — the generic document symbol and the version line under it are gone. See [W-28 and W-29](#4-welcome-window). |
 | A window that opens the right size | A document window now opens wide enough for the writing **and** the comments beside it — 1056 × 820, being the 700pt column plus the 356pt rail — instead of arriving at the root view's minimum with the notes already squeezing the text. Derived from the same call the green button zooms to, clamped to the screen, and still only a default: a restored window keeps what it had. See [I-225 to I-228](#10a-ai-assisted-critique). |
 | A pad of notes, in one hand | The summary became the first note — white, because it is a read on the draft rather than a fault in it — carrying **What Works** and **What Doesn't Work** as fields the critique is asked for directly. Every word in the rail is now Permanent Marker, hierarchy coming from size and spacing rather than from a second face. Answering is a green tick and a red cross drawn as filled blocks, which stay legible on all four papers where a tinted glyph would not. Notes lift on hover, and the pad sits on the same grid as the page. See [I-121 to I-124](#10a-ai-assisted-critique). |
 | Marks that hug the words | Shading is drawn per line and measured from the glyphs on it, so a passage stops at its last word instead of running the width of the page, and its corners are rounded. See [I-125](#10a-ai-assisted-critique). |
