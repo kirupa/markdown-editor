@@ -6,6 +6,21 @@
 
 const layer = () => document.getElementById('alertLayer');
 
+/**
+ * Builds a dialog on the alert layer and resolves with whatever it closes with.
+ *
+ * Exported so a feature with a panel of its own -- the critique's provider,
+ * model and key -- can use the same layer, the same Escape handling and the
+ * same focus rules as every other dialog here, rather than growing a second
+ * kind of modal that behaves almost the same.
+ */
+export function presentDialog(build) {
+  return present(build);
+}
+
+/** A heading, a paragraph and a button, so a caller can build its own dialog. */
+export const dialogParts = { heading, paragraph, button };
+
 function present(build) {
   return new Promise((resolve) => {
     const host = layer();

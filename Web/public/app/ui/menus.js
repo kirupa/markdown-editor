@@ -296,25 +296,6 @@ function menuDefinitions(commands, state) {
       title: 'View',
       items: [
         {
-          title: 'Rich Text',
-          shortcut: { command: true, control: true, key: '1' },
-          checked: state.mode() === 'rich',
-          action: () => commands.setMode('rich'),
-        },
-        {
-          title: 'Side by Side',
-          shortcut: { command: true, control: true, key: '2' },
-          checked: state.mode() === 'split',
-          action: () => commands.setMode('split'),
-        },
-        {
-          title: 'Markdown',
-          shortcut: { command: true, control: true, key: '3' },
-          checked: state.mode() === 'source',
-          action: () => commands.setMode('source'),
-        },
-        separator,
-        {
           title: 'Show File Explorer',
           shortcut: { command: true, control: true, key: 's' },
           checked: state.sidebarVisible(),

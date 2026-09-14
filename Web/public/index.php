@@ -122,16 +122,14 @@ $asset = static fn (string $path): string => $assetBase === '' ? $path : "$asset
                   title="Discard the unsaved edits here and show the newest version">Show Newest</button>
         </span>
       </div>
+      <!-- One view. The Markdown and Side-by-Side panes are gone, following the
+           Mac: a rendered view that is genuinely editable makes a second pane
+           showing the same document a second place to look rather than a second
+           thing to see. -->
       <div class="me-editor__panes" id="editorPanes">
         <div class="me-pane me-pane--rich" id="richPane">
           <div class="me-surface" id="richSurface" role="textbox"
-               aria-multiline="true" aria-label="Rendered Markdown" spellcheck="true"></div>
-        </div>
-        <div class="me-divider me-divider--pane" id="paneDivider" role="separator"
-             aria-orientation="vertical" aria-label="Preview width" tabindex="0"></div>
-        <div class="me-pane me-pane--source" id="sourcePane">
-          <div class="me-surface me-surface--source" id="sourceSurface" role="textbox"
-               aria-multiline="true" aria-label="Markdown source" spellcheck="false"></div>
+               aria-multiline="true" aria-label="Document" spellcheck="true"></div>
         </div>
       </div>
     </main>

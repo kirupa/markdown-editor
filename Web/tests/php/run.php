@@ -953,30 +953,101 @@ $runner->suite('The critique the server runs', function (TestRunner $t): void {
         $t->expect(MarkdownEditor\CritiqueProvider::isKnown('openAI'));
     });
 
-    $t->test('describe never reveals the key', function (TestRunner $t): void {
+    $t->test('describe tells the browser about the server, never about a key', function (TestRunner $t): void {
         $previous = getenv('MDE_CRITIQUE_KEY');
         putenv('MDE_CRITIQUE_KEY=sk-secret-value');
         $described = MarkdownEditor\Critique::describe();
-        $t->expect($described['available'] === true);
         $t->expect(!str_contains(json_encode($described), 'sk-secret-value'));
+        $t->expect(array_key_exists('skill', $described));
         putenv($previous === false ? 'MDE_CRITIQUE_KEY' : 'MDE_CRITIQUE_KEY=' . $previous);
     });
 
-    $t->test('with no key configured the server says so rather than failing oddly', function (TestRunner $t): void {
-        $names = ['MDE_CRITIQUE_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GEMINI_API_KEY'];
-        $saved = [];
-        foreach ($names as $name) {
-            $saved[$name] = getenv($name);
-            putenv($name);
-            unset($_SERVER[$name]);
+    $t->test("a server key is ignored unless the server opted in", function (TestRunner $t): void {
+        // The failure mode of the other default is a bill: a host that already
+        // has OPENAI_API_KEY set for something else would otherwise start
+        // paying for every visitor's critiques without anyone deciding to.
+        $previousKey = getenv('MDE_CRITIQUE_KEY');
+        $previousAllow = getenv('MDE_CRITIQUE_ALLOW_SERVER_KEY');
+        putenv('MDE_CRITIQUE_KEY=sk-server-key');
+        putenv('MDE_CRITIQUE_ALLOW_SERVER_KEY');
+        unset($_SERVER['MDE_CRITIQUE_ALLOW_SERVER_KEY']);
+
+        $t->expect(MarkdownEditor\Critique::serverKey() === null);
+        $t->expect(MarkdownEditor\Critique::describe()['serverKey'] === false);
+
+        putenv('MDE_CRITIQUE_ALLOW_SERVER_KEY=1');
+        $t->expect(MarkdownEditor\Critique::serverKey() !== null);
+        $t->expect(MarkdownEditor\Critique::describe()['serverKey'] === true);
+
+        putenv($previousKey === false ? 'MDE_CRITIQUE_KEY' : 'MDE_CRITIQUE_KEY=' . $previousKey);
+        putenv($previousAllow === false
+            ? 'MDE_CRITIQUE_ALLOW_SERVER_KEY'
+            : 'MDE_CRITIQUE_ALLOW_SERVER_KEY=' . $previousAllow);
+    });
+
+    $t->test("with no key anywhere the reader is told to add one, not that the server is broken", function (TestRunner $t): void {
+        $previousAllow = getenv('MDE_CRITIQUE_ALLOW_SERVER_KEY');
+        putenv('MDE_CRITIQUE_ALLOW_SERVER_KEY');
+        unset($_SERVER['MDE_CRITIQUE_ALLOW_SERVER_KEY']);
+        $caught = null;
+        try {
+            MarkdownEditor\Critique::fromRequest(['text' => 'Draft.']);
+        } catch (MarkdownEditor\WorkspaceError $error) {
+            $caught = $error;
         }
-        $t->expect(MarkdownEditor\Critique::fromEnvironment() === null);
-        $t->expect(MarkdownEditor\Critique::describe()['available'] === false);
-        foreach ($names as $name) {
-            if ($saved[$name] !== false) {
-                putenv($name . '=' . $saved[$name]);
-            }
+        $t->expect($caught !== null);
+        $t->expect(str_contains((string) $caught?->getMessage(), 'needs an API key'));
+        $t->expect(str_contains((string) $caught?->recoverySuggestion(), 'stays in this browser'));
+        putenv($previousAllow === false
+            ? 'MDE_CRITIQUE_ALLOW_SERVER_KEY'
+            : 'MDE_CRITIQUE_ALLOW_SERVER_KEY=' . $previousAllow);
+    });
+
+    $t->test("the reader's key is used as sent", function (TestRunner $t): void {
+        $critique = MarkdownEditor\Critique::fromRequest([
+            'key' => '  sk-reader  ',
+            'provider' => 'gemini',
+            'model' => 'gemini-3.6-flash',
+        ]);
+        // Read through reflection because these are private and should stay
+        // that way: a getter for the key would be a getter somebody later uses.
+        $values = [];
+        foreach ((new ReflectionClass($critique))->getProperties() as $property) {
+            $values[$property->getName()] = $property->getValue($critique);
         }
+        // Trimmed: a key pasted out of a web page arrives with whitespace more
+        // often than not, and the provider rejects it without saying why.
+        $t->expectEqual($values['apiKey'], 'sk-reader');
+        $t->expectEqual($values['provider'], 'gemini');
+        $t->expectEqual($values['model'], 'gemini-3.6-flash');
+    });
+
+    $t->test('a model the provider does not offer is refused, not put in a URL', function (TestRunner $t): void {
+        // Otherwise the model name is a string from a page that ends up inside
+        // a request URL, which is a forgery waiting for somebody to find it.
+        $caught = null;
+        try {
+            MarkdownEditor\Critique::fromRequest([
+                'key' => 'sk-reader',
+                'provider' => 'gemini',
+                'model' => '../../secret:generateContent',
+            ]);
+        } catch (MarkdownEditor\WorkspaceError $error) {
+            $caught = $error;
+        }
+        $t->expect($caught !== null);
+        $t->expect(str_contains((string) $caught?->getMessage(), 'does not offer a model'));
+    });
+
+    $t->test('an unknown provider from the page is refused', function (TestRunner $t): void {
+        $caught = null;
+        try {
+            MarkdownEditor\Critique::fromRequest(['key' => 'k', 'provider' => 'evilcorp']);
+        } catch (MarkdownEditor\WorkspaceError $error) {
+            $caught = $error;
+        }
+        $t->expect($caught !== null);
+        $t->expect(str_contains((string) $caught?->getMessage(), 'not a provider'));
     });
 
     $t->test('an empty draft is refused before a request is spent on it', function (TestRunner $t): void {

@@ -35,14 +35,6 @@ export const ICONS = {
   critique:
     '<path d="M12.6 2.4a1.45 1.45 0 0 1 0 2.1L6 11.1l-2.8.8.8-2.8 6.6-6.6a1.45 1.45 0 0 1 2 0z"/><path d="M2.6 14h10.8" opacity="0.45"/>',
 
-  // The three editor views. Each says what you would be looking at: a laid-out
-  // document, the same document beside its source, and the Markdown mark.
-  richText:
-    '<rect x="2.2" y="2.2" width="11.6" height="11.6" rx="2.2"/><rect x="4.5" y="4.8" width="7" height="2" rx="0.8" class="me-fill"/><path d="M4.6 9.2h6.8M4.6 11.4h4.3"/>',
-  sideBySide:
-    '<rect x="1.6" y="2.9" width="12.8" height="10.2" rx="2"/><path d="M8 2.9v10.2"/><path d="M3.6 6.1h2.6M3.6 8.4h2.6M9.8 6.1h2.6M9.8 8.4h2.6M9.8 10.7h1.7"/>',
-  markdown:
-    '<rect x="1.1" y="3.5" width="13.8" height="9" rx="1.9"/><path d="M3.5 10.2V5.8l2.3 2.8 2.3-2.8v4.4"/><path d="M11.3 5.8v4.4M9.7 8.6l1.6 1.8 1.6-1.8"/>',
   sidebar:
     '<rect x="1.1" y="2.9" width="13.8" height="10.2" rx="1.9"/><path d="M6.1 2.9v10.2"/>',
 };
@@ -76,34 +68,6 @@ function separator() {
  * @param {object} commands the shared command table from `main.js`
  */
 export function buildToolbar(root, commands) {
-  const segmented = document.createElement('div');
-  segmented.className = 'me-segmented';
-  segmented.setAttribute('role', 'group');
-  segmented.setAttribute('aria-label', 'Editor mode');
-  const modeButtons = new Map();
-  // E-1, E-4: icons rather than words. The three views are a permanent fixture
-  // of the toolbar, so a glyph each keeps the row short enough for the
-  // formatting controls to stay visible on a narrow window. The name is not
-  // lost — it is the accessible name and the tooltip, which is where a label
-  // this stable belongs.
-  for (const [mode, label, icon, shortcut] of [
-    ['rich', 'Rich Text', 'richText', '⌃⌘1'],
-    ['split', 'Side by Side', 'sideBySide', '⌃⌘2'],
-    ['source', 'Markdown', 'markdown', '⌃⌘3'],
-  ]) {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'me-segmented__option';
-    button.innerHTML = `<svg viewBox="0 0 16 16" aria-hidden="true">${ICONS[icon]}</svg>`;
-    button.title = `${label} (${shortcut})`;
-    button.setAttribute('aria-label', label);
-    button.setAttribute('aria-pressed', 'false');
-    button.addEventListener('click', () => commands.setMode(mode));
-    keepFocus(button);
-    modeButtons.set(mode, button);
-    segmented.append(button);
-  }
-
   const headings = document.createElement('select');
   headings.className = 'me-tool me-tool--wide';
   headings.title = 'Paragraph style';
@@ -164,7 +128,6 @@ export function buildToolbar(root, commands) {
 
   root.replaceChildren(
     group(sidebarButton),
-    group(segmented),
     separator(),
     group(headings),
     separator(),
@@ -187,12 +150,6 @@ export function buildToolbar(root, commands) {
   );
 
   return {
-    setMode(mode) {
-      for (const [name, button] of modeButtons) {
-        button.setAttribute('aria-pressed', String(name === mode));
-      }
-    },
-
     /** WT-13: the toggle shows whether the explorer is open. */
     setSidebarVisible(visible) {
       sidebarButton.setAttribute('aria-pressed', String(visible));

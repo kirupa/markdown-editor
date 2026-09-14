@@ -32,6 +32,20 @@ import {
 } from '../app/core/critique-model.js';
 import { adjustAnchor, editBetween } from '../app/core/critique-anchor-tracking.js';
 import { makeRange } from '../app/core/range.js';
+import {
+  INITIAL_PROVIDER,
+  PROVIDERS,
+  currentModel,
+  currentProvider,
+  hasKey,
+  maskKey,
+  providerByID,
+  removeKey,
+  saveKey,
+  setCurrentModel,
+  setCurrentProvider,
+  storedKey,
+} from '../app/core/critique-credentials.js';
 
 function finding(overrides = {}) {
   return {
@@ -369,5 +383,98 @@ suite('Keeping the marks on the words', () => {
     // which is why this is checked before the insert/replace split.
     const edit = editBetween('one two', 'one\ntwo');
     expect(edit.insertedBreaksLine, 'a newline should be recognised');
+  });
+});
+
+suite("The reader's own key", () => {
+  // The modules read localStorage directly, so the node runner needs one. A
+  // Map is the whole contract these five functions use.
+  const store = new Map();
+  const shim = {
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => store.set(k, String(v)),
+    removeItem: (k) => store.delete(k),
+  };
+  if (typeof globalThis.localStorage === 'undefined') {
+    globalThis.localStorage = shim;
+  }
+  const reset = () => store.clear();
+
+  test('with nothing chosen the provider is the one the picker shows', () => {
+    // On the Mac this default was written in three places and two disagreed,
+    // so a picker ticked one provider while critiques went through another.
+    reset();
+    expectEqual(currentProvider(), INITIAL_PROVIDER);
+  });
+
+  test('a stored provider that no longer exists falls back rather than breaking', () => {
+    reset();
+    localStorage.setItem('markdown-editor.critiqueProvider', 'copilotCLI');
+    expectEqual(currentProvider(), INITIAL_PROVIDER);
+  });
+
+  test('the default model is the inexpensive one', () => {
+    reset();
+    for (const provider of PROVIDERS) {
+      expectEqual(currentModel(provider.id), provider.models[0]);
+    }
+  });
+
+  test('a model the provider no longer offers falls back to one it does', () => {
+    // Exactly what happened to the Gemini pair: they were retired under us.
+    reset();
+    setCurrentModel('gemini-1.5-flash', 'gemini');
+    expectEqual(currentModel('gemini'), providerByID('gemini').models[0]);
+  });
+
+  test('keys are kept per provider, so trying another does not lose the first', () => {
+    reset();
+    saveKey('sk-openai', 'openAI');
+    saveKey('sk-anthropic', 'anthropic');
+    expectEqual(storedKey('openAI'), 'sk-openai');
+    expectEqual(storedKey('anthropic'), 'sk-anthropic');
+    expect(!hasKey('gemini'), 'gemini should have no key');
+  });
+
+  test('a key is trimmed, because one pasted from a web page rarely is', () => {
+    reset();
+    saveKey('   sk-spaces   ', 'openAI');
+    expectEqual(storedKey('openAI'), 'sk-spaces');
+  });
+
+  test('saving nothing removes the key rather than storing an empty one', () => {
+    // Otherwise "" is a key as far as everything downstream is concerned, and
+    // the provider answers with an authentication error instead of the app
+    // saying there is no key.
+    reset();
+    saveKey('sk-real', 'openAI');
+    saveKey('   ', 'openAI');
+    expect(!hasKey('openAI'), 'an empty save should clear the key');
+  });
+
+  test('removing a key removes it', () => {
+    reset();
+    saveKey('sk-real', 'openAI');
+    removeKey('openAI');
+    expectEqual(storedKey('openAI'), '');
+  });
+
+  test('a key shown back is never shown whole', () => {
+    // The point of showing it is to answer "is the right key in here", which
+    // the ends answer and the middle does not, and a key printed in full is a
+    // key that ends up in a screenshot.
+    const key = 'sk-proj-abcdefghijklmnopqrstuvwxyz0123456789';
+    const masked = maskKey(key);
+    expect(!masked.includes('mnopqrst'), 'the middle must not survive masking');
+    expect(masked.startsWith('sk-pro'), 'the start is what identifies it');
+    expect(masked.endsWith('6789'), 'the end is what identifies it');
+    expectEqual(maskKey(''), '');
+    expect(!maskKey('short-key').includes('ort-k'), 'a short key is masked too');
+  });
+
+  test('setting the provider round-trips', () => {
+    reset();
+    setCurrentProvider('gemini');
+    expectEqual(currentProvider(), 'gemini');
   });
 });

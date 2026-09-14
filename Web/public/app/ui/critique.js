@@ -29,7 +29,20 @@ import {
 } from '../core/critique-model.js';
 import { trackItems } from '../core/critique-anchor-tracking.js';
 import { findingAdvice, findingAdviceLabel } from '../core/critique-report.js';
-import { showMessage } from './dialogs.js';
+import {
+  PROVIDERS,
+  currentModel,
+  currentProvider,
+  hasKey,
+  maskKey,
+  providerByID,
+  removeKey,
+  saveKey,
+  setCurrentModel,
+  setCurrentProvider,
+  storedKey,
+} from '../core/critique-credentials.js';
+import { dialogParts, presentDialog } from './dialogs.js';
 import { keepFocus } from './keep-focus.js';
 
 const HAND_KEY = 'markdown-editor.critiqueHand';
@@ -316,8 +329,21 @@ export class CritiqueRail {
     if (this.visible) this.render();
   }
 
+  /** Whether a critique can run at all: a key here, or one on the server. */
+  get isConfigured() {
+    return hasKey() || this.config?.serverKey === true;
+  }
+
   async run({ focus = null } = {}) {
     if (this.isRunning) return;
+    // Asking without a key spends a request to be told what this already
+    // knows. The rail says what is missing and offers the panel that fixes it.
+    if (!this.isConfigured) {
+      this.show();
+      this.render();
+      await this.#openSettings();
+      if (!this.isConfigured) return;
+    }
     const text = this.readText();
     this.noteCurrentText(text);
     this.show();
@@ -329,7 +355,14 @@ export class CritiqueRail {
     const controller = new AbortController();
     this.pending = controller;
     try {
-      const answer = await critiqueApi.run(text, focus, controller.signal);
+      const answer = await critiqueApi.run({
+        text,
+        focus,
+        provider: currentProvider(),
+        model: currentModel(),
+        key: storedKey(),
+        signal: controller.signal,
+      });
       const report = decodeCritiqueReport(answer.reply);
       this.#apply(report, text);
     } catch (error) {
@@ -449,8 +482,8 @@ export class CritiqueRail {
       body.append(this.#failed());
       return;
     }
-    if (this.config && this.config.available === false) {
-      body.append(this.#notConfigured());
+    if (!this.isConfigured) {
+      body.append(this.#needsKey());
       return;
     }
     if (!this.report) {
@@ -571,20 +604,29 @@ export class CritiqueRail {
     return panel;
   }
 
-  #notConfigured() {
+  /**
+   * The first-run state: a critique needs a model, and a model needs a key.
+   *
+   * It says whose key and where it goes, because "enter your API key" is not
+   * help if you do not already know where they live or what happens to it.
+   */
+  #needsKey() {
     const panel = build('div', 'me-critique__state');
-    panel.append(
-      build('p', 'me-critique__state-note', 'This server is not set up to run critiques.')
-    );
+    panel.append(build('p', 'me-critique__state-note', 'Bring your own key.'));
     panel.append(
       build(
         'p',
         'me-critique__state-detail',
-        'A critique needs a model to answer it, and the key for that model lives '
-          + 'on the server rather than in this browser. Until one is configured '
-          + 'there is nothing here that can work.'
+        'A critique is read by a model, and reaching one costs money, so it runs '
+          + 'on your account rather than on this site\u2019s. The key is kept in '
+          + 'this browser and sent with each critique for the server to use and '
+          + 'forget.'
       )
     );
+    const open = build('button', 'me-critique__button', 'Add a key');
+    open.type = 'button';
+    open.addEventListener('click', () => this.#openSettings());
+    panel.append(open);
     return panel;
   }
 
@@ -879,45 +921,184 @@ export class CritiqueRail {
   }
 
   /**
-   * What is answering, and what it is reading from.
+   * Which model answers, on which key, against which skill.
    *
-   * The Mac's version of this panel also holds the key and a button that pulls
-   * a new copy of the skill. Neither belongs here: the key is the server's,
-   * and the skill is deployed with the app rather than fetched, so the honest
-   * thing to show is which copy went out with this deploy.
+   * The Mac keeps the key in the Keychain and talks to the provider itself.
+   * A browser can do neither: it has nowhere safe to put a secret, and the two
+   * of the three providers that matter do not answer a cross-origin request at
+   * all. So the key is the reader's, kept in this browser, and sent with each
+   * request for the server to spend and forget.
+   *
+   * That is a real trade and it is written down rather than implied:
+   * `localStorage` is readable by any script on this origin, which is the same
+   * exposure the rest of the app's preferences have and a good deal more
+   * consequence. It is the least-bad option a page has, and it is the reader's
+   * own key rather than somebody else's.
    */
   async #openSettings() {
     if (!this.config) await this.loadConfig();
-    const config = this.config ?? { available: false };
-    const lines = [];
-    if (config.available) {
-      lines.push(`Answering: ${config.providerTitle} · ${config.model}`);
-    } else {
-      lines.push('No model is configured on this server, so a critique cannot run.');
-    }
-    if (config.skill) {
-      lines.push(
-        `KONVO skill: ${config.skill.summary}`,
-        config.skill.subject,
-        config.skill.loaded
-          ? 'The critique pass is sent with every request, so the critique is '
-            + "KONVO's whichever model answers."
-          : 'The critique pass was not deployed, so the critique will be generic.'
-      );
-    } else {
-      lines.push('No KONVO skill was deployed with this build.');
-    }
-    lines.push('The key and the model are server settings; this browser never sees them.');
+    const { heading, paragraph, button } = dialogParts;
 
-    let testLine = '';
-    if (config.available) {
-      try {
-        const answer = await critiqueApi.test();
-        testLine = answer.detail;
-      } catch (error) {
-        testLine = error.message;
+    await presentDialog((alert, close) => {
+      alert.classList.add('me-alert--settings');
+      alert.append(heading('AI Assisted Critique'));
+
+      let providerID = currentProvider();
+
+      const field = (labelText, control) => {
+        const row = document.createElement('label');
+        row.className = 'me-settings__row';
+        const label = document.createElement('span');
+        label.className = 'me-settings__label';
+        label.textContent = labelText;
+        row.append(label, control);
+        return row;
+      };
+
+      // --- Provider -------------------------------------------------------
+      const providerSelect = document.createElement('select');
+      providerSelect.className = 'me-settings__control';
+      for (const provider of PROVIDERS) {
+        const option = document.createElement('option');
+        option.value = provider.id;
+        option.textContent = provider.title;
+        option.selected = provider.id === providerID;
+        providerSelect.append(option);
       }
-    }
-    await showMessage({ title: 'AI Assisted Critique', lines: [...lines, testLine] });
+
+      // --- Model ----------------------------------------------------------
+      const modelSelect = document.createElement('select');
+      modelSelect.className = 'me-settings__control';
+
+      // --- Key ------------------------------------------------------------
+      // A password field, so a key does not sit in plain sight on a screen
+      // somebody might be sharing.
+      const keyField = document.createElement('input');
+      keyField.type = 'password';
+      keyField.className = 'me-settings__control';
+      keyField.autocomplete = 'off';
+      keyField.spellcheck = false;
+      keyField.placeholder = 'Paste your API key';
+
+      const status = document.createElement('p');
+      status.className = 'me-settings__status';
+      const origin = document.createElement('p');
+      origin.className = 'me-alert__recovery';
+
+      const refresh = () => {
+        const provider = providerByID(providerID);
+        modelSelect.replaceChildren();
+        for (const model of provider.models) {
+          const option = document.createElement('option');
+          option.value = model;
+          option.textContent = model;
+          option.selected = model === currentModel(provider.id);
+          modelSelect.append(option);
+        }
+        keyField.value = '';
+        origin.textContent = `Keys come from ${provider.keyOrigin}`;
+        status.textContent = hasKey(provider.id)
+          ? `A key is stored in this browser: ${maskKey(storedKey(provider.id))}`
+          : 'No key yet, so a critique cannot run.';
+        status.dataset.state = hasKey(provider.id) ? 'ok' : 'missing';
+      };
+
+      providerSelect.addEventListener('change', () => {
+        providerID = providerSelect.value;
+        setCurrentProvider(providerID);
+        refresh();
+      });
+      modelSelect.addEventListener('change', () => {
+        setCurrentModel(modelSelect.value, providerID);
+      });
+
+      alert.append(
+        field('Provider', providerSelect),
+        field('Model', modelSelect),
+        field('API key', keyField),
+        status,
+        origin
+      );
+
+      const note = paragraph(
+        'The key is kept in this browser and sent with each critique for the '
+          + 'server to use and forget. It is never stored on the server, and '
+          + 'nobody else who visits this page can use it.',
+        'me-alert__recovery'
+      );
+      alert.append(note);
+
+      // --- The skill ------------------------------------------------------
+      const skill = this.config?.skill;
+      alert.append(
+        paragraph(
+          skill
+            ? `KONVO skill ${skill.summary} — ${skill.subject}`
+            : 'No KONVO skill was deployed with this build.',
+          'me-alert__recovery'
+        )
+      );
+      if (skill) {
+        alert.append(
+          paragraph(
+            skill.loaded
+              ? 'Its critique pass is sent with every request, so the critique '
+                + "is KONVO's whichever model answers."
+              : 'Its critique pass was not deployed, so the critique will be '
+                + 'generic.',
+            'me-alert__recovery'
+          )
+        );
+      }
+
+      // --- Buttons --------------------------------------------------------
+      const buttons = document.createElement('div');
+      buttons.className = 'me-alert__buttons';
+
+      const testResult = document.createElement('p');
+      testResult.className = 'me-settings__status';
+
+      const test = button('Test', '', async () => {
+        const key = keyField.value.trim() || storedKey(providerID);
+        if (key === '') {
+          testResult.textContent = 'Enter a key first.';
+          testResult.dataset.state = 'missing';
+          return;
+        }
+        testResult.textContent = 'Asking…';
+        delete testResult.dataset.state;
+        try {
+          const answer = await critiqueApi.test({
+            provider: providerID,
+            model: modelSelect.value,
+            key,
+          });
+          testResult.textContent = answer.detail;
+          testResult.dataset.state = 'ok';
+        } catch (error) {
+          testResult.textContent = error.message;
+          testResult.dataset.state = 'missing';
+        }
+      });
+
+      const remove = button('Remove', '', () => {
+        removeKey(providerID);
+        refresh();
+        testResult.textContent = '';
+      });
+
+      const save = button('Save', 'me-button--default', () => {
+        const typed = keyField.value.trim();
+        if (typed !== '') saveKey(typed, providerID);
+        setCurrentProvider(providerID);
+        setCurrentModel(modelSelect.value, providerID);
+        close(null);
+        this.render();
+      });
+
+      buttons.append(test, remove, save);
+      alert.append(testResult, buttons);
+      refresh();
+    });
   }
 }

@@ -213,12 +213,34 @@ Two things to know before relying on it:
 
 ## 8. Editing modes
 
+### 8.1 One view
+
+Following the Mac ([macOS PRD I-142](../macOS/README.md#10a-ai-assisted-critique)),
+there is **one view** and no switcher. The rendered document is what you edit.
+
+A rendered view that is genuinely editable makes a second pane showing the same
+document a second place to look rather than a second thing to see — and the
+whole point of this editor is that the rendered view is not a preview. The raw
+Markdown is still on disk, unchanged, and still one keystroke away in any text
+editor.
+
 | ID | Requirement |
 | --- | --- |
-| WE-1 | **Rich Text** (`⌃⌘1`) — edit the rendered document directly. |
-| WE-2 | **Side by Side** (`⌃⌘2`, the default) — rendered on the left, raw Markdown on the right, both editable. |
-| WE-3 | **Markdown** (`⌃⌘3`) — raw source with representative typography. |
-| WE-4 | The chosen mode persists across reloads. |
+| WE-16 | There is one view. It renders the document and is directly editable. |
+| WE-2 | *Superseded.* Side by Side — rendered on the left, raw Markdown on the right — is gone, with the pane divider, the scroll link and the selection mirror that served it. |
+| WE-3 | *Superseded.* The Markdown pane and its representative typography are gone; `source-renderer.js` is deleted rather than left unreferenced. |
+| WE-4 | *Superseded.* There is no mode to persist. |
+| WE-8 | *Superseded, with Side by Side.* |
+| WE-9 | *Superseded, with Side by Side.* |
+| WE-10 | *Superseded.* A command applies to the one surface there is. |
+| WE-11 | *Superseded, with the Markdown pane.* |
+| WE-15 | *Superseded.* The three icons are gone from the toolbar, and `⌃⌘1`/`⌃⌘2`/`⌃⌘3` with them. |
+
+### 8.2 The rendered view
+
+| ID | Requirement |
+| --- | --- |
+| WE-1 | Edit the rendered document directly. It is not a preview. |
 | WE-5 | In Rich Text, markers (`**`, `#`, `` ` ``) are hidden and the styling they describe is shown instead. |
 | WE-6 | Editing the rendered view maps the change back through the source ↔ rendered range mapping and rewrites only the affected source range. |
 | WE-7 | An image is one atomic, non-editable unit: the caret cannot enter it, and deleting it removes the whole `![…](…)`. |
@@ -226,10 +248,10 @@ Two things to know before relying on it:
 | WE-9 | In Side by Side, moving the caret or selection in one pane mirrors it into the other through the same range mapping. |
 | WE-10 | Formatting commands apply to whichever pane last had focus, so clicking a toolbar button never redirects the edit. |
 | WE-11 | The Markdown pane shows every marker verbatim while giving headings, body text, and code their representative sizes and weights — size and weight only, matching `MarkdownSourceStyler`. |
-| WE-12 | Copy and cut place Markdown source on the clipboard from either pane; paste inserts text as Markdown. |
+| WE-12 | Copy and cut place Markdown source on the clipboard; paste inserts text as Markdown. |
 | WE-13 | Input Method Editor composition is left alone until it commits, so non-Latin input works normally. |
 | WE-15 | The three modes are chosen with icons rather than words — a page, two panes, and the Markdown mark. They sit left of the formatting controls in a bar those controls already fill, and at that size three words crowd out the tools people reach for far more often. Each keeps its full name as its accessible name and shows it, with the shortcut, on hover, so nothing is only available to someone who recognises the picture. |
-| WE-14 | The rendered and source panes always contain exactly the text the model says they should. This is asserted by tests that compare the DOM's plain text against the model, and round-trip every character offset through the DOM. |
+| WE-14 | The rendered view always contains exactly the text the model says it should. This is asserted by tests that compare the DOM's plain text against the model, and round-trip every character offset through the DOM. |
 
 ---
 
@@ -567,19 +589,31 @@ enough to be worth stating before the requirements rather than after them.
 | WA-10 | Answering a note is remembered by what the note *says*, not by its identity, so a re-run does not resurrect a dismissal. |
 | WA-11 | The comments can be set in any of thirteen hands, eight bundled and the rest offered only where they resolve. Each name in the picker is shown in its own face. |
 | WA-12 | The first card is the summary -- what the piece is, what works, what does not -- and is entirely in the system face, because it is a summary *of* the handwritten notes rather than one of them. |
-| WA-13 | Nothing about the critique fails silently. A provider that is not configured, a refused key, an unreachable model and a reply that is not a critique are four different messages, each with what to do about it. |
+| WA-13 | Nothing about the critique fails silently. A missing key, a refused key, an unreachable model and a reply that is not a critique are four different messages, each with what to do about it. |
 
-### Where the key lives
+### Whose key
+
+**The reader's.** A critique is read by a model, and reaching one costs money,
+so it runs on the reader's account rather than on the site's.
+
+That is not only a billing decision. This page is open to anyone who finds the
+URL ([WS-6](#15-run-deploy-and-test)), and an app that critiques on the owner's
+key is an app whose running cost is set by whoever else happens to visit. The
+failure is quiet, it is somebody else's, and nobody notices until the bill.
 
 | ID | Requirement |
 | --- | --- |
-| WA-14 | The API key is the **server's**, read from the environment, and is never sent to the browser. A browser cannot hold a secret: anything it can send, anyone reading the page can send. |
-| WA-15 | It follows that **whoever can reach this app can spend the key behind it.** The deploy script's optional `.htpasswd` ([§15](#15-run-deploy-and-test)) is what that is for. This is stated here rather than left to be discovered on a bill. |
-| WA-16 | The rail's settings therefore *report* the provider and model rather than asking for them, and offer a test that asks the model for one word over the same path a critique uses. |
-| WA-17 | `MDE_CRITIQUE_PROVIDER`, `MDE_CRITIQUE_MODEL`, `MDE_CRITIQUE_KEY` and `MDE_CRITIQUE_BASE_URL` configure it; with none set, `OPENAI_API_KEY` is used, which a host doing anything else with a model usually already has. |
-| WA-18 | `MDE_CRITIQUE_BASE_URL` exists because the OpenAI request shape is spoken by rather more than OpenAI -- Azure, OpenRouter, a proxy, a model on the same machine. It is also how this build is exercised end to end without spending a request on a live account. |
-| WA-29 | A model list is a set of claims about somebody else's service, and it had gone stale: the Gemini pair shipped here were **retired**, and the API says so as `is not found for API version v1beta` — which reads like a mistyped name rather than a model that no longer exists. `gemini-2.5-flash` and `gemini-3.6-flash` are the two verified answering. OpenAI's and Anthropic's lists are not verified, because the key on that host is rejected and the Anthropic account is out of credit. |
-| WA-19 | The macOS build's fourth provider -- a model already installed on the reader's machine, needing no key -- is deliberately absent. A server has no such thing, and offering it would put an option in a menu that could never work. |
+| WA-14 | The key is entered by the reader and kept **in this browser**, in `localStorage`, one per provider so that trying another does not lose the first. |
+| WA-15 | It is sent with each request for the server to spend and forget. It is not written to disk, not put in a session, and not logged — the catch-all handler logs a message and never the request. |
+| WA-16 | It goes through the server rather than straight from the page, because two of the three providers refuse a cross-origin request outright. Proxying all three keeps one code path instead of three behaviours, and it is the same code the Mac's requests are ported from. |
+| WA-30 | **`localStorage` is readable by any script on this origin.** That is the same exposure the rest of the app's preferences have and a good deal more consequence, and it is the least-bad option a page has. It is said here rather than left to be assumed, and it is the reader's own key rather than somebody else's. |
+| WA-31 | The key field is a password field, and a stored key is shown back **masked** — the first six characters and the last four. That answers "is the right key in here", which is the only question worth asking of it, and a key printed in full on screen is a key that ends up in a screenshot. |
+| WA-32 | The provider and the model are **validated on the server** against what this build knows. Otherwise a model name is a string from a page that ends up inside a request URL, which is a forgery waiting for somebody to find it. |
+| WA-33 | Asking for a critique without a key opens the settings instead of spending a request to be told what the app already knows. |
+| WA-17 | A server may hold a key of its own, for a private install where that is the point, but **only when `MDE_CRITIQUE_ALLOW_SERVER_KEY` is set**. The default is off: a host that already has `OPENAI_API_KEY` set for something else would otherwise opt in by accident, and the failure mode of that default is a bill. |
+| WA-18 | `MDE_CRITIQUE_BASE_URL` redirects the request, because the OpenAI request shape is spoken by rather more than OpenAI — Azure, OpenRouter, a proxy, a model on the same machine. It is also how this build is exercised end to end without spending a request on a live account. |
+| WA-29 | A model list is a set of claims about somebody else's service, and it had gone stale: the Gemini pair shipped here were **retired**, and the API says so as `is not found for API version v1beta` — which reads like a mistyped name rather than a model that no longer exists. `gemini-2.5-flash` and `gemini-3.6-flash` are the two verified answering. |
+| WA-19 | The macOS build's fourth provider — a model already installed on the reader's machine, needing no key — is deliberately absent. A browser has no such thing, and offering it would put an option in a menu that could never work. |
 
 ### The KONVO skill
 
@@ -602,6 +636,15 @@ enough to be worth stating before the requirements rather than after them.
 
 ### What has been verified
 
+- **The reader's key, end to end.** With no key the rail says so and offers the
+  panel; the server refuses the request with a sentence rather than a shrug.
+  A key typed into the panel tested, saved, flipped the rail to ready, and ran
+  a critique that anchored every quote.
+- **One view.** The source pane, the divider and the switcher are gone from the
+  markup, the toolbar, the menus and the mobile sheet, and the rendered view
+  still shades a critique's passages exactly — measured on screen, the
+  highlights landed on "In today's fast-paced world" and "Over 90% of companies
+  use widgets daily".
 - **The whole path, on the live site.** A draft posted to
   <https://www.kirupa.com/markdown/> came back with six findings through the
   KONVO critique pass, and **all six quotes were verbatim in the draft** — which
@@ -622,10 +665,11 @@ enough to be worth stating before the requirements rather than after them.
 
 ### What has not been verified
 
-- **OpenAI and Anthropic have never answered a critique here.** The key on the
-  host is rejected by OpenAI and the Anthropic account has no credit. Their
-  request shapes are tested against recorded replies, and their live behaviour
-  is not.
+- **OpenAI and Anthropic have never answered a critique here.** The keys on the
+  host were rejected and out of credit respectively, and that was before the key
+  became the reader's. Their request shapes are tested against recorded replies,
+  and their live behaviour is not. A reader with a working key of either would be
+  the first to find out.
 - **Firefox.** The shading needs the CSS Custom Highlight API, which Firefox
   gained in 140; the fallback ([WA-26](#deliberate-differences-from-the-mac))
   is written but has not been watched degrade in a real Firefox.
@@ -724,7 +768,6 @@ sheets in place of menus.
 | `⌘1` … `⌘6` | Heading 1 … 6 |
 | `⇧⌘7` / `⇧⌘8` / `⇧⌘9` | Bulleted / Numbered / Task list |
 | `⌃⌘Q` | Block Quote |
-| `⌃⌘1` / `⌃⌘2` / `⌃⌘3` | Rich Text / Side by Side / Markdown |
 | `⌃⌘S` | Show File Explorer |
 | `⌃⌘C` | AI Assisted Critique |
 | `⇧⌘C` | Show Critique |
@@ -766,6 +809,9 @@ Web/
 │   ├── css/
 │   │   ├── themes.css         Generated from EditorColorTheme.swift
 │   │   └── app.css            Layout, typography, components
+│   └── app/
+│       ├── core/              Ports of the Swift: rendering, formatting, critique
+│       └── ui/                The DOM: surface, toolbar, menus, explorer, rail
 │   ├── app/
 │   │   ├── core/              Ported from Swift; no DOM, no network
 │   │   │   ├── range.js               NSRange arithmetic
@@ -839,18 +885,20 @@ If you control the document root, there is almost nothing to do:
 Only `Web/public` needs to be reachable. `Web/src`, `Web/bootstrap.php`,
 `Web/seed`, `Web/skill`, and `Web/tests` are read by PHP but never served.
 
-To run critiques, the server also needs a key. It is read from the environment
-so that it is never a file somebody can accidentally commit, serve, or back up:
+Critiques need no server configuration at all: the key is the reader's, entered
+in the app and kept in their browser ([§Whose key](#whose-key)).
+
+A **private** install may prefer to hold one key for everybody. That is off
+unless it is asked for, because a host that already has `OPENAI_API_KEY` set for
+something else would otherwise start paying for every visitor's critiques
+without anyone having decided to:
 
 ```apache
+SetEnv MDE_CRITIQUE_ALLOW_SERVER_KEY 1
 SetEnv MDE_CRITIQUE_KEY sk-...
 ```
 
-`OPENAI_API_KEY` is used when that is unset, which a host already doing
-something else with a model usually has. Without either, the editor works
-exactly as before and the rail says plainly that critiques are not set up
-([WA-13](#11c-ai-assisted-critique)). **Anyone who can reach the app can spend
-that key** — see [WA-15](#where-the-key-lives) and `MDE_HTPASSWD` below.
+Do that only behind `MDE_HTPASSWD`, or on a page nobody else can reach.
 
 #### On shared hosting, where you cannot move the document root
 
@@ -890,6 +938,7 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 | WS-10 | The hash is of the contents, so an unchanged deploy re-uses the directory and nothing is re-downloaded, and `mirror --delete` removes the previous one. |
 | WS-11 | `.htaccess` marks `.php` no-cache — the page naming the assets must never outlive them — and denies `asset-base.php`, which is data for `index.php` rather than a page. |
 | WS-12 | `skill/` is deployed with the private half, so the KONVO critique pass is readable by PHP and not by URL. |
+| WS-14 | `deploy.sh` can name a critique provider and model. **Never a key**: writing one into a generated `.htaccess` would put a secret in a file this script uploads and a misconfigured server could serve. |
 | WS-13 | `fonts/` and `hands.css` stay *outside* the versioned asset tree. A stylesheet moved into `v/<hash>/css/` resolves its `url()` from three folders deep rather than one, so a font path that is right in the repository is a 404 on the deployed build — and only there. It also keeps 1.4MB of typefaces out of every deploy that changes a line of JavaScript; the versioned directory exists for the module graph, and a font has no imports to break. |
 | WS-8 | Whether or not there is a password, the deployment still contains itself: the classes, the starter documents, and every document live above the document root, `.htaccess` refuses `.md` files and directory listings under the served folder, and the workspace boundary ([§5](#5-the-workspace)) is enforced on every request. An open install can be edited by anyone; it still cannot be read *around*. |
 
@@ -938,7 +987,8 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 
 | Change | What shipped |
 | --- | --- |
-| The critique rail, on the web | The macOS build's AI assisted critique, brought over whole: a rail of notes down the right-hand side, each shaded onto the passage it is about, with a decaying score, Done and Dismiss, and thirteen hands to write in ([§11c](#11c-ai-assisted-critique)). The pure logic is ported line by line from the Swift and tested against the same expectations — the decoder, the anchoring, the score, the ordering and the anchor tracking, forty tests. Two things had to be decided rather than copied. The **key is the server's**, because a browser cannot hold a secret, which means whoever can reach the app can spend the key behind it and the PRD says so ([WA-14](#where-the-key-lives), [WA-15](#where-the-key-lives)); and the **skill is vendored and deployed** rather than pulled, because a web server has no checkout to pull into, so the version panel names the commit that actually went out instead of implying it is current ([WA-21](#the-konvo-skill), [WA-22](#the-konvo-skill)). The shading is painted with the CSS Custom Highlight API: both surfaces are `contenteditable`, so wrapping a passage in a `<mark>` would move every offset after it and land in the undo stack as though the author had typed it ([WA-25](#deliberate-differences-from-the-mac)). Running it end to end against a stand-in model found three faults no unit test would have: the View menu reads the rail's state *while it is being built*, so a rail declared further down the module left the whole app blank; `curl_close()` is deprecated in PHP 8.5 and its notice is printed **before** the JSON body, so a host with `display_errors` on would have failed every request with a parse error; and a stylesheet moved into `v/<hash>/` resolves `url()` from three folders deep instead of one, so the eight typefaces would have 404'd on the deployed build and only there — the faces now live in their own unversioned `hands.css` ([WA-11](#11c-ai-assisted-critique)). Run for real against kirupa.com afterwards, which found three more things. A 5xx status was the wrong way to carry an application error: **Cloudflare replaces a 5xx body from the origin with its own page**, so a carefully worded explanation of a bad key arrived as the string `error code: 502` — an app promising that nothing fails silently cannot use a status whose body is thrown away in transit, so these are 424 now ([WA-13](#11c-ai-assisted-critique)). The Gemini models the app has been offering since the feature shipped had been **retired**, which the API reports as `is not found`, reading like a typo rather than a model that no longer exists; fixed in the shared provider so all three builds moved together ([WA-29](#where-the-key-lives)). And the live keys tell their own story: OpenAI's is rejected, Anthropic's account is out of credit, and Gemini answers — so [§What has been verified](#what-has-been-verified) says which of the three has actually written a critique. |
+| Bring your own key, and one view | Two changes the critique made necessary. The API key is now the **reader's**, entered in the app and kept in their browser rather than held by the server ([§Whose key](#whose-key)). A page open to anyone that critiques on the owner's key is a page whose running cost is set by whoever visits, and the failure is quiet and somebody else's until the bill arrives. The key still travels through the server, because two of the three providers refuse a cross-origin request outright, but it is spent and forgotten — not stored, not logged. The trade is written down rather than implied: `localStorage` is readable by any script on this origin, which is the least-bad option a page has ([WA-30](#whose-key)). A server key is still possible for a private install, behind an explicit `MDE_CRITIQUE_ALLOW_SERVER_KEY`, because a host with `OPENAI_API_KEY` already set for something else would otherwise opt in by accident ([WA-17](#whose-key)). And the provider and model are validated server-side, since a model name is otherwise a string from a page that ends up inside a request URL ([WA-32](#whose-key)). Separately, and following the Mac, there is now **one view** ([§8.1](#81-one-view)). Side by Side, the Markdown pane, the divider, the scroll link, the selection mirror, the three toolbar icons, `⌃⌘1`/`⌃⌘2`/`⌃⌘3` and `source-renderer.js` are all gone. A rendered view that is genuinely editable makes a second pane showing the same document a second place to look rather than a second thing to see. |
+| The critique rail, on the web | The macOS build's AI assisted critique, brought over whole: a rail of notes down the right-hand side, each shaded onto the passage it is about, with a decaying score, Done and Dismiss, and thirteen hands to write in ([§11c](#11c-ai-assisted-critique)). The pure logic is ported line by line from the Swift and tested against the same expectations — the decoder, the anchoring, the score, the ordering and the anchor tracking, forty tests. Two things had to be decided rather than copied. The **key is the server's**, because a browser cannot hold a secret, which means whoever can reach the app can spend the key behind it and the PRD says so ([WA-14](#whose-key), [WA-15](#whose-key)); and the **skill is vendored and deployed** rather than pulled, because a web server has no checkout to pull into, so the version panel names the commit that actually went out instead of implying it is current ([WA-21](#the-konvo-skill), [WA-22](#the-konvo-skill)). The shading is painted with the CSS Custom Highlight API: both surfaces are `contenteditable`, so wrapping a passage in a `<mark>` would move every offset after it and land in the undo stack as though the author had typed it ([WA-25](#deliberate-differences-from-the-mac)). Running it end to end against a stand-in model found three faults no unit test would have: the View menu reads the rail's state *while it is being built*, so a rail declared further down the module left the whole app blank; `curl_close()` is deprecated in PHP 8.5 and its notice is printed **before** the JSON body, so a host with `display_errors` on would have failed every request with a parse error; and a stylesheet moved into `v/<hash>/` resolves `url()` from three folders deep instead of one, so the eight typefaces would have 404'd on the deployed build and only there — the faces now live in their own unversioned `hands.css` ([WA-11](#11c-ai-assisted-critique)). Run for real against kirupa.com afterwards, which found three more things. A 5xx status was the wrong way to carry an application error: **Cloudflare replaces a 5xx body from the origin with its own page**, so a carefully worded explanation of a bad key arrived as the string `error code: 502` — an app promising that nothing fails silently cannot use a status whose body is thrown away in transit, so these are 424 now ([WA-13](#11c-ai-assisted-critique)). The Gemini models the app has been offering since the feature shipped had been **retired**, which the API reports as `is not found`, reading like a typo rather than a model that no longer exists; fixed in the shared provider so all three builds moved together ([WA-29](#whose-key)). And the live keys tell their own story: OpenAI's is rejected, Anthropic's account is out of credit, and Gemini answers — so [§What has been verified](#what-has-been-verified) says which of the three has actually written a critique. |
 | Give a picture the run of the page | The page is now wider than the column the text is set in, and a picture may spread up to 100px into the margin on each side while prose stays at the column ([WI-26](#10-images-and-assets)…[WI-29](#10-images-and-assets)). Matches the Mac, including the arithmetic. Measured in a real browser: a 842px picture in a 652px column overhung 95px each side with both centres at 732. Building it turned up a fault a unit test could not have: the ceiling was read from a custom property, and `getComputedStyle` hands those back unresolved, so `clamp( 0px, (100vw - 700px) / 2, 100px )` parsed as `NaN` and the ceiling silently collapsed to the column. |
 | A calmer page | Four changes with one aim: put the document on its own. A selected image now has four corner drag handles and resizes proportionally from any of them, as one undo step rather than one per pointer move ([WI-22](#10-images-and-assets)). The explorer starts closed and floats over the document instead of taking part in the layout, so opening it no longer shoves the text sideways, and the rendered measure is centered on the page rather than in whatever the explorer leaves over ([WT-13](#12-themes-typography-and-layout), [WT-15](#12-themes-typography-and-layout)). The menu bar, toolbar, and status bar gave up their tinted bands and group rules for the page's own background ([WT-14](#12-themes-typography-and-layout)). Writing the styles turned up two bugs that had been shipping unnoticed. `#alertLayer` — fixed, inset 0, `rgb(0 0 0 / 0.28)`, the dimming behind a dialog — was written into the markup **without** the `hidden` attribute, and the dialog code only ever *unsets* it, so every page load was dimmed 28% until some dialog happened to open and close; a theme claiming `#ffffff` measured `rgb(184, 184, 184)` on screen, which is exactly 255 × 0.72. And `--me-border` and `--me-text` were used six times but defined nowhere, which does not warn — an undefined custom property makes the whole declaration invalid, so those borders were `currentColor` and that background was transparent. Neither is the kind of bug a behavioural test can see, so both are now guarded by reading the files ([WY-22](#tests), [WY-23](#tests)), and the handles by real trusted pointer input, since a synthetic event never exercises pointer capture. |
 | Notice a change made outside this browser | Two gaps closed. Local storage pushes nothing at all by design ([WC-7](#live-updates)), so a document edited on the server's disk while it was open here went unnoticed until the next save quietly overwrote it; the open document is now re-read whenever the tab comes back to the front ([WC-9](#live-updates)) — one request per return, not the polling WC-7 rejected — which also covers cloud tabs the browser suspended in the background. And a revision that arrived while there were unsaved edits was announced in a status flash and then dropped, though this browser held the only copy of it; it is now kept and offered in a bar above the document, **Show Newest** or **Keep Mine** ([WC-10](#live-updates)). The tab-return trigger is injectable so `live.js` stays free of the DOM and testable under node; seven tests, mutation-checked (removing the trigger turns three red). |

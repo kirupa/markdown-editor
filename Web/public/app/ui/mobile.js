@@ -244,21 +244,7 @@ export function buildMobileUI({ root, topBar, formatBar, commands, state }) {
   });
 
   const moreButton = button('me-mobile__button', 'more', 'More', () => {
-    const mode = state.mode();
     openSheet([
-      {
-        label: 'Rich Text',
-        icon: 'richText',
-        selected: mode === 'rich',
-        action: () => commands.setMode('rich'),
-      },
-      {
-        label: 'Markdown',
-        icon: 'markdown',
-        selected: mode === 'source',
-        action: () => commands.setMode('source'),
-      },
-      { separator: true },
       { label: 'New Document', icon: 'newDocument', action: () => commands.newDocument() },
       { label: 'Save', icon: 'save', action: () => commands.save() },
       { separator: true },
@@ -383,8 +369,5 @@ export function buildMobileUI({ root, topBar, formatBar, commands, state }) {
       if (document.activeElement !== headings) headings.value = String(heading);
     },
 
-    setMode() {
-      // The mode lives in the overflow sheet, which is rebuilt on each open.
-    },
   };
 }

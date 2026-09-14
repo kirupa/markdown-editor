@@ -29,6 +29,10 @@
   --me-quote-inset: 20px;
 
   --me-sidebar-width: 240px;
+  /* The measure the document is set at. Named "preview" from when there were
+     two panes and this was the width of one of them; kept because it is
+     written into every reader's localStorage and into the image-bleed
+     arithmetic that the stylesheet tests check. */
   --me-preview-width: 700px;
   /* The page is wider than the column the text is set in. This is how much
      wider it may be, on each side, and a picture is the only thing allowed to
@@ -297,46 +301,6 @@ body {
 .me-tool svg .me-fill { fill: currentColor; stroke: none; }
 .me-tool--wide { width: auto; padding: 0 9px; gap: 5px; }
 
-/* Segmented control for the three editor views (E-1, E-4). */
-.me-segmented {
-  display: inline-flex;
-  padding: 2px;
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--me-primary-text) 6%, transparent);
-}
-
-.me-segmented__option {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 24px;
-  font: inherit;
-  color: inherit;
-  background: none;
-  border: 0;
-  padding: 0;
-  border-radius: 5px;
-  cursor: default;
-}
-
-.me-segmented__option svg {
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.me-segmented__option svg .me-fill { fill: currentColor; stroke: none; }
-
-.me-segmented__option[aria-pressed="true"] {
-  background: var(--me-page-background);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.10);
-}
-
 /* ------------------------------------------------------------------- sidebar */
 
 .me-sidebar {
@@ -566,21 +530,13 @@ body {
 
 .me-pane[hidden] { display: none; }
 
-/* In Split the preview takes a draggable fixed width and the source pane
-   absorbs the remainder (X-16). In single-pane modes the visible one fills
-   everything. */
-.me-editor[data-mode="split"] .me-pane--rich {
-  flex: 0 0 var(--me-preview-width);
-  width: var(--me-preview-width);
-}
+/* There is one pane, and it fills the editor. */
+.me-pane--rich { flex: 1; }
 
-.me-editor[data-mode="split"] .me-pane--source { flex: 1; }
-.me-editor[data-mode="rich"] .me-pane--rich,
-.me-editor[data-mode="source"] .me-pane--source { flex: 1; }
-
-/* Rich Text on its own centers the document at the same measure the preview
-   uses in Split, so switching modes does not reflow the text (E-14). */
-.me-editor[data-mode="rich"] .me-pane--rich .me-surface {
+/* The document is centred at a fixed measure rather than set to the width of
+   the window, because a line of text that runs the width of a monitor is a
+   line nobody can find their way back to the start of. */
+.me-pane--rich .me-surface {
   width: 100%;
   /* Whatever room is left over each side of the column, up to the maximum —
      the same rule as EditorPaneGeometry.imageBleed, and it collapses to
@@ -619,11 +575,6 @@ body {
   white-space: pre-wrap;
   overflow-wrap: break-word;
   tab-size: 4;
-}
-
-.me-surface--source {
-  padding: 16px 18px;       /* Y-7 */
-  font-family: var(--me-mono-font);
 }
 
 /* ------------------------------------------------------- rendered block styles */
@@ -1336,7 +1287,7 @@ body {
   padding-bottom: calc(28px + env(safe-area-inset-bottom));
 }
 
-.me-app[data-layout="mobile"] .me-editor[data-mode] .me-pane { flex: 1; }
+.me-app[data-layout="mobile"] .me-pane { flex: 1; }
 .me-app[data-layout="mobile"] .me-editor .me-pane--rich .me-surface {
   max-width: none;
   margin: 0;
@@ -2135,3 +2086,43 @@ body {
   flex: 1;
   border-left: 0;
 }
+
+/* The critique's settings panel: provider, model, and the reader's own key.
+   Wider than an alert because it is a form rather than a sentence. */
+.me-alert--settings { max-width: 460px; text-align: left; }
+
+.me-settings__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0;
+}
+
+.me-settings__label {
+  flex: 0 0 78px;
+  font-size: 13px;
+  color: var(--me-secondary-text);
+}
+
+.me-settings__control {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--me-separator);
+  border-radius: 6px;
+  background: var(--me-page-background);
+  font: inherit;
+  font-size: 13px;
+  color: var(--me-primary-text);
+}
+
+.me-settings__status {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--me-secondary-text);
+}
+
+/* Green for a key that is there, red for one that is not. Not colour alone —
+   the sentence says which either way, so this only speeds up a glance. */
+.me-settings__status[data-state="ok"] { color: var(--me-note-works); }
+.me-settings__status[data-state="missing"] { color: var(--me-note-high-ink); }

@@ -7,15 +7,22 @@ namespace MarkdownEditor;
 /**
  * Running a critique, server-side.
  *
- * This is the one place the web build differs from the Mac by necessity rather
- * than by taste. On the Mac the key lives in the reader's Keychain and the app
- * talks to the provider directly. A browser cannot hold a secret -- anything
- * it can send, anyone reading the page can send -- so the key stays on the
- * server and the browser asks *this* to make the call.
+ * The key is the **reader's**, sent with the request, spent here and forgotten.
  *
- * That has a consequence worth stating plainly: whoever can reach this app can
- * spend the key behind it. The deploy script's optional .htpasswd is what that
- * is for, and the PRD says so rather than leaving it to be discovered.
+ * That arrangement is the answer to two problems at once. A page open to
+ * anyone cannot run critiques on the site owner's account, because the first
+ * person to notice would be spending somebody else's money; and a browser
+ * cannot call these providers itself, because two of the three answer a
+ * cross-origin request by refusing it. So the browser holds the key and this
+ * makes the call.
+ *
+ * Nothing about the key is kept. It is not written to disk, not put in a
+ * session, and not logged -- the catch-all handler in Api.php logs a message
+ * and never the request.
+ *
+ * A server may still hold a key of its own, for a private install where that
+ * is the point, but only when `MDE_CRITIQUE_ALLOW_SERVER_KEY` says so. The
+ * default is off, because the failure mode of the other default is a bill.
  */
 final class Critique
 {
@@ -41,15 +48,70 @@ final class Critique
     }
 
     /**
-     * Reads the provider, model and key out of the environment.
+     * The service for one request, using the key the browser sent.
      *
-     * Environment rather than a config file so that a key is never a file
-     * somebody can accidentally commit, serve, or back up. `MDE_CRITIQUE_*`
-     * overrides, then the provider's own conventional variable, which is
-     * usually already set on a host that does anything else with a model.
+     * The provider and the model are validated rather than trusted: the
+     * provider must be one this build knows, and the model must be one that
+     * provider offers. Otherwise the model name is a string from a page that
+     * ends up inside a URL, which is a request forgery waiting for somebody to
+     * find it.
+     *
+     * @throws WorkspaceError
      */
-    public static function fromEnvironment(): ?self
+    public static function fromRequest(array $body): self
     {
+        $key = self::text($body['key'] ?? null);
+        if ($key === null) {
+            return self::fromServerKey();
+        }
+
+        $providerID = self::text($body['provider'] ?? null) ?? CritiqueProvider::OPENAI;
+        if (!CritiqueProvider::isKnown($providerID)) {
+            throw WorkspaceError::critique(
+                'That is not a provider this editor knows.',
+                'Choose OpenAI, Anthropic or Google Gemini in the critique settings.'
+            );
+        }
+        $provider = new CritiqueProvider($providerID);
+
+        $model = self::text($body['model'] ?? null) ?? $provider->defaultModel();
+        if (!in_array($model, $provider->models(), true)) {
+            throw WorkspaceError::critique(
+                sprintf('%s does not offer a model called "%s".', $provider->title(), $model),
+                'Pick one from the list in the critique settings.'
+            );
+        }
+
+        return new self($providerID, $model, $key);
+    }
+
+    /**
+     * The server's own key, for an install where that is deliberate.
+     *
+     * Off unless `MDE_CRITIQUE_ALLOW_SERVER_KEY` is set, because a public page
+     * quietly spending the owner's account is a failure nobody notices until
+     * the bill, and a host that already has `OPENAI_API_KEY` set for something
+     * else would otherwise opt in by accident.
+     *
+     * @throws WorkspaceError
+     */
+    private static function fromServerKey(): self
+    {
+        $critique = self::serverKey();
+        if ($critique === null) {
+            throw WorkspaceError::critique(
+                'A critique needs an API key.',
+                'Add one in the critique settings. It stays in this browser.'
+            );
+        }
+        return $critique;
+    }
+
+    public static function serverKey(): ?self
+    {
+        if (self::env('MDE_CRITIQUE_ALLOW_SERVER_KEY') === null) {
+            return null;
+        }
         $providerID = self::env('MDE_CRITIQUE_PROVIDER') ?? CritiqueProvider::OPENAI;
         if (!CritiqueProvider::isKnown($providerID)) {
             return null;
@@ -66,24 +128,23 @@ final class Critique
     }
 
     /**
-     * What the browser is allowed to know about the configuration.
+     * What the browser is allowed to know about the server.
      *
-     * The provider and the model, because the rail says which model answered
-     * and a critique that silently changed model would be a critique that
-     * silently changed its mind. Never the key, and never whether a *specific*
-     * key is wrong -- only whether one is configured at all.
+     * Which KONVO skill went out with this deploy, and whether the server has
+     * a key of its own to fall back on -- so the rail can tell "add a key" from
+     * "ready to go" without asking for one that is not needed. Never a key, and
+     * never anything about the reader's.
      */
     public static function describe(): array
     {
-        $critique = self::fromEnvironment();
         $version = KonvoSkill::version();
+        $server = self::serverKey();
         return [
-            'available' => $critique !== null,
-            'provider' => $critique?->provider,
-            'providerTitle' => $critique === null
+            'serverKey' => $server !== null,
+            'serverProvider' => $server === null
                 ? null
-                : (new CritiqueProvider($critique->provider))->title(),
-            'model' => $critique?->model,
+                : (new CritiqueProvider($server->provider))->title(),
+            'serverModel' => $server?->model,
             'skill' => $version === null ? null : [
                 'commit' => $version['commit'],
                 'subject' => $version['subject'],
@@ -91,6 +152,16 @@ final class Critique
                 'loaded' => KonvoSkill::pass() !== null,
             ],
         ];
+    }
+
+    /** A non-empty trimmed string, or null. */
+    private static function text(mixed $value): ?string
+    {
+        if (!is_string($value)) {
+            return null;
+        }
+        $trimmed = trim($value);
+        return $trimmed === '' ? null : $trimmed;
     }
 
     private static function env(string $name): ?string

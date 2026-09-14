@@ -1,8 +1,14 @@
 // Application wiring.
 //
-// Everything user-visible is assembled here: the two editing surfaces, the
-// mode switch, the command table shared by the toolbar and menus, image
-// import, the dividers, and scroll/selection synchronization.
+// Everything user-visible is assembled here: the editing surface, the command
+// table shared by the toolbar and menus, image import, the explorer divider,
+// and the critique rail.
+//
+// There is one view. The Markdown and Side-by-Side panes are gone, following
+// the Mac (macOS PRD I-142): a rendered view that is genuinely editable makes
+// a second pane showing the same document a second place to look rather than a
+// second thing to see, and the raw source is still one keystroke away in any
+// text editor.
 
 import { api, ApiError } from './api.js';
 import {
@@ -27,7 +33,6 @@ import {
   wrapCodeBlock,
 } from './core/formatting.js';
 import { renderInto } from './ui/renderer.js';
-import { renderSourceInto } from './ui/source-renderer.js';
 import { EditorSurface } from './ui/editor-surface.js';
 import { positionForOffset } from './dom-text.js';
 import { Explorer } from './ui/explorer.js';
@@ -50,10 +55,8 @@ import {
   paintCritiqueHighlights,
 } from './ui/critique-highlights.js';
 
-const MODE_KEY = 'markdown-editor.mode';
 const SIDEBAR_KEY = 'markdown-editor.sidebarVisible';
 const SIDEBAR_WIDTH_KEY = 'markdown-editor.sidebarWidth';
-const PREVIEW_WIDTH_KEY = 'markdown-editor.previewWidth';
 const LAYOUT_KEY = 'markdown-editor.layout';
 
 /** Below this the desktop toolbar cannot lay out without wrapping (WB-3). */
@@ -75,7 +78,6 @@ function modelFor(source) {
   }
   return renderModel;
 }
-let mode = localStorage.getItem(MODE_KEY) ?? 'split';
 /**
  * WT-13: the explorer starts closed. A first visit opens on the document alone;
  * the nav is one click away and, once opened, is remembered. Only an explicit
@@ -94,8 +96,6 @@ let mobileLayout =
     ? window.matchMedia(`(max-width: ${MOBILE_MAX_WIDTH}px), (pointer: coarse)`).matches
     : storedLayout === 'mobile';
 
-/** Set when entering mobile forced a mode change, so leaving can undo it. */
-let modeBeforeMobile = null;
 /** The drawer is transient, unlike the desktop sidebar preference. */
 let drawerOpen = false;
 let config = { workspaceName: 'Workspace', imageExtensions: [] };
@@ -112,16 +112,7 @@ const richProjection = {
   toSurface: (source, range) => modelFor(source).renderedRange(range),
 };
 
-/** The raw pane shows the source itself, so every mapping is the identity. */
-const sourceProjection = {
-  render: (source) => renderSourceInto(element('sourceSurface'), source, modelFor(source)),
-  textFor: (source) => source,
-  toSource: (_source, range) => range,
-  toSurface: (_source, range) => range,
-};
-
 const richSurface = new EditorSurface(element('richSurface'), richProjection, model);
-const sourceSurface = new EditorSurface(element('sourceSurface'), sourceProjection, model);
 
 const explorer = new Explorer({
   tree: element('explorerTree'),
@@ -215,7 +206,6 @@ function showNewestVersion() {
   if (!revision) return;
   model.applyRemote(revision);
   richSurface.renderedSource = null;
-  sourceSurface.renderedSource = null;
   refreshSurfaces({ force: true });
   updateStatus();
   flashStatus('Showing the newest version');
@@ -232,7 +222,6 @@ function restartLiveUpdates() {
     onDocumentChanged: () => {
       hideExternalNotice();
       richSurface.renderedSource = null;
-      sourceSurface.renderedSource = null;
       refreshSurfaces({ force: true });
       updateStatus();
     },
@@ -253,21 +242,16 @@ function updateStorageIndicator() {
     : 'Documents are stored in the workspace folder on the server hosting this page.';
 }
 
-// In Split, a command applies to whichever pane the user was last editing.
-// Tracking that explicitly means a control that steals focus on click cannot
-// silently redirect the command to the other pane (F-10).
-let lastFocused = richSurface;
-for (const surface of [richSurface, sourceSurface]) {
-  surface.element.addEventListener('focus', () => {
-    lastFocused = surface;
-  });
-}
-
-/** The surface a formatting command should act on. */
+/**
+ * The surface a command acts on.
+ *
+ * There is only one. Kept as a function rather than inlined because every
+ * command reads it, and a single view is a layout decision rather than a
+ * promise -- naming the seam costs nothing and is what made removing the
+ * second pane a small change.
+ */
 function activeSurface() {
-  if (mode === 'source') return sourceSurface;
-  if (mode === 'rich') return richSurface;
-  return lastFocused;
+  return richSurface;
 }
 
 function currentSelection() {
@@ -381,12 +365,6 @@ const commands = {
   newFolder: () => explorer.newFolder(),
   newDocumentFile: () => explorer.newDocument(),
   showWelcome: () => welcome.show({ dismissable: true }),
-  setMode(next) {
-    // An explicit choice replaces the mode mobile borrowed, so leaving the
-    // layout must not resurrect Side by Side over it.
-    modeBeforeMobile = null;
-    setMode(next);
-  },
   toggleSidebar() {
     if (mobileLayout) {
       drawerOpen = !drawerOpen;
@@ -451,7 +429,6 @@ const toolbar = buildToolbar(element('toolbar'), commands);
 buildMenus(element('menubar'), commands, {
   canUndo: () => model.canUndo,
   canRedo: () => model.canRedo,
-  mode: () => mode,
   sidebarVisible: () => sidebarVisible,
   critiqueVisible: () => critique.isVisible,
   mobileLayout: () => mobileLayout,
@@ -465,7 +442,6 @@ const mobileUI = buildMobileUI({
   commands,
   state: {
     canUndo: () => model.canUndo,
-    mode: () => mode,
     documentName: () => model.displayName,
     documentPath: () => model.path,
     isDirty: () => model.isDirty,
@@ -519,7 +495,6 @@ function refreshActiveStyles() {
 
 function refreshSurfaces(options = {}) {
   richSurface.sync(model.source, model.selection, options);
-  sourceSurface.sync(model.source, model.selection, options);
   // A sync replaces every element in the rendered pane, so a selected image
   // has to be found again or the size panel would close on its own first
   // keystroke.
@@ -564,7 +539,7 @@ element('richSurface').addEventListener('pointerdown', (event) => {
 
 // Any edit elsewhere means the panel is describing an image the caret has
 // left, so it stops applying.
-for (const surface of [richSurface, sourceSurface]) {
+for (const surface of [richSurface]) {
   surface.element.addEventListener('keydown', () => imageSelection.clear());
 }
 
@@ -595,7 +570,6 @@ function repaintCritique() {
     selectedID: critique.selectedID,
     surfaces: [
       { root: element('richSurface'), map: (range) => richProjection.toSurface(model.source, range) },
-      { root: element('sourceSurface'), map: (range) => range },
     ],
   });
 }
@@ -617,40 +591,21 @@ function revealSourceRange(range) {
   }
 }
 
-// E-16: moving the caret in one pane moves it in the other, so Side by Side
-// always shows the same place twice.
-function mirrorSelection(source) {
+function noteSelectionMoved(surface) {
   refreshActiveStyles();
   // A click in the *text* opens the card for the passage under it, which is
   // the other half of the two-way link: without it the rail can point into the
   // document but the document cannot point back.
-  const caret = source.currentSourceSelection();
+  const caret = surface.currentSourceSelection();
   if (caret) critique.selectAtOffset(caret.location);
-  if (mode !== 'split') return;
-  const other = source === richSurface ? sourceSurface : richSurface;
-  const range = other.projection.toSurface(model.source, model.selection);
-  const node = other.element;
-  // Only scroll — stealing the DOM selection would steal focus with it.
-  const position = positionForOffset(node, range.location);
-  if (!position) return;
-  const probe = document.createRange();
-  probe.setStart(position.node, position.offset);
-  probe.collapse(true);
-  const rect = probe.getBoundingClientRect();
-  const bounds = node.parentElement.getBoundingClientRect();
-  if (rect.top < bounds.top || rect.bottom > bounds.bottom) {
-    node.parentElement.scrollTop += rect.top - bounds.top - bounds.height / 3;
-  }
 }
 
-richSurface.onSelectionChange = () => mirrorSelection(richSurface);
-sourceSurface.onSelectionChange = () => mirrorSelection(sourceSurface);
+richSurface.onSelectionChange = () => noteSelectionMoved(richSurface);
 model.addEventListener('open', () => {
   // A held revision belongs to the document it came from, and this is a
   // different one now.
   hideExternalNotice();
   richSurface.renderedSource = null;
-  sourceSurface.renderedSource = null;
   refreshSurfaces({ force: true });
   // So is a critique. Keeping one across an open would leave notes about a
   // document nobody is looking at, anchored to offsets in a different text.
@@ -687,19 +642,6 @@ function flashStatus(message) {
   updateStatus();
 }
 
-function setMode(next) {
-  // Side by Side needs two readable columns, which a phone does not have.
-  if (mobileLayout && next === 'split') next = 'rich';
-  mode = next;
-  localStorage.setItem(MODE_KEY, next);
-  element('editor').dataset.mode = next;
-  element('richPane').hidden = next === 'source';
-  element('sourcePane').hidden = next === 'rich';
-  element('paneDivider').hidden = next !== 'split';
-  toolbar.setMode(next);
-  refreshSurfaces({ force: true });
-}
-
 function applySidebarVisibility() {
   // In mobile the sidebar is a transient drawer, so its state must not be
   // written over the desktop preference.
@@ -728,17 +670,7 @@ function setMobileLayout(enabled) {
   element('app').dataset.layout = enabled ? 'mobile' : 'desktop';
   mobileUI.setEnabled(enabled);
 
-  if (enabled) {
-    drawerOpen = false;
-    if (mode === 'split') {
-      modeBeforeMobile = mode;
-      setMode('rich');
-    }
-  } else if (modeBeforeMobile) {
-    const restored = modeBeforeMobile;
-    modeBeforeMobile = null;
-    setMode(restored);
-  }
+  if (enabled) drawerOpen = false;
 
   applySidebarVisibility();
   mobileUI.refresh();
@@ -769,7 +701,7 @@ async function newDocument() {
   if (!(await guardUnsaved())) return;
   model.reset();
   welcome.hide();
-  setMode(mode);
+  refreshSurfaces({ force: true });
   richSurface.focus();
   updateStatus();
 }
@@ -910,9 +842,8 @@ async function importImages(files) {
 }
 
 richSurface.onPasteFiles = importImages;
-sourceSurface.onPasteFiles = importImages;
 
-for (const surface of [element('richSurface'), element('sourceSurface')]) {
+for (const surface of [element('richSurface')]) {
   surface.addEventListener('dragover', (event) => {
     if (!event.dataTransfer?.types.includes('Files')) return;
     event.preventDefault();
@@ -1007,36 +938,6 @@ installDivider(element('sidebarDivider'), (clientX) => {
   localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width));
 });
 
-// L-9: the preview keeps a usable measure no matter how far the gripper drags.
-installDivider(element('paneDivider'), (clientX) => {
-  const editor = element('editor').getBoundingClientRect();
-  const width = Math.round(
-    Math.min(Math.max(320, editor.width - 260), Math.max(320, clientX - editor.left))
-  );
-  document.documentElement.style.setProperty('--me-preview-width', `${width}px`);
-  localStorage.setItem(PREVIEW_WIDTH_KEY, String(width));
-});
-
-// ------------------------------------------------------------ scroll sync
-
-let syncingScroll = false;
-function linkScroll(from, to) {
-  from.addEventListener('scroll', () => {
-    if (mode !== 'split' || syncingScroll) return;
-    syncingScroll = true;
-    const range = from.scrollHeight - from.clientHeight;
-    const fraction = range > 0 ? from.scrollTop / range : 0;
-    const targetRange = to.scrollHeight - to.clientHeight;
-    to.scrollTop = fraction * Math.max(0, targetRange);
-    // Releasing on the next frame keeps the mirrored scroll from echoing back.
-    requestAnimationFrame(() => {
-      syncingScroll = false;
-    });
-  });
-}
-linkScroll(element('richPane'), element('sourcePane'));
-linkScroll(element('sourcePane'), element('richPane'));
-
 // ---------------------------------------------------------------- startup
 
 window.addEventListener('beforeunload', (event) => {
@@ -1103,12 +1004,6 @@ async function start() {
   if (storedWidth) {
     document.documentElement.style.setProperty('--me-sidebar-width', `${storedWidth}px`);
   }
-  const storedPreview = localStorage.getItem(PREVIEW_WIDTH_KEY);
-  if (storedPreview) {
-    document.documentElement.style.setProperty('--me-preview-width', `${storedPreview}px`);
-  }
-
-  setMode(mode);
   setMobileLayout(mobileLayout);
   element('app').hidden = false;
 

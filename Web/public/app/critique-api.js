@@ -49,21 +49,28 @@ async function request(url, options = {}) {
 }
 
 export const critiqueApi = {
-  /** What the server is set up with, so the rail never offers what cannot work. */
+  /**
+   * What the server can and cannot do, so the rail never offers what cannot
+   * work: whether the KONVO skill was deployed with it, and whether it has a
+   * key of its own to fall back on.
+   */
   config: () => request(`${ENDPOINT}?action=critiqueConfig`),
 
   /**
    * Reads the draft and returns the model's raw reply.
    *
-   * Raw, and decoded in the browser by the same ported decoder the Mac uses,
-   * so a reply that is 90% right is shown rather than thrown away by a second
-   * and differently-forgiving parser on the server.
+   * The key travels with the request. The server spends it and forgets it --
+   * it is not stored, not logged, and not shared with the next visitor.
+   *
+   * The reply is raw, and decoded in the browser by the same ported decoder
+   * the Mac uses, so a reply that is 90% right is shown rather than thrown
+   * away by a second and differently-forgiving parser on the server.
    */
-  run: (text, focus, signal) =>
+  run: ({ text, focus, provider, model, key, signal }) =>
     request(`${ENDPOINT}?action=critique`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, focus }),
+      body: JSON.stringify({ text, focus, provider, model, key }),
       signal,
     }),
 
@@ -74,5 +81,10 @@ export const critiqueApi = {
    * no way to tell a mistyped key from a model the account cannot reach from a
    * network that is down.
    */
-  test: () => request(`${ENDPOINT}?action=critiqueTest`, { method: 'POST', body: '{}' }),
+  test: ({ provider, model, key }) =>
+    request(`${ENDPOINT}?action=critiqueTest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider, model, key }),
+    }),
 };
