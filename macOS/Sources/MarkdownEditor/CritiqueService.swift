@@ -212,6 +212,58 @@ final class CritiqueService {
         return KonvoSkill.critiquePass(fromSkill: markdown)
     }
 
+    /// Asks the configured provider for one word, and reports what happened.
+    ///
+    /// Goes through the same `ask` and `run` the critique uses rather than a
+    /// simplified copy. A test that takes a different path can pass while the
+    /// real one fails — different header, different endpoint, different
+    /// timeout — and then it is worse than no test, because it says the
+    /// connection is fine.
+    func testConnection() async -> CritiqueConnectionTest.Outcome {
+        let provider = CritiqueCredentials.provider
+        let model = CritiqueCredentials.model(for: provider)
+        do {
+            let reply: String
+            if provider.needsAPIKey {
+                guard let key = CritiqueCredentials.key(for: provider) else {
+                    return CritiqueConnectionTest.failure(
+                        "No API key is saved for \(provider.title)."
+                    )
+                }
+                reply = try await ask(
+                    provider,
+                    key: key,
+                    model: model,
+                    prompt: CritiqueConnectionTest.prompt,
+                    onProgress: { _ in }
+                )
+            } else {
+                guard let cli = Self.locateCLI() else {
+                    return CritiqueConnectionTest.failure(
+                        Failure.cliNotFound.errorDescription
+                            ?? "No critique provider is set up."
+                    )
+                }
+                reply = try await run(
+                    cli: cli,
+                    prompt: CritiqueConnectionTest.prompt,
+                    onProgress: { _ in }
+                )
+            }
+            return CritiqueConnectionTest.interpret(
+                reply: reply,
+                provider: provider.title,
+                model: provider.needsAPIKey ? model : ""
+            )
+        } catch let error as Failure {
+            return CritiqueConnectionTest.failure(
+                error.errorDescription ?? "The test did not complete."
+            )
+        } catch {
+            return CritiqueConnectionTest.failure(error.localizedDescription)
+        }
+    }
+
     func cancel() {
         running?.terminate()
         running = nil

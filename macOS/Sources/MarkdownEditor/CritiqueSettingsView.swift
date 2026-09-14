@@ -22,6 +22,11 @@ struct CritiqueSettingsView: View {
     @State private var savedKeyExists = false
     @State private var justSaved = false
     @StateObject private var skill = KonvoSkillModel()
+    @State private var testOutcome: CritiqueConnectionTest.Outcome?
+    @State private var isTesting = false
+    /// Its own service, not a document's. A test belongs to the settings
+    /// window and must not cancel, or be cancelled by, a critique in progress.
+    @State private var tester = CritiqueService()
 
     private var provider: CritiqueProvider {
         CritiqueProvider(rawValue: providerRaw) ?? .openAI
@@ -98,6 +103,8 @@ struct CritiqueSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 }
+
+                testRow
             }
 
             Section("Appearance") {
@@ -150,6 +157,45 @@ struct CritiqueSettingsView: View {
         .frame(width: 460)
         .fixedSize(horizontal: false, vertical: true)
         .onAppear(perform: load)
+    }
+
+    /// Prove the connection works before spending a critique on finding out.
+    ///
+    /// A critique takes the better part of a minute, and until it fails there
+    /// is no way to tell a mistyped key from a model the account cannot reach
+    /// from a network that is down — all three arrive as the same shrug at the
+    /// end of a long wait. This asks for one word on the same path a critique
+    /// uses.
+    @ViewBuilder
+    private var testRow: some View {
+        HStack {
+            Button("Test") { runTest() }
+                .disabled(isTesting)
+            if isTesting {
+                ProgressView().controlSize(.small)
+                Text("Asking…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if let outcome = testOutcome {
+                Text(outcome.detail)
+                    .font(.caption)
+                    .foregroundStyle(outcome.didPass ? .green : .red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func runTest() {
+        guard !isTesting else { return }
+        isTesting = true
+        testOutcome = nil
+        Task {
+            let outcome = await tester.testConnection()
+            await MainActor.run {
+                testOutcome = outcome
+                isTesting = false
+            }
+        }
     }
 
     /// Which copy of the skill the critique is actually running against.
@@ -232,6 +278,9 @@ struct CritiqueSettingsView: View {
 
     private func load() {
         skill.read()
+        // A result from the previous provider would describe a connection the
+        // reader is no longer looking at.
+        testOutcome = nil
         // The picker has to show the provider the critique will actually use.
         //
         // `@AppStorage` cannot express this default because it is not a
