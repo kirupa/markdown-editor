@@ -40,30 +40,25 @@ func makeBitmap(size: Int, draw: (CGContext, CGFloat) -> Void) -> NSBitmapImageR
     return representation
 }
 
-/// The kirupa mark, and where its visible ink sits inside its own square.
-///
-/// The ink box is measured rather than written down, because the artwork is
-/// neither centred in its viewBox nor filling it: drawn as a plain square the
-/// mark comes out small and visibly off to one side. Measuring means the next
-/// logo dropped in here is placed correctly without anybody re-deriving a
-/// number.
+/// The kirupa mark, and the circle a reader centres it by.
 struct Logo {
     let image: NSImage
-    /// The ink's bounds as fractions of the image, y measured from the bottom.
-    let ink: NSRect
+    /// The circular outline's bounds as fractions of the image, y measured
+    /// from the bottom. What the icon is sized and centred on.
+    let anchor: NSRect
 
-    /// Draws the mark so its **ink** is centred in `rect` and its longer side
-    /// is `fill` of that rect.
+    /// Draws the mark so its **circle** is centred in `rect` and that circle's
+    /// diameter is `fill` of the rect.
     ///
-    /// Fitting the ink rather than the image is the whole point: white is not
-    /// ink here. The logo carries a white halo and a white disc behind the
-    /// fruit, which are invisible on a white plate, so sizing to the image
-    /// would silently reserve room for something nobody can see.
+    /// The circle rather than the artwork, because the circle is what a reader
+    /// sees as the mark: the leaves are an accent that sticks out of it at one
+    /// corner, and sizing or centring by them makes the round part — the part
+    /// the eye settles on — sit small and off to one side.
     func draw(in rect: NSRect, fill: CGFloat) {
-        let side = rect.width * fill / max(ink.width, ink.height)
+        let side = rect.width * fill / max(anchor.width, anchor.height)
         let origin = NSPoint(
-            x: rect.midX - ink.midX * side,
-            y: rect.midY - ink.midY * side
+            x: rect.midX - anchor.midX * side,
+            y: rect.midY - anchor.midY * side
         )
         image.draw(
             in: NSRect(origin: origin, size: NSSize(width: side, height: side)),
@@ -90,7 +85,7 @@ func drawAppIcon(_ context: CGContext, _ size: CGFloat, logo: Logo) {
     plate.fill()
     context.restoreGState()
 
-    logo.draw(in: plate, fill: 0.80)
+    logo.draw(in: plate, fill: 0.66)
 }
 
 /// The logo, read from the SVG beside the icons it is drawn into.
@@ -109,16 +104,32 @@ func loadLogo(from directory: URL) throws -> Logo {
             userInfo: [NSLocalizedDescriptionKey: "No logo at \(url.path)"]
         )
     }
-    return Logo(image: image, ink: inkBounds(of: image))
+    return Logo(image: image, anchor: anchorBounds(of: image))
 }
 
-/// Where a mark's visible ink sits inside its own square, as fractions.
+/// Where the mark's circular outline sits inside its own square, as fractions.
 ///
-/// Rendered large and scanned. Transparent pixels are not ink, and neither is
-/// white: on a white plate the logo's halo is invisible, so counting it would
-/// push the part a person can actually see off centre — measured at 3.5pt
-/// across and 5pt down on a 512pt canvas before this existed.
-func inkBounds(of image: NSImage) -> NSRect {
+/// Measured rather than written down. The artwork is neither centred in its
+/// viewBox nor filling it, so every number here would otherwise be a constant
+/// nobody could check — and the next mark dropped in would need all of them
+/// re-derived by hand.
+///
+/// The outline is found as ink that is dark **and** near-neutral. Dark alone
+/// does not do it: the leaves are `#008000`, which is darker than the
+/// `#333333` ring, so a brightness test alone drags the box back out to the
+/// top-left corner. Saturation is what separates a drawn outline from coloured
+/// artwork.
+///
+/// Measured on this logo the circle comes back 0.713 square, centred at
+/// (0.539, 0.520) — against (0.489, 0.484) for the bounding box of everything
+/// drawn. That gap of about a twentieth of the icon is the visible lean this
+/// exists to remove.
+///
+/// Falls back to every non-white pixel when a mark has no such outline. White
+/// is not ink either way: this logo carries a white halo and a white disc that
+/// are invisible on a white plate, and counting them reserves room for
+/// something nobody can see.
+func anchorBounds(of image: NSImage) -> NSRect {
     let probe = 512
     let rep = makeBitmap(size: probe) { _, size in
         image.draw(
@@ -131,31 +142,50 @@ func inkBounds(of image: NSImage) -> NSRect {
         )
     }
 
-    var minX = probe, minY = probe, maxX = -1, maxY = -1
+    var outline = Box(), ink = Box()
     for y in 0..<probe {
         for x in 0..<probe {
             guard let colour = rep.colorAt(x: x, y: y), colour.alphaComponent > 0.5
             else { continue }
-            let isWhite = colour.redComponent > 0.97
-                && colour.greenComponent > 0.97
-                && colour.blueComponent > 0.97
-            guard !isWhite else { continue }
-            minX = min(minX, x); maxX = max(maxX, x)
-            minY = min(minY, y); maxY = max(maxY, y)
+            let highest = max(colour.redComponent, max(colour.greenComponent, colour.blueComponent))
+            let lowest = min(colour.redComponent, min(colour.greenComponent, colour.blueComponent))
+            guard highest < 0.97 || lowest < 0.97 else { continue }
+            ink.add(x: x, y: y)
+
+            let saturation = highest > 0 ? (highest - lowest) / highest : 0
+            if saturation < 0.25, highest < 0.45 {
+                outline.add(x: x, y: y)
+            }
         }
     }
-    guard maxX >= minX, maxY >= minY else {
-        return NSRect(x: 0, y: 0, width: 1, height: 1)
+
+    let box = outline.isEmpty ? ink : outline
+    return box.normalized(in: probe)
+}
+
+/// A bounding box accumulated a pixel at a time, in top-down image rows.
+struct Box {
+    private var minX = Int.max, minY = Int.max, maxX = -1, maxY = -1
+
+    var isEmpty: Bool { maxX < minX }
+
+    mutating func add(x: Int, y: Int) {
+        minX = min(minX, x); maxX = max(maxX, x)
+        minY = min(minY, y); maxY = max(maxY, y)
     }
 
-    // `colorAt` counts rows from the top; the drawing above does not.
-    let side = CGFloat(probe)
-    return NSRect(
-        x: CGFloat(minX) / side,
-        y: CGFloat(probe - 1 - maxY) / side,
-        width: CGFloat(maxX - minX + 1) / side,
-        height: CGFloat(maxY - minY + 1) / side
-    )
+    /// As fractions of a `side`-pixel square, with y flipped to run from the
+    /// bottom — `colorAt` counts rows from the top, and drawing does not.
+    func normalized(in side: Int) -> NSRect {
+        guard !isEmpty else { return NSRect(x: 0, y: 0, width: 1, height: 1) }
+        let side = CGFloat(side)
+        return NSRect(
+            x: CGFloat(minX) / side,
+            y: (side - 1 - CGFloat(maxY)) / side,
+            width: CGFloat(maxX - minX + 1) / side,
+            height: CGFloat(maxY - minY + 1) / side
+        )
+    }
 }
 
 /// The document icon: a white page with a folded corner, a few text rules, and
@@ -333,10 +363,10 @@ func drawIOSAppIcon(_ context: CGContext, _ size: CGFloat, logo: Logo) {
     NSColor.white.setFill()
     plate.fill()
 
-    // Tighter than the Mac's 0.80 because this square has no plate inside
+    // Tighter than the Mac's 0.66 because this square has no plate inside
     // it: iOS rounds the corners off the artwork itself, so the same fraction
     // would put the mark hard against the visible edge.
-    logo.draw(in: plate, fill: 0.62)
+    logo.draw(in: plate, fill: 0.51)
 }
 
 /// Writes the single 1024×1024 PNG an iOS asset catalog expects.
