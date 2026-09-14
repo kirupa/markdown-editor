@@ -20,6 +20,12 @@ struct MarkdownEditorApp: App {
                 appearanceModeRawValue: $appearanceModeRawValue
             )
         }
+        // What a window opens at on a first run: wide enough for the writing
+        // column *and* the comments rail beside it, because the rail is there
+        // from the moment the document is. Anything saved for a window — a
+        // restored session, a size set by hand — still wins over this; it is
+        // the default, not a rule.
+        .defaultSize(Layout.defaultWindowContentSize)
         .commands {
             MarkdownEditorCommands()
         }

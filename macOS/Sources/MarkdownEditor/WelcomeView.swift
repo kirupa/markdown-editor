@@ -54,20 +54,17 @@ struct WelcomeView: View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
 
-            Image(systemName: "doc.richtext")
-                .font(.system(size: 62, weight: .thin))
-                .foregroundStyle(Color(nsColor: colorTheme.accentColor))
+            Image(nsImage: logo)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(width: Self.logoSize, height: Self.logoSize)
                 .accessibilityHidden(true)
 
             Text("KONVO")
                 .font(.system(size: 25, weight: .semibold))
                 .foregroundStyle(primaryText)
                 .padding(.top, 14)
-
-            Text(versionSummary)
-                .font(.system(size: 11))
-                .foregroundStyle(secondaryText)
-                .padding(.top, 3)
 
             Spacer(minLength: 24)
 
@@ -205,19 +202,27 @@ struct WelcomeView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var versionSummary: String {
-        let information = Bundle.main.infoDictionary
-        let version = information?["CFBundleShortVersionString"] as? String
-        let build = information?["CFBundleVersion"] as? String
+    /// The app's own icon, at the size the identity panel draws it.
+    ///
+    /// The plate inside a macOS icon is inset from its canvas by 8.6% a side —
+    /// see `Scripts/make-icons.swift` — so this is the canvas, and the logo a
+    /// reader sees is about 70pt of it.
+    private static let logoSize: CGFloat = 84
 
-        switch (version, build) {
-        case let (version?, build?):
-            return "Version \(version) (\(build))"
-        case let (version?, nil):
-            return "Version \(version)"
-        default:
-            return "Native Markdown editing for macOS"
-        }
+    /// The logo, read from the bundle rather than drawn again here.
+    ///
+    /// `Scripts/make-icons.swift` generates the icon, so a second copy of the
+    /// artwork in this view would be one more place to update and one more
+    /// place to forget. `applicationIconName` resolves to whatever the bundle
+    /// ships, which is the same mark as in the Dock and in Finder — the point
+    /// of a logo being that it is the same everywhere.
+    private var logo: NSImage {
+        NSImage(named: NSImage.applicationIconName)
+            ?? NSImage(
+                systemSymbolName: "doc.richtext",
+                accessibilityDescription: nil
+            )
+            ?? NSImage()
     }
 }
 

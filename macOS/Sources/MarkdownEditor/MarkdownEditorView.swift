@@ -158,7 +158,10 @@ struct MarkdownEditorView: View {
                 }
             }
         }
-        .frame(minWidth: Layout.minimumWindowWidth, minHeight: 520)
+        .frame(
+            minWidth: Layout.minimumWindowWidth,
+            minHeight: Layout.minimumWindowHeight
+        )
         .background {
             // The desk the page lies on: a flat tone with a faint grid over
             // it, drawn behind everything rather than inside the page.
@@ -726,4 +729,74 @@ enum Layout {
     // X-18: the explorer floats, so it no longer needs a column of its own for
     // the window to be usable. The window only has to fit a document.
     static let minimumWindowWidth = defaultDocumentWidth
+
+    /// The shortest a document window may be made.
+    static let minimumWindowHeight: CGFloat = 520
+
+    /// How tall a document window opens.
+    ///
+    /// Picked rather than derived, because there is no height that "fits" a
+    /// Markdown document — it is as long as it is. Tall enough for a screenful
+    /// of prose with a column of notes beside it, and short enough to still
+    /// land under the menu bar of a 13" laptop rather than be clamped there.
+    static let defaultWindowHeight: CGFloat = 820
+
+    /// The title bar and toolbar drawn above the content — 52pt, measured on
+    /// the running app.
+    ///
+    /// Taken off the screen's `visibleFrame` before capping the opening size.
+    /// SwiftUI is not specific about whether the size a scene is given is the
+    /// window's or its content's — measured, it is the window's — so the cap
+    /// allows for the chrome either way and the window fits on the screen
+    /// under both readings.
+    static let windowChromeHeight: CGFloat = 52
+
+    /// The size a document window opens at on a first run.
+    ///
+    /// The comments rail starts open — see `CritiqueModel.isPresented` — so the
+    /// window has to be wide enough for the writing column *and* the rail from
+    /// the moment it appears, or the first thing a reader does is resize it.
+    /// The file explorer is not counted, for the same reason zooming does not
+    /// count it: it floats over the document rather than taking part in the
+    /// row.
+    ///
+    /// Worked out from the same call the green button zooms to, so the size a
+    /// window opens at and the size it zooms to cannot drift apart.
+    static var defaultWindowContentSize: CGSize {
+        EditorPaneGeometry.defaultWindowContentSize(
+            ideal: CGSize(
+                width: EditorPaneGeometry.idealContentWidth(
+                    columnWidth: defaultPreviewWidth,
+                    railWidth: railWidth,
+                    railIsOpen: true
+                ),
+                height: defaultWindowHeight
+            ),
+            minimum: CGSize(
+                width: minimumWindowWidth,
+                height: minimumWindowHeight
+            ),
+            available: availableContentSize
+        )
+    }
+
+    /// What the screen leaves for a window, once its own chrome is allowed for.
+    ///
+    /// Unbounded when there is no screen to ask — a headless run has no desk to
+    /// overflow, and clamping to zero there would open every window at its
+    /// minimum.
+    private static var availableContentSize: CGSize {
+        guard let visibleFrame = (NSScreen.main ?? NSScreen.screens.first)?
+            .visibleFrame
+        else {
+            return CGSize(
+                width: CGFloat.greatestFiniteMagnitude,
+                height: CGFloat.greatestFiniteMagnitude
+            )
+        }
+        return CGSize(
+            width: visibleFrame.width,
+            height: visibleFrame.height - windowChromeHeight
+        )
+    }
 }

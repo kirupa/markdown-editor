@@ -568,6 +568,74 @@ asserted end to end by `macOS/Scripts/check-session.swift`. The web build
 reaches the same outcome from a different direction — it has no file to watch,
 so it re-reads the document whenever the tab comes back to the front.
 
+### The size a document window opens at
+
+A window that opens too small for what it is already showing is a window whose
+first use is being resized. Every build that shows the critique rail — the
+column of editorial comments docked against the document's trailing edge; see
+`macOS/README.md` §10a for the feature itself — will hit this, because the rail
+is **open from the moment a document is**. It is not a panel you summon, it is
+part of the document's furniture, and it says what it needs (an API key, a first
+run) rather than waiting to be discovered. A window sized to the writing alone
+therefore opens with the notes squeezing the column they dock to.
+
+The opening size is derived, not picked:
+
+```
+width  = document column width + comments rail width
+height = a screenful of prose
+```
+
+On the existing desktop build that is `700 + 356 = 1056` wide by `820` tall.
+Those two numbers are the layout's own constants — the rail keeps a fixed width
+rather than taking whatever room is spare, and the column has a default reading
+measure — so a port should read its own pair rather than copy `1056`, or the
+window and the layout will drift apart the first time either is tuned.
+
+Four rules go with it, and each was paid for:
+
+- **Use the same expression the "zoom to fit" affordance uses.** On macOS that
+  is the green button; on Windows it is the maximise/restore behaviour a window
+  chooses for itself. If opening and zooming are computed separately they
+  disagree, and zooming a freshly opened window visibly resizes it for no reason
+  the reader can see. One function, two callers.
+- **Do not count a floating sidebar.** The file explorer floats *over* the
+  document rather than taking part in the row, precisely so that opening it does
+  not move the text. Widening the window to make room for it undoes that from
+  the other side. Count only what is actually in the row.
+- **Clamp to the screen, and let the minimum win.** Cap the derived size to the
+  display's working area — `NSScreen.visibleFrame`, `MonitorInfo.rcWork`,
+  `window.screen.availWidth/Height` — less an allowance for the window's own
+  chrome, which on the macOS build measured 52pt of title bar and toolbar. Then
+  take the maximum with the window's own minimum size: on a display too small
+  for that minimum, a window that overflows beats one squeezed below the size
+  its content refuses to go under. This ordering is the same one the explorer
+  width uses.
+- **It is a default, not a rule.** It applies when nothing has been saved for
+  the window — a genuine first run. A restored window, or one the reader sized
+  by hand, keeps what it had. Do not re-apply it on every launch, and do not add
+  a mechanism that overrides state restoration to enforce it. On SwiftUI that is
+  `Scene.defaultSize`; the equivalents are WinUI's `AppWindow.Resize` guarded by
+  "no persisted frame", and on the web a size written only when the stored
+  layout is absent.
+
+One thing measured on the macOS build that will save a port an hour: SwiftUI's
+`defaultSize` is documented as the window's *content* size, but the number handed
+to it came back as the window's **frame** — 1056 × 820 outside, 1056 × 768 of
+content, the 52 being the title bar and toolbar. That is why the chrome
+allowance is subtracted from the screen's working area rather than added to the
+requested size: it is then correct under either reading. Settle this on your own
+platform the same way it was settled here — launch with the saved window state
+deleted and read the frame back — rather than from the layout code, which cannot
+tell you which of the two a framework meant.
+
+Reference: `Shared/Sources/MarkdownEditorUI/EditorPaneGeometry.swift`
+(`idealContentWidth`, `defaultWindowContentSize` — both pure, both tested in
+`EditorPaneGeometryTests`), wired up in
+`macOS/Sources/MarkdownEditor/MarkdownEditorApp.swift` with the constants in
+`Layout` at the foot of `MarkdownEditorView.swift`. The macOS README records the
+reasoning as I-225 to I-228.
+
 ### What is deliberately per-platform
 
 Not everything is a requirement. These differ between the existing builds on

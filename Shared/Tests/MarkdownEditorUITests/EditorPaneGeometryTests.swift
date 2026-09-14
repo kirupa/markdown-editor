@@ -338,6 +338,85 @@ struct EditorPaneGeometryTests {
         }
     }
 
+    // MARK: - What a window opens at
+
+    /// The app's own numbers: a 700pt column, a 356pt rail, a 620×520 floor.
+    private func defaultWindowSize(
+        onScreenOf available: CGSize,
+        railIsOpen: Bool = true
+    ) -> CGSize {
+        EditorPaneGeometry.defaultWindowContentSize(
+            ideal: CGSize(
+                width: EditorPaneGeometry.idealContentWidth(
+                    columnWidth: 700, railWidth: 356, railIsOpen: railIsOpen
+                ),
+                height: 820
+            ),
+            minimum: CGSize(width: 620, height: 520),
+            available: available
+        )
+    }
+
+    @Test("A window opens wide enough for the writing and its comments")
+    func defaultSizeFitsTheRail() {
+        // The whole point: the rail is open from the moment a document is, so
+        // a window that opens at the column's width alone opens with the notes
+        // already squeezing the writing they are about.
+        let size = defaultWindowSize(
+            onScreenOf: CGSize(width: 1_800, height: 1_100)
+        )
+        #expect(size.width == 1_056)
+        #expect(size.height == 820)
+    }
+
+    @Test("A window never opens wider than the screen it lands on")
+    func defaultSizeIsCappedToTheScreen() {
+        let size = defaultWindowSize(
+            onScreenOf: CGSize(width: 900, height: 700)
+        )
+        #expect(size.width == 900)
+        #expect(size.height == 700)
+    }
+
+    @Test("The window's own minimum wins over a screen smaller than it")
+    func defaultSizeNeverGoesUnderTheMinimum() {
+        // Nothing useful is left to do on a desk this small, and a window
+        // clamped under the size its content refuses to go to is worse than
+        // one that overflows: the content would be squeezed either way, and
+        // this way the window can at least be moved.
+        let size = defaultWindowSize(
+            onScreenOf: CGSize(width: 400, height: 300)
+        )
+        #expect(size.width == 620)
+        #expect(size.height == 520)
+    }
+
+    @Test("A roomy screen changes nothing")
+    func defaultSizeDoesNotGrowToFillTheScreen() {
+        // Zoom is what "as much as possible" is for. Opening should be the
+        // size the content asks for, on a laptop and on a 6K display alike.
+        for width in [CGFloat(1_100), 1_800, 3_000, 6_016] {
+            let size = defaultWindowSize(
+                onScreenOf: CGSize(width: width, height: 3_384)
+            )
+            #expect(size.width == 1_056, "on a screen \(width) wide")
+            #expect(size.height == 820)
+        }
+    }
+
+    @Test("The opening width is the width the green button zooms to")
+    func defaultSizeMatchesTheZoomTarget() {
+        // Two names for one measurement. If these ever disagree, zooming a
+        // freshly opened window would visibly resize it for no reason.
+        let roomy = CGSize(width: 4_000, height: 3_000)
+        #expect(
+            defaultWindowSize(onScreenOf: roomy).width
+                == EditorPaneGeometry.idealContentWidth(
+                    columnWidth: 700, railWidth: 356, railIsOpen: true
+                )
+        )
+    }
+
     // MARK: - Double-clicking the title bar
 
     /// The bar and its controls, at the geometry measured from the running app:
