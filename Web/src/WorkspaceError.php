@@ -45,13 +45,19 @@ class WorkspaceError extends \RuntimeException
     /**
      * A critique that could not be run, or could not be understood.
      *
-     * 502 rather than 400 or 500: nothing is wrong with what the browser
-     * asked for, and nothing is wrong with this server either. The failure is
-     * upstream, and saying so is the difference between "try again" and "fix
-     * your document".
+     * **424, not 502**, and not because 424 is a better description — 502 is.
+     * A CDN replaces a 5xx body from the origin with its own error page, so a
+     * carefully worded explanation of a bad key comes out of Cloudflare as the
+     * string "error code: 502" and nothing else. This app promises that nothing
+     * fails silently ([WG-4]), and a status whose body is thrown away in transit
+     * cannot keep that promise.
+     *
+     * 424 Failed Dependency is the closest honest 4xx: the request was fine,
+     * and the thing it depended on was not. Being 4xx, it reaches the browser
+     * with its body intact.
      */
     public static function critique(string $message, string $recovery = ''): self
     {
-        return new self($message, $recovery, 502);
+        return new self($message, $recovery, 424);
     }
 }

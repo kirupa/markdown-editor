@@ -49,13 +49,20 @@ final class CritiqueProvider
      * that follows a schema and reads carefully; it does not want the
      * reasoning tier, which costs many times more for work that is not much
      * better at this.
+     *
+     * The Gemini pair are the two verified against a live account. The 1.5
+     * series that shipped here before had been **retired** — the API answers
+     * `is not found for API version v1beta`, which reads like a mistyped name
+     * rather than a model that no longer exists, so it cost a deploy and two
+     * guesses to identify. A model list is a set of claims about somebody
+     * else's service and goes stale on their schedule, not ours.
      */
     public function models(): array
     {
         return match ($this->id) {
             self::OPENAI => ['gpt-4o-mini', 'gpt-4o'],
             self::ANTHROPIC => ['claude-3-5-haiku-latest', 'claude-3-5-sonnet-latest'],
-            self::GEMINI => ['gemini-1.5-flash', 'gemini-1.5-pro'],
+            self::GEMINI => ['gemini-2.5-flash', 'gemini-3.6-flash'],
             default => [],
         };
     }

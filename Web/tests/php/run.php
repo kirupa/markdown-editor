@@ -908,7 +908,7 @@ $runner->suite('The critique the server runs', function (TestRunner $t): void {
 
     $t->test('the model name is escaped into the Gemini URL', function (TestRunner $t): void {
         $gemini = new MarkdownEditor\CritiqueProvider(MarkdownEditor\CritiqueProvider::GEMINI);
-        $t->expect(str_ends_with($gemini->endpoint('gemini-1.5-flash'), '/gemini-1.5-flash:generateContent'));
+        $t->expect(str_ends_with($gemini->endpoint('gemini-2.5-flash'), '/gemini-2.5-flash:generateContent'));
     });
 
     $t->test("each provider's reply is unwrapped from its own envelope", function (TestRunner $t): void {
@@ -933,7 +933,7 @@ $runner->suite('The critique the server runs', function (TestRunner $t): void {
         }
         $t->expect($caught !== null, 'an error envelope should throw');
         $t->expectEqual($caught->getMessage(), 'Incorrect API key provided');
-        $t->expectEqual($caught->status(), 502);
+        $t->expectEqual($caught->status(), 424);
     });
 
     $t->test('a reply that is not JSON is reported as that', function (TestRunner $t): void {
