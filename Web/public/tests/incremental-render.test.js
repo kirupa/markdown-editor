@@ -6,7 +6,11 @@
 // models agree on the text, on every span, and on every offset mapping.
 
 import { suite, test, expect, expectEqual } from './harness.js';
-import { renderMarkdown, MarkdownRenderModel } from '../app/core/render-model.js';
+import {
+  renderMarkdown,
+  MarkdownRenderModel,
+  rejectedChangeCount,
+} from '../app/core/render-model.js';
 import { insertNewline } from '../app/core/formatting.js';
 
 /** Everything a caller can observe, as one comparable value. */
@@ -239,6 +243,39 @@ suite('Updating the render model in place', () => {
       replacement: '!!!',
     });
     expectEqual(shapeOf(model), shapeOf(renderMarkdown(next)));
+  });
+
+  test('a description that cannot be used is counted, not swallowed', () => {
+    // Falling back is correct but reads the whole document, so a caller that
+    // gets the shape wrong would otherwise only find out from a profiler.
+    const before = rejectedChangeCount();
+    const model = new MarkdownRenderModel('one\ntwo\n');
+
+    // No description at all is ordinary: an undo or an open genuinely does not
+    // know what moved.
+    model.update('one\ntwoX\n');
+    expectEqual(rejectedChangeCount(), before, 'omitting a description is not a mistake');
+
+    // The shape a caller reaches for first, and the one the fallback hides.
+    model.update('one\ntwoXY\n', { location: 7, removed: 0, inserted: 1 });
+    expectEqual(rejectedChangeCount(), before + 1, 'a wrong shape is counted');
+
+    // Right shape, wrong text: the description belongs to an older source.
+    model.update('one\ntwoXYZ\n', {
+      previousSource: 'something else',
+      range: { location: 0, length: 0 },
+      replacement: 'Z',
+    });
+    expectEqual(rejectedChangeCount(), before + 2, 'a stale description is counted');
+
+    // And a correct one is used.
+    const source = model.source;
+    model.update(`${source}tail\n`, {
+      previousSource: source,
+      range: { location: source.length, length: 0 },
+      replacement: 'tail\n',
+    });
+    expectEqual(rejectedChangeCount(), before + 2, 'a usable description is not counted');
   });
 
   test('a very long single line', () => {

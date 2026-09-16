@@ -589,19 +589,29 @@ export class MarkdownRenderModel {
         return -1;
     }
 
-    /** What changed between the source the model holds and the one that arrived. */
+    /**
+     * What changed between the source the model holds and the one that arrived.
+     *
+     * A caller that says what it replaced is taken at its word only after the
+     * claim is checked against the text that actually arrived. A wrong one is
+     * measured instead, which is correct but costs a read of the whole
+     * document — so it is also reported, because the only other symptom is a
+     * keystroke that is quietly proportional to the document again.
+     */
     #editFor(source, change) {
         const previous = this.source;
-        if (
-            change !== null &&
-            change.previousSource === previous &&
-            previous.length - change.range.length + change.replacement.length === source.length
-        ) {
-            return {
-                location: change.range.location,
-                removed:  change.range.length,
-                inserted: change.replacement.length,
-            };
+        if (change !== null) {
+            if (
+                change.previousSource === previous &&
+                previous.length - change.range.length + change.replacement.length === source.length
+            ) {
+                return {
+                    location: change.range.location,
+                    removed:  change.range.length,
+                    inserted: change.replacement.length,
+                };
+            }
+            noteRejectedChange(change);
         }
 
         const shared = Math.min(previous.length, source.length);
@@ -804,6 +814,41 @@ function parseLine(parser, bounds, enterFence) {
 }
 
 // ─── Public entry point ───────────────────────────────────────────────────────
+
+/**
+ * Updates that were given a description of the edit and could not use it.
+ *
+ * Passing no description at all is ordinary — an undo, an open, or a revision
+ * from another device genuinely does not know what moved. Passing one that
+ * does not fit the text that arrived is a mistake in the caller, and the only
+ * symptom is that every keystroke silently reads the whole document again. So
+ * it is counted, and said once.
+ */
+let rejectedChanges = 0;
+
+/** How many descriptions have been turned down. Exported for tests. */
+export function rejectedChangeCount() {
+    return rejectedChanges;
+}
+
+function noteRejectedChange(change) {
+    rejectedChanges += 1;
+    if (rejectedChanges > 1 || typeof console === 'undefined') return;
+    const wrongShape =
+        typeof change.previousSource !== 'string' ||
+        typeof change.replacement !== 'string' ||
+        typeof change.range?.location !== 'number' ||
+        typeof change.range?.length !== 'number';
+    console.warn(
+        'MarkdownRenderModel.update: the change passed could not be used, so the ' +
+        'difference was measured instead — which reads the whole document. ' +
+        (wrongShape
+            ? `It must be { previousSource, range: { location, length }, replacement }; got { ${Object.keys(change).sort().join(', ')} }.`
+            : 'Its `previousSource` is not the source this model holds, or its lengths ' +
+              'do not add up to the text that arrived. Pass the change the edit was ' +
+              'actually made from, or pass none at all.')
+    );
+}
 
 /** A model of `markdown`, parsed in full. */
 export function renderMarkdown(markdown) {

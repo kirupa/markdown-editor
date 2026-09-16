@@ -9,7 +9,11 @@
 // They need a real DOM, so they run in the browser page rather than under node.
 
 import { suite, test, expect, expectEqual } from './harness.js';
-import { renderMarkdown, MarkdownRenderModel } from '../app/core/render-model.js';
+import {
+  renderMarkdown,
+  MarkdownRenderModel,
+  rejectedChangeCount,
+} from '../app/core/render-model.js';
 import { renderInto, ensureBlockOffsets } from '../app/ui/renderer.js';
 import { EditorSurface } from '../app/ui/editor-surface.js';
 import { readPlainText, textOfBlock } from '../app/dom-text.js';
@@ -501,6 +505,104 @@ suite('Reading an edit out of the surface', () => {
       const whole = surface.changedDocument();
       expectEqual(whole.replacement, 'ONE');
       expect(textOfBlock(element.childNodes[0]) === 'ONE', 'the block really did change');
+    } finally {
+      element.remove();
+    }
+  });
+});
+
+suite('The description an edit hands the model', () => {
+  /**
+   * The surface, the document and the model wired the way `main.js` wires
+   * them: an edit carries what it replaced, the document holds it, and the
+   * model is offered it on the next draw.
+   *
+   * What this is really testing is that the description the surface produces
+   * is one the model can actually use. It is only ever a shortcut — a wrong
+   * one still renders correctly — so the only symptom of getting it wrong is
+   * that every keystroke quietly reads the whole document again, which is the
+   * thing this whole change exists to stop.
+   */
+  function editorOver(source) {
+    const element = host();
+    const model = new MarkdownRenderModel(source);
+    const document_ = {
+      source,
+      selection: { location: 0, length: 0 },
+      lastChange: null,
+      edit(next, selection, { change = null } = {}) {
+        this.lastChange = change;
+        this.source = next;
+        this.selection = selection;
+        surface.sync(next, selection, { force: true });
+      },
+      undo() {},
+      redo() {},
+    };
+    const layoutFor = (text) => model.update(text, document_.lastChange);
+    const surface = new EditorSurface(
+      element,
+      {
+        render: (text) => renderInto(element, layoutFor(text), IMAGE),
+        textFor: (text) => layoutFor(text).text,
+        toSource: (text, range) => layoutFor(text).sourceRange(range),
+        toSurface: (text, range) => layoutFor(text).renderedRange(range),
+        layoutFor,
+      },
+      document_
+    );
+    surface.sync(source, document_.selection, { force: true });
+    return { element, surface, model, document: document_ };
+  }
+
+  test('typing hands over a description the model can use', () => {
+    const { element, surface, document: document_ } = editorOver(
+      '# Title\n\nFirst paragraph.\n\nSecond paragraph.\n'
+    );
+    try {
+      element.focus();
+      const before = rejectedChangeCount();
+
+      for (const letter of 'abcde') {
+        const block = element.childNodes[2];
+        block.firstChild.nodeValue = `${block.firstChild.nodeValue}${letter}`;
+        const range = window.document.createRange();
+        range.selectNodeContents(block);
+        range.collapse(false);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        surface.noteSelectedBlocks();
+        surface.handleInput();
+      }
+
+      expect(document_.source.includes('abcde'), `the edits landed: ${document_.source}`);
+      expectEqual(
+        rejectedChangeCount(),
+        before,
+        'every keystroke must hand over a description the model can use'
+      );
+    } finally {
+      element.remove();
+    }
+  });
+
+  test('Return hands over no description rather than a wrong one', () => {
+    // The command rewrites the source through the formatting layer, so the
+    // surface has nothing honest to say about what it replaced. Saying
+    // nothing costs a full diff once; saying the wrong thing would be a
+    // rejected description on every Return, which is the same cost plus a
+    // warning.
+    const { element, surface, document: document_ } = editorOver('- item\n');
+    try {
+      element.focus();
+      const before = rejectedChangeCount();
+      surface.handleBeforeInput({
+        inputType: 'insertParagraph',
+        preventDefault() {},
+      });
+      expect(document_.source.length > '- item\n'.length, 'Return inserted something');
+      expectEqual(rejectedChangeCount(), before, 'and told the model nothing it had to reject');
     } finally {
       element.remove();
     }
