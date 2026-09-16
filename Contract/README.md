@@ -444,11 +444,14 @@ Replacing the whole text of a pane loses the reader's scroll position, and
 every build has lost it that way at least once. Until rendering became
 incremental this was the price of every keystroke everywhere: macOS, iOS and
 the web build all re-styled by throwing the pane's contents away and building
-them again, per character. None of them does that for typing any more — each
-re-renders only the block the edit landed in — but all three still replace a
-pane wholesale for the things that genuinely change every character on screen:
-a palette or theme change, a change of column width, opening a different
-document, or a revision arriving from elsewhere.
+them again, per character. None of them does that for typing any more. Each
+re-renders only the blocks an edit disturbs — one on the Swift builds, and in
+the browser the dirty blocks plus one either side, since a neighbour can
+change where a block ends — and the count stays the same however long the
+document is. But all three still replace a pane wholesale for the things that
+genuinely change every character on screen: a palette or theme change, a
+change of column width, opening a different document, or a revision arriving
+from elsewhere.
 
 So this section is not history. It governs those paths in every build today,
 and it governs the *first* version of any new one, which will re-style the
