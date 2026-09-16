@@ -768,6 +768,12 @@ can fail says so.
 | I-215 | The version *is* the git commit. The skill is a checkout and has no `version:` field in its front matter; inventing one here would mean a number maintained in two places that could disagree. Shown as commit, date and subject, with "edited locally" when the checkout is dirty — an update will refuse rather than discard those edits, and knowing why beats a button that appears to do nothing. |
 | I-216 | **Update** runs `git pull --ff-only` and reports what happened in a sentence. "Already up to date" is git's phrasing and is translated, because a button that says nothing after being pressed reads as a button that did not work. The exit code decides success, not the text: the word "error" appears in plenty of successful pull output, in a file name among others. |
 | I-217 | The Settings provider picker had the **same default disagreement** the hand picker had. `@AppStorage` cannot express this default because it is not a constant — with nothing chosen it is the Copilot CLI when the CLI is installed and OpenAI when it is not — so the picker said "OpenAI" while every critique went through the CLI. It is seeded from `CritiqueCredentials.provider` now. |
+| I-218 | A document window **opens wide enough to hold the document column and the whole rail**, never with the rail clipped. The rail is presented on every newly opened document — `CritiqueModel.isDismissed` starts false and `attach(to:)` resets it — while nothing sized the window for it, so SwiftUI opened it at the view's minimum width and the rail was laid out past the trailing edge. Measured on `scroll-test.md` at a 620-point window: the panel's header showed, its body text and its "Run critique" button did not. The width asked for is `EditorPaneGeometry.idealContentWidth`, the same number the green button zooms to — 1,056 points at the default 700-point column. |
+| I-219 | Opening the rail on a window **already on screen** widens it too, if it has to. `EditorPaneGeometry.widenedFrame` decides, and it is deliberately conservative: never narrower than the window already is, never wider than the screen's visible frame, and never moved unless growing in place would push it off the right — then left by exactly as much as that takes. Growth is added at the trailing edge, where the rail is, so the writing stays where the reader left it. A window that already fits is returned untouched rather than set to the frame it is in. |
+| I-220 | It happens **twice and only twice**: the first time the window is seen on screen, and the moment the rail opens on one that was not showing it. Not on every layout pass — the column's width changes on every drag of the gripper — and not when the window is focused. Between those two moments the width belongs to the reader, and a window that grew back to "ideal" whenever it was touched is a window that cannot be made smaller. |
+| I-221 | **Closing the rail does not narrow the window**, and that is a choice. A window is a thing somebody placed; taking 356 points off it because a panel closed moves the writing they are reading to pay for a panel they just dismissed. The width left over is not empty desk either — with the rail gone the page takes its bleed margins back, so wide pictures have somewhere to go. Zoom still offers the writing alone for anyone who wants it. |
+| I-222 | While the rail is open the window's **minimum width rises** to the column's minimum plus the rail — 360 + 356 — and drops back to the document's own minimum when it closes. Automatic sizing only covers the moment a window opens; without the floor, a window dragged narrow afterwards puts the rail straight back off the edge. Clamped to the screen, because a minimum wider than the display leaves a window that can be neither fully seen nor resized. |
+| I-223 | Below that width the **column gives way, not the rail**. The rail is a fixed width docked to the column, so in a window too narrow for both, one of them has to yield — and nothing took the rail's width out of the measure first, so what yielded was the rail, drawn where nobody could read or click it. The column is the elastic half: it reflows to whatever it is given, while a note card at half width is not a narrower note. `EditorPaneGeometry.measureWidth(_:…:railWidth:)`, with the rail's width zero when it is shut, so there is one rule rather than two. |
 | I-209 | The green button, Window ▸ Zoom and a double-click on the title bar size the window to **the document plus its comments** — 700 + 356 rather than the whole screen, which is what AppKit offers when nobody answers `windowWillUseStandardFrame`. The file explorer is deliberately not counted: it floats over the document so that opening it does not move the text, and widening the window for it would undo that from the other side. |
 | I-210 | The double-click is handled by the app, because **this machine's macOS does not send it**: `AppleMiniaturizeOnDoubleClick` is 0 and `AppleActionOnDoubleClick` is unset, so the gesture does nothing in any application. Measured, after the delegate was proved correct — a direct `zoom(nil)` consults it and gets the right answer, while the gesture never reached it. |
 | I-211 | Which part of the bar was clicked is decided by the **controls' own frames**, not by hit-testing. SwiftUI draws the whole title bar through one `ToolbarItemHostingView`, so a hit test at the theme button, at the document title and at empty space between them all return the same view. The first version trusted the hit test and zoomed the window every time the theme button was double-clicked — measured on screen, not reasoned about. |
@@ -853,7 +859,7 @@ is closed unless it is asked for.
 
 | ID | Requirement |
 | --- | --- |
-| X-16 | The rendered preview has its own draggable width, defaulting to 700 points, clamped between 360 and 1100 (220 minimum inside Split). |
+| X-16 | The rendered preview has its own draggable width, defaulting to 700 points, clamped between 360 and 1100 (220 minimum inside Split). With the critique rail open the ceiling is whatever the window has left once the rail has taken its 356 points, so the column narrows rather than the rail being pushed off the edge (I-223). |
 | X-17 | Content **reflows live while the divider is being dragged**, not only on release. |
 
 ---
@@ -1057,6 +1063,7 @@ make install
 | `make icons` | Regenerates `Packaging/AppIcon.icns` and `Packaging/MarkdownDocument.icns` |
 | `make test` | Runs the unit test suite |
 | `make check-scroll` | Drives real AppKit text views and asserts the "never jump" scroll rules |
+| `make check-window` | Opens a **real document window** around the real editor and reads its frame back: that a window born too narrow grows to hold the document column and the whole critique rail, that it is not moved off its screen doing so, that the rail is really drawn in the room made for it, that the minimum width rises while the rail is open, that a window dragged back to the width the bug was photographed at still shows the rail whole, and that a window already wide enough is neither narrowed nor moved. Set `MDE_WINDOW_PNG` to write out what it drew |
 | `make check-session` | Compiles the real session against a recording pane: what happens when another app rewrites the open file |
 | `make check-image-handles` | Renders real attachments and finds them by pixel: proves the picture rect is the drawn picture and not its line box, and guards the baseline-offset rule across seven offsets |
 | `make check-image-layout` | The same geometry through the **real** `RichMarkdownStyler`, at the app's own container inset — a bug whose size *is* the inset cannot happen in a view that has none — plus the pointer shape at each place it matters — and, through the real `mouseMoved`, the places it *does not* matter, where the view must set nothing and hand the shape back on the way out — the clicks that select a picture, dragging a picture to a new place in the document, and the four ways a resize used to go wrong: focus, reflow, a refused commit, and a cursor stranded by teardown |
@@ -1106,7 +1113,7 @@ the code they cover, so this one command covers the iOS build's engine too.
 
 ### 16.1 Test coverage
 
-544 tests across 37 suites, in the shared package:
+583 tests across 41 suites, in the shared package:
 
 | Suite | Tests | Covers |
 | --- | --- | --- |
@@ -1125,7 +1132,7 @@ the code they cover, so this one command covers the iOS build's engine too.
 | External change watching | 18 | Reporting another app's writes without ever reporting our own, including atomic replacement |
 | External document change | 13 | The decision itself: adopt, hold, or stay quiet, and what autosave may do while a notice is up |
 | Editor image geometry | 11 | Where a picture is, where its handles are, which corner a point belongs to, and the aspect-ratio vote |
-| Editor pane geometry | 11 | Pane widths, centring, and the minimums each layout has to respect |
+| Editor pane geometry | 49 | Pane widths, centring, the minimums each layout has to respect, what the window zooms to, and how wide it has to be to hold the comments rail — including the clamp to the screen and the window that is already wide enough and must be left alone |
 | Image handle source guards | 3 | That the pointer, the click, and the drag all still go through one rect function, and that a pushed cursor is popped |
 | Recent documents catalog | 10 | Merge order, de-duplication, Markdown filtering, caps, promotion, removal, pruning of missing files, home-relative paths |
 | New document | 10 | Heading 1 seeding |
@@ -1505,12 +1512,39 @@ and a deadlock presents as a hung network call — the stack shows a live
 `NSURLConnectionLoader` thread and nothing about keychains. The probe uses an
 async `@main` instead.
 
+### 16.9 Checking the window holds its rail
+
+The arithmetic is unit tested and needs no screen: `EditorPaneGeometry` answers
+how wide a window has to be and how narrow it may be dragged. What those tests
+cannot see is the wiring — whether the window uses the answer — and the
+clipped-rail bug lived entirely in that gap. Every number was already right;
+nothing asked the window for them.
+
+`make check-window` closes it. It builds the real `MarkdownEditorView`, puts it
+in a real `NSWindow` the size a fresh document window is born, and reads the
+frame back. The window is fully transparent and ordered behind everything, so
+it can run on a machine somebody is using — and, unlike a screen capture, it
+works behind a lock screen, which is where `screencapture -l` fails (see the
+note in [16.4](#164-scroll-checks) and I-180 for the other two ways a
+screen-reading check has been fooled here).
+
+It cannot be placed off-screen instead. A window that intersects no display has
+no `screen`, and the screen is half of what is being tested.
+
+For eyes rather than assertions, `MDE_WINDOW_PNG=/tmp/window.png make
+check-window` writes out what it drew, and `make run` opens the real app: open a
+document, make sure the critique panel is showing, and confirm the whole rail is
+inside the window — its header, the body text under it, and the **Run
+critique** button at its foot. A screenshot with any of that cut off at the
+trailing edge is the bug I-218 describes, not a finished job.
+
 ---
 
 ## 17. Release history
 
 | Change | Summary |
 | --- | --- |
+| A window that fits its comments | A document window now opens wide enough to hold the writing *and* the critique rail beside it, instead of opening at its minimum width and leaving the rail hanging off the trailing edge — header visible, body text and **Run critique** button outside the window. Opening the rail on a window already on screen widens it too, at the trailing edge, never past the screen and never smaller than it was. While the rail is open the window cannot be dragged narrow enough to clip it again: the column yields instead. `make check-window` opens a real document window and measures all of it. See [I-218 to I-223](#10a-ai-assisted-critique) and [§16.9](#169-checking-the-window-holds-its-rail). |
 | A title bar that behaves like one | Dragging the title bar moves the window now. SwiftUI fills that bar with a hosting view that eats the mouse, so of 900 points only two slivers — 15 by the traffic lights, 8 at the far right — ever moved it, and every grab across the middle did nothing; all five test positions move it now. The title also names its document, which gives it the menu every Mac window has: **Copy Path**, **Reveal in Finder**, and the folders above the file, on a ⌘-click or a right-click. `DocumentGroup` never sets `representedURL`, so there was no menu there at all. Verified on screen: the path reached the clipboard, Finder opened the folder with the file selected, and the toolbar buttons still fire rather than dragging the window. See [I-238 to I-242](#10a-ai-assisted-critique). |
 | A bold word you can break in half | Pressing Return in the middle of a bold word used to leave `**` on screen. Emphasis is matched within a line, so the break left the markers unpaired on both sides and the rendered view began showing the syntax it exists to hide. They are closed before the break and opened again after it now. The markers reopened are the ones the document wrote, since `_italic_` and `*italic*` are the same style and swapping one for the other crosses the pair; a break at the edge of a run steps outside its markers rather than writing `****`; and a break at a space takes the space with it, because emphasis will not close after whitespace. Links are left alone, as splitting one would mean inventing a second copy of its destination. Checked against all 451 committed `insertNewline` contract cases, so the web build and this one still agree character for character. See [I-233 to I-237](#10a-ai-assisted-critique). |
 | A quote that stays a quote | Pressing Return inside a block quote now leaves the caret at the quote's indent instead of dropping it to the margin and snapping it into place on the first keystroke. The source had said `> ` all along; what failed was the drawing, because a line with no text on it is reported as a zero-length span and an attribute over a zero-length range does nothing at all. An empty line takes its style from its own newline — never the one before it, which belongs to the line above and would have indented a paragraph nobody quoted — and the last line of a document, which has no newline either, takes it from the text view's typing attributes. Measured in the running app: the quoted text sits at x=528, the unindented margin at x=508, and the caret after Return moved from 508 to 528. See [I-229 to I-232](#10a-ai-assisted-critique). |

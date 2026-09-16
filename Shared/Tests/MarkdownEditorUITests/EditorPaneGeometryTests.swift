@@ -339,6 +339,184 @@ struct EditorPaneGeometryTests {
         }
     }
 
+    // MARK: - How narrow the window may be made
+
+    /// The app's own numbers: a 620-point document minimum, a column that
+    /// clamps down to 360, and a 356-point rail.
+    private func minimumWidth(
+        railIsOpen: Bool,
+        screenWidth: CGFloat = 1_800
+    ) -> CGFloat {
+        EditorPaneGeometry.minimumContentWidth(
+            documentMinimum: 620,
+            columnMinimum: 360,
+            railWidth: 356,
+            railIsOpen: railIsOpen,
+            screenWidth: screenWidth
+        )
+    }
+
+    @Test("With the comments open the window must stay wide enough for them")
+    func minimumWidthMakesRoomForTheRail() {
+        #expect(minimumWidth(railIsOpen: true) == 716)
+    }
+
+    @Test("Closing the comments lets the window get narrow again")
+    func minimumWidthDropsBackWithTheRailShut() {
+        // The point of the raised floor is the rail. With no rail there is
+        // nothing to protect, and a floor left high would be a window that
+        // could not be tidied away after the panel was closed.
+        #expect(minimumWidth(railIsOpen: false) == 620)
+    }
+
+    @Test("A screen too narrow for both is not made unusable")
+    func minimumWidthNeverExceedsTheScreen() {
+        #expect(minimumWidth(railIsOpen: true, screenWidth: 700) == 700)
+        // And never below the document's own minimum, even on a display that
+        // cannot show that either: a window that cannot be resized at all is
+        // worse than a rail with less room than it wants.
+        #expect(minimumWidth(railIsOpen: true, screenWidth: 500) == 620)
+    }
+
+    // MARK: - Widening a window that cannot hold its rail
+
+    private let desk = CGRect(x: 0, y: 0, width: 1_800, height: 1_000)
+
+    private func widened(
+        _ frame: CGRect,
+        to width: CGFloat,
+        within screen: CGRect? = nil
+    ) -> CGRect {
+        EditorPaneGeometry.widenedFrame(
+            frame, toWidth: width, within: screen ?? desk
+        )
+    }
+
+    @Test("A window too narrow for the rail is grown to fit it")
+    func tooNarrowGrows() {
+        let frame = CGRect(x: 100, y: 80, width: 620, height: 700)
+        let fitted = widened(frame, to: 1_056)
+        #expect(fitted.width == 1_056)
+        // Grown at the trailing edge, where the rail is: the writing does not
+        // move out from under the cursor to make room for the notes.
+        #expect(fitted.minX == 100)
+        #expect(fitted.minY == 80)
+        #expect(fitted.height == 700)
+    }
+
+    @Test("A window already wide enough is left exactly alone")
+    func wideEnoughIsUntouched() {
+        let frame = CGRect(x: 100, y: 80, width: 1_400, height: 700)
+        #expect(widened(frame, to: 1_056) == frame)
+        // Including one that is exactly the width asked for, which must not
+        // count as growth and trigger a resize of zero points.
+        let exact = CGRect(x: 100, y: 80, width: 1_056, height: 700)
+        #expect(widened(exact, to: 1_056) == exact)
+    }
+
+    @Test("Fitting never shrinks a window, even one wider than the screen")
+    func neverShrinks() {
+        // Spanning two displays, or simply dragged bigger than `visibleFrame`
+        // by someone who wanted it that way. The screen clamp is a ceiling on
+        // *growth*, not a size the window is pulled back to.
+        let frame = CGRect(x: -200, y: 80, width: 2_400, height: 700)
+        #expect(widened(frame, to: 1_056) == frame)
+    }
+
+    @Test("Growth stops at the screen rather than running off the desk")
+    func clampsToTheScreen() {
+        let small = CGRect(x: 0, y: 0, width: 800, height: 600)
+        let fitted = widened(
+            CGRect(x: 0, y: 0, width: 620, height: 500), to: 1_056, within: small
+        )
+        // Degrades to the widest the display can actually show. The rail is
+        // then short of room, but every point of it that exists is reachable.
+        #expect(fitted.width == 800)
+        #expect(fitted.minX == 0)
+    }
+
+    @Test("A window near the right edge slides left, only as far as it must")
+    func slidesLeftOnlyAsFarAsNeeded() {
+        // 1,200 across a 1,800 desk: growing in place would end at 2,256.
+        let frame = CGRect(x: 1_200, y: 0, width: 620, height: 600)
+        let fitted = widened(frame, to: 1_056)
+        #expect(fitted.maxX == desk.maxX)
+        #expect(fitted.minX == desk.width - 1_056)
+    }
+
+    @Test("Growing pulls a window back onto the screen it is hanging off")
+    func growthLandsOnTheScreen() {
+        // Not a window that needed moving on its own account — it is being
+        // resized anyway, and finishing that resize with the window half off
+        // the left of the desk would put the writing where the rail was.
+        let frame = CGRect(x: -150, y: 0, width: 620, height: 600)
+        let fitted = widened(frame, to: 1_056)
+        #expect(fitted.minX == 0)
+        #expect(fitted.width == 1_056)
+    }
+
+    @Test("A screen that is not at the origin is respected")
+    func honoursAScreenOffset() {
+        // A second display to the right of the built-in one, which is where
+        // `visibleFrame` stops being a rectangle that starts at zero.
+        let second = CGRect(x: 1_800, y: 0, width: 1_200, height: 800)
+        let frame = CGRect(x: 2_500, y: 0, width: 620, height: 600)
+        let fitted = widened(frame, to: 1_056, within: second)
+        #expect(fitted.width == 1_056)
+        #expect(fitted.maxX == second.maxX)
+        #expect(fitted.minX >= second.minX)
+    }
+
+    // MARK: - The column yields to the rail, not the other way round
+
+    private func measure(
+        _ proposed: CGFloat,
+        totalWidth: CGFloat,
+        railWidth: CGFloat
+    ) -> CGFloat {
+        EditorPaneGeometry.measureWidth(
+            proposed,
+            totalWidth: totalWidth,
+            minimum: 360,
+            maximum: 1_100,
+            handleWidth: 12,
+            railWidth: railWidth
+        )
+    }
+
+    @Test("A window with room to spare sets the column at its own width")
+    func railDoesNotSqueezeAWideWindow() {
+        #expect(measure(700, totalWidth: 1_600, railWidth: 356) == 700)
+    }
+
+    @Test("A narrow window squeezes the column rather than clipping the rail")
+    func theColumnGivesWayToTheRail() {
+        // At the window's own minimum the pair fits exactly: 360 of column
+        // against 356 of rail. Before this the column took 704 of a 716-point
+        // window and the rail was drawn from 704 to 1,060 — past the edge.
+        #expect(measure(700, totalWidth: 716, railWidth: 356) == 360)
+        for window in [CGFloat(716), 800, 900, 1_000, 1_056] {
+            let column = measure(700, totalWidth: window, railWidth: 356)
+            #expect(column + 356 <= window, "at a window of \(window)")
+        }
+    }
+
+    @Test("With no rail the clamp is the one it always was")
+    func noRailIsTheUnclampedRule() {
+        for window in [CGFloat(400), 620, 900, 1_600] {
+            #expect(
+                measure(700, totalWidth: window, railWidth: 0)
+                    == EditorPaneGeometry.measureWidth(
+                        700,
+                        totalWidth: window,
+                        minimum: 360,
+                        maximum: 1_100,
+                        handleWidth: 12
+                    )
+            )
+        }
+    }
+
     // MARK: - Double-clicking the title bar
 
     /// The bar and its controls, at the geometry measured from the running app:
