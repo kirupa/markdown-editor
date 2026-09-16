@@ -1,3 +1,4 @@
+import Foundation
 import CoreGraphics
 
 /// The widths of the two things a document window can resize: the file
@@ -121,7 +122,37 @@ public enum EditorPaneGeometry {
     /// `controls` are the toolbar's items and the traffic lights. The document
     /// title is deliberately not among them: it is not a control, and
     /// double-clicking it zooms in every other Mac application.
-    public static func titleBarClickZooms(
+    ///
+    /// Three behaviours ask this now — zoom on a double-click, move the window
+    /// on a drag, and the title menu on a right-click — because they are the
+    /// same question. A point that belongs to a button belongs to none of them.
+
+    /// The folders containing `url`, innermost first, up to the volume root.
+    ///
+    /// What a title bar's path menu is made of. Pure, and here rather than in
+    /// the window, because the two ways it goes wrong are both arithmetic: a
+    /// loop that never reaches the root, and a path deep enough to build a menu
+    /// taller than the screen.
+    ///
+    /// The root itself is not included — "Macintosh HD" under every document is
+    /// a row nobody has ever needed — and the chain stops at `limit` folders,
+    /// because a path can be pathological and a menu that runs off the screen
+    /// is not a menu.
+    public static func folderChain(from url: URL, limit: Int = 12) -> [URL] {
+        var chain: [URL] = []
+        var folder = url.deletingLastPathComponent()
+        while folder.path != "/", chain.count < limit {
+            chain.append(folder)
+            let parent = folder.deletingLastPathComponent()
+            // A URL that no longer shortens has reached its own root, which is
+            // not always "/" — a relative path runs out at ".".
+            guard parent != folder else { break }
+            folder = parent
+        }
+        return chain
+    }
+
+    public static func titleBarClaimsClick(
         at point: CGPoint,
         titleBar: CGRect,
         controls: [CGRect]

@@ -101,12 +101,13 @@ struct MarkdownEditorView: View {
                 // clamps it down, and zooming from there would ask for the
                 // squeezed width and so never grow past it — the button would
                 // do nothing on exactly the window that needs it most.
-                .zoomsToFitContent(
-                    EditorPaneGeometry.idealContentWidth(
+                .windowChrome(
+                    contentWidth: EditorPaneGeometry.idealContentWidth(
                         columnWidth: previewWidth,
                         railWidth: Layout.railWidth,
                         railIsOpen: critique.isPresented
-                    )
+                    ),
+                    fileURL: fileURL
                 )
 
                 if session.isExplorerVisible {

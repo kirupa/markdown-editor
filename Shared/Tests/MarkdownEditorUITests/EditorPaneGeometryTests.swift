@@ -1,3 +1,4 @@
+import Foundation
 import CoreGraphics
 import Testing
 
@@ -358,7 +359,7 @@ struct EditorPaneGeometryTests {
     @Test("Double-clicking empty title bar zooms")
     func emptyTitleBarZooms() {
         #expect(
-            EditorPaneGeometry.titleBarClickZooms(
+            EditorPaneGeometry.titleBarClaimsClick(
                 at: CGPoint(x: 440, y: 674),
                 titleBar: titleBar,
                 controls: titleBarControls
@@ -374,7 +375,7 @@ struct EditorPaneGeometryTests {
         // the popover the button had just opened.
         for control in titleBarControls {
             #expect(
-                !EditorPaneGeometry.titleBarClickZooms(
+                !EditorPaneGeometry.titleBarClaimsClick(
                     at: CGPoint(x: control.midX, y: control.midY),
                     titleBar: titleBar,
                     controls: titleBarControls
@@ -390,7 +391,7 @@ struct EditorPaneGeometryTests {
         // filename is drawn, and double-clicking a window's title zooms it in
         // every other Mac application.
         #expect(
-            EditorPaneGeometry.titleBarClickZooms(
+            EditorPaneGeometry.titleBarClaimsClick(
                 at: CGPoint(x: 200, y: 674),
                 titleBar: titleBar,
                 controls: titleBarControls
@@ -401,7 +402,7 @@ struct EditorPaneGeometryTests {
     @Test("A click below the title bar is not a title bar click")
     func theDocumentDoesNotZoom() {
         #expect(
-            !EditorPaneGeometry.titleBarClickZooms(
+            !EditorPaneGeometry.titleBarClaimsClick(
                 at: CGPoint(x: 440, y: 300),
                 titleBar: titleBar,
                 controls: titleBarControls
@@ -455,5 +456,43 @@ struct EditorPaneGeometryTests {
             )
             #expect(inset + pageWidth == inset + width)
         }
+    }
+}
+
+@Suite("The title bar's path menu")
+struct FolderChainTests {
+    @Test("The folders are innermost first, and the root is not among them")
+    func theChainRunsUpwardsAndStopsShortOfTheRoot() {
+        let chain = EditorPaneGeometry.folderChain(
+            from: URL(fileURLWithPath: "/Users/me/Notes/Trip.md")
+        )
+        #expect(chain.map(\.lastPathComponent) == ["Notes", "me", "Users"])
+        // "Macintosh HD" under every document is a row nobody has needed.
+        #expect(!chain.contains { $0.path == "/" })
+    }
+
+    @Test("A file at the root has no folders above it")
+    func aFileAtTheRootHasAnEmptyChain() {
+        #expect(EditorPaneGeometry.folderChain(
+            from: URL(fileURLWithPath: "/Trip.md")
+        ).isEmpty)
+    }
+
+    @Test("A pathological path cannot build a menu taller than the screen")
+    func theChainIsCapped() {
+        let deep = URL(fileURLWithPath: "/" + Array(repeating: "d", count: 40)
+            .joined(separator: "/") + "/Trip.md")
+        #expect(EditorPaneGeometry.folderChain(from: deep).count == 12)
+        #expect(EditorPaneGeometry.folderChain(from: deep, limit: 3).count == 3)
+    }
+
+    @Test("A path that stops shortening ends the walk rather than looping")
+    func aRelativePathTerminates() {
+        // `deletingLastPathComponent` on a relative URL bottoms out at "." and
+        // then stops changing. Without the guard this is an infinite loop that
+        // only a relative path reaches — so it is checked rather than reasoned
+        // about.
+        let chain = EditorPaneGeometry.folderChain(from: URL(fileURLWithPath: "Trip.md"))
+        #expect(chain.count < 12, "the walk must terminate: \(chain.map(\.path))")
     }
 }
