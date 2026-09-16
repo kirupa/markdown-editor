@@ -26,6 +26,9 @@ final class RichMarkdownTextView: NSTextView {
         let id: UUID
         let range: NSRange
         let colour: NSColor
+        /// Drawn as a solid rule under the passage, for the one whose note is
+        /// open. Nil for every other passage — see `selectionRule`.
+        var rule: NSColor?
     }
 
     /// Told to the view rather than worked out by it: turning a source range
@@ -1346,15 +1349,35 @@ final class RichMarkdownTextView: NSTextView {
     private func drawCritiqueHighlights(in rect: NSRect) {
         guard !critiqueHighlights.isEmpty else { return }
         for highlight in critiqueHighlights {
+            let boxes = critiqueHighlightBoxes(for: highlight.range)
             highlight.colour.setFill()
-            for box in critiqueHighlightBoxes(for: highlight.range)
-            where box.intersects(rect) {
+            for box in boxes where box.intersects(rect) {
                 // Rounded, but by no more than half the line height, so a mark
                 // on one line and a mark across three look like the same
                 // object rather than a pill and a rectangle.
                 let radius = min(5, box.height / 2)
                 NSBezierPath(roundedRect: box, xRadius: radius, yRadius: radius)
                     .fill()
+            }
+            // The open note's passage is ruled as well as washed. A wash on
+            // its own is a difference of a few hundredths of an alpha under
+            // text, which a reader whose passage was already on screen — so
+            // there was no scroll to tell them anything happened — reasonably
+            // reports as the press having done nothing.
+            guard let rule = highlight.rule else { continue }
+            rule.setFill()
+            let thickness = CritiqueSeverity.selectionRuleThickness
+            for box in boxes {
+                // Square, while the wash it sits under is rounded: a rule that
+                // tapers at both ends stops looking like a rule.
+                let under = NSRect(
+                    x: box.minX + 3,
+                    y: box.maxY - thickness,
+                    width: max(0, box.width - 6),
+                    height: thickness
+                )
+                guard under.width > 0, under.intersects(rect) else { continue }
+                under.fill()
             }
         }
     }
