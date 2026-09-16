@@ -7,6 +7,7 @@
 /** Pure logic — runs anywhere. */
 export const CORE_TEST_MODULES = [
   './render-model.test.js',
+  './incremental-render.test.js',
   './formatting.test.js',
   './move-image.test.js',
   './drop-edge.test.js',
@@ -28,7 +29,7 @@ export const CORE_TEST_MODULES = [
 ];
 
 /** Needs a real DOM, so these run only in the browser page. */
-export const DOM_TEST_MODULES = ['./dom.test.js'];
+export const DOM_TEST_MODULES = ['./dom.test.js', './incremental-dom.test.js'];
 
 /**
  * Needs to read files from the repository, so these run only under node. They

@@ -1,14 +1,31 @@
 // Render model → DOM, for the directly-editable rendered view.
 //
-// The model gives flat rendered text plus spans carrying source ranges. This
-// turns that into block elements holding inline elements, preserving the text
-// exactly so `readPlainText` returns the model's text character for character
-// — which is what lets an edit be diffed and mapped back to Markdown (E-7).
+// The model gives one block per rendered line, each carrying the spans that
+// style it and source ranges for every character. This turns that into block
+// elements holding inline elements, preserving the text exactly so
+// `readPlainText` returns the model's text character for character — which is
+// what lets an edit be diffed and mapped back to Markdown (E-7).
 //
 // Nothing here interprets Markdown. Anything the parser did not recognize
 // arrives as plain text and is emitted as plain text (E-8, M-4).
+//
+// A redraw touches only the blocks the edit disturbed. The model says which
+// those are; everything above and below keeps the elements it already had, so
+// typing into a long document costs what typing into a short one costs, and
+// the caret, the scroll position and the browser's own idea of the selection
+// all stay where they were.
 
 import { maxRange } from '../core/range.js';
+
+/**
+ * What each surface was last drawn from.
+ *
+ * `offsetsValidTo` counts the blocks whose `data-rendered-*` still say where
+ * they are. An edit moves every offset below it, and writing them all back
+ * would be the walk of the whole document this module exists to avoid — so
+ * they are brought up to date only when something is about to read them.
+ */
+const STATE = new WeakMap();
 
 /** Per-line block styling, taken from whichever spans cover the line. */
 function blockClassFor(styles) {
@@ -55,72 +72,184 @@ function isBlock(style) {
 }
 
 /**
- * Builds the rendered DOM into `root`.
+ * Brings `root` into line with `model`.
+ *
+ * The first draw of a model builds every block. After that the model reports
+ * the blocks an edit disturbed and only those are built again, which is the
+ * difference between an edit costing what it changed and an edit costing the
+ * whole document.
  *
  * @param {HTMLElement} root
  * @param {import('../core/render-model.js').MarkdownRenderModel} model
  * @param {(destination: string) => string|null} resolveImage maps a Markdown
  *   destination to a URL the browser can load, or null to show a placeholder.
+ * @returns {{built: number, replaced: number, removed: number, kept: number}}
+ *   how much work it took, which is what the tests hold to a bound.
  */
 export function renderInto(root, model, resolveImage = () => null) {
-  const { text, spans } = model;
-  const blocks = [];
+  const dirty = model.consumeDirty();
+  const state = STATE.get(root);
 
-  let lineStart = 0;
-  while (lineStart <= text.length) {
-    let lineEnd = text.indexOf('\n', lineStart);
-    if (lineEnd === -1) lineEnd = text.length;
-    blocks.push({ start: lineStart, end: lineEnd });
-    if (lineEnd === text.length) break;
-    lineStart = lineEnd + 1;
+  if (state === undefined || state.model !== model) {
+    return buildEveryBlock(root, model, resolveImage);
+  }
+  if (dirty === null) {
+    return { built: 0, replaced: 0, removed: 0, kept: root.childNodes.length };
+  }
+  return patchBlocks(root, model, resolveImage, dirty, state);
+}
+
+function buildEveryBlock(root, model, resolveImage) {
+  const count = model.blockCount;
+  // Collected into a fragment rather than spread into `replaceChildren`,
+  // because a long document is more elements than an argument list can hold.
+  const fragment = document.createDocumentFragment();
+  for (let index = 0; index < count; index += 1) {
+    fragment.append(buildBlock(model, index, resolveImage));
+  }
+  root.replaceChildren();
+  root.append(fragment);
+  STATE.set(root, { model, offsetsValidTo: count });
+  return { built: count, replaced: count, removed: 0, kept: 0 };
+}
+
+/**
+ * Rebuilds the disturbed blocks and leaves the rest alone.
+ *
+ * The DOM is read as the record of what is on screen rather than a list kept
+ * alongside it, because a `contenteditable` surface is edited by the browser
+ * too: counting the unchanged tail from the end means a block the browser
+ * merged away corrects itself instead of throwing the bookkeeping out.
+ */
+function patchBlocks(root, model, resolveImage, dirty, state) {
+  const children = root.childNodes;
+  const oldCount = children.length;
+  const newCount = model.blockCount;
+
+  // One block either side, because a fenced run's rounded corners belong to
+  // its first and last lines (Y-5) — a neighbour can stop being either.
+  const from   = Math.max(0, dirty.from - 1);
+  const suffix = Math.max(0, dirty.suffix - 1);
+  const oldEnd = Math.max(from, oldCount - suffix);
+  const newEnd = Math.max(from, newCount - suffix);
+
+  const anchor = children[oldEnd] ?? null;
+  const previous = [];
+  for (let index = from; index < oldEnd; index += 1) previous.push(children[index]);
+
+  let built = 0;
+  let replaced = 0;
+  let kept = 0;
+  const reused = new Set();
+  const fragment = document.createDocumentFragment();
+
+  for (let index = from; index < newEnd; index += 1) {
+    const block = buildBlock(model, index, resolveImage);
+    built += 1;
+    const existing = previous[index - from];
+    // Widening the range costs nothing when the neighbour did not move: an
+    // identical block keeps the element it already had, so the caret and the
+    // browser's selection never notice the redraw.
+    if (existing !== undefined && existing.isEqualNode(block)) {
+      reused.add(existing);
+      fragment.append(existing);
+      kept += 1;
+      continue;
+    }
+    fragment.append(block);
+    replaced += 1;
   }
 
-  const elements = blocks.map(({ start, end }, index) => {
-    const covering = spans.filter((span) => {
-      if (!isBlock(span.style)) return false;
-      const from = span.renderedRange.location;
-      const to = maxRange(span.renderedRange);
-      if (from > start || to < end) return false;
-      // A block ends *before* the newline that closes its last line, so an
-      // empty line sitting exactly at `to` belongs to whatever follows.
-      return start < to || span.renderedRange.length === 0;
-    });
+  // Only the ones that were not carried over: appending to the fragment has
+  // already taken the reused elements out of the surface.
+  for (const block of previous) {
+    if (!reused.has(block)) block.remove();
+  }
+  root.insertBefore(fragment, anchor);
 
-    const block = document.createElement('div');
-    block.className = 'me-block';
-    // Where this line begins in the Markdown. Dragging a picture needs to turn
-    // a pointer position into a source offset, and a block is the smallest
-    // thing on screen that corresponds to a whole line of the document.
-    block.dataset.renderedStart = String(start);
-    block.dataset.renderedEnd = String(end);
-    const blockClass = blockClassFor(covering.map((span) => span.style));
-    if (blockClass) block.classList.add(blockClass);
+  state.offsetsValidTo = Math.min(state.offsetsValidTo, newEnd);
+  return { built, replaced, removed: Math.max(0, previous.length - (newEnd - from)), kept };
+}
 
-    const codeSpan = covering
-      .filter((span) => span.style.kind === 'codeBlock')
-      // The model emits both a per-line span and one covering the whole fence.
-      // Only the widest one describes the run the rounded rectangle wraps (Y-5).
-      .sort((a, b) => b.renderedRange.length - a.renderedRange.length)[0];
-    if (codeSpan) {
-      // Y-5: the fence renders as one continuous rounded rectangle, so only
-      // the first and last lines of a run get rounded corners.
-      const previous = blocks[index - 1];
-      const next = blocks[index + 1];
-      const inSameFence = (line) =>
-        line !== undefined &&
-        line.start >= codeSpan.renderedRange.location &&
-        line.start < maxRange(codeSpan.renderedRange);
-      if (!inSameFence(previous)) block.classList.add('me-code-block--first');
-      if (!inSameFence(next)) block.classList.add('me-code-block--last');
+/**
+ * Makes every `data-rendered-*` and picture offset say where it really is.
+ *
+ * An edit shifts every offset below it, and the only things that read them —
+ * carrying a picture to a new paragraph, and selecting one to resize — already
+ * measure every block on screen when they run. So the correction is paid then,
+ * by whoever needs it, rather than on every keystroke by everybody.
+ */
+export function ensureBlockOffsets(root) {
+  const state = STATE.get(root);
+  if (state === undefined) return;
+  const { model } = state;
+  const count = Math.min(model.blockCount, root.childNodes.length);
+  for (let index = state.offsetsValidTo; index < count; index += 1) {
+    const block = root.childNodes[index];
+    if (!(block instanceof HTMLElement)) continue;
+    block.dataset.renderedStart = String(model.blockRenderedStart(index));
+    block.dataset.renderedEnd = String(model.blockRenderedEnd(index));
+    const images = block.querySelectorAll('.me-image');
+    if (images.length === 0) continue;
+    const spans = model
+      .blockSpans(index)
+      .filter((span) => span.style.kind === 'image')
+      .sort((a, b) => a.sourceRange.location - b.sourceRange.location);
+    for (let at = 0; at < images.length && at < spans.length; at += 1) {
+      images[at].dataset.sourceLocation = String(spans[at].sourceRange.location);
+      images[at].dataset.sourceLength = String(spans[at].sourceRange.length);
     }
+  }
+  state.offsetsValidTo = count;
+}
 
-    appendInlineContent(block, text, start, end, spans, resolveImage);
-    if (block.childNodes.length === 0) block.append(document.createElement('br'));
-    markImageOnlyBlock(block);
-    return block;
+/** One rendered line, as an element. */
+function buildBlock(model, index, resolveImage) {
+  const start = model.blockRenderedStart(index);
+  const end = model.blockRenderedEnd(index);
+  const spans = model.blockSpans(index);
+
+  const covering = spans.filter((span) => {
+    if (!isBlock(span.style)) return false;
+    const from = span.renderedRange.location;
+    const to = maxRange(span.renderedRange);
+    if (from > start || to < end) return false;
+    // A block ends *before* the newline that closes its last line, so an
+    // empty line sitting exactly at `to` belongs to whatever follows.
+    return start < to || span.renderedRange.length === 0;
   });
 
-  root.replaceChildren(...elements);
+  const block = document.createElement('div');
+  block.className = 'me-block';
+  // Where this line begins in the Markdown. Dragging a picture needs to turn
+  // a pointer position into a source offset, and a block is the smallest
+  // thing on screen that corresponds to a whole line of the document.
+  block.dataset.renderedStart = String(start);
+  block.dataset.renderedEnd = String(end);
+  const blockClass = blockClassFor(covering.map((span) => span.style));
+  if (blockClass) block.classList.add(blockClass);
+
+  const codeSpan = covering
+    .filter((span) => span.style.kind === 'codeBlock')
+    // The model emits both a per-line span and one covering the whole fence.
+    // Only the widest one describes the run the rounded rectangle wraps (Y-5).
+    .sort((a, b) => b.renderedRange.length - a.renderedRange.length)[0];
+  if (codeSpan) {
+    // Y-5: the fence renders as one continuous rounded rectangle, so only
+    // the first and last lines of a run get rounded corners.
+    const inSameFence = (at) =>
+      at >= 0 &&
+      at < model.blockCount &&
+      model.blockRenderedStart(at) >= codeSpan.renderedRange.location &&
+      model.blockRenderedStart(at) < maxRange(codeSpan.renderedRange);
+    if (!inSameFence(index - 1)) block.classList.add('me-code-block--first');
+    if (!inSameFence(index + 1)) block.classList.add('me-code-block--last');
+  }
+
+  appendInlineContent(block, model.blockText(index), start, end, spans, resolveImage);
+  if (block.childNodes.length === 0) block.append(document.createElement('br'));
+  markImageOnlyBlock(block);
+  return block;
 }
 
 /**
@@ -178,6 +307,10 @@ export function setBlockImageWidth(block, width) {
  * each resulting segment is wrapped in the styles covering it. Nesting depth
  * is unbounded in Markdown, so the wrappers are applied outermost-first by
  * span length.
+ *
+ * `text` is this line's own rendered text and `spans` are the spans this line
+ * owns, so both scans are the size of the line. They used to be the whole
+ * document's, which made drawing it cost lines × spans.
  */
 function appendInlineContent(block, text, start, end, spans, resolveImage) {
   const touching = spans.filter(
@@ -211,11 +344,11 @@ function appendInlineContent(block, text, start, end, spans, resolveImage) {
 
     const imageSpan = covering.find((span) => span.style.kind === 'image');
     if (imageSpan) {
-      block.append(buildImage(imageSpan, text.slice(from, to), resolveImage));
+      block.append(buildImage(imageSpan, text.slice(from - start, to - start), resolveImage));
       continue;
     }
 
-    let node = document.createTextNode(text.slice(from, to));
+    let node = document.createTextNode(text.slice(from - start, to - start));
     for (const span of covering) {
       const className = INLINE_CLASSES[span.style.kind];
       if (!className) continue;

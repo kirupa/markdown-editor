@@ -277,6 +277,9 @@ export class CritiqueRail {
     const previous = this.currentText;
     this.currentText = text;
     if (previous === '' || previous === text) return;
+    // Nothing anchored, nothing to move — and working out what changed means
+    // comparing the whole draft against the whole draft.
+    if (this.items.length === 0) return;
     const before = this.items;
     this.items = trackItems(this.items, previous, text);
     if (before.some((item, index) => item.range !== this.items[index].range)) {

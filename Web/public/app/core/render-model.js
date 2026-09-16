@@ -36,15 +36,365 @@ export const escaped        = Object.freeze({ kind: 'escaped' });
 
 // ─── MarkdownRenderModel ──────────────────────────────────────────────────────
 
-export class MarkdownRenderModel {
-    #lower; // lowerSourceOffsets: one entry per rendered boundary
-    #upper; // upperSourceOffsets: one entry per rendered boundary
+/**
+ * One source line's contribution to the model, in the line's own coordinates.
+ *
+ * Nothing here is absolute, which is the whole point: a line that was not
+ * edited renders the same wherever the text above it pushes it to, so its
+ * parse survives every edit that happens elsewhere (E-7).
+ *
+ * `lower` and `upper` hold one entry per rendered code unit the line produced,
+ * for rendered positions 1…length. Position 0 is the boundary this line shares
+ * with the one above, and only its upper bound belongs to this line —
+ * `upperAtStart` — because that is the offset the parser records when it skips
+ * markup before emitting anything.
+ */
+class LineRender {
+    constructor(sourceLength, text, spans, lower, upper, upperAtStart, enterFence, exitFence) {
+        this.sourceLength = sourceLength;
+        this.text         = text;
+        this.spans        = spans;
+        this.lower        = lower;
+        this.upper        = upper;
+        this.upperAtStart = upperAtStart;
+        this.enterFence   = enterFence;
+        this.exitFence    = exitFence;
+    }
+}
 
-    constructor(text, spans, lowerSourceOffsets, upperSourceOffsets) {
-        this.text  = text;
-        this.spans = spans;
-        this.#lower = lowerSourceOffsets;
-        this.#upper = upperSourceOffsets;
+/** Two fence states are interchangeable when a line cannot tell them apart. */
+function sameFence(a, b) {
+    if (a === b) return true;
+    if (a === null || b === null) return false;
+    return a.marker === b.marker && a.language === b.language;
+}
+
+/** Index of the last entry in the sorted `starts` that is <= `value`. */
+function lastAtOrBefore(starts, count, value) {
+    let low = 0;
+    let high = count - 1;
+    let found = 0;
+    while (low <= high) {
+        const middle = (low + high) >> 1;
+        if (starts[middle] <= value) { found = middle; low = middle + 1; }
+        else high = middle - 1;
+    }
+    return found;
+}
+
+/** Index of the last entry in the sorted `starts` that is strictly below. */
+function lastBefore(starts, count, value) {
+    let low = 0;
+    let high = count - 1;
+    let found = 0;
+    while (low <= high) {
+        const middle = (low + high) >> 1;
+        if (starts[middle] < value) { found = middle; low = middle + 1; }
+        else high = middle - 1;
+    }
+    return found;
+}
+
+export class MarkdownRenderModel {
+    #lines         = [];   // LineRender[], one per source line
+    #sourceStart   = [];   // absolute source offset of each line
+    #renderedStart = [];   // absolute rendered offset of each line
+    // Lengths and fence transitions live beside the lines rather than inside
+    // them. Restating where the lines below an edit begin is the one thing
+    // still proportional to the document, so it reads plain numbers packed
+    // together instead of chasing a pointer per line.
+    #sourceSpan    = [];   // source characters each line consumes
+    #renderedSpan  = [];   // rendered characters each line produces
+    #fenceMark     = [];   // 0 nothing, 1 opens a fence, 2 closes one
+    #fenceOpen     = [];   // line indices where a fence opens, ascending
+    #fenceClose    = [];   // the matching closing line, or -1 when unclosed
+    // Rendered blocks are the lines that produce text — a fence's own marker
+    // lines render nothing — plus the empty block a trailing newline leaves
+    // behind. The editor's DOM is one element per block, so the two indexes
+    // are what let an edit be turned into a handful of element rebuilds.
+    #blockLine     = [];   // line each block came from, or -1 for the last empty one
+    #blockOfLine   = [];   // line-backed blocks produced above a line; one entry past the end
+    #dirtyFrom     = -1;   // first block an update disturbed, or -1 when nothing did
+    #dirtySuffix   = 0;    // blocks at the end that both old and new agree on
+    #text          = null; // materialised on demand
+    #spans         = null;
+
+    /**
+     * The source the model describes.
+     *
+     * Held as a reference, not a copy — JavaScript strings are immutable and
+     * shared, so this is a pointer to the same text the document already owns.
+     * It is what lets an update that arrives without a change description work
+     * out for itself what moved.
+     */
+    source = '';
+
+    constructor(source = '') {
+        this.#reparseAll(source);
+    }
+
+    get text() {
+        if (this.#text === null) {
+            let text = '';
+            for (const line of this.#lines) text += line.text;
+            this.#text = text;
+        }
+        return this.#text;
+    }
+
+    get spans() {
+        if (this.#spans === null) this.#spans = this.#materialiseSpans();
+        return this.#spans;
+    }
+
+    get lineCount() {
+        return this.#lines.length;
+    }
+
+    /** Rendered text of one source line, including any line terminator. */
+    lineText(index) {
+        return this.#lines[index].text;
+    }
+
+    lineRenderedStart(index) {
+        return index < this.#lines.length ? this.#renderedStart[index] : this.renderedLength;
+    }
+
+    lineSourceStart(index) {
+        return index < this.#lines.length ? this.#sourceStart[index] : this.source.length;
+    }
+
+    get renderedLength() {
+        const count = this.#lines.length;
+        if (count === 0) return 0;
+        return this.#renderedStart[count - 1] + this.#lines[count - 1].text.length;
+    }
+
+    /** Spans a line owns, rebased onto absolute offsets. */
+    spansForLine(index) {
+        const line = this.#lines[index];
+        if (line.spans.length === 0) return line.spans;
+        return line.spans.map((span) => this.#rebase(span, index));
+    }
+
+    /** Spans belonging to the line `offset` falls on. */
+    spansForSourceLine(offset) {
+        const count = this.#lines.length;
+        if (count === 0) return [];
+        return this.spansForLine(lastAtOrBefore(this.#sourceStart, count, offset));
+    }
+
+    /**
+     * Every span whose source range can cover `offset`.
+     *
+     * Only two lines can: the one the offset falls in, and the one above,
+     * because a span may end exactly where its line does and the caret sitting
+     * there is still inside it.
+     */
+    spansAtSourceOffset(offset) {
+        const count = this.#lines.length;
+        if (count === 0) return [];
+        const index = lastAtOrBefore(this.#sourceStart, count, offset);
+        const spans = [];
+        for (let at = Math.max(0, index - 1); at <= index; at += 1) {
+            for (const span of this.spansForLine(at)) spans.push(span);
+        }
+        const fence = this.#firstFenceEndingAtOrAfter(index);
+        if (fence < this.#fenceOpen.length && this.#fenceOpen[fence] <= index) {
+            spans.push(this.#fenceSpan(fence));
+        }
+        return spans;
+    }
+
+    // ─── Rendered blocks ─────────────────────────────────────────────────────
+
+    get blockCount() {
+        return this.#blockLine.length;
+    }
+
+    /** The source line a block came from, or -1 for the trailing empty one. */
+    blockLine(index) {
+        return this.#blockLine[index];
+    }
+
+    blockRenderedStart(index) {
+        const line = this.#blockLine[index];
+        return line === -1 ? this.renderedLength : this.#renderedStart[line];
+    }
+
+    /**
+     * Where a block's text ends.
+     *
+     * Blocks are separated by exactly one newline, so the end of one is the
+     * start of the next less that character — no need to ask the line whether
+     * it was terminated.
+     */
+    blockRenderedEnd(index) {
+        return index + 1 < this.#blockLine.length
+            ? this.blockRenderedStart(index + 1) - 1
+            : this.renderedLength;
+    }
+
+    /** Text of one block, without its terminator. */
+    blockText(index) {
+        const line = this.#blockLine[index];
+        if (line === -1) return '';
+        const text = this.#lines[line].text;
+        return text.charCodeAt(text.length - 1) === 0x0a ? text.slice(0, -1) : text;
+    }
+
+    /**
+     * Every span that styles a block: the ones its line owns, plus the fence
+     * it may sit inside, which is the only span that outlives a single line.
+     */
+    blockSpans(index) {
+        const line = this.#blockLine[index];
+        if (line === -1) return [];
+        const spans = this.spansForLine(line);
+        if (this.#lines[line].enterFence === null) return spans;
+        const fence = this.#firstFenceEndingAtOrAfter(line);
+        if (fence < this.#fenceOpen.length && this.#fenceOpen[fence] <= line) {
+            return [...spans, this.#fenceSpan(fence)];
+        }
+        return spans;
+    }
+
+    /**
+     * What an update disturbed, as a block range, taken once.
+     *
+     * The renderer owns this: it is the only thing that needs to know, and
+     * reading it is what says the DOM has caught up.
+     */
+    consumeDirty() {
+        if (this.#dirtyFrom === -1) return null;
+        const dirty = { from: this.#dirtyFrom, suffix: this.#dirtySuffix };
+        this.#dirtyFrom = -1;
+        return dirty;
+    }
+
+    #rebase(span, index) {
+        const renderedBase = this.#renderedStart[index];
+        const sourceBase   = this.#sourceStart[index];
+        return {
+            style:          span.style,
+            renderedRange:  makeRange(span.renderedRange.location + renderedBase, span.renderedRange.length),
+            sourceRange:    makeRange(span.sourceRange.location + sourceBase, span.sourceRange.length),
+            includesMarkup: span.includesMarkup,
+            isAtomic:       span.isAtomic,
+        };
+    }
+
+    /**
+     * The fence span a closed or unclosed run of fenced code contributes.
+     *
+     * Built here rather than cached on a line because it is the one span that
+     * spans lines, so its extent changes whenever anything between its ends
+     * does (Y-5).
+     */
+    #fenceSpan(which) {
+        const openLine  = this.#fenceOpen[which];
+        const closeLine = this.#fenceClose[which];
+        const language  = this.#lines[openLine].exitFence?.language ?? null;
+        // The opening line renders nothing, so the run starts where the line
+        // after it starts.
+        const renderedStart = this.lineRenderedStart(openLine + 1);
+        const renderedEnd   = closeLine === -1
+            ? this.renderedLength
+            : this.lineRenderedStart(closeLine);
+        const sourceStart = this.#sourceStart[openLine];
+        const sourceEnd   = closeLine === -1
+            ? this.source.length
+            : this.#sourceStart[closeLine] + this.#lines[closeLine].sourceLength;
+        return {
+            style:          codeBlock(language),
+            renderedRange:  makeRange(renderedStart, renderedEnd - renderedStart),
+            sourceRange:    makeRange(sourceStart, sourceEnd - sourceStart),
+            includesMarkup: true,
+            isAtomic:       false,
+        };
+    }
+
+    #materialiseSpans() {
+        const spans = [];
+        let fence = 0;
+        for (let index = 0; index < this.#lines.length; index += 1) {
+            for (const span of this.#lines[index].spans) spans.push(this.#rebase(span, index));
+            while (fence < this.#fenceOpen.length && this.#fenceClose[fence] === index) {
+                spans.push(this.#fenceSpan(fence));
+                fence += 1;
+            }
+        }
+        // An unclosed fence runs to the end of the document, so its span is the
+        // last thing the parser emits.
+        for (; fence < this.#fenceOpen.length; fence += 1) {
+            if (this.#fenceClose[fence] === -1) spans.push(this.#fenceSpan(fence));
+        }
+        return spans;
+    }
+
+    /**
+     * Every span that could cover a rendered range, without walking the rest.
+     *
+     * Only lines the range touches can own a span that overlaps it, because
+     * every span but the fence is confined to its own line — and a fence only
+     * matters to `sourceRange` when the range reaches its opening line.
+     */
+    #spansOverlapping(range) {
+        const count = this.#lines.length;
+        if (count === 0) return [];
+        const first = lastAtOrBefore(this.#renderedStart, count, range.location);
+        const last  = lastAtOrBefore(this.#renderedStart, count, maxRange(range));
+        const spans = [];
+        for (let index = first; index <= last; index += 1) {
+            for (const span of this.#lines[index].spans) spans.push(this.#rebase(span, index));
+        }
+        // A fence covers `openLine … closeLine`, so the ones that can matter
+        // are those whose run of lines meets the window. Both ends are sorted,
+        // because fences cannot nest.
+        const fences = this.#fenceOpen.length;
+        for (let fence = this.#firstFenceEndingAtOrAfter(first); fence < fences; fence += 1) {
+            if (this.#fenceOpen[fence] > last) break;
+            spans.push(this.#fenceSpan(fence));
+        }
+        return spans;
+    }
+
+    #firstFenceEndingAtOrAfter(line) {
+        let low = 0;
+        let high = this.#fenceOpen.length - 1;
+        let found = this.#fenceOpen.length;
+        while (low <= high) {
+            const middle = (low + high) >> 1;
+            const close = this.#fenceClose[middle];
+            if (close === -1 || close >= line) { found = middle; high = middle - 1; }
+            else low = middle + 1;
+        }
+        return found;
+    }
+
+    /** The source offset a rendered position maps to through `upper`. */
+    #upperAt(position) {
+        const count = this.#lines.length;
+        if (count === 0) return 0;
+        // The parser's last act is to record the end of the source, so the
+        // final boundary always maps past everything.
+        if (position >= this.renderedLength) return this.source.length;
+        const index  = lastAtOrBefore(this.#renderedStart, count, position);
+        const line   = this.#lines[index];
+        const offset = position - this.#renderedStart[index];
+        const relative = offset === 0 ? line.upperAtStart : line.upper[offset - 1];
+        return this.#sourceStart[index] + relative;
+    }
+
+    /** The source offset a rendered position maps to through `lower`. */
+    #lowerAt(position) {
+        if (position <= 0) return 0;
+        const count = this.#lines.length;
+        if (count === 0) return 0;
+        const index  = lastBefore(this.#renderedStart, count, position);
+        const line   = this.#lines[index];
+        const offset = position - this.#renderedStart[index];
+        return this.#sourceStart[index] + line.lower[offset - 1];
     }
 
     /**
@@ -61,19 +411,19 @@ export class MarkdownRenderModel {
      * @returns {{ location: number, length: number }}
      */
     sourceRange(renderedRange, includingMarkup = false) {
-        const renderedLength = this.text.length;
+        const renderedLength = this.renderedLength;
         const location = Math.min(Math.max(0, renderedRange.location), renderedLength);
         const length   = Math.min(Math.max(0, renderedRange.length), renderedLength - location);
         const clamped  = makeRange(location, length);
 
         if (clamped.length === 0) {
-            return makeRange(this.#upper[location], 0);
+            return makeRange(this.#upperAt(location), 0);
         }
 
-        let sourceStart = this.#upper[location];
-        let sourceEnd   = this.#lower[maxRange(clamped)];
+        let sourceStart = this.#upperAt(location);
+        let sourceEnd   = this.#lowerAt(maxRange(clamped));
 
-        for (const span of this.spans) {
+        for (const span of this.#spansOverlapping(clamped)) {
             if (span.isAtomic &&
                 intersectionRange(clamped, span.renderedRange).length > 0
             ) {
@@ -107,27 +457,357 @@ export class MarkdownRenderModel {
     renderedRange(sourceRange) {
         const sourceStart   = Math.max(0, sourceRange.location);
         const sourceEnd     = Math.max(sourceStart, maxRange(sourceRange));
-        const renderedStart = this.#renderedOffset(sourceStart, this.#upper);
+        const renderedStart = this.#renderedOffset(sourceStart, true);
         if (sourceRange.length === 0) {
             return makeRange(renderedStart, 0);
         }
-        const renderedEnd = this.#renderedOffset(sourceEnd, this.#lower);
+        const renderedEnd = this.#renderedOffset(sourceEnd, false);
         return makeRange(renderedStart, Math.max(0, renderedEnd - renderedStart));
     }
 
-    // Linear forward scan: first rendered index whose mapped source offset >= target.
-    #renderedOffset(target, offsets) {
-        for (let i = 0; i < offsets.length; i++) {
-            if (offsets[i] >= target) return i;
+    /**
+     * First rendered position whose mapped source offset is at least `target`.
+     *
+     * Both mappings rise with the rendered position, so this is a binary
+     * search rather than the forward scan the first port used — the difference
+     * between a lookup and a walk of the whole document on every caret move.
+     */
+    #renderedOffset(target, useUpper) {
+        let low  = 0;
+        let high = this.renderedLength;
+        while (low < high) {
+            const middle = (low + high) >> 1;
+            const offset = useUpper ? this.#upperAt(middle) : this.#lowerAt(middle);
+            if (offset >= target) high = middle;
+            else low = middle + 1;
         }
-        return Math.max(0, offsets.length - 1);
+        return low;
     }
+
+    // ─── Keeping up with the document ────────────────────────────────────────
+
+    /**
+     * Brings the model up to date with `source`, parsing only what moved.
+     *
+     * The reparse starts at the line the edit begins on and runs forward until
+     * it lands on a line boundary the previous parse also had, entered in the
+     * same fence state. From there down every line renders exactly as it
+     * already did, however far the edit pushed it — so typing a character into
+     * a long document costs what typing a character into a short one costs.
+     *
+     * `change` is the edit as the caller made it. It is only ever a shortcut:
+     * without one, or with one that does not describe the text that arrived,
+     * the difference is measured here instead.
+     */
+    update(source, change = null) {
+        if (source === this.source) return this;
+
+        const edit  = this.#editFor(source, change);
+        const lines = this.#lines;
+        const count = lines.length;
+
+        // An edit belongs to the line it starts on, because a line is the
+        // smallest thing this parser makes a decision about.
+        let first = count === 0 ? 0 : lastAtOrBefore(this.#sourceStart, count, edit.location);
+        const removedEnd = edit.location + edit.removed;
+        const delta      = edit.inserted - edit.removed;
+
+        const parser  = new Parser(source);
+        const rebuilt = [];
+        let location = count === 0 ? 0 : this.#sourceStart[first];
+        let fence    = first === 0 ? null : lines[first - 1].exitFence;
+        let rejoin   = -1;
+
+        while (location < source.length) {
+            // The same place in the text as it was before the edit. Once that
+            // is past everything the edit touched and lands on a line the old
+            // parse also started, the rest of the document is already right.
+            const before = location - delta;
+            if (before >= removedEnd) {
+                const candidate = this.#lineStartingAt(before, first);
+                if (candidate !== -1 && sameFence(lines[candidate].enterFence, fence)) {
+                    rejoin = candidate;
+                    break;
+                }
+            }
+            const bounds = lineBounds(source, location);
+            const line   = parseLine(parser, bounds, fence);
+            rebuilt.push(line);
+            fence    = line.exitFence;
+            location = Math.max(bounds.lineEnd, location + 1);
+        }
+        if (rejoin === -1) rejoin = count;
+
+        // How much of the document the edit left alone, counted in blocks from
+        // the end so the number survives the splice.
+        const oldSuffix = this.#blockLine.length - this.#blockOfLine[rejoin];
+        const from      = this.#blockOfLine[first];
+
+        this.source = source;
+        spliceLines(
+            { lines, sourceSpan: this.#sourceSpan, renderedSpan: this.#renderedSpan, fenceMark: this.#fenceMark },
+            first,
+            rejoin - first,
+            rebuilt
+        );
+        this.#invalidate();
+        this.#reindex(first);
+
+        const newSuffix = this.#blockLine.length - this.#blockOfLine[first + rebuilt.length];
+        this.#noteDirty(from, Math.min(oldSuffix, newSuffix));
+        return this;
+    }
+
+    /**
+     * Records the block range an update disturbed, merging it with anything
+     * not yet drawn — several edits can land between two renders.
+     *
+     * The suffix is what both the old and the new block list still agree on,
+     * so the smallest agreement across every pending update is the safe one.
+     */
+    #noteDirty(from, suffix) {
+        if (this.#dirtyFrom === -1) {
+            this.#dirtyFrom   = from;
+            this.#dirtySuffix = suffix;
+            return;
+        }
+        this.#dirtyFrom   = Math.min(this.#dirtyFrom, from);
+        this.#dirtySuffix = Math.min(this.#dirtySuffix, suffix);
+    }
+
+    /** Index of the line that starts exactly at `offset`, at or after `from`. */
+    #lineStartingAt(offset, from) {
+        let low  = from;
+        let high = this.#lines.length - 1;
+        while (low <= high) {
+            const middle = (low + high) >> 1;
+            const start = this.#sourceStart[middle];
+            if (start === offset) return middle;
+            if (start < offset) low = middle + 1;
+            else high = middle - 1;
+        }
+        return -1;
+    }
+
+    /** What changed between the source the model holds and the one that arrived. */
+    #editFor(source, change) {
+        const previous = this.source;
+        if (
+            change !== null &&
+            change.previousSource === previous &&
+            previous.length - change.range.length + change.replacement.length === source.length
+        ) {
+            return {
+                location: change.range.location,
+                removed:  change.range.length,
+                inserted: change.replacement.length,
+            };
+        }
+
+        const shared = Math.min(previous.length, source.length);
+        let prefix = 0;
+        while (prefix < shared && previous.charCodeAt(prefix) === source.charCodeAt(prefix)) {
+            prefix += 1;
+        }
+        let suffix = 0;
+        while (
+            suffix < shared - prefix &&
+            previous.charCodeAt(previous.length - suffix - 1) ===
+                source.charCodeAt(source.length - suffix - 1)
+        ) {
+            suffix += 1;
+        }
+        return {
+            location: prefix,
+            removed:  previous.length - prefix - suffix,
+            inserted: source.length - prefix - suffix,
+        };
+    }
+
+    #invalidate() {
+        this.#text  = null;
+        this.#spans = null;
+    }
+
+    /** Parses the whole document from nothing, one line at a time. */
+    #reparseAll(source) {
+        this.source = source;
+        const parser = new Parser(source);
+        const lines  = [];
+        let location = 0;
+        let fence    = null;
+
+        while (location < source.length) {
+            const bounds = lineBounds(source, location);
+            const line   = parseLine(parser, bounds, fence);
+            lines.push(line);
+            fence    = line.exitFence;
+            location = Math.max(bounds.lineEnd, location + 1);
+        }
+
+        this.#lines         = lines;
+        this.#sourceStart   = new Array(lines.length);
+        this.#renderedStart = new Array(lines.length);
+        this.#sourceSpan    = lines.map((line) => line.sourceLength);
+        this.#renderedSpan  = lines.map((line) => line.text.length);
+        this.#fenceMark     = lines.map(fenceMarkFor);
+        this.#fenceOpen     = [];
+        this.#fenceClose    = [];
+        this.#blockLine     = [];
+        this.#blockOfLine   = [];
+        this.#dirtyFrom     = -1;
+        this.#invalidate();
+        this.#reindex(0);
+    }
+
+    /**
+     * Restates where every line from `from` onwards begins, and which lines
+     * the fences run between.
+     *
+     * Integer arithmetic over an array that is already the right size, so an
+     * edit near the top of a long document costs a walk of numbers rather than
+     * a walk of the text.
+     */
+    #reindex(from) {
+        const count = this.#lines.length;
+        const sourceStart   = this.#sourceStart;
+        const renderedStart = this.#renderedStart;
+        const sourceSpan    = this.#sourceSpan;
+        const renderedSpan  = this.#renderedSpan;
+        const fenceMark     = this.#fenceMark;
+        sourceStart.length   = count;
+        renderedStart.length = count;
+
+        let source   = from === 0 ? 0 : sourceStart[from - 1] + sourceSpan[from - 1];
+        let rendered = from === 0 ? 0 : renderedStart[from - 1] + renderedSpan[from - 1];
+        for (let index = from; index < count; index += 1) {
+            sourceStart[index]   = source;
+            renderedStart[index] = rendered;
+            source   += sourceSpan[index];
+            rendered += renderedSpan[index];
+        }
+
+        // Blocks, in the same walk. A line that renders nothing — a fence's
+        // own marker — is not a block, and a document that ends in a newline
+        // leaves an empty one behind that no line owns.
+        const blockLine   = this.#blockLine;
+        const blockOfLine = this.#blockOfLine;
+        blockOfLine.length = count + 1;
+        let block = from === 0 ? 0 : blockOfLine[from];
+        for (let index = from; index < count; index += 1) {
+            blockOfLine[index] = block;
+            if (renderedSpan[index] > 0) {
+                blockLine[block] = index;
+                block += 1;
+            }
+        }
+        blockOfLine[count] = block;
+        blockLine.length = block;
+        // Whether the rendered text ends in a newline, which is a question for
+        // the last line that rendered anything — the last line of the document
+        // may be a fence marker that rendered nothing at all.
+        const last = block > 0 ? blockLine[block - 1] : -1;
+        if (last !== -1 && this.#lines[last].text.endsWith('\n')) blockLine.push(-1);
+        else if (block === 0) blockLine.push(-1);
+
+        let kept = 0;
+        while (kept < this.#fenceOpen.length && this.#fenceOpen[kept] < from) kept += 1;
+        this.#fenceOpen.length  = kept;
+        this.#fenceClose.length = kept;
+
+        // A fence opened above the rebuilt range is still the same fence; only
+        // where it ends can have moved.
+        let open = kept > 0 && from < count && this.#lines[from].enterFence !== null ? kept - 1 : -1;
+        if (open !== -1) this.#fenceClose[open] = -1;
+
+        for (let index = from; index < count; index += 1) {
+            const mark = fenceMark[index];
+            if (mark === 0) continue;
+            if (mark === 1) {
+                this.#fenceOpen.push(index);
+                this.#fenceClose.push(-1);
+                open = this.#fenceOpen.length - 1;
+            } else {
+                if (open !== -1) this.#fenceClose[open] = index;
+                open = -1;
+            }
+        }
+    }
+}
+
+/**
+ * Replaces `removeCount` lines with `insert`, keeping the numbers that sit
+ * beside them in step.
+ *
+ * The overwhelmingly common edit replaces a line with a line, which is a
+ * store rather than a move of everything below it. A whole document arriving
+ * at once — an open, or a revision from another device — is rebuilt instead of
+ * spliced, because spreading a document's worth of lines into a call is an
+ * argument list no engine promises to accept.
+ */
+function spliceLines(model, start, removeCount, insert) {
+    const { lines, sourceSpan, renderedSpan, fenceMark } = model;
+    if (removeCount === insert.length) {
+        for (let offset = 0; offset < insert.length; offset += 1) {
+            const line  = insert[offset];
+            const index = start + offset;
+            lines[index]        = line;
+            sourceSpan[index]   = line.sourceLength;
+            renderedSpan[index] = line.text.length;
+            fenceMark[index]    = fenceMarkFor(line);
+        }
+        return;
+    }
+
+    if (insert.length <= SPREAD_LIMIT) {
+        lines.splice(start, removeCount, ...insert);
+        sourceSpan.splice(start, removeCount, ...insert.map((line) => line.sourceLength));
+        renderedSpan.splice(start, removeCount, ...insert.map((line) => line.text.length));
+        fenceMark.splice(start, removeCount, ...insert.map(fenceMarkFor));
+        return;
+    }
+
+    const tail = lines.slice(start + removeCount);
+    lines.length        = start;
+    sourceSpan.length   = start;
+    renderedSpan.length = start;
+    fenceMark.length    = start;
+    for (const line of insert) appendLine(model, line);
+    for (const line of tail)   appendLine(model, line);
+}
+
+/** How many lines may be spread into one call. */
+const SPREAD_LIMIT = 8192;
+
+function appendLine({ lines, sourceSpan, renderedSpan, fenceMark }, line) {
+    lines.push(line);
+    sourceSpan.push(line.sourceLength);
+    renderedSpan.push(line.text.length);
+    fenceMark.push(fenceMarkFor(line));
+}
+
+function fenceMarkFor(line) {
+    if (line.enterFence === null) return line.exitFence === null ? 0 : 1;
+    return line.exitFence === null ? 2 : 0;
+}
+
+/** One line's parse, in the line's own coordinates. */
+function parseLine(parser, bounds, enterFence) {
+    const builder = parser.beginLine();
+    const step    = parser.renderLineAt(bounds, enterFence);
+    return builder.lineRender(
+        bounds.lineStart,
+        bounds.lineEnd - bounds.lineStart,
+        enterFence,
+        step.fence,
+    );
 }
 
 // ─── Public entry point ───────────────────────────────────────────────────────
 
+/** A model of `markdown`, parsed in full. */
 export function renderMarkdown(markdown) {
-    return new Parser(markdown).render();
+    return new MarkdownRenderModel(markdown);
 }
 
 // ─── RenderBuilder ────────────────────────────────────────────────────────────
@@ -191,12 +871,35 @@ class RenderBuilder {
         this.spans.push({ style, renderedRange, sourceRange, includesMarkup, isAtomic });
     }
 
-    model() {
-        return new MarkdownRenderModel(
+    /**
+     * The line's parse, rebased onto the line's own coordinates.
+     *
+     * Everything the builder recorded is absolute, because the parser reads
+     * the real document and has to see the real neighbouring characters. What
+     * is stored is relative, because that is what survives the text above it
+     * changing length.
+     */
+    lineRender(lineStart, sourceLength, enterFence, exitFence) {
+        const length = this._rendered.length;
+        const lower  = new Array(length);
+        const upper  = new Array(length);
+        for (let offset = 0; offset < length; offset++) {
+            lower[offset] = this._lower[offset + 1] - lineStart;
+            upper[offset] = this._upper[offset + 1] - lineStart;
+        }
+        const spans = this.spans;
+        for (const span of spans) {
+            span.sourceRange = makeRange(span.sourceRange.location - lineStart, span.sourceRange.length);
+        }
+        return new LineRender(
+            sourceLength,
             this._rendered,
-            this.spans,
-            this._lower,
-            this._upper,
+            spans,
+            lower,
+            upper,
+            this._upper[0] - lineStart,
+            enterFence,
+            exitFence,
         );
     }
 }
@@ -221,68 +924,56 @@ class Parser {
         this._parsedTokenEnd = 0; // set by _parseCodeSpan / _parseDelimited before returning true
     }
 
-    render() {
-        const source = this._source;
-        let location  = 0;
-        let codeFence = null; // { marker, language, sourceStart, renderedStart }
+    /** A builder holding one line's output, in that line's own coordinates. */
+    beginLine() {
+        this._builder = new RenderBuilder(this._source);
+        return this._builder;
+    }
 
-        while (location < source.length) {
-            const { lineStart, lineEnd, contentsEnd } = lineBounds(source, location);
-            const contentRange = makeRange(lineStart, contentsEnd - lineStart);
-            const newlineRange = makeRange(contentsEnd, lineEnd - contentsEnd);
-            const line         = source.slice(lineStart, contentsEnd);
+    /**
+     * Renders one line and reports the fence state that follows it.
+     *
+     * Every other decision the parser makes is confined to the line it is
+     * looking at — inline scanning never crosses a newline, and the
+     * neighbouring characters it does consult are always the terminators. The
+     * fence is the single exception, so it is handed back rather than kept,
+     * which is what lets a reparse start in the middle of a document.
+     *
+     * The fence's own span is not emitted here: it covers many lines, so it
+     * belongs to whoever is stitching lines together.
+     */
+    renderLineAt(bounds, codeFence) {
+        const source       = this._source;
+        const { lineStart, lineEnd, contentsEnd } = bounds;
+        const contentRange = makeRange(lineStart, contentsEnd - lineStart);
+        const newlineRange = makeRange(contentsEnd, lineEnd - contentsEnd);
+        const line         = source.slice(lineStart, contentsEnd);
 
-            if (codeFence !== null) {
-                if (isClosingFence(line, codeFence)) {
-                    this._builder.advanceSource(lineEnd);
-                    this._builder.addSpan(
-                        codeBlock(codeFence.language),
-                        makeRange(codeFence.renderedStart, this._builder.length - codeFence.renderedStart),
-                        makeRange(codeFence.sourceStart,  lineEnd - codeFence.sourceStart),
-                        /*includesMarkup*/ true,
-                    );
-                    codeFence = null;
-                } else {
-                    const renderedStart = this._builder.length;
-                    this._builder.appendSource(contentRange);
-                    this._builder.appendSource(newlineRange);
-                    this._builder.addSpan(
-                        codeBlock(codeFence.language),
-                        makeRange(renderedStart, this._builder.length - renderedStart),
-                        makeRange(contentRange.location, lineEnd - contentRange.location),
-                    );
-                }
-            } else {
-                const fence = openingFence(line);
-                if (fence !== null) {
-                    this._builder.advanceSource(lineEnd);
-                    codeFence = {
-                        marker:        fence.marker,
-                        language:      fence.language,
-                        sourceStart:   lineStart,
-                        renderedStart: this._builder.length,
-                    };
-                } else {
-                    this._renderLine(contentRange);
-                    this._builder.appendSource(newlineRange);
-                }
-            }
-
-            location = Math.max(lineEnd, location + 1);
-        }
-
-        // Unclosed fence: emit everything from the opening line to EOF as a code block.
         if (codeFence !== null) {
+            if (isClosingFence(line, codeFence)) {
+                this._builder.advanceSource(lineEnd);
+                return { fence: null, opened: false, closed: true };
+            }
+            const renderedStart = this._builder.length;
+            this._builder.appendSource(contentRange);
+            this._builder.appendSource(newlineRange);
             this._builder.addSpan(
                 codeBlock(codeFence.language),
-                makeRange(codeFence.renderedStart, this._builder.length - codeFence.renderedStart),
-                makeRange(codeFence.sourceStart, source.length - codeFence.sourceStart),
-                /*includesMarkup*/ true,
+                makeRange(renderedStart, this._builder.length - renderedStart),
+                makeRange(contentRange.location, lineEnd - contentRange.location),
             );
+            return { fence: codeFence, opened: false, closed: false };
         }
 
-        this._builder.advanceSource(source.length);
-        return this._builder.model();
+        const fence = openingFence(line);
+        if (fence !== null) {
+            this._builder.advanceSource(lineEnd);
+            return { fence, opened: true, closed: false };
+        }
+
+        this._renderLine(contentRange);
+        this._builder.appendSource(newlineRange);
+        return { fence: null, opened: false, closed: false };
     }
 
     _renderLine(lineRange) {

@@ -43,6 +43,20 @@ export function textReplacement(oldText, newText, requestedRange) {
     }
   }
 
+  return minimalReplacement(oldText, newText);
+}
+
+/**
+ * The shortest replacement turning `oldText` into `newText`, measured.
+ *
+ * Shared ends are found directly, so nothing either text already agreed on is
+ * part of the answer. Used on its own where the caller has already narrowed
+ * the comparison to the region that could have changed and so has no range to
+ * confirm, and as the fallback when a requested one turns out to be wrong.
+ *
+ * @returns {TextReplacement}
+ */
+export function minimalReplacement(oldText, newText) {
   let sharedPrefixLength = 0;
   const sharedLength = Math.min(oldText.length, newText.length);
   while (

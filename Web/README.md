@@ -972,6 +972,7 @@ repository. Run it with `--dry-run` first to see exactly what would be sent.
 | Command | Covers |
 | --- | --- |
 | Open `/tests/` in a browser | The full client suite, including the DOM tests. Needs only PHP. |
+| Open `/tests/keystroke-cost.php` | Not a test: what one keystroke costs, on documents of 2,200, 11,000 and 55,000 lines. `?full=1` rebuilds the whole model and the whole DOM per keystroke instead, so a change to the drawing can be measured against what it replaced. The suite counts work rather than timing it, because a clock measures the machine it runs on; this is where a number comes from. |
 | `node Web/tests/run.mjs` | The same client suites minus the DOM ones, plus the rules-conformance suite, which reads the `.rules` files and so cannot run in the browser. Node is optional and used only for a fast terminal loop. |
 | `php Web/tests/php/run.php` | Workspace path safety, document read/write, file tree, file management, image import and its content validation, and how settings are read from the environment. |
 | `Web/firebase/run-rules-checks.sh` | The security rules, evaluated by Firebase's own engine in the emulators ([WY-17](#tests)). Needs a JDK and the Firebase CLI, so it is not part of the suite. |

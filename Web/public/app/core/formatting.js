@@ -304,17 +304,18 @@ export function wrapCodeBlock(text, selection) {
  * cursor is at the end of a non-empty continuation line.  An empty list item
  * (marker with no content) removes the marker instead of adding another item.
  */
-export function insertNewline(text, selection) {
+export function insertNewline(text, selection, model = null) {
   const requested = clampRange(selection, text.length);
   // Emphasis is matched within a line, so a break in the middle of a bold word
   // leaves `**` unpaired on both sides of it and the reader is shown the
   // asterisks instead of bold text. The markers are closed before the break and
   // opened again after it — see `inlineMending`.
+  const spans = mendableSpans(text, requested.location, model);
   const sel =
     requested.length === 0
-      ? absorbingSpace(breakLocation(text, requested.location), text)
+      ? absorbingSpace(breakLocation(text, requested.location, spans), text, spans)
       : requested;
-  const mend = inlineMending(text, sel);
+  const mend = inlineMending(text, sel, spans);
 
   if (sel.length !== 0) {
     const rep = mend.closing + '\n' + mend.opening;
@@ -361,6 +362,19 @@ const MENDABLE = Object.freeze({
 });
 
 /**
+ * The spans that could need mending around `offset`.
+ *
+ * Every mendable style is an inline one, and inline emphasis is matched within
+ * a line — so this was always a question about one line, asked by reading the
+ * whole document. `model`, when the caller has one already on this text,
+ * answers it without parsing anything.
+ */
+function mendableSpans(text, offset, model) {
+  const rendered = model !== null && model.source === text ? model : renderMarkdown(text);
+  return rendered.spansForSourceLine(offset);
+}
+
+/**
  * The markers a span was actually written with.
  *
  * Not the ones the toolbar would write. `_italic_` and `*italic*` are the same
@@ -405,8 +419,7 @@ function mendableContent(span, text) {
  * Applied repeatedly because emphasis nests, and stepping out of one run can
  * land on the edge of another.
  */
-function breakLocation(text, location) {
-  const spans = renderMarkdown(text).spans;
+function breakLocation(text, location, spans) {
   let at = location;
   for (let pass = 0; pass < 4; pass += 1) {
     let moved = false;
@@ -440,9 +453,9 @@ function breakLocation(text, location) {
  * two would be a hard break — and outside emphasis the space is kept, because
  * there the break is harmless and the text is not ours to tidy.
  */
-function absorbingSpace(location, text) {
+function absorbingSpace(location, text, spans) {
   let range = makeRange(location, 0);
-  if (!isInsideMendableRun(range, text)) return range;
+  if (!isInsideMendableRun(range, text, spans)) return range;
   const isSpace = (offset) =>
     offset >= 0 && offset < text.length && (text[offset] === ' ' || text[offset] === '\t');
   while (range.location > 0 && isSpace(range.location - 1)) {
@@ -454,8 +467,8 @@ function absorbingSpace(location, text) {
   return range;
 }
 
-function isInsideMendableRun(range, text) {
-  return renderMarkdown(text).spans.some((span) => {
+function isInsideMendableRun(range, text, spans) {
+  return spans.some((span) => {
     const content = mendableContent(span, text);
     if (content === null) return false;
     return range.location > content.start && maxRange(range) < content.end;
@@ -479,9 +492,9 @@ function isInsideMendableRun(range, text) {
  * Nesting is closed innermost-first and reopened outermost-first, so the pairs
  * come back nested rather than crossed.
  */
-function inlineMending(text, range) {
+function inlineMending(text, range, spans) {
   if (!isFlanked(range, text)) return { closing: '', opening: '' };
-  const straddling = renderMarkdown(text).spans.filter((span) => {
+  const straddling = spans.filter((span) => {
     const content = mendableContent(span, text);
     if (content === null) return false;
     return range.location > content.start && maxRange(range) < content.end;
