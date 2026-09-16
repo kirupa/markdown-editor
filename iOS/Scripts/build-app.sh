@@ -23,7 +23,7 @@ DEPLOYMENT_TARGET="${IOS_DEPLOYMENT_TARGET:-17.0}"
 
 # Prefer the Command Line Tools toolchain: it can compile against the iOS SDK
 # and, unlike the Xcode one, does not refuse to run before the licence is
-# accepted. Callers who want the Xcode toolchain can set DEVELOPER_DIR.
+# accepted. Callers who want the Xcode toolchain can set MDE_TOOLCHAIN.
 TOOLCHAIN="${MDE_TOOLCHAIN:-/Library/Developer/CommandLineTools}"
 if [ ! -x "$TOOLCHAIN/usr/bin/swiftc" ]; then
   TOOLCHAIN="$(xcode-select -p)"
@@ -49,33 +49,29 @@ mkdir -p "$WORK"
 # 1. The shared package, compiled for the simulator.
 #
 # SwiftPM has no iOS destination of its own, and `-Xswiftc -sdk` does not work
-# because SwiftPM appends its own macOS -sdk afterwards and wins. A
-# destination file is the supported way to say this.
-cat > "$WORK/destination.json" <<JSON
-{
-  "version": 1,
-  "target": "$TARGET",
-  "sdk": "$SDK",
-  "toolchain-bin-dir": "$TOOLCHAIN/usr/bin",
-  "extra-cc-flags": ["-target", "$TARGET"],
-  "extra-swiftc-flags": ["-target", "$TARGET"],
-  "extra-cpp-flags": ["-target", "$TARGET"]
-}
-JSON
-
-DEVELOPER_DIR="$TOOLCHAIN" "$TOOLCHAIN/usr/bin/swift" build \
+# because SwiftPM appends its own macOS -sdk afterwards and wins. `--sdk` with
+# `--triple` is the supported way to say this.
+#
+# DEVELOPER_DIR must point at Xcode rather than at the toolchain: the Swift
+# Build engine reads the iPhoneSimulator platform definition from there, and
+# without it every target fails with "unable to resolve run destination
+# platform: 'iphonesimulator'". The compiler still comes from TOOLCHAIN, so
+# this needs Xcode's files on disk rather than a working `xcodebuild`; whether
+# that is enough before the licence is accepted has not been tested here.
+DEVELOPER_DIR="$XCODE_DIR" "$TOOLCHAIN/usr/bin/swift" build \
   --package-path "$REPO/Shared" \
-  --destination "$WORK/destination.json" \
+  --sdk "$SDK" \
+  --triple "$TARGET" \
+  --scratch-path "$WORK/shared" \
   --configuration release
 
-SHARED_BIN="$REPO/Shared/.build/$ARCH-apple-ios-simulator/release"
+SHARED_BIN="$WORK/shared/out/Products/Release-iphonesimulator"
 
-# SwiftPM leaves an "automatic" library product as loose object files rather
-# than an archive, because it normally decides how to link at the point of
-# use. Gather them into one static library to link against.
-find "$SHARED_BIN/MarkdownEditorCore.build" "$SHARED_BIN/MarkdownEditorUI.build" \
-  -name '*.o' -print0 | xargs -0 "$TOOLCHAIN/usr/bin/libtool" \
-  -static -o "$WORK/libMarkdownEditorKit.a"
+if [ ! -f "$SHARED_BIN/libMarkdownEditorCore.a" ]; then
+  printf 'error: shared package built but produced no library at %s\n' \
+    "$SHARED_BIN" >&2
+  exit 1
+fi
 
 # 2. The app itself.
 mkdir -p "$APP_DIR"
@@ -85,9 +81,10 @@ DEVELOPER_DIR="$TOOLCHAIN" "$TOOLCHAIN/usr/bin/swiftc" \
   -sdk "$SDK" \
   -O \
   -module-name "$EXECUTABLE_NAME" \
-  -I "$SHARED_BIN/Modules" \
-  -L "$WORK" \
-  -lMarkdownEditorKit \
+  -I "$SHARED_BIN" \
+  -L "$SHARED_BIN" \
+  -lMarkdownEditorCore \
+  -lMarkdownEditorUI \
   -o "$APP_DIR/$EXECUTABLE_NAME" \
   "$ROOT/Sources/MarkdownEditorIOS"/*.swift
 
