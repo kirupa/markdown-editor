@@ -1,4 +1,5 @@
 import { suite, test, expect, expectEqual } from './harness.js';
+import { renderMarkdown } from "../app/core/render-model.js";
 import {
   InlineStyle,
   ListStyle,
@@ -432,5 +433,71 @@ suite('Resizing an image', () => {
     expectEqual(out.text, '<img src="my%20file.png" alt="P" width="10" height="10">');
     const back = setImageSize(out.text, imageRange(out.text), { width: null, height: null });
     expectEqual(back.text, text, 'and returns to exactly the original Markdown');
+  });
+});
+
+suite('Breaking a line inside emphasis', () => {
+  // Mirrors the Swift suite of the same name. Emphasis is matched within a
+  // line, so a break in the middle of a bold word left `**` unpaired on both
+  // sides and the reader saw the asterisks in a rendered view.
+  const sourceAfterBreak = (markdown, renderedCaret) => {
+    const model = renderMarkdown(markdown);
+    const caret = model.sourceRange({ location: renderedCaret, length: 0 }).location;
+    return insertNewline(markdown, { location: caret, length: 0 }).text;
+  };
+  const shown = (markdown, renderedCaret) =>
+    renderMarkdown(sourceAfterBreak(markdown, renderedCaret)).text;
+
+  test('breaking a bold word keeps both halves bold and the markers hidden', () => {
+    expectEqual(sourceAfterBreak('a **bold** word', 4), 'a **bo**\n**ld** word');
+    expectEqual(shown('a **bold** word', 4), 'a bo\nld word');
+  });
+
+  test('every position inside the word is safe, not just the middle', () => {
+    for (let caret = 2; caret <= 6; caret += 1) {
+      const rendered = shown('a **bold** word', caret);
+      expect(!rendered.includes('*'), `breaking at ${caret} showed markers: ${rendered}`);
+    }
+  });
+
+  test("the document's own markers are the ones reopened", () => {
+    // `_italic_` and `*italic*` are the same style; reopening one with the
+    // other crosses the pair and puts both on screen.
+    expectEqual(sourceAfterBreak('a _italic_ word', 4), 'a _it_\n_alic_ word');
+    expect(!shown('a _italic_ word', 4).includes('_'));
+  });
+
+  test('nested emphasis closes innermost first and reopens outermost first', () => {
+    expectEqual(sourceAfterBreak('a ***both*** word', 4), 'a ***bo***\n***th*** word');
+    expectEqual(shown('a ***both*** word', 4), 'a bo\nth word');
+  });
+
+  test('code and strikethrough are mended too', () => {
+    expectEqual(shown('a `code` word', 4), 'a co\nde word');
+    expectEqual(shown('a ~~gone~~ word', 4), 'a go\nne word');
+  });
+
+  test('a break at the edge of a run goes outside its markers', () => {
+    // The caret drawn before a bold word sits inside the `**`, because that is
+    // the only source offset the rendered position maps to.
+    expectEqual(sourceAfterBreak('a **bold** word', 2), 'a \n**bold** word');
+    expectEqual(sourceAfterBreak('a **bold** word', 6), 'a **bold**\n word');
+  });
+
+  test('a break at a space inside emphasis takes the space with it', () => {
+    // Emphasis will not close after a space, so the space goes into the line
+    // ending instead. A single trailing space is invisible in Markdown.
+    expectEqual(sourceAfterBreak('**bold and italic**', 4), '**bold**\n**and italic**');
+    expectEqual(shown('**bold and italic**', 4), 'bold\nand italic');
+  });
+
+  test('ordinary text keeps its spaces', () => {
+    expectEqual(sourceAfterBreak('just plain words', 4), 'just\n plain words');
+    expectEqual(sourceAfterBreak('just plain words', 6), 'just p\nlain words');
+  });
+
+  test("a quote's marker and its emphasis are both carried over", () => {
+    expectEqual(sourceAfterBreak('> a **bold** word', 4), '> a **bo**\n> **ld** word');
+    expectEqual(shown('> a **bold** word', 4), 'a bo\nld word');
   });
 });

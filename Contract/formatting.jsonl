@@ -1381,7 +1381,7 @@
 {"argument":"task","command":"toggleList","document":"emphasis","replace":[43,0],"selection":[84,0],"selectionAfter":[90,0],"with":"- [ ] "}
 {"command":"toggleQuote","document":"emphasis","replace":[43,0],"selection":[84,0],"selectionAfter":[86,0],"with":"> "}
 {"command":"wrapCodeBlock","document":"emphasis","replace":[84,0],"selection":[84,0],"selectionAfter":[89,0],"with":"\n```\n\n```\n"}
-{"command":"insertNewline","document":"emphasis","replace":[84,0],"selection":[84,0],"selectionAfter":[85,0],"with":"\n"}
+{"command":"insertNewline","document":"emphasis","replace":[84,0],"selection":[84,0],"selectionAfter":[87,0],"with":"_\n_"}
 {"argument":"https://example.com","command":"insertLink","document":"emphasis","replace":[84,0],"selection":[84,0],"selectionAfter":[85,9],"with":"[link text](https://example.com)"}
 {"command":"insertHorizontalRule","document":"emphasis","replace":[84,0],"selection":[84,0],"selectionAfter":[90,0],"with":"\n***\n\n"}
 {"command":"moveImage","document":"emphasis","replace":[169,0],"selection":[84,0],"selectionAfter":[0,0],"with":""}
@@ -1885,7 +1885,7 @@
 {"argument":"task","command":"toggleList","document":"code","replace":[0,0],"selection":[31,0],"selectionAfter":[37,0],"with":"- [ ] "}
 {"command":"toggleQuote","document":"code","replace":[0,0],"selection":[31,0],"selectionAfter":[33,0],"with":"> "}
 {"command":"wrapCodeBlock","document":"code","replace":[31,0],"selection":[31,0],"selectionAfter":[36,0],"with":"\n```\n\n```\n"}
-{"command":"insertNewline","document":"code","replace":[31,0],"selection":[31,0],"selectionAfter":[32,0],"with":"\n"}
+{"command":"insertNewline","document":"code","replace":[31,0],"selection":[31,0],"selectionAfter":[34,0],"with":"`\n`"}
 {"argument":"https://example.com","command":"insertLink","document":"code","replace":[31,0],"selection":[31,0],"selectionAfter":[32,9],"with":"[link text](https://example.com)"}
 {"command":"insertHorizontalRule","document":"code","replace":[31,0],"selection":[31,0],"selectionAfter":[37,0],"with":"\n***\n\n"}
 {"command":"moveImage","document":"code","replace":[93,0],"selection":[31,0],"selectionAfter":[0,0],"with":""}
@@ -1906,7 +1906,7 @@
 {"argument":"task","command":"toggleList","document":"code","replace":[0,0],"selection":[46,0],"selectionAfter":[52,0],"with":"- [ ] "}
 {"command":"toggleQuote","document":"code","replace":[0,0],"selection":[46,0],"selectionAfter":[48,0],"with":"> "}
 {"command":"wrapCodeBlock","document":"code","replace":[46,0],"selection":[46,0],"selectionAfter":[51,0],"with":"\n```\n\n```\n"}
-{"command":"insertNewline","document":"code","replace":[46,0],"selection":[46,0],"selectionAfter":[47,0],"with":"\n"}
+{"command":"insertNewline","document":"code","replace":[46,0],"selection":[46,0],"selectionAfter":[49,0],"with":"`\n`"}
 {"argument":"https://example.com","command":"insertLink","document":"code","replace":[46,0],"selection":[46,0],"selectionAfter":[47,9],"with":"[link text](https://example.com)"}
 {"command":"insertHorizontalRule","document":"code","replace":[46,0],"selection":[46,0],"selectionAfter":[52,0],"with":"\n***\n\n"}
 {"command":"moveImage","document":"code","replace":[93,0],"selection":[46,0],"selectionAfter":[0,0],"with":""}
@@ -7135,7 +7135,7 @@
 {"argument":"task","command":"toggleList","document":"astral","replace":[0,0],"selection":[48,0],"selectionAfter":[54,0],"with":"- [ ] "}
 {"command":"toggleQuote","document":"astral","replace":[0,0],"selection":[48,0],"selectionAfter":[50,0],"with":"> "}
 {"command":"wrapCodeBlock","document":"astral","replace":[48,0],"selection":[48,0],"selectionAfter":[53,0],"with":"\n```\n\n```\n"}
-{"command":"insertNewline","document":"astral","replace":[48,0],"selection":[48,0],"selectionAfter":[49,0],"with":"\n"}
+{"command":"insertNewline","document":"astral","replace":[49,0],"selection":[48,0],"selectionAfter":[50,0],"with":"\n"}
 {"argument":"https://example.com","command":"insertLink","document":"astral","replace":[48,0],"selection":[48,0],"selectionAfter":[49,9],"with":"[link text](https://example.com)"}
 {"command":"insertHorizontalRule","document":"astral","replace":[48,0],"selection":[48,0],"selectionAfter":[54,0],"with":"\n***\n\n"}
 {"command":"moveImage","document":"astral","replace":[97,0],"selection":[48,0],"selectionAfter":[0,0],"with":""}
