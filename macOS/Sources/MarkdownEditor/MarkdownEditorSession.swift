@@ -331,6 +331,11 @@ final class MarkdownEditorSession: ObservableObject {
     }
 
     /// The image span covering `location` in `editor`'s source.
+    ///
+    /// Scoped to the block the caret is in. This is read from a view body, so
+    /// it runs on every SwiftUI pass — rendering the document here meant the
+    /// toolbar asking "is the caret on a picture?" cost a full parse of the
+    /// file several times per keystroke.
     private func image(
         at location: Int,
         in editor: any MarkdownEditingSurface
@@ -341,7 +346,10 @@ final class MarkdownEditorSession: ObservableObject {
             to: text.length
         )
 
-        for span in MarkdownRenderer.render(editor.sourceText).spans {
+        for span in MarkdownFormatting.spansAroundBlock(
+            at: selection.location,
+            in: text
+        ) {
             guard case .image = span.style else { continue }
             let start = span.sourceRange.location
             let end = NSMaxRange(span.sourceRange)

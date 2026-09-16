@@ -131,14 +131,16 @@ struct MarkdownSourceTextEditor: UIViewRepresentable {
         }
 
         private func restyleCurrentParagraph(in textView: UITextView) {
-            let source = textView.text ?? ""
-            let selected = textView.selectedRange
             isApplyingProgrammatically = true
             defer { isApplyingProgrammatically = false }
-            MarkdownSourceStyler.apply(
-                source, to: textView, colorTheme: parent.theme
+            // Only the block the caret is in, and only its attributes — the
+            // characters are already right, and replacing them would throw
+            // away the layout of the whole document to restyle one line of it.
+            MarkdownSourceStyler.restyle(
+                blockContaining: textView.selectedRange,
+                in: textView,
+                colorTheme: parent.theme
             )
-            textView.selectedRange = selected
         }
     }
 }

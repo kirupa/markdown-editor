@@ -177,8 +177,18 @@ struct RichTextEditor: NSViewRepresentable {
         var colorTheme: EditorColorTheme
         var page: MarkdownPageMetrics
 
-        private var model = MarkdownRenderer.render("")
+        /// The document, kept up to date one block at a time. Nothing on the
+        /// typing path ever asks it for the whole document.
+        private let renderer = MarkdownIncrementalRenderer()
         private var renderedSource = ""
+        /// What the last edit actually changed, when the caller knew. Without
+        /// it a whole new document has to be compared against the old one to
+        /// find the difference, which is cheap but not free.
+        private var pendingSourceEdit: MarkdownTextReplacement?
+        /// How far the text storage has run ahead of the render model, which
+        /// happens only while an input method has marked text on screen. See
+        /// `spliceRange(for:drift:)`.
+        private var pendingStorageDrift: (range: NSRange, delta: Int)?
         private var renderedDocumentURL: URL?
         private var renderedColorTheme: EditorColorTheme?
         private var renderedPage: MarkdownPageMetrics?
@@ -225,6 +235,11 @@ struct RichTextEditor: NSViewRepresentable {
 
         @objc private func remoteImageDidLoad() {
             guard textView != nil, !isRendering else { return }
+            // Settle any marked text first. Re-styling underneath an IME would
+            // move the ground out from under the composition, and the commit
+            // maps its difference through the document as it was when the
+            // composition began.
+            commitPendingComposition()
             // Re-styling replaces the text storage, so the caret has to be put
             // back exactly where it was, and the view must not scroll: the
             // image may be far from what the writer is looking at.
@@ -240,14 +255,14 @@ struct RichTextEditor: NSViewRepresentable {
 
         /// Where a rendered range starts in the Markdown source.
         func sourceLocation(forRendered range: NSRange) -> Int {
-            model.sourceRange(for: range).location
+            renderer.sourceRange(for: range).location
         }
 
         var selectedSourceRange: NSRange {
             guard let textView else {
                 return NSRange(location: 0, length: 0)
             }
-            return model.sourceRange(for: textView.selectedRange())
+            return renderer.sourceRange(for: textView.selectedRange())
         }
 
         var hostingWindow: NSWindow? {
@@ -289,13 +304,15 @@ struct RichTextEditor: NSViewRepresentable {
             self.colorTheme = colorTheme
             self.page = page
             let contentChanged = renderedSource != text.wrappedValue
-                || renderedDocumentURL != documentURL
+            let documentChanged = renderedDocumentURL != documentURL
             let themeChanged = renderedColorTheme != colorTheme
             // The indents that hold prose to the column are baked into the
             // attributed text, so a change of column has to be re-styled and
             // not merely re-laid-out.
             let pageChanged = renderedPage != page
-            guard contentChanged || themeChanged || pageChanged else {
+            guard contentChanged || documentChanged || themeChanged
+                || pageChanged
+            else {
                 return
             }
 
@@ -303,17 +320,18 @@ struct RichTextEditor: NSViewRepresentable {
             let selection = session?.selectionForEditorUpdate(
                 fallback: fallbackSelection
             ) ?? fallbackSelection
-            // `render` holds the pane still by itself, so neither branch has
-            // to save and restore a position around it. The split branch only
-            // differs in being willing to follow the caret, because the two
-            // panes track each other's selection.
+            // A palette, a column width, or a different file changes how every
+            // character is drawn, so those are the occasions — and the only
+            // ones — that still re-style the whole document. A change of text
+            // is a change to the blocks the text changed in.
             render(
                 sourceSelection: selection,
                 // Never chases the caret on a content change. That
                 // followed the *other* pane's caret when two were tracking
                 // each other; with one pane the caret is already where the
                 // writer put it, and scrolling to it fights them.
-                scrollToSelection: false
+                scrollToSelection: false,
+                wholeDocument: documentChanged || themeChanged || pageChanged
             )
         }
 
@@ -329,7 +347,7 @@ struct RichTextEditor: NSViewRepresentable {
 
             let highlights = critique.highlights.compactMap {
                 id, sourceRange, severity -> RichMarkdownTextView.CritiqueHighlight? in
-                let rendered = model.renderedRange(for: sourceRange)
+                let rendered = renderer.renderedRange(for: sourceRange)
                 guard rendered.length > 0 else { return nil }
                 let selected = critique.selectedFindingID == id
                 return RichMarkdownTextView.CritiqueHighlight(
@@ -357,17 +375,25 @@ struct RichTextEditor: NSViewRepresentable {
             else {
                 return
             }
-            let rendered = model.renderedRange(for: sourceRange)
+            let rendered = renderer.renderedRange(for: sourceRange)
             guard rendered.length > 0 else { return }
             textView.scrollRangeToVisible(rendered)
         }
 
         func apply(_ result: MarkdownEditResult, actionName: String) {
+            apply(result, actionName: actionName, edit: nil)
+        }
+
+        private func apply(
+            _ result: MarkdownEditResult,
+            actionName: String,
+            edit: MarkdownTextReplacement?
+        ) {
             let previousState = MarkdownEditResult(
                 text: text.wrappedValue,
                 selection: selectedSourceRange
             )
-            set(result)
+            set(result, edit: edit)
             if let undoManager = textView?.undoManager {
                 session?.registerUndo(
                     previousState,
@@ -415,8 +441,8 @@ struct RichTextEditor: NSViewRepresentable {
                 return
             }
             let renderedSelection = clamped(
-                model.renderedRange(for: selection),
-                to: (textView.string as NSString).length
+                renderer.renderedRange(for: selection),
+                to: textView.textStorage?.length ?? 0
             )
             textView.setSelectedRange(renderedSelection)
             guard scrollToSelection else {
@@ -446,40 +472,101 @@ struct RichTextEditor: NSViewRepresentable {
             textView.window?.makeFirstResponder(textView)
         }
 
-        /// Re-styles the document in place.
+        /// Re-styles what an edit changed, and nothing else.
         ///
-        /// Replacing the text storage throws away all layout, so the pane has
-        /// to be held still across the replacement or the reader is thrown
-        /// somewhere else in the document. Three things keep it still:
-        /// nothing is published while the pane is in pieces, layout is forced
-        /// before anything asks how tall the document is, and the pane is put
-        /// back at the exact offset it was at rather than a fraction of a
-        /// height that has changed underneath it.
+        /// The whole document is only ever rebuilt for something that changes
+        /// how every character is drawn — a palette, a column width, a
+        /// different file. An edit re-styles the blocks it landed in and
+        /// splices them into the text storage, which leaves every glyph
+        /// outside them laid out and every measurement TextKit has already
+        /// made intact. That is what keeps the pane still as well as quick:
+        /// nothing is thrown away, so there is nothing to put back.
+        ///
+        /// The whole-document path still has to hold the pane still across the
+        /// replacement, which is what the three steps below are for: nothing
+        /// is published while the pane is in pieces, layout is forced before
+        /// anything asks how tall the document is, and the pane is put back at
+        /// the exact offset it was at rather than at a fraction of a height
+        /// that has changed underneath it.
         func render(
             sourceSelection: NSRange,
-            scrollToSelection: Bool = true
+            scrollToSelection: Bool = true,
+            wholeDocument: Bool = true
         ) {
-            guard let textView else {
+            guard let textView, let textStorage = textView.textStorage else {
                 return
             }
 
             isRendering = true
             let restoredOffset = scrollSynchronizer.documentOffset
+            // A splice lands at an offset in the text storage, so the storage
+            // and the model have to be describing the same text for it to land
+            // in the right place. The one thing that puts them out of step is
+            // an input method writing marked text into the view without asking
+            // — `drift` says how much of that is outstanding. Checking is a
+            // comparison of two integers, and being wrong about it would write
+            // a block into the middle of a sentence, so anything unexpected
+            // falls back to rebuilding the document.
+            let drift = pendingStorageDrift
+            pendingStorageDrift = nil
+            let isSpliceable = !wholeDocument
+                && textStorage.length
+                    == renderer.renderedLength + (drift?.delta ?? 0)
             scrollSynchronizer.withoutPublishingScroll {
-                model = MarkdownRenderer.render(text.wrappedValue)
-                let attributedText = RichMarkdownStyler.attributedString(
-                    for: model,
-                    documentURL: documentURL,
-                    colorTheme: colorTheme,
-                    page: page
-                )
-                textView.textStorage?.setAttributedString(attributedText)
-                // Measure enough of the new document to put the reader back
-                // where they were. Without this the pane reports only the
-                // height it has measured so far and the restore is clamped
-                // towards the top.
-                scrollSynchronizer.prepareLayout(toRestore: restoredOffset)
-                scrollSynchronizer.setDocumentOffset(restoredOffset)
+                if !isSpliceable {
+                    renderer.reset(source: text.wrappedValue)
+                    let update = MarkdownRenderUpdate(
+                        renderedRange: NSRange(location: 0, length: 0),
+                        fragment: renderer.renderedText(),
+                        spans: renderer.allSpans(),
+                        reparsedBlockCount: renderer.blockCount
+                    )
+                    textStorage.setAttributedString(styled(update))
+                    // Measure enough of the new document to put the reader
+                    // back where they were. Without this the pane reports only
+                    // the height it has measured so far and the restore is
+                    // clamped towards the top.
+                    scrollSynchronizer.prepareLayout(toRestore: restoredOffset)
+                    scrollSynchronizer.setDocumentOffset(restoredOffset)
+                } else {
+                    let edit = pendingSourceEdit
+                    let update = edit.map {
+                        renderer.replace(
+                            sourceRange: $0.range,
+                            with: $0.replacement
+                        )
+                    } ?? renderer.update(source: text.wrappedValue)
+                    if let target = spliceRange(
+                        for: update.renderedRange,
+                        drift: drift
+                    ) {
+                        textStorage.beginEditing()
+                        textStorage.replaceCharacters(
+                            in: target,
+                            with: styled(update)
+                        )
+                        textStorage.endEditing()
+                    } else {
+                        textStorage.setAttributedString(
+                            styled(
+                                MarkdownRenderUpdate(
+                                    renderedRange: NSRange(
+                                        location: 0,
+                                        length: 0
+                                    ),
+                                    fragment: renderer.renderedText(),
+                                    spans: renderer.allSpans(),
+                                    reparsedBlockCount: renderer.blockCount
+                                )
+                            )
+                        )
+                        scrollSynchronizer.prepareLayout(
+                            toRestore: restoredOffset
+                        )
+                        scrollSynchronizer.setDocumentOffset(restoredOffset)
+                    }
+                }
+                pendingSourceEdit = nil
 
                 renderedSource = text.wrappedValue
                 renderedDocumentURL = documentURL
@@ -492,9 +579,9 @@ struct RichTextEditor: NSViewRepresentable {
                 )
             }
             isRendering = false
-            // Replacing the storage discards the layout the handles and the
-            // image cursor rects were measured from, so both are stale until
-            // they are measured against the new one.
+            // The handles and the image cursor rects are measured from the
+            // layout, and a splice invalidates the layout around it, so both
+            // are stale until they are measured again.
             (textView as? RichMarkdownTextView)?.updateImageHandles()
             // Temporary attributes live on the layout manager, and replacing
             // the storage takes them with it. Without this every critique
@@ -507,6 +594,44 @@ struct RichTextEditor: NSViewRepresentable {
             if hasFocus {
                 session?.noteSelection(selectedSourceRange)
             }
+        }
+
+        /// Where a re-rendered block goes in the text storage.
+        ///
+        /// The renderer answers in the coordinates of the document it knows
+        /// about, which is the one before any marked text was typed into the
+        /// view. A block that encloses that marked text is that much longer on
+        /// screen than the renderer thinks, and this is where that is added
+        /// back. A block that does not enclose it has not moved at all, since
+        /// the composition is always inside the block being replaced.
+        /// Returns nil when the two cannot be reconciled, which means the
+        /// document has to be rebuilt rather than spliced.
+        private func spliceRange(
+            for renderedRange: NSRange,
+            drift: (range: NSRange, delta: Int)?
+        ) -> NSRange? {
+            guard let drift, drift.delta != 0 else {
+                return renderedRange
+            }
+            guard renderedRange.location <= drift.range.location,
+                NSMaxRange(renderedRange) >= NSMaxRange(drift.range)
+            else {
+                return nil
+            }
+            return NSRange(
+                location: renderedRange.location,
+                length: renderedRange.length + drift.delta
+            )
+        }
+
+        private func styled(_ update: MarkdownRenderUpdate) -> NSAttributedString {
+            RichMarkdownStyler.attributedString(
+                forFragment: update.fragment,
+                spans: update.spans,
+                documentURL: documentURL,
+                colorTheme: colorTheme,
+                page: page
+            )
         }
 
         func textDidBeginEditing(_ notification: Notification) {
@@ -546,15 +671,15 @@ struct RichTextEditor: NSViewRepresentable {
                 return false
             }
 
-            let sourceRange = model.sourceRange(
+            let sourceRange = renderer.sourceRange(
                 for: clamped(
                     affectedCharRange,
-                    to: (textView.string as NSString).length
+                    to: textView.textStorage?.length ?? 0
                 )
             )
             let replacement = replacementString
             if replacement == "\n" {
-                if isInsideCodeBlock(sourceRange.location) {
+                if renderer.isInsideCodeBlock(sourceOffset: sourceRange.location) {
                     replaceSource(
                         range: sourceRange,
                         with: replacement,
@@ -594,10 +719,9 @@ struct RichTextEditor: NSViewRepresentable {
             )
             compositionState = CompositionState(
                 sourceText: text.wrappedValue,
-                sourceSelection: model.sourceRange(for: safeRenderedRange),
+                sourceSelection: renderer.sourceRange(for: safeRenderedRange),
                 renderedText: textView.string,
-                renderedRange: safeRenderedRange,
-                model: model
+                renderedRange: safeRenderedRange
             )
         }
 
@@ -633,25 +757,38 @@ struct RichTextEditor: NSViewRepresentable {
                 )
                 return
             }
-            let sourceRange = compositionState.model.sourceRange(
-                for: difference.range
-            )
-            let mutableSource = NSMutableString(
-                string: compositionState.sourceText
-            )
-            mutableSource.replaceCharacters(
-                in: clamped(sourceRange, to: mutableSource.length),
-                with: difference.replacement
+            // The renderer still holds the document as it was when the
+            // composition began: nothing re-renders while marked text is on
+            // screen, and everything that would — a theme change, a picture
+            // arriving — commits the composition first.
+            let composedSource = compositionState.sourceText as NSString
+            let sourceRange = clamped(
+                renderer.sourceRange(for: difference.range),
+                to: composedSource.length
             )
             let result = MarkdownEditResult(
-                text: mutableSource as String,
+                text: composedSource.replacingCharacters(
+                    in: sourceRange,
+                    with: difference.replacement
+                ),
                 selection: NSRange(
                     location: sourceRange.location
                         + (difference.replacement as NSString).length,
                     length: 0
                 )
             )
-            set(result)
+            pendingStorageDrift = (
+                range: difference.range,
+                delta: (difference.replacement as NSString).length
+                    - difference.range.length
+            )
+            set(
+                result,
+                edit: MarkdownTextReplacement(
+                    range: sourceRange,
+                    replacement: difference.replacement
+                )
+            )
             if let undoManager = textView.undoManager {
                 session?.registerUndo(
                     MarkdownEditResult(
@@ -667,7 +804,7 @@ struct RichTextEditor: NSViewRepresentable {
         func markdown(forRenderedRange range: NSRange) -> String {
             let source = text.wrappedValue as NSString
             let sourceRange = clamped(
-                model.sourceRange(for: range, includingMarkup: true),
+                renderer.sourceRange(for: range, includingMarkup: true),
                 to: source.length
             )
             return source.substring(with: sourceRange)
@@ -684,14 +821,25 @@ struct RichTextEditor: NSViewRepresentable {
             )
         }
 
-        private func set(_ state: MarkdownEditResult) {
+        /// Applies a new version of the document.
+        ///
+        /// `edit` is what the caller changed, when the caller knew — typing
+        /// always does. Without it the renderer has to find the difference by
+        /// comparing the two documents, which is right but costs a pass over
+        /// both; a keystroke should never pay that.
+        private func set(
+            _ state: MarkdownEditResult,
+            edit: MarkdownTextReplacement? = nil
+        ) {
+            pendingSourceEdit = edit
             text.wrappedValue = state.text
             // The caret has been moved on purpose here, so following it is
-            // wanted. `render` holds the pane still and only chases the caret
-            // when the edit has taken it off screen.
+            // wanted. `render` only chases the caret when the edit has taken
+            // it off screen.
             render(
                 sourceSelection: state.selection,
-                scrollToSelection: true
+                scrollToSelection: true,
+                wholeDocument: false
             )
         }
 
@@ -704,33 +852,27 @@ struct RichTextEditor: NSViewRepresentable {
                 NSSound.beep()
                 return
             }
-            let mutableSource = NSMutableString(string: text.wrappedValue)
-            let safeRange = clamped(range, to: mutableSource.length)
-            mutableSource.replaceCharacters(
-                in: safeRange,
-                with: replacement
+            let source = text.wrappedValue as NSString
+            let safeRange = clamped(range, to: source.length)
+            let edit = MarkdownTextReplacement(
+                range: safeRange,
+                replacement: replacement
             )
             apply(
                 MarkdownEditResult(
-                    text: mutableSource as String,
+                    text: source.replacingCharacters(
+                        in: safeRange,
+                        with: replacement
+                    ),
                     selection: NSRange(
                         location: safeRange.location
                             + (replacement as NSString).length,
                         length: 0
                     )
                 ),
-                actionName: actionName
+                actionName: actionName,
+                edit: edit
             )
-        }
-
-        private func isInsideCodeBlock(_ sourceOffset: Int) -> Bool {
-            model.spans.contains { span in
-                guard case .codeBlock = span.style else {
-                    return false
-                }
-                return sourceOffset >= span.sourceRange.location
-                    && sourceOffset <= NSMaxRange(span.sourceRange)
-            }
         }
 
         private func clamped(_ range: NSRange, to length: Int) -> NSRange {
@@ -747,7 +889,6 @@ struct RichTextEditor: NSViewRepresentable {
         let sourceSelection: NSRange
         let renderedText: String
         let renderedRange: NSRange
-        let model: MarkdownRenderModel
     }
 }
 

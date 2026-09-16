@@ -16,6 +16,34 @@ public enum RichMarkdownStyler {
         colorTheme: EditorColorTheme,
         page: MarkdownPageMetrics? = nil
     ) -> NSAttributedString {
+        attributedString(
+            forFragment: model.text,
+            spans: model.spans,
+            documentURL: documentURL,
+            colorTheme: colorTheme,
+            page: page
+        )
+    }
+
+    /// Styles part of a document as if the rest of it were not there.
+    ///
+    /// This is what lets a keystroke cost one block instead of one document.
+    /// It is only sound because every rule below is confined to a span's own
+    /// range or to the paragraph that range sits in, and the fragments handed
+    /// to it always begin and end on a block boundary — which is a paragraph
+    /// boundary in the rendered text. So a fragment styled alone comes out
+    /// identical, attribute for attribute, to the same stretch of a document
+    /// styled whole. `RichMarkdownStylerFragmentTests` checks that over the
+    /// contract corpus rather than leaving it as an argument.
+    ///
+    /// `spans` are in the fragment's own coordinates.
+    public static func attributedString(
+        forFragment fragment: String,
+        spans: [MarkdownRenderSpan],
+        documentURL: URL?,
+        colorTheme: EditorColorTheme,
+        page: MarkdownPageMetrics? = nil
+    ) -> NSAttributedString {
         // The page is wider than the column prose is set in, and every
         // paragraph is indented by the difference so it wraps at the column.
         // A picture is the one thing allowed to give that indent up — see
@@ -28,11 +56,11 @@ public enum RichMarkdownStyler {
         let bleed = page?.bleed ?? 0
 
         let attributedText = NSMutableAttributedString(
-            string: model.text,
+            string: fragment,
             attributes: baseAttributes(colorTheme: colorTheme, bleed: bleed)
         )
 
-        for span in model.spans
+        for span in spans
         where span.style.isBlockStyle
             && (!span.isAtomic || span.style.usesAtomicBlockStyling)
         {
@@ -43,7 +71,7 @@ public enum RichMarkdownStyler {
                 bleed: bleed
             )
         }
-        for span in model.spans
+        for span in spans
         where !span.style.isBlockStyle
             || (span.isAtomic && !span.style.usesAtomicBlockStyling)
         {
@@ -101,10 +129,29 @@ public enum RichMarkdownStyler {
         colorTheme: EditorColorTheme,
         page: MarkdownPageMetrics? = nil
     ) -> [NSAttributedString.Key: Any]? {
-        guard location >= (model.text as NSString).length else {
+        typingAttributes(
+            spans: model.spans,
+            renderedLength: (model.text as NSString).length,
+            at: location,
+            colorTheme: colorTheme,
+            page: page
+        )
+    }
+
+    /// The same question, asked of the spans around the caret rather than of
+    /// every span in the document. Only the last line of the document can
+    /// answer it, so the caller only has to supply the spans there.
+    public static func typingAttributes(
+        spans: [MarkdownRenderSpan],
+        renderedLength: Int,
+        at location: Int,
+        colorTheme: EditorColorTheme,
+        page: MarkdownPageMetrics? = nil
+    ) -> [NSAttributedString.Key: Any]? {
+        guard location >= renderedLength else {
             return nil
         }
-        guard let span = model.spans.first(where: {
+        guard let span = spans.first(where: {
             $0.style.isBlockStyle
                 && $0.renderedRange.length == 0
                 && $0.renderedRange.location == location

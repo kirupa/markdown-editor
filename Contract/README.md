@@ -440,13 +440,27 @@ using whatever that platform's convention is.
 
 ### Keeping the reader's place while re-styling
 
-Every build re-styles by replacing the whole text of a pane, and every build
-has lost the reader's scroll position doing it. This is the one rule here that
-was written from a bug rather than from a design, so it is worth reading before
-a port repeats it.
+Replacing the whole text of a pane loses the reader's scroll position, and
+every build has lost it that way at least once. Until rendering became
+incremental this was the price of every keystroke everywhere: macOS, iOS and
+the web build all re-styled by throwing the pane's contents away and building
+them again, per character. None of them does that for typing any more. Each
+re-renders only the blocks an edit disturbs — one on the Swift builds, and in
+the browser the dirty blocks plus one either side, since a neighbour can
+change where a block ends — and the count stays the same however long the
+document is. But all three still replace a pane wholesale for the things that
+genuinely change every character on screen: a palette or theme change, a
+change of column width, opening a different document, or a revision arriving
+from elsewhere.
+
+So this section is not history. It governs those paths in every build today,
+and it governs the *first* version of any new one, which will re-style the
+whole pane on every keystroke because that is the obvious thing to write. These
+rules were written from bugs rather than from a design, which is why they are
+worth reading before a port rediscovers them.
 
 The failure looks like the document jumping far down the page and snapping back
-on a keystroke. Four rules prevent it, and each corresponds to a defect that
+on a keystroke. Six rules prevent it, and each corresponds to a defect that
 actually shipped:
 
 1. **Restore an absolute offset, not a fraction of the travel.** A fraction is
@@ -472,18 +486,19 @@ actually shipped:
    straddling the edge of the viewport counts as off screen — testing for
    intersection rather than containment leaves it permanently half-hidden.
 
-5. **Publish a selection change only when the writer caused it.** Both panes
-   replace their whole text storage to re-style, on every keystroke, and the
-   toolkit moves the selection part-way through that before the intended one is
-   put back. AppKit announces that intermediate value through the same delegate
-   callback it uses for a real caret move, and it is not near the caret: 19,681
-   characters away in the case that was measured. Publishing it made the other
-   pane reveal a caret the writer had not moved, so a split editor lurched down
-   the document and back on every character typed. Suppress selection
-   notifications while re-styling and publish the settled selection afterwards.
-   UIKit does the same thing on `attributedText` assignment — the iOS build
-   guards it — so a port should assume its toolkit does too until it has
-   checked.
+5. **Publish a selection change only when the writer caused it.** Replacing a
+   pane's whole text storage makes the toolkit move the selection part-way
+   through, before the intended one is put back. AppKit announces that
+   intermediate value through the same delegate callback it uses for a real
+   caret move, and it is not near the caret: 19,681 characters away in the case
+   that was measured. Publishing it made the other pane reveal a caret the
+   writer had not moved, so a split editor lurched down the document and back
+   on every character typed — which is what this cost when a keystroke still
+   replaced the storage. Typing no longer does, but opening a document and
+   changing the palette still do, so suppress selection notifications while
+   re-styling and publish the settled selection afterwards. UIKit does the same
+   thing on `attributedText` assignment — the iOS build guards it — so a port
+   should assume its toolkit does too until it has checked.
 
 6. **Catch a pane up when it joins the split, not on every update.** Aligning
    one pane to the other applies a normalized *fraction*, and the two panes

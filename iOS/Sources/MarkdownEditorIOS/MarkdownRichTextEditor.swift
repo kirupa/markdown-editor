@@ -56,7 +56,9 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
         var parent: MarkdownRichTextEditor
         weak var textView: UITextView?
 
-        private var model = MarkdownRenderer.render("")
+        /// The document, kept up to date one block at a time. Nothing on the
+        /// typing path ever asks it for the whole document.
+        private let renderer = MarkdownIncrementalRenderer()
         private var appliedRevision = -1
         private var appliedTheme: EditorColorTheme?
         private var appliedText: String?
@@ -246,7 +248,10 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
                 var rect = layout.boundingRect(forGlyphRange: glyphs, in: container)
                 rect = rect.offsetBy(dx: origin.x, dy: origin.y)
                 guard rect.contains(point) else { continue }
-                let source = model.sourceRange(for: range, includingMarkup: true)
+                let source = renderer.sourceRange(
+                    for: range,
+                    includingMarkup: true
+                )
                 return (source, rect, attachment.image)
             }
             return nil
@@ -284,7 +289,7 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
                 .offsetBy(dx: origin.x, dy: origin.y)
             let below = point.y > rect.midY
             let rendered = below ? NSMaxRange(paragraph) : paragraph.location
-            let source = model.sourceRange(
+            let source = renderer.sourceRange(
                 for: NSRange(location: rendered, length: 0)
             ).location
             return (source, below ? rect.maxY : rect.minY)
@@ -292,7 +297,7 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
 
         private func naturalSize(forImageAt range: NSRange) -> MarkdownImageTag.Size? {
             guard let textView else { return nil }
-            let rendered = model.renderedRange(for: range)
+            let rendered = renderer.renderedRange(for: range)
             guard rendered.length == 1, rendered.location < textView.textStorage.length else {
                 return nil
             }
@@ -350,13 +355,13 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
             render(applied, theme: theme, documentURL: parent.documentURL)
         }
 
-        /// Re-styles the document in place.
+        /// Re-styles the whole document.
         ///
-        /// Assigning `attributedText` throws away the text view's layout and
-        /// takes the reader back to the top with it, so the offset has to be
-        /// carried across the assignment by hand. Enough of the document is
-        /// laid out first for the offset to survive being clamped against a
-        /// content size that has not caught up yet.
+        /// Kept for the occasions that really do change every character — a
+        /// palette, a rotation, a different file. Assigning `attributedText`
+        /// throws away the text view's layout and takes the reader back to the
+        /// top with it, so the offset has to be carried across the assignment
+        /// by hand. An edit does not come through here; see `apply`.
         func render(
             _ source: String,
             theme: EditorColorTheme,
@@ -367,10 +372,11 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
             defer { isApplyingProgrammatically = false }
 
             let restoredOffset = textView.contentOffset
-            model = MarkdownRenderer.render(source)
+            renderer.reset(source: source)
             let selected = textView.selectedRange
             textView.attributedText = RichMarkdownStyler.attributedString(
-                for: model,
+                forFragment: renderer.renderedText(),
+                spans: renderer.allSpans(),
                 documentURL: documentURL,
                 colorTheme: theme,
                 page: Self.page(for: textView)
@@ -387,6 +393,54 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
             restoreOffset(restoredOffset, in: textView)
             appliedText = source
             appliedTheme = theme
+            appliedPage = Self.page(for: textView)
+        }
+
+        /// Re-styles what an edit changed, and nothing else.
+        ///
+        /// The replacement is spliced into the text storage, so every glyph
+        /// outside the edited block keeps the layout UIKit has already done
+        /// for it — which is what makes a keystroke cost the same in a long
+        /// document as in a short one, and what stops the view scrolling away
+        /// from the caret when the storage is rebuilt underneath it.
+        private func apply(
+            edit: MarkdownTextReplacement,
+            producing source: String,
+            theme: EditorColorTheme,
+            documentURL: URL?
+        ) {
+            guard let textView else { return }
+            // A splice lands at an offset in the text storage, so the storage
+            // and the model have to be describing the same text for it to land
+            // in the right place. Being wrong about that would write a block
+            // into the middle of a sentence, so anything unexpected — marked
+            // text UIKit put on screen without asking, say — falls back to
+            // rebuilding the document rather than guessing.
+            guard textView.textStorage.length == renderer.renderedLength else {
+                render(source, theme: theme, documentURL: documentURL)
+                return
+            }
+            isApplyingProgrammatically = true
+            defer { isApplyingProgrammatically = false }
+
+            let update = renderer.replace(
+                sourceRange: edit.range,
+                with: edit.replacement
+            )
+            let storage = textView.textStorage
+            storage.beginEditing()
+            storage.replaceCharacters(
+                in: update.renderedRange,
+                with: RichMarkdownStyler.attributedString(
+                    forFragment: update.fragment,
+                    spans: update.spans,
+                    documentURL: documentURL,
+                    colorTheme: theme,
+                    page: Self.page(for: textView)
+                )
+            )
+            storage.endEditing()
+            appliedText = source
             appliedPage = Self.page(for: textView)
         }
 
@@ -440,7 +494,7 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
         ) -> Bool {
             guard !isApplyingProgrammatically else { return true }
 
-            let sourceRange = model.sourceRange(for: range)
+            let sourceRange = renderer.sourceRange(for: range)
             let source = parent.text as NSString
             let clamped = NSRange(
                 location: min(sourceRange.location, source.length),
@@ -459,11 +513,16 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
 
             parent.text = updated
             parent.controller.recordEdit(from: .rich)
-            render(
-                updated,
+            apply(
+                edit: MarkdownTextReplacement(
+                    range: clamped,
+                    replacement: replacement
+                ),
+                producing: updated,
                 theme: parent.theme,
                 documentURL: parent.documentURL
             )
+            appliedText = updated
             appliedRevision = parent.controller.externalRevision
 
             let length = (textView.text ?? "").utf16.count
@@ -472,7 +531,7 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
             )
             textView.selectedRange = caret
             applyTypingAttributes(textView, at: caret)
-            parent.controller.selection = model.sourceRange(for: caret)
+            parent.controller.selection = renderer.sourceRange(for: caret)
             return false
         }
 
@@ -490,7 +549,13 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
         ) {
             guard caret.length == 0,
                 let attributes = RichMarkdownStyler.typingAttributes(
-                    for: model,
+                    spans: renderer.spans(
+                        inRenderedRange: NSRange(
+                            location: caret.location,
+                            length: 0
+                        )
+                    ),
+                    renderedLength: renderer.renderedLength,
                     at: caret.location,
                     colorTheme: parent.theme
                 )
@@ -502,7 +567,7 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
 
         func textViewDidChangeSelection(_ textView: UITextView) {
             guard !isApplyingProgrammatically else { return }
-            parent.controller.selection = model.sourceRange(
+            parent.controller.selection = renderer.sourceRange(
                 for: textView.selectedRange
             )
         }

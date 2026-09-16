@@ -754,4 +754,55 @@ struct EmphasisMending {
         let broken = source("a [label](http://x.test) word", renderedCaret: 3)
         #expect(!broken.contains("http://x.test\n") || !broken.contains("](http://x.test)("))
     }
+
+    /// Pressing Return inside a fenced block must not run the list rules over
+    /// the code in it.
+    ///
+    /// The mending helpers read the spans of the block the caret is in rather
+    /// than of the whole document, which is only equivalent if the block is
+    /// found the same way the parser finds it. A fence indented with a
+    /// no-break space is the case where that came apart: the scanner saw
+    /// prose, so it offered the emphasis spans of a line that is really code,
+    /// and Return wrote asterisks into the code block.
+    @Test("Block-scoped spans agree with the whole document")
+    func blockScopedSpansMatchTheDocument() {
+        let documents = [
+            "```\nA **bold** line\n```\nafter\n",
+            "\u{00A0}```\nA **bold** line\n```\nafter\n",
+            "  ~~~\n1. one\n~~~\n",
+            "A **bold** line\n\n> a *quoted* line\n",
+            "```\n- item"
+        ]
+        for text in documents {
+            let source = text as NSString
+            let whole = MarkdownRenderer.render(text).spans
+            for offset in 0...source.length {
+                let scoped = MarkdownFormatting.spansAroundBlock(
+                    at: offset,
+                    in: source
+                )
+                // Half-open, because the offset one past a span's end
+                // belongs to whatever comes next — including, at the end of a
+                // line, the next block. That is what the callers here mean by
+                // "the span the caret is in".
+                let containing = whole.filter { span in
+                    offset >= span.sourceRange.location
+                        && offset < NSMaxRange(span.sourceRange)
+                }
+                for span in containing {
+                    #expect(
+                        scoped.contains {
+                            $0.style == span.style
+                                && $0.sourceRange == span.sourceRange
+                        },
+                        """
+                        \(text.debugDescription) at \(offset): the document \
+                        has \(span.style) over \(span.sourceRange) and the \
+                        block does not
+                        """
+                    )
+                }
+            }
+        }
+    }
 }

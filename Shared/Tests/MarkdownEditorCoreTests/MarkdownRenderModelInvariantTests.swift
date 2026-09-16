@@ -243,4 +243,42 @@ struct MarkdownRenderModelInvariantTests {
         #expect(model.spans.isEmpty)
         #expect(model.sourceRange(for: NSRange(location: 0, length: 0)).length == 0)
     }
+
+    /// Both offset tables must only ever move forwards through the source.
+    ///
+    /// The model answers "where in the source is this?" with a binary search
+    /// over those tables, and a binary search is only correct if what it is
+    /// searching is ordered. It used to be a walk from the start of the
+    /// document, which cost more the further down the file the caret was but
+    /// did not care about order — so this property was free before and has to
+    /// be pinned now.
+    @Test("The source offset tables never move backwards")
+    func offsetTablesAreMonotonic() {
+        for document in ContractCorpus.documents {
+            let model = MarkdownRenderer.render(document.text)
+            let renderedLength = (model.text as NSString).length
+            var previousUpper = Int.min
+            var previousLower = Int.min
+            for offset in 0...renderedLength {
+                let upper = model.upperSourceOffset(at: offset)
+                let lower = model.lowerSourceOffset(at: offset)
+                #expect(
+                    upper >= previousUpper,
+                    """
+                    \(document.id): the start edge went from \(previousUpper) \
+                    back to \(upper) at rendered \(offset)
+                    """
+                )
+                #expect(
+                    lower >= previousLower,
+                    """
+                    \(document.id): the end edge went from \(previousLower) \
+                    back to \(lower) at rendered \(offset)
+                    """
+                )
+                previousUpper = upper
+                previousLower = lower
+            }
+        }
+    }
 }
