@@ -556,12 +556,51 @@ public enum MarkdownFormatting {
         return range
     }
 
+    /// The spans of the one block a range sits in, with their **source**
+    /// ranges in document coordinates.
+    ///
+    /// The rendered range is deliberately not filled in. Turning a block's
+    /// rendered offsets into the document's would mean rendering everything
+    /// above it, which is the cost this exists to avoid, and a range quietly
+    /// left in block coordinates is the kind of thing that is right until
+    /// somebody uses it. `NSNotFound` says so out loud.
+    ///
+    /// Pressing Return used to render the whole document three times over —
+    /// once here, once to find where the break belongs, and once to work out
+    /// which markers to mend — so a long file grew slower to write in the
+    /// further down it you were. Emphasis is matched within a line and a span
+    /// never crosses a block, so every one of those questions is answered by
+    /// the block the caret is in, and the answers are identical.
+    public static func spansAroundBlock(
+        at location: Int,
+        in source: NSString
+    ) -> [MarkdownRenderSpan] {
+        let block = MarkdownBlockScanner.blockRange(
+            containing: location,
+            in: source
+        )
+        guard block.length > 0 else { return [] }
+        return MarkdownRenderer.render(source.substring(with: block)).spans
+            .map { span in
+                MarkdownRenderSpan(
+                    style: span.style,
+                    renderedRange: NSRange(location: NSNotFound, length: 0),
+                    sourceRange: NSRange(
+                        location: span.sourceRange.location + block.location,
+                        length: span.sourceRange.length
+                    ),
+                    includesMarkup: span.includesMarkup,
+                    isAtomic: span.isAtomic
+                )
+            }
+    }
+
     /// Whether a run this break would have to mend actually contains it.
     private static func isInsideMendableRun(
         _ range: NSRange,
         in source: NSString
     ) -> Bool {
-        MarkdownRenderer.render(source as String).spans.contains { span in
+        spansAroundBlock(at: range.location, in: source).contains { span in
             guard let style = span.style.mendableInlineStyle else { return false }
             let markers = writtenMarkers(of: span, style: style, in: source)
             let contentStart = span.sourceRange.location
@@ -619,7 +658,7 @@ public enum MarkdownFormatting {
         at location: Int
     ) -> Int {
         var location = location
-        let spans = MarkdownRenderer.render(source as String).spans
+        let spans = spansAroundBlock(at: location, in: source)
         for _ in 0..<4 {
             var moved = false
             for span in spans {
@@ -677,7 +716,10 @@ public enum MarkdownFormatting {
         guard isFlanked(range, in: source) else {
             return ("", "")
         }
-        let straddling = MarkdownRenderer.render(text).spans.filter { span in
+        let straddling = spansAroundBlock(
+            at: range.location,
+            in: source
+        ).filter { span in
             guard let style = span.style.mendableInlineStyle else { return false }
             let markers = writtenMarkers(of: span, style: style, in: source)
             let contentStart = span.sourceRange.location

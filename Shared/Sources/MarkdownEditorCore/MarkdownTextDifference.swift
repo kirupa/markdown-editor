@@ -23,15 +23,20 @@ public enum MarkdownTextDifference {
         let suffixLength = oldSource.length - NSMaxRange(oldRange)
 
         if newSource.length >= prefixLength + suffixLength {
-            let oldPrefix = oldSource.substring(to: prefixLength)
-            let newPrefix = newSource.substring(to: prefixLength)
-            let oldSuffix = oldSource.substring(
-                from: oldSource.length - suffixLength
-            )
-            let newSuffix = newSource.substring(
-                from: newSource.length - suffixLength
-            )
-            if oldPrefix == newPrefix, oldSuffix == newSuffix {
+            let keptSuffixStart = oldSource.length - suffixLength
+            if matches(
+                oldSource,
+                newSource,
+                oldStart: 0,
+                newStart: 0,
+                length: prefixLength
+            ), matches(
+                oldSource,
+                newSource,
+                oldStart: keptSuffixStart,
+                newStart: newSource.length - suffixLength,
+                length: suffixLength
+            ) {
                 return MarkdownTextReplacement(
                     range: oldRange,
                     replacement: newSource.substring(
@@ -46,26 +51,28 @@ public enum MarkdownTextDifference {
             }
         }
 
-        var sharedPrefixLength = 0
-        let sharedLength = min(oldSource.length, newSource.length)
-        while sharedPrefixLength < sharedLength,
-            oldSource.character(at: sharedPrefixLength)
-                == newSource.character(at: sharedPrefixLength)
-        {
-            sharedPrefixLength += 1
-        }
+        return minimalReplacement(from: oldText, to: newText)
+    }
 
-        var sharedSuffixLength = 0
-        while sharedSuffixLength < oldSource.length - sharedPrefixLength,
-            sharedSuffixLength < newSource.length - sharedPrefixLength,
-            oldSource.character(
-                at: oldSource.length - sharedSuffixLength - 1
-            ) == newSource.character(
-                at: newSource.length - sharedSuffixLength - 1
-            )
-        {
-            sharedSuffixLength += 1
-        }
+    /// The smallest replacement that turns one document into the other.
+    ///
+    /// Used when nobody can say what changed — an undo, a formatting command,
+    /// a file rewritten by another app. Finding the difference is what lets
+    /// those re-render the part of the document that moved instead of all of
+    /// it, so it is worth doing properly rather than assuming the worst.
+    public static func minimalReplacement(
+        from oldText: String,
+        to newText: String
+    ) -> MarkdownTextReplacement {
+        let oldSource = oldText as NSString
+        let newSource = newText as NSString
+
+        let sharedPrefixLength = sharedPrefix(oldSource, newSource)
+        let sharedSuffixLength = sharedSuffix(
+            oldSource,
+            newSource,
+            after: sharedPrefixLength
+        )
 
         return MarkdownTextReplacement(
             range: NSRange(
@@ -85,12 +92,145 @@ public enum MarkdownTextDifference {
         )
     }
 
+    private static func sharedPrefix(
+        _ oldSource: NSString,
+        _ newSource: NSString
+    ) -> Int {
+        let limit = min(oldSource.length, newSource.length)
+        var shared = 0
+        withCharacterWindows(oldSource, newSource) { old, new, window in
+            while shared < limit {
+                let count = min(window, limit - shared)
+                oldSource.getCharacters(
+                    old,
+                    range: NSRange(location: shared, length: count)
+                )
+                newSource.getCharacters(
+                    new,
+                    range: NSRange(location: shared, length: count)
+                )
+                var index = 0
+                while index < count, old[index] == new[index] {
+                    index += 1
+                }
+                shared += index
+                if index < count { return }
+            }
+        }
+        return shared
+    }
+
+    private static func sharedSuffix(
+        _ oldSource: NSString,
+        _ newSource: NSString,
+        after prefix: Int
+    ) -> Int {
+        let limit = min(
+            oldSource.length - prefix,
+            newSource.length - prefix
+        )
+        var shared = 0
+        withCharacterWindows(oldSource, newSource) { old, new, window in
+            while shared < limit {
+                let count = min(window, limit - shared)
+                oldSource.getCharacters(
+                    old,
+                    range: NSRange(
+                        location: oldSource.length - shared - count,
+                        length: count
+                    )
+                )
+                newSource.getCharacters(
+                    new,
+                    range: NSRange(
+                        location: newSource.length - shared - count,
+                        length: count
+                    )
+                )
+                var index = 0
+                while index < count,
+                    old[count - 1 - index] == new[count - 1 - index]
+                {
+                    index += 1
+                }
+                shared += index
+                if index < count { return }
+            }
+        }
+        return shared
+    }
+
+    /// Two scratch windows, so a comparison reads the strings out in blocks
+    /// rather than one `character(at:)` message at a time.
+    private static func withCharacterWindows(
+        _ oldSource: NSString,
+        _ newSource: NSString,
+        _ body: (
+            UnsafeMutablePointer<unichar>,
+            UnsafeMutablePointer<unichar>,
+            Int
+        ) -> Void
+    ) {
+        let window = min(
+            4_096,
+            max(1, max(oldSource.length, newSource.length))
+        )
+        var old = [unichar](repeating: 0, count: window)
+        var new = [unichar](repeating: 0, count: window)
+        old.withUnsafeMutableBufferPointer { oldBuffer in
+            new.withUnsafeMutableBufferPointer { newBuffer in
+                body(
+                    oldBuffer.baseAddress!,
+                    newBuffer.baseAddress!,
+                    window
+                )
+            }
+        }
+    }
+
     private static func clamped(_ range: NSRange, to length: Int) -> NSRange {
         let location = min(max(0, range.location), length)
         return NSRange(
             location: location,
             length: min(max(0, range.length), length - location)
         )
+    }
+
+    /// Whether two stretches of two strings hold the same characters.
+    ///
+    /// Read out a window at a time rather than by cutting substrings. The
+    /// substrings were the head and the tail of the document, so confirming
+    /// that an edit was where the caller said it was allocated the document
+    /// twice over — on a five megabyte file, twenty megabytes thrown away for
+    /// a question answered with a comparison.
+    private static func matches(
+        _ oldSource: NSString,
+        _ newSource: NSString,
+        oldStart: Int,
+        newStart: Int,
+        length: Int
+    ) -> Bool {
+        guard length > 0 else { return true }
+        let window = 4_096
+        var oldBuffer = [unichar](repeating: 0, count: min(window, length))
+        var newBuffer = [unichar](repeating: 0, count: min(window, length))
+        var copied = 0
+        while copied < length {
+            let count = min(window, length - copied)
+            oldSource.getCharacters(
+                &oldBuffer,
+                range: NSRange(location: oldStart + copied, length: count)
+            )
+            newSource.getCharacters(
+                &newBuffer,
+                range: NSRange(location: newStart + copied, length: count)
+            )
+            for index in 0..<count where oldBuffer[index] != newBuffer[index] {
+                return false
+            }
+            copied += count
+        }
+        return true
     }
 
     /// Where a selection ends up after the text is replaced wholesale.

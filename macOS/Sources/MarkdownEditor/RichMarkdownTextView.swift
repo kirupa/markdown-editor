@@ -1484,10 +1484,19 @@ final class RichMarkdownTextView: NSTextView {
             return
         }
 
+        guard let searched = codeBlockSearchRange(
+            for: dirtyRect,
+            in: textStorage,
+            layoutManager: layoutManager,
+            textContainer: textContainer
+        ) else {
+            return
+        }
+
         let textContainerOrigin = self.textContainerOrigin
         textStorage.enumerateAttribute(
             .markdownCodeBlockBackground,
-            in: NSRange(location: 0, length: textStorage.length)
+            in: searched
         ) { value, characterRange, _ in
             guard let backgroundColor = value as? NSColor else {
                 return
@@ -1550,6 +1559,61 @@ final class RichMarkdownTextView: NSTextView {
                 yRadius: 5
             ).fill()
         }
+    }
+
+    /// The characters worth looking at to shade the code blocks in a rect.
+    ///
+    /// This used to be the whole document, and asking for a character range's
+    /// glyphs is what forces that part of the document to be laid out — so
+    /// drawing one screenful measured every line in the file, on every draw.
+    /// The rect is what has to be painted, so the search starts from the
+    /// characters in it.
+    ///
+    /// Grown outwards to whole runs of the attribute, because a code block
+    /// taller than the window starts above the rect and ends below it, and a
+    /// box measured from the clipped part would put a rounded corner across
+    /// the middle of it. Growing is bounded by the block, not by the document.
+    private func codeBlockSearchRange(
+        for dirtyRect: NSRect,
+        in textStorage: NSTextStorage,
+        layoutManager: NSLayoutManager,
+        textContainer: NSTextContainer
+    ) -> NSRange? {
+        let glyphs = layoutManager.glyphRange(
+            forBoundingRect: dirtyRect,
+            in: textContainer
+        )
+        var characters = layoutManager.characterRange(
+            forGlyphRange: glyphs,
+            actualGlyphRange: nil
+        )
+        characters = NSIntersectionRange(
+            characters,
+            NSRange(location: 0, length: textStorage.length)
+        )
+        guard characters.length > 0 else { return nil }
+
+        let whole = NSRange(location: 0, length: textStorage.length)
+        var start = characters.location
+        var end = NSMaxRange(characters)
+        var run = NSRange(location: 0, length: 0)
+        if textStorage.attribute(
+            .markdownCodeBlockBackground,
+            at: start,
+            longestEffectiveRange: &run,
+            in: whole
+        ) != nil {
+            start = run.location
+        }
+        if textStorage.attribute(
+            .markdownCodeBlockBackground,
+            at: end - 1,
+            longestEffectiveRange: &run,
+            in: whole
+        ) != nil {
+            end = NSMaxRange(run)
+        }
+        return NSRange(location: start, length: end - start)
     }
 }
 

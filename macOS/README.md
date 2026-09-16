@@ -383,7 +383,7 @@ the 30 runtime checks in `check-session.swift` that held it.
 
 | ID | Requirement |
 | --- | --- |
-| M-5 | The render model records, for every rendered character, the source range it came from, enabling bidirectional mapping. |
+| M-5 | The render model records, for every rendered character, the source range it came from, enabling bidirectional mapping. It stores that as runs rather than as one entry per character — see I-247 — which changes what it costs, not what it says. |
 | M-6 | Synthetic characters that have no 1:1 source counterpart (`•`, `☐`, `☑`, `—`, the image placeholder) are interpolated across the source range they represent. |
 | M-7 | Atomic spans — currently images — map as a unit, so a selection touching an image selects the whole reference in the source. |
 
@@ -488,8 +488,10 @@ operation.
 ### 9.5 Rendering an image held at a web address
 
 The rendered editor draws remote images for real rather than showing a
-placeholder glyph. Styling is synchronous and re-runs on every keystroke, so
-the lookup must be instant and the download must not be.
+placeholder glyph. Styling is synchronous and runs on the typing path — for the
+edited block on a keystroke ([§9.6](#96-keeping-typing-responsive-on-an-illustrated-document)),
+for the whole document when the palette or the column changes — so the lookup
+must be instant and the download must not be.
 
 | ID | Requirement |
 | --- | --- |
@@ -503,12 +505,55 @@ the lookup must be instant and the download must not be.
 
 ### 9.6 Keeping typing responsive on an illustrated document
 
-Styling re-runs on **every keystroke** and rebuilds every attachment in the
-document, so without a cache each character typed re-read and re-decoded every
-picture on the page. Measured on forty photo-sized references: **65.7 ms per
-keystroke, of which 64.6 ms was the images** — about 15 fps, which is felt as
-lag rather than seen as a glitch. With the cache the same document styles in
-**4.0 ms**.
+A keystroke re-renders the **block it landed in**, not the document. See
+[§9.6.1](#961-rendering-a-block-at-a-time) for how, and for the numbers.
+
+Styling used to re-run over the whole document on every keystroke and rebuild
+every attachment in it, so without a cache each character typed re-read and
+re-decoded every picture on the page. Measured on forty photo-sized references:
+**65.7 ms per keystroke, of which 64.6 ms was the images** — about 15 fps, which
+is felt as lag rather than seen as a glitch. With the cache the same document
+styled in **4.0 ms**. The cache still matters, because a block-sized render
+still builds the attachments in that block and a whole-document render still
+happens when the palette or the column changes.
+
+#### 9.6.1 Rendering a block at a time
+
+A keystroke used to cost three passes over the whole document — parsing it,
+building an attributed string for it, and handing that to `NSTextStorage`,
+which threw away every glyph TextKit had laid out — and it allocated the
+document several times over on the way. The cost grew with the file, so the
+longer the document the slower it was to write in.
+
+The unit of reuse is a **block**, and the choice is not arbitrary: the Markdown
+parser carries exactly one piece of state from line to line, which is whether a
+fenced code block is open. So a block is one line, or one fenced region from
+its opening fence to its closing one, and at every boundary between blocks the
+parser's state is empty. That is what lets a block be parsed on its own and
+produce precisely what parsing the whole document would have produced for it.
+
+| ID | Requirement |
+| --- | --- |
+| I-243 | An edit re-parses only the blocks it reaches, and splices the result into the text storage inside `beginEditing()`/`endEditing()`. Blocks the edit did not reach keep the very model they already had — not an equal copy, the same one — so an edit allocates for what it changed and for nothing else. |
+| I-244 | An edit that changes the structure around it — typing the third backtick of a fence, deleting the line that closed one — carries the re-parse forward until it rejoins what was already there. Widening happens by construction; there is no case that falls back to re-rendering the document. |
+| I-245 | Incremental output is **identical** to a full render: the same rendered text, the same spans in the same order, and the same source mapping at every offset in both directions. Checked over the contract corpus, at every caret position, for typing and deleting, and against a fuzzed stream of edits. |
+| I-246 | The whole document is re-rendered only for something that changes how every character is drawn: a palette, a column width, a different file, or a remote image arriving. |
+| I-247 | The render model records where rendered text came from as **runs** rather than one entry per character. The two per-character tables it replaces cost sixteen bytes for every character in the document and were rebuilt from nothing on every keystroke. |
+| I-248 | A splice only happens when the text storage and the render model agree on how long the document is. They come apart only while an input method has marked text on screen, which is accounted for exactly; anything else falls back to rebuilding the document rather than guessing. |
+
+Measured on a document built from headings, prose with inline markup, lists,
+quotes and fenced code, typing one character in the middle:
+
+| Document | Whole document | A block at a time | |
+| --- | --- | --- | --- |
+| 3,001 lines (65 KB) | 21.8 ms | **0.10 ms** | 226× |
+| 30,001 lines (650 KB) | 682 ms | **0.10 ms** | 6,900× |
+| 150,001 lines (3.3 MB) | ~14,000 ms | **0.29 ms** | 49,000× |
+
+Memory moves the same way. Two hundred keystrokes on the 3.3 MB document grew
+the process by about **3 MB**; five keystrokes the old way grew it by over
+**110 MB**, because each one allocated the parse, the offset tables, and the
+attributed string for the entire file.
 
 | ID | Requirement |
 | --- | --- |
@@ -983,6 +1028,8 @@ layer below is macOS-specific.
 ├── MarkdownEditorCore/          UI-free, fully unit-tested logic
 │   ├── MarkdownFormatting       Source-to-source formatting transforms
 │   ├── MarkdownRenderModel      Markdown parser + bidirectional range mapping
+│   ├── MarkdownIncrementalRenderer
+│   │                            Re-renders the blocks an edit reaches
 │   ├── MarkdownImageImporter    Asset folder resolution, copying, referencing
 │   ├── MarkdownTextInsertion    Caret-relative literal insertion
 │   ├── MarkdownTextCodec        UTF-8 and BOM handling
@@ -994,7 +1041,8 @@ layer below is macOS-specific.
     ├── PlatformTextView         NSTextView and UITextView conformances
     ├── EditorColorTheme         Palettes and derived colors
     ├── MarkdownTypography       Shared type scale
-    ├── RichMarkdownStyler       Applies attributes from the render model
+    ├── RichMarkdownStyler       Applies attributes from the render model,
+    │                            to a block or to the whole document
     ├── MarkdownSourceStyler     Representative source typography
     ├── MarkdownDocument         FileDocument conformance
     └── EditorViewMode           The three modes and their symbols
@@ -1106,13 +1154,15 @@ the code they cover, so this one command covers the iOS build's engine too.
 
 ### 16.1 Test coverage
 
-544 tests across 37 suites, in the shared package:
+592 tests across 43 suites, in the shared package:
 
 | Suite | Tests | Covers |
 | --- | --- | --- |
 | Markdown formatting | 42 | Every inline and block transform, toggle-off detection, renumbering, list continuation |
 | Cloud workspace | 39 | Firestore tree reads and writes, moves, and the prefix filter a range query needs |
 | Markdown render model | 31 | Block and inline parsing, boundary rules, escapes, range mapping |
+| Incremental rendering | 16 | A block-at-a-time render equals a full one — text, spans, and both mappings at every offset — over the corpus, every caret position, structure-changing edits and a fuzzed edit stream; and a keystroke's work stays bounded however long the document is |
+| Incremental styling | 2 | A block styled on its own matches the same stretch of the document styled whole, attribute for attribute, and typing leaves no seam where the block was spliced |
 | Remote images | 29 | Which addresses are fetched, the transfer ceiling enforced against a stubbed server, decoding, failure caching |
 | Image tags | 25 | `<img …>` parsing and writing, liberal attribute forms, proportional sizing |
 | Moving an image | 15 | Moving a picture's Markdown, the offset correction a forward move needs, dropping on itself, HTML tags, sizes surviving the move, and a move that undoes itself |
@@ -1131,13 +1181,13 @@ the code they cover, so this one command covers the iOS build's engine too.
 | New document | 10 | Heading 1 seeding |
 | Platform types | 9 | AppKit/UIKit parity; portable colour blending within 1/255 of `NSColor.blended` on every colour the app displays |
 | Markdown text insertion | 8 | Caret placement, clamping stale selections, UTF-16 offsets |
-| Markdown render model invariants | 8 | Every span addresses real text, both mappings stay in bounds, every prefix and suffix renders safely |
+| Markdown render model invariants | 9 | Every span addresses real text, both mappings stay in bounds, every prefix and suffix renders safely |
 | Markdown formatting invariants | 7 | Seventeen commands over every corpus selection: bounds, surrogate pairs, clamping, involution |
 | Markdown image importer | 6 | Assets folder naming, collisions, symlink rejection, unsaved documents, unsupported types |
 | Local image resolution | 11 | Which paths in a real document actually draw the reader's picture: beside, below, above, absolute, spaced and percent-encoded — and which correctly draw nothing |
 | File tree scanner | 6 | Ordering, hidden files, packages, symlinks |
 | Cross-platform contract | 5 | The exported fixtures still describe the compiled Swift |
-| Markdown source styler | 4 | Styling is not undoable, and survives a text view that resets its undo manager mid-edit |
+| Markdown source styler | 7 | Styling is not undoable, and survives a text view that resets its undo manager mid-edit |
 | Markdown text codec | 3 | UTF-8 round trip, BOM preservation, invalid input |
 | Markdown text difference | 3 | Minimal replacement computation |
 | Editor view mode | 2 | The three layouts round-trip through storage and have distinct icons |
@@ -1212,10 +1262,13 @@ The last of those pins a platform behaviour rather than a rule of our own.
 Replacing a text view's storage makes AppKit move the selection before the
 intended one is put back, and it announces that intermediate value through the
 delegate exactly as it announces a real caret move — measured at character
-102,890 while the caret sat at 35. Both panes re-style on every keystroke and
-publish selection changes to the other pane, which reveals them, so an
-unguarded delegate threw the other pane most of the way down the document and
-back on every character typed.
+102,890 while the caret sat at 35. Both panes re-styled by replacing their whole
+storage and published selection changes to the other pane, which reveals them,
+so an unguarded delegate threw the other pane most of the way down the document
+and back on every character typed. Typing no longer replaces the storage
+([§9.6.1](#961-rendering-a-block-at-a-time)), but opening a document and
+changing the palette still do, so the guard is still what holds the pane still
+across them.
 
 One trap is worth stating, because it made an earlier version of these checks
 worthless. `NSTextView` never shrinks its frame — once it has been laid out it
@@ -1511,6 +1564,7 @@ async `@main` instead.
 
 | Change | Summary |
 | --- | --- |
+| Render a block at a time, not the document | A keystroke used to re-parse the whole document, build an attributed string for the whole document, and hand it to `NSTextStorage`, which throws away every glyph TextKit has laid out — three passes over the file per character, plus the offset tables the render model kept for every character in it. The longer the document, the slower it was to write in: 682 ms per keystroke at 30,000 lines, about 14 seconds at 150,000. An edit now re-parses only the blocks it reaches and splices them into the storage, so the same keystrokes cost **0.10 ms** and **0.29 ms**, and two hundred of them grow the process by about 3 MB where five used to grow it by over 110 MB. A block is the right unit because the parser carries exactly one thing across a line — whether a fence is open — so a block parses alone into precisely what the document would have given it, and that equality is checked offset for offset rather than argued. See [§9.6.1](#961-rendering-a-block-at-a-time). |
 | A title bar that behaves like one | Dragging the title bar moves the window now. SwiftUI fills that bar with a hosting view that eats the mouse, so of 900 points only two slivers — 15 by the traffic lights, 8 at the far right — ever moved it, and every grab across the middle did nothing; all five test positions move it now. The title also names its document, which gives it the menu every Mac window has: **Copy Path**, **Reveal in Finder**, and the folders above the file, on a ⌘-click or a right-click. `DocumentGroup` never sets `representedURL`, so there was no menu there at all. Verified on screen: the path reached the clipboard, Finder opened the folder with the file selected, and the toolbar buttons still fire rather than dragging the window. See [I-238 to I-242](#10a-ai-assisted-critique). |
 | A bold word you can break in half | Pressing Return in the middle of a bold word used to leave `**` on screen. Emphasis is matched within a line, so the break left the markers unpaired on both sides and the rendered view began showing the syntax it exists to hide. They are closed before the break and opened again after it now. The markers reopened are the ones the document wrote, since `_italic_` and `*italic*` are the same style and swapping one for the other crosses the pair; a break at the edge of a run steps outside its markers rather than writing `****`; and a break at a space takes the space with it, because emphasis will not close after whitespace. Links are left alone, as splitting one would mean inventing a second copy of its destination. Checked against all 451 committed `insertNewline` contract cases, so the web build and this one still agree character for character. See [I-233 to I-237](#10a-ai-assisted-critique). |
 | A quote that stays a quote | Pressing Return inside a block quote now leaves the caret at the quote's indent instead of dropping it to the margin and snapping it into place on the first keystroke. The source had said `> ` all along; what failed was the drawing, because a line with no text on it is reported as a zero-length span and an attribute over a zero-length range does nothing at all. An empty line takes its style from its own newline — never the one before it, which belongs to the line above and would have indented a paragraph nobody quoted — and the last line of a document, which has no newline either, takes it from the text view's typing attributes. Measured in the running app: the quoted text sits at x=528, the unindented margin at x=508, and the caret after Return moved from 508 to 528. See [I-229 to I-232](#10a-ai-assisted-critique). |

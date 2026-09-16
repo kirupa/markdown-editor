@@ -194,6 +194,8 @@ Shared/                            One SwiftPM package, two platforms
 ├── Sources/MarkdownEditorCore/    Pure Foundation. No AppKit, no UIKit, no SwiftUI.
 │   ├── MarkdownFormatting         Source-to-source formatting transforms
 │   ├── MarkdownRenderModel        Parser + bidirectional range mapping
+│   ├── MarkdownIncrementalRenderer
+│   │                              Re-renders the blocks an edit reaches
 │   ├── MarkdownImageImporter      Assets folder resolution, copying, referencing
 │   ├── MarkdownTextInsertion      Caret-relative literal insertion
 │   ├── MarkdownTextCodec          UTF-8 and BOM handling
@@ -205,7 +207,8 @@ Shared/                            One SwiftPM package, two platforms
     ├── PlatformTextView           NSTextView and UITextView conformances
     ├── EditorColorTheme           Palettes and derived colours
     ├── MarkdownTypography         Shared type scale
-    ├── RichMarkdownStyler         Attributes from the render model
+    ├── RichMarkdownStyler         Attributes from the render model, for a
+    │                              block or the whole document
     ├── MarkdownSourceStyler       Representative source typography
     ├── MarkdownDocument           FileDocument conformance
     └── EditorViewMode             The three modes and their symbols
@@ -296,7 +299,7 @@ xcrun simctl launch booted com.kirupa.markdown-editor
 macOS/Scripts/run-tests.sh
 ```
 
-329 tests in 24 suites. The suite covers the shared package, so it exercises
+348 tests in 26 suites. The suite covers the shared package, so it exercises
 the iOS build's entire Markdown engine — the iOS layer above it is views.
 
 Around one in six is property-based rather than example-based: they run
@@ -311,6 +314,8 @@ output. See `macOS/README.md` §16.2 for what each kind of test is for and
 | Markdown formatting | 42 | Every inline and block transform, toggle-off, renumbering, continuation |
 | Cloud workspace | 39 | Firestore tree reads, writes, moves, and the prefix filter a range query needs |
 | Markdown render model | 31 | Block and inline parsing, boundaries, escapes, range mapping |
+| Incremental rendering | 16 | A block-at-a-time render equals a full one — text, spans, and both mappings at every offset — over the corpus, every caret position, structure-changing edits and a fuzzed edit stream; and a keystroke's work stays bounded however long the document is |
+| Incremental styling | 2 | A block styled on its own matches the same stretch of the document styled whole, attribute for attribute, and typing leaves no seam where the block was spliced |
 | Remote images | 29 | Which addresses are fetched, the size ceiling, decoding, failure caching |
 | Image tags | 25 | `<img …>` parsing and writing, proportional sizing, aspect ratio |
 | Editor scroll geometry | 18 | When a pane's figures may be trusted, and fraction ↔ offset conversion |
@@ -322,12 +327,12 @@ output. See `macOS/README.md` §16.2 for what each kind of test is for and
 | New document | 10 | Heading 1 seeding |
 | Platform types | 9 | AppKit/UIKit parity, and the colour blending above |
 | Markdown text insertion | 8 | Caret placement, clamping stale selections, UTF-16 offsets |
-| Markdown render model invariants | 8 | Every span addresses real text, both mappings stay in bounds, every prefix and suffix renders |
+| Markdown render model invariants | 9 | Every span addresses real text, both mappings stay in bounds, every prefix and suffix renders |
 | Markdown formatting invariants | 7 | Seventeen commands over every corpus selection: bounds, surrogate pairs, clamping, involution |
 | Markdown image importer | 6 | Assets naming, collisions, symlink rejection, unsaved documents |
 | File tree scanner | 6 | Ordering, hidden files, packages, symlinks |
 | Cross-platform contract | 5 | The exported fixtures still match the compiled Swift |
-| Markdown source styler | 4 | Styling is not undoable, and survives a text view that resets its undo manager mid-edit |
+| Markdown source styler | 7 | Styling is not undoable, and survives a text view that resets its undo manager mid-edit |
 | Markdown text codec | 3 | UTF-8 round trip, BOM preservation, invalid input |
 | Markdown text difference | 3 | Minimal replacement computation |
 | Editor view mode | 2 | The three layouts round-trip through storage and have distinct icons |
@@ -338,12 +343,13 @@ output. See `macOS/README.md` §16.2 for what each kind of test is for and
 
 | Change | Summary |
 | --- | --- |
+| Render a block at a time, not the document | A keystroke re-parsed the whole document, styled the whole document, and assigned the result to `attributedText`, which throws away every glyph UIKit has laid out — so the longer the file, the slower it was to write in. Both panes now re-render only the block the edit landed in and splice it into the text storage: the rendered pane through the shared `MarkdownIncrementalRenderer`, the source pane by re-applying attributes over the enclosing block without touching its characters. Measured on the Mac, where the same shared engine runs: a keystroke in a 3.3 MB document went from about **14,000 ms** to **0.29 ms**, and two hundred keystrokes grew the process by about 3 MB where five used to grow it by over 110 MB. Incremental output is checked to be identical to a full render, offset for offset. See `macOS/README.md` §9.6.1. |
 | Stop a picture being drawn out of shape | Dragging a picture wider than the line it sits on used to squeeze it while the height carried on growing, so it came out the wrong shape with nothing to say so. A resize now stops at the width the line actually gets. Worse and much more common: a picture with **no size of its own** defaults to 560 points and a phone's column is about 368, so every unsized picture in every document was drawn squashed — measured on a device at 384x107 where its shape is 384x72, and now 367x68 ([ID-64](#6-images)). The Mac gained a page wider than its text column at the same time and a picture there may spread 100 points into each margin; a phone has no margins to give, so this build takes the ceiling and not the bleed ([ID-63](#6-images)). |
 | Select, resize and move a picture with a finger | Ported the Mac's picture handling to touch: tap to select, drag a 44pt corner to resize, long-press and drag to move, sharing `EditorImageGeometry` and `MarkdownFormatting.moveImage` so a picture lands in the same place on every build. Four faults only a running app could show, all found on a booted iPhone: the overlay sized to `bounds` instead of `contentSize` ([ID-59](#6-images)), UITextView's own long press cancelling ours ([ID-60](#6-images)), a stale selection frame left behind by a committed move ([ID-61](#6-images)), and a filter meant for the long press that also stopped a tap deselecting ([ID-62](#6-images)). All three gestures verified end to end on a simulator, including the Markdown written to disk. |
 | Notice when something else changes the open document | The editor watches its file, and re-checks every time the app returns to the foreground — the case that matters here, because a suspended app hears nothing. With nothing unsaved the newer text is applied and a bar says so; with unsaved edits nothing is applied and the bar offers **Show Newest** or **Keep Mine**, holding the incoming copy in memory so it stays reachable. Shares the decision, the watcher, and the banner with macOS. One thing macOS does that this build cannot: hold off saving until the question is answered — iOS saves through `UIDocument` and a view cannot suspend that. Recorded as [ID-53](#3-document-lifecycle). |
 | Ship resources if a target ever declares one | Both no-Xcode build scripts now copy the `<Package>_<Target>.bundle` SwiftPM emits for a target with `resources:` — into `Contents/Resources` on the Mac, the bundle root on iOS, which is where `Bundle.module` looks on each. Nothing declares a resource today, so both copy nothing; a target that gained one would previously have built and signed cleanly and trapped on launch. Verified by temporarily giving `MarkdownEditorUI` a resource and confirming it reached both apps. |
 | Keep typing responsive on an illustrated document | Local images are decoded once and kept in memory rather than re-read on every keystroke. The cache is in the shared package, so this build gets it too: a document of forty photo-sized references styled in 65.7 ms per character on the Mac and now styles in 4.0 ms. Keyed on modification date and size, so a picture edited elsewhere is never drawn stale, and it releases everything under memory pressure — which matters more here than on the Mac. |
-| Expand the regression net | 329 shared tests across 24 suites, up from 244 across 16. The new suites are property-based: every formatting command over every corpus selection, every prefix and suffix of the corpus through the renderer and the styler, all sixteen palettes held to WCAG contrast, and a byte-exact read/write path. All of it is shared code, so it covers this build's engine as much as the Mac's. |
+| Expand the regression net | 348 shared tests across 26 suites, up from 244 across 16. The new suites are property-based: every formatting command over every corpus selection, every prefix and suffix of the corpus through the renderer and the styler, all sixteen palettes held to WCAG contrast, and a byte-exact read/write path. All of it is shared code, so it covers this build's engine as much as the Mac's. |
 | Stop the editor jumping while typing | Re-styling the rendered pane no longer loses the reader's place. Assigning `attributedText` resets `contentOffset`, so the offset is now carried across the assignment, using the same `EditorScrollGeometry` rules the Mac uses. |
 | Draw images held at a web address | An `https://` image renders as the real picture instead of a placeholder glyph, and can now be measured for proportional resizing. Verified on a booted simulator: two remote images drawn, a broken address still a placeholder. |
 | Share the Swift core between platforms | `Shared/` package; AppKit's Generic RGB blending reproduced portably; `themes.css` verified byte-identical |
