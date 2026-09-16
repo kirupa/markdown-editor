@@ -7,7 +7,22 @@ struct FormattingAction: Identifiable {
     let id: String
     let title: String
     let systemImage: String
+    /// The inline style this runs, when it runs one.
+    ///
+    /// Carried so the bar can grey the button out where that style is inert —
+    /// inside a fenced block or a code span, where Markdown is literal and
+    /// bold could only write two asterisks into somebody's code. The block and
+    /// heading actions leave it nil: they rewrite whole lines and are not part
+    /// of this report.
+    var style: MarkdownInlineStyle?
     let run: (String, NSRange) -> MarkdownEditResult
+
+    func isAvailable(in context: MarkdownCodeContext) -> Bool {
+        guard let style else {
+            return true
+        }
+        return MarkdownFormatting.isAvailable(style, context: context)
+    }
 }
 
 /// The formatting bar's contents.
@@ -18,14 +33,16 @@ struct FormattingAction: Identifiable {
 enum FormattingActions {
     static let inline: [FormattingAction] = [
         FormattingAction(
-            id: "bold", title: "Bold", systemImage: "bold"
+            id: "bold", title: "Bold", systemImage: "bold",
+            style: .bold
         ) { text, selection in
             MarkdownFormatting.toggleInline(
                 .bold, in: text, selection: selection
             )
         },
         FormattingAction(
-            id: "italic", title: "Italic", systemImage: "italic"
+            id: "italic", title: "Italic", systemImage: "italic",
+            style: .italic
         ) { text, selection in
             MarkdownFormatting.toggleInline(
                 .italic, in: text, selection: selection
@@ -34,14 +51,16 @@ enum FormattingActions {
         FormattingAction(
             id: "strikethrough",
             title: "Strikethrough",
-            systemImage: "strikethrough"
+            systemImage: "strikethrough",
+            style: .strikethrough
         ) { text, selection in
             MarkdownFormatting.toggleInline(
                 .strikethrough, in: text, selection: selection
             )
         },
         FormattingAction(
-            id: "underline", title: "Underline", systemImage: "underline"
+            id: "underline", title: "Underline", systemImage: "underline",
+            style: .underline
         ) { text, selection in
             MarkdownFormatting.toggleInline(
                 .underline, in: text, selection: selection
@@ -50,7 +69,8 @@ enum FormattingActions {
         FormattingAction(
             id: "code",
             title: "Inline Code",
-            systemImage: "chevron.left.forwardslash.chevron.right"
+            systemImage: "chevron.left.forwardslash.chevron.right",
+            style: .inlineCode
         ) { text, selection in
             MarkdownFormatting.toggleInline(
                 .inlineCode, in: text, selection: selection
@@ -140,6 +160,9 @@ struct MarkdownFormattingBar: View {
     /// set. Shown disabled rather than hidden so the control does not move
     /// around under the thumb.
     var canSizeImage: Bool = false
+    /// What the caret is sitting in, so the inline buttons can be greyed where
+    /// Markdown is literal and they could not do anything.
+    var codeContext: MarkdownCodeContext = .prose
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -156,6 +179,9 @@ struct MarkdownFormattingBar: View {
                 }
                 .buttonStyle(.plain)
                 .frame(width: 40, height: 36)
+                .disabled(
+                    !MarkdownFormatting.isLinkAvailable(context: codeContext)
+                )
                 .accessibilityLabel("Insert Link")
                 Button(action: onInsertImage) {
                     Label("Insert Image", systemImage: "photo")
@@ -196,6 +222,7 @@ struct MarkdownFormattingBar: View {
             }
             .buttonStyle(.plain)
             .frame(width: 40, height: 36)
+            .disabled(!action.isAvailable(in: codeContext))
             .accessibilityLabel(action.title)
         }
     }

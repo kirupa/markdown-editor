@@ -309,6 +309,8 @@ export function buildMobileUI({ root, topBar, formatBar, commands, state }) {
 
   const scroller = document.createElement('div');
   scroller.className = 'me-format__scroller';
+  const linkButton = formatButton('link', 'Insert Link', () => commands.link());
+
   scroller.append(
     headings,
     divider(),
@@ -319,7 +321,7 @@ export function buildMobileUI({ root, topBar, formatBar, commands, state }) {
     quoteButton,
     codeBlockButton,
     divider(),
-    formatButton('link', 'Insert Link', () => commands.link()),
+    linkButton,
     formatButton('image', 'Add Image', () => commands.image()),
     formatButton('rule', 'Horizontal Rule', () => commands.horizontalRule())
   );
@@ -367,6 +369,17 @@ export function buildMobileUI({ root, topBar, formatBar, commands, state }) {
       }
       quoteButton.setAttribute('aria-pressed', String(quote));
       if (document.activeElement !== headings) headings.value = String(heading);
+    },
+
+    /** Greys out what cannot work in code — see `toolbar.js`. */
+    setAvailability({ inline = null, link = true } = {}) {
+      for (const [name, element] of inlineButtons) {
+        const allowed = inline === null || inline.has(name);
+        element.disabled = !allowed;
+        element.setAttribute('aria-disabled', String(!allowed));
+      }
+      linkButton.disabled = !link;
+      linkButton.setAttribute('aria-disabled', String(!link));
     },
 
   };

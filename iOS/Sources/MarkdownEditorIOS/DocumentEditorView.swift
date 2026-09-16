@@ -113,7 +113,12 @@ struct DocumentEditorView: View {
     /// The editor itself. Split from `body` only to keep each
     /// expression small enough for the type checker to solve.
     private var editorBody: some View {
-        VStack(spacing: 0) {
+        // One parse for the whole bar. Both questions it has to answer — is
+        // the caret on a picture, and is it in code — are answered from the
+        // same spans, so asking the renderer twice would be paying twice for
+        // one answer.
+        let model = MarkdownRenderer.render(document.text)
+        return VStack(spacing: 0) {
             MarkdownFormattingBar(
                 text: $document.text,
                 controller: controller,
@@ -121,7 +126,11 @@ struct DocumentEditorView: View {
                 onInsertLink: { isAskingForLink = true },
                 onInsertImage: { isChoosingImageSource = true },
                 onSizeImage: { isSizingImage = true },
-                canSizeImage: imageAtSelection() != nil
+                canSizeImage: imageAtSelection(in: model) != nil,
+                codeContext: MarkdownCodeContext.containing(
+                    controller.selection,
+                    in: model
+                )
             )
             Divider()
             ExternalChangeBanner(
@@ -338,14 +347,15 @@ struct DocumentEditorView: View {
     ///
     /// A rendered image is a single atomic character, so "on" means the caret
     /// is inside or immediately after it.
-    private func imageAtSelection()
-        -> (range: NSRange, tag: MarkdownImageTag.Parsed)?
-    {
+    private func imageAtSelection(
+        in model: MarkdownRenderModel? = nil
+    ) -> (range: NSRange, tag: MarkdownImageTag.Parsed)? {
         let text = document.text as NSString
         let selection = controller.selection
         guard selection.location <= text.length else { return nil }
 
-        for span in MarkdownRenderer.render(document.text).spans {
+        let spans = (model ?? MarkdownRenderer.render(document.text)).spans
+        for span in spans {
             guard case .image = span.style else { continue }
             guard
                 selection.location >= span.sourceRange.location,

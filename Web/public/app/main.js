@@ -32,7 +32,10 @@ import {
   toggleList,
   toggleQuote,
   wrapCodeBlock,
+  isInlineStyleAvailable,
+  isLinkAvailable,
 } from './core/formatting.js';
+import { codeContextInModel } from './core/code-context.js';
 import { renderInto } from './ui/renderer.js';
 import { EditorSurface } from './ui/editor-surface.js';
 import { positionForOffset } from './dom-text.js';
@@ -505,6 +508,17 @@ function refreshActiveStyles() {
   }
   toolbar.setActiveStyles({ inline, list, quote, heading });
   mobileUI.setActiveStyles({ inline, list, quote, heading });
+
+  // What can work here, from the same model: inside a fence or a code span
+  // Markdown is literal, so the inline commands refuse and their buttons say
+  // so rather than clicking through to nothing.
+  const context = codeContextInModel(selection, rendered);
+  const available = new Set(
+    Object.values(InlineStyle).filter((style) => isInlineStyleAvailable(style, context))
+  );
+  const availability = { inline: available, link: isLinkAvailable(context) };
+  toolbar.setAvailability(availability);
+  mobileUI.setAvailability(availability);
 }
 
 function refreshSurfaces(options = {}) {

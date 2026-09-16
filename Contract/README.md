@@ -15,8 +15,8 @@ So this is not more prose. It is the compiled Swift, dumped as data:
 
 | File | What it pins down | Cases |
 | --- | --- | --- |
-| `formatting.jsonl` | Every formatting command, at every interesting selection, in every corpus document | 8,180 |
-| `render-model.json` | What the reading view shows, and where each part of it came from in the source | 13 documents, every span |
+| `formatting.jsonl` | Every formatting command, at every interesting selection, in every corpus document | 9,471 |
+| `render-model.json` | What the reading view shows, and where each part of it came from in the source | 14 documents, every span |
 | `paths.json` | Workspace-path arithmetic: naming, descendancy, subtree rewriting, collision numbering | 123 |
 
 Regenerate them after changing `MarkdownEditorCore` or `CloudPath`:
@@ -58,7 +58,7 @@ One JSON object per line. The first line is the header, which carries the
 corpus; every line after it is a case.
 
 ```
-{"version":1,"about":"…","offsets":"UTF-16 code units","caseCount":8180,"documents":[{"id":"mixed","text":"# Trip notes\n…"}]}
+{"version":1,"about":"…","offsets":"UTF-16 code units","caseCount":9471,"documents":[{"id":"mixed","text":"# Trip notes\n…"}]}
 {"argument":"bold","command":"toggleInline","document":"mixed","replace":[0,0],"selection":[2,4],"selectionAfter":[4,4],"with":"**"}
 ```
 
@@ -105,6 +105,58 @@ in this editor: inside a list it continues the list, and on an empty list item i
 ends it. A port that treats Return as plain text insertion passes everything
 else and gets lists wrong.
 
+### Inside code, the inline commands do nothing
+
+Markdown is inert inside code. `**bold**` typed into a fenced block or between
+a code span's backticks is not emphasis — it is four asterisks and a word, and
+every conforming renderer, this one included, shows it that way. So
+`toggleInline` and `insertLink` **must return the document and the selection
+unchanged** when the selection is code. There is no third option: the command
+cannot do what it was asked, and the only thing it can otherwise produce is
+literal punctuation in the writer's code. A port that skips this reproduces the
+bug this rule was written for — the caret in a fence, bold pressed, and
+`**bold text**` saved into the file.
+
+Code, for this purpose, is:
+
+| | Where it starts | Where it ends |
+| --- | --- | --- |
+| **A fenced code block** | the first character of its opening fence line | the end of its closing fence line, or the end of the file if it is never closed |
+| **An inline code span** | *after* its opening backtick run | the end of its closing backtick run |
+
+The asymmetry at the start is deliberate and load-bearing. A caret at the first
+character of a fence line is inside the block, because anything written there
+displaces the fence. A caret at the first backtick of a code span is in front of
+it, and what is written there lands in the prose, correctly.
+
+Two selections are **not** code and must still format:
+
+- one that **contains a whole code span**, with prose either side —
+  `**Call \`reload()\` now**` is valid Markdown and useful;
+- anything in a **block quote**. A quote is prose. Bold in a quote is ordinary
+  Markdown, the renderer hides its markers there as it does anywhere else, and a
+  port that refuses in a quote has over-applied this rule.
+
+A selection that overlaps a code region **without containing it** is refused,
+because it would put one marker inside the code and its partner outside.
+
+Inline code itself stays available inside a code span, because that is how a
+span is taken off again — and there it *removes* the span rather than adding
+one, including from a bare caret between the backticks.
+
+**Four-space indented code is not code here.** This editor's render model does
+not implement indented code blocks: an indented line is an ordinary paragraph,
+and emphasis typed on one is drawn as emphasis. Refusing there would stop a
+command that visibly works. A port that *does* implement indented code should
+make the two agree — the rule is that the commands refuse in exactly the places
+the reading view draws as code, and nowhere else.
+
+Derive the answer from the render model rather than from a scanner of its own;
+that is what keeps the two from disagreeing. `MarkdownCodeContext.swift` and
+`Web/public/app/core/code-context.js` are the two existing implementations, and
+the refusals are in `formatting.jsonl` like any other case — an unchanged
+document is recorded as an empty edit.
+
 ## Reading the render fixture
 
 `render-model.json` holds, for each corpus document, the text the reading view
@@ -127,6 +179,28 @@ an image, or a horizontal rule.
 Some of the contract is not a pure function and cannot be dumped as cases. Those
 parts are listed here with the file that defines them, so nothing has to be
 reverse-engineered from behaviour.
+
+### A withdrawn command has to look withdrawn
+
+The fixture can say that `toggleInline` returns the document unchanged inside
+code. It cannot say what the toolbar does about it, and a control that silently
+does nothing when clicked is worse than the bug it is refusing to cause: the
+writer presses it twice, then concludes the editor is broken.
+
+So every build **greys the control out** while the selection is in code, rather
+than hiding it. Hiding teaches nothing, and a toolbar that changes shape as the
+caret moves is its own problem. The same goes for the menu item behind the
+keyboard shortcut, on platforms that have one.
+
+Ask the shared availability predicate rather than re-deriving the rule in the
+interface — `MarkdownFormatting.isAvailable(_:context:)` and
+`isLinkAvailable(context:)`, or their JavaScript twins in `formatting.js` — so
+the button and the command can never disagree about what will happen.
+
+Ask it from a render model the pane **already has**, not from a fresh parse. The
+answer is needed on every caret move, and parsing an 80 KB document takes about
+37 ms against 0.8 ms to scan the spans of one already parsed. Both native builds
+and the web build pass the model they are holding.
 
 ### The Firestore data model
 

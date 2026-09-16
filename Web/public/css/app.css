@@ -1463,7 +1463,15 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-.me-format__button:active { background: color-mix(in srgb, var(--me-accent) 22%, transparent); }
+.me-format__button:active:not(:disabled) {
+  background: color-mix(in srgb, var(--me-accent) 22%, transparent);
+}
+
+/* Off where the command could not work: inside a fenced block or a code span,
+   where Markdown is literal and bold could only write two asterisks into
+   somebody's code. Greyed rather than hidden, so the bar does not change shape
+   as the caret moves. Matches `.me-tool:disabled` on the desktop toolbar. */
+.me-format__button:disabled { opacity: 0.35; }
 
 .me-format__button[aria-pressed="true"] {
   background: var(--me-selection-background);

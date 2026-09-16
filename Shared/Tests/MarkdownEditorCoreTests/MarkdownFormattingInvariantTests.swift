@@ -381,4 +381,97 @@ struct MarkdownFormattingInvariantTests {
     private func isLowSurrogate(_ unit: unichar) -> Bool {
         (0xDC00...0xDFFF).contains(unit)
     }
+
+    // MARK: - Code
+
+    /// No inline command may put visible markup inside code.
+    ///
+    /// The example tests name a fence and a code span. This says the thing
+    /// those examples are *for*, over every document and every selection in
+    /// the corpus: wherever the shared context says the selection is code, the
+    /// inline commands and the link command leave the document exactly as they
+    /// found it. A rule that holds on two hand-written strings and fails on the
+    /// corpus is the rule that shipped the bug in the first place.
+    @Test("No inline command edits a document when the selection is code")
+    func inlineCommandsRefuseInsideCode() {
+        for document in ContractCorpus.documents {
+            for selection in ContractCorpus.selections(in: document.text) {
+                let context = MarkdownCodeContext.containing(
+                    selection,
+                    in: document.text
+                )
+                guard context.isCode else {
+                    continue
+                }
+
+                for style in MarkdownInlineStyle.allCases {
+                    let result = MarkdownFormatting.toggleInline(
+                        style,
+                        in: document.text,
+                        selection: selection
+                    )
+                    if MarkdownFormatting.isAvailable(style, context: context) {
+                        // Only inline code answers inside a code span, and what
+                        // it does there is remove one, so the text gets shorter.
+                        #expect(
+                            (result.text as NSString).length
+                                < (document.text as NSString).length,
+                            "toggleInline(\(style)) added markup in code: \(document.id) at \(selection)"
+                        )
+                    } else {
+                        #expect(
+                            result.text == document.text,
+                            "toggleInline(\(style)) edited code: \(document.id) at \(selection)"
+                        )
+                        #expect(result.selection == selection)
+                    }
+                }
+
+                let link = MarkdownFormatting.insertLink(
+                    destination: "https://example.com",
+                    in: document.text,
+                    selection: selection
+                )
+                #expect(
+                    link.text == document.text,
+                    "insertLink edited code: \(document.id) at \(selection)"
+                )
+            }
+        }
+    }
+
+    /// The context is read off the render model, so it can only ever name code
+    /// the reading view also draws as code.
+    ///
+    /// This is the property that keeps the refusal honest: a command that
+    /// declined somewhere the reader sees ordinary prose would be a worse bug
+    /// than the one being fixed. A block quote is the case it protects — bold
+    /// in a quote is valid Markdown and must never be refused.
+    @Test("Nothing outside a fence or a code span is ever called code")
+    func onlyRealCodeIsCalledCode() {
+        for document in ContractCorpus.documents {
+            let model = MarkdownRenderer.render(document.text)
+            let codeRanges = model.spans.compactMap { span -> NSRange? in
+                switch span.style {
+                case .codeBlock: span.sourceRange
+                case .inlineCode: span.sourceRange
+                default: nil
+                }
+            }
+
+            for selection in ContractCorpus.selections(in: document.text) {
+                let context = MarkdownCodeContext.containing(
+                    selection,
+                    in: model
+                )
+                guard let range = context.sourceRange else {
+                    continue
+                }
+                #expect(
+                    codeRanges.contains(where: { NSEqualRanges($0, range) }),
+                    "\(document.id) at \(selection): \(range) is not a code span"
+                )
+            }
+        }
+    }
 }

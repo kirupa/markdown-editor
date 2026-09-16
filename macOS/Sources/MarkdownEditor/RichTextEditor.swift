@@ -250,6 +250,10 @@ struct RichTextEditor: NSViewRepresentable {
             return model.sourceRange(for: textView.selectedRange())
         }
 
+        var codeContext: MarkdownCodeContext {
+            MarkdownCodeContext.containing(selectedSourceRange, in: model)
+        }
+
         var hostingWindow: NSWindow? {
             textView?.window
         }
