@@ -130,6 +130,8 @@ byte-identical.
 | ID-17 | Every button calls `MarkdownFormatting`. Nothing about what "bold" means is decided in the iOS layer. |
 | ID-18 | Commands toggle: applying bold to already-bold text removes it, the same detection the other builds use. |
 | ID-19 | Link insertion prompts for a destination, defaulting to `https://`, and uses the current selection as the label. |
+| ID-65 | **Inside code, the inline styles and the link button do nothing, and are greyed while the caret is there.** Markdown is inert in a fenced block and between a code span's backticks, so the only thing bold could write there is two asterisks into the writer's code. The refusal is `MarkdownFormatting`'s, shared with the other builds; the bar only asks `isAvailable(_:context:)`. A block quote is *not* code — bold in a quote is ordinary Markdown and is written. See [`Contract/README.md`](../Contract/README.md#inside-code-the-inline-commands-do-nothing). |
+| ID-66 | The bar computes the caret's context from **one** render of the document, shared with the "can this picture be sized" question it already answered, rather than parsing twice per layout pass. |
 
 The bar is docked, not floating. The web build learned this the hard way on a
 real iPhone — a bottom bar fights the keyboard accessory row and the home

@@ -283,6 +283,9 @@ keyboard shortcut, and every one of them toggles:
 | WF-10 | Every command preserves the selection sensibly — text stays selected, and an inserted empty pair leaves the caret between the markers. |
 | WF-11 | The toolbar highlights the inline styles, heading level, and list type active at the caret, and updates as the caret moves. |
 | WF-12 | Commands operate on the source through the same pure functions the macOS build uses, so a command applied in either build produces byte-identical text. |
+| WF-13 | **Inside code, the inline styles and the link command do nothing.** Markdown is inert in a fenced block and between a code span's backticks, so the only thing bold could write there is two asterisks into the writer's code. The commands return the document and the selection untouched. A block quote is *not* code: bold in a quote is ordinary Markdown, is written, and has its markers hidden exactly as in a paragraph. See [`Contract/README.md`](../Contract/README.md#inside-code-the-inline-commands-do-nothing). |
+| WF-14 | A command withdrawn by WF-13 is **greyed in the toolbar and in the mobile format bar**, not hidden, and its `disabled` state is what the stylesheet dims — one source of truth, as with `aria-pressed`. Availability comes from the shared `isInlineStyleAvailable` / `isLinkAvailable` in `core/formatting.js`, read off the render model `refreshActiveStyles` already built, so no caret move costs a second parse. |
+| WF-15 | `code-context.js` is a port of `MarkdownCodeContext.swift` and is checked against it: `contract-inline.test.js` replays every `toggleInline` and `insertLink` case in `Contract/formatting.jsonl` — text *and* selection — so the browser and the Mac refuse in exactly the same places and nowhere else. This is the kind of rule a port gets silently wrong: nothing looks broken, because the only difference is a command that does nothing. |
 
 ---
 

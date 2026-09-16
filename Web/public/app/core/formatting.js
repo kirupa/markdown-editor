@@ -13,6 +13,7 @@ import {
   encodeDestination,
 } from './image-tag.js';
 import { renderMarkdown } from './render-model.js';
+import { CodeContextKind, codeContextIn } from './code-context.js';
 
 // ── Exported constants ───────────────────────────────────────────────────────
 
@@ -33,6 +34,37 @@ export const ListStyle = Object.freeze({
 // ── Public API ───────────────────────────────────────────────────────────────
 
 /**
+ * Whether `style` can do anything in `context`, and so whether the control
+ * that runs it should be offered at all.
+ *
+ * Inside code the answer is no, because Markdown is inert there: the command
+ * could only write literal punctuation into the writer's code. The one
+ * exception is inline code itself while the selection is inside a code span —
+ * that is how a span is taken off again.
+ *
+ * @param {string} style - One of the InlineStyle constants.
+ * @param {{ kind: string }} context - From `codeContextIn`.
+ */
+export function isInlineStyleAvailable(style, context) {
+  switch (context.kind) {
+    case CodeContextKind.codeBlock:
+      return false;
+    case CodeContextKind.inlineCodeSpan:
+      return style === InlineStyle.inlineCode;
+    default:
+      return true;
+  }
+}
+
+/**
+ * Whether a link can be written in `context`. `[text](url)` inside code is six
+ * characters of punctuation and no link.
+ */
+export function isLinkAvailable(context) {
+  return context.kind === CodeContextKind.prose;
+}
+
+/**
  * Toggle an inline style around the selection.
  * @param {string} style - One of the InlineStyle constants.
  * @param {string} text
@@ -41,6 +73,23 @@ export const ListStyle = Object.freeze({
  */
 export function toggleInline(style, text, selection) {
   const sel = clampRange(selection, text.length);
+  const context = codeContextIn(sel, text);
+
+  if (!isInlineStyleAvailable(style, context)) {
+    return { text, selection: sel };
+  }
+
+  // Inline code is the one command still answering inside a code span, and
+  // what it means there is "take this off". The paths below already do that
+  // for a selection that names the span's contents; this covers the two they
+  // cannot see — a bare caret between the backticks, and a selection that
+  // crosses one of the backtick runs — which would otherwise wrap a second
+  // span around part of the first.
+  if (context.kind === CodeContextKind.inlineCodeSpan) {
+    const removal = removingCodeSpan(context.sourceRange, text, sel);
+    if (removal !== null) return removal;
+  }
+
   const selectedContent = substringWithRange(text, sel);
   const markers = markersForStyle(style, selectedContent);
   const openingLength = markers.opening.length;
@@ -522,6 +571,9 @@ function isFlanked(range, text) {
  */
 export function insertLink(destination, text, selection) {
   const sel = clampRange(selection, text.length);
+  if (!isLinkAvailable(codeContextIn(sel, text))) {
+    return { text, selection: sel };
+  }
   const label = sel.length > 0 ? substringWithRange(text, sel) : 'link text';
   const escapedLabel = escapeLabel(label);
   const encodedDestination = encodeDestination(destination);
@@ -937,6 +989,54 @@ function longestBacktickRun(text) {
     }
   }
   return longest;
+}
+
+/**
+ * Takes the backticks off the code span at `span`, for a selection the
+ * ordinary unwrapping paths cannot recognise as naming it.
+ *
+ * Returns null — leaving those paths to run — when the selection does name the
+ * span's contents, so every selection that already toggled a span off keeps
+ * doing it, and keeps landing where it used to.
+ */
+function removingCodeSpan(span, text, selection) {
+  let fenceLength = 0;
+  while (
+    span.location + fenceLength < maxRange(span) &&
+    text.charCodeAt(span.location + fenceLength) === 0x60
+  ) {
+    fenceLength += 1;
+  }
+  if (fenceLength === 0) return null;
+
+  const contents = makeRange(
+    span.location + fenceLength,
+    Math.max(0, span.length - fenceLength * 2),
+  );
+  const namesContents =
+    selection.length > 0 &&
+    selection.location >= contents.location &&
+    maxRange(selection) <= maxRange(contents);
+  if (namesContents) return null;
+
+  const unwrapped = unwrappedCodeSpan(substringWithRange(text, span));
+  if (unwrapped === null) return null;
+
+  // How much came off the front: the backticks, and the padding space
+  // `unwrappedCodeSpan` strips when there is one on both sides.
+  const removedBefore = fenceLength + (unwrapped.length === contents.length - 2 ? 1 : 0);
+  const contentStart = span.location;
+  const contentEnd = contentStart + unwrapped.length;
+  const location = Math.min(
+    Math.max(contentStart, selection.location - removedBefore),
+    contentEnd,
+  );
+  return replacing(
+    text,
+    span,
+    unwrapped,
+    makeRange(location, Math.min(selection.length, contentEnd - location)),
+  );
 }
 
 /**

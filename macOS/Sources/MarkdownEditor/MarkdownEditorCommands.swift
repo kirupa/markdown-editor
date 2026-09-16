@@ -1,3 +1,4 @@
+import MarkdownEditorCore
 import MarkdownEditorUI
 import SwiftUI
 
@@ -29,6 +30,15 @@ struct MarkdownEditorCommands: Commands {
 
     @FocusedValue(\.editorColorThemeSelection)
     private var colorThemeSelection
+
+    /// Greys a command out where it could not work.
+    ///
+    /// With no focused document nothing is greyed: the menu is drawn once for
+    /// the whole app, and a document that is not open cannot be said to have
+    /// the caret in code.
+    private func isUnavailable(_ style: MarkdownInlineStyle) -> Bool {
+        session.map { !$0.isAvailable(style) } ?? false
+    }
 
     var body: some Commands {
         CommandGroup(after: .appInfo) {
@@ -115,22 +125,27 @@ struct MarkdownEditorCommands: Commands {
                 session?.toggleInline(.bold)
             }
             .keyboardShortcut("b")
+            .disabled(isUnavailable(.bold))
             Button("Italic") {
                 session?.toggleInline(.italic)
             }
             .keyboardShortcut("i")
+            .disabled(isUnavailable(.italic))
             Button("Underline") {
                 session?.toggleInline(.underline)
             }
             .keyboardShortcut("u")
+            .disabled(isUnavailable(.underline))
             Button("Strikethrough") {
                 session?.toggleInline(.strikethrough)
             }
+            .disabled(isUnavailable(.strikethrough))
 
             Menu("Code") {
                 Button("Inline Code (Single Line)") {
                     session?.toggleInline(.inlineCode)
                 }
+                .disabled(isUnavailable(.inlineCode))
                 Button("Fenced Code Block (Multi-Line)") {
                     session?.insertFencedCodeBlock()
                 }
@@ -172,6 +187,7 @@ struct MarkdownEditorCommands: Commands {
                 session?.chooseLink()
             }
             .keyboardShortcut("k")
+            .disabled(session.map { !$0.isLinkAvailable } ?? false)
             Button("Image…") {
                 session?.chooseAndInsertImage()
             }

@@ -39,7 +39,7 @@ the Mac build, verified by 14,148 differential test cases, but the harness that
 produced that number was never committed, so the claim could not be repeated.
 
 That gap is what [`../Contract/`](../Contract/) closes. It holds the compiled
-Swift's actual behaviour dumped as language-neutral fixtures: 8,180 formatting
+Swift's actual behaviour dumped as language-neutral fixtures: 9,471 formatting
 cases, every render-model span with its source mapping, and 123 path cases.
 
 So, concretely:
@@ -86,6 +86,12 @@ suite that runs in a third of a second and one that needs a UI.
    `Contract/formatting.jsonl`. 9,471 cases; expect the astral and CRLF
    documents to find real bugs. `moveImage` is in there too — see
    "[Direct manipulation of pictures](#direct-manipulation-of-pictures)".
+   Port `MarkdownCodeContext.swift` with it: the inline commands and the link
+   command **do nothing inside a fenced block or a code span**, and the fixture
+   records those cases as empty edits that a port can pass by accident and then
+   get wrong in the app. Read `Contract/README.md` § "Inside code, the inline
+   commands do nothing" first — especially the part about a block quote *not*
+   being code, which is the half that is easy to over-apply.
 3. **Render model.** Port `MarkdownRenderModel.swift` against
    `Contract/render-model.json`. Do not skip the `source` ranges — the reading
    view is not usable without them.
@@ -210,6 +216,7 @@ written down so the Windows port does not pay it again.
 | Where | What |
 | --- | --- |
 | `MarkdownFormatting.moveImage` | The whole text transform. Covered by `Contract/formatting.jsonl` (451 `moveImage` cases). Port it and make the fixture pass before writing any UI. |
+| `MarkdownCodeContext` | Whether a selection is in a fenced block, a code span, or prose — read off the render model, not a scanner of its own, so the commands refuse in exactly the places the reading view draws as code. It is also what the toolbar asks to grey a button out. |
 | `EditorImageGeometry` | Handle rects, hit rects, the corner tie-break, `draggedWidth`. Pointer *and* touch variants. |
 | `MarkdownImageTag.proportionalSize` | Turning a dragged width into a written width/height pair. |
 | `EditorPaneGeometry` | The page, the column inside it, and how far a picture may reach past it: `imageBleed`, `maximumImageWidth`, `imageParagraphIndent`. |
