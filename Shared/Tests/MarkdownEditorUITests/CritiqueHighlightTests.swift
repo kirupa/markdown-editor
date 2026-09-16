@@ -175,4 +175,85 @@ struct CritiqueHighlightTests {
             )
         }
     }
+
+    // MARK: - The rule under the open note's passage
+
+    @Test("Only the open note's passage is ruled")
+    func onlySelectionIsRuled() {
+        for severity in everySeverity {
+            for mode in everyMode {
+                // Hover deliberately does not get one. The reader asked a
+                // question by pointing and answered it by pressing, and the
+                // two answers have to look different.
+                #expect(severity.selectionRule(.resting, on: mode) == nil)
+                #expect(severity.selectionRule(.hovered, on: mode) == nil)
+                #expect(
+                    severity.selectionRule(.selected, on: mode)
+                        == severity.selectionRule(on: mode)
+                )
+            }
+        }
+    }
+
+    @Test("The rule is solid, not another wash")
+    func theRuleIsSolid() throws {
+        for severity in everySeverity {
+            for mode in everyMode {
+                let rule = try #require(
+                    severity.selectionRule(on: mode).sRGBComponents
+                )
+                // The whole point is that it is not a few hundredths of an
+                // alpha under text. A translucent rule is a fourth wash.
+                #expect(rule.alpha == 1)
+            }
+        }
+    }
+
+    @Test("The rule carries the severity, the way the open note's border does")
+    func theRuleCarriesTheSeverity() throws {
+        for mode in everyMode {
+            var seen: Set<String> = []
+            for severity in everySeverity {
+                let rule = try #require(
+                    severity.selectionRule(on: mode).sRGBComponents
+                )
+                seen.insert("\(rule.red),\(rule.green),\(rule.blue)")
+
+                // And it belongs to the same hue family as the wash it is
+                // drawn under, or the passage reads as two marks rather than
+                // one. Compared by which channel leads, which is what "the
+                // red one" and "the blue one" actually mean.
+                let wash = try #require(
+                    severity.highlight(on: mode).sRGBComponents
+                )
+                #expect(
+                    (rule.red > rule.blue) == (wash.red > wash.blue),
+                    Comment(rawValue: "\(severity) on \(mode)")
+                )
+            }
+            #expect(seen.count == 3, "two severities are ruled the same")
+        }
+    }
+
+    @Test("The rule is visible on the page it is drawn on")
+    func theRuleIsVisibleOnItsPage() throws {
+        for (mode, page) in [
+            (EditorAppearanceMode.light, 1.0), (.dark, 0.13)
+        ] {
+            for severity in everySeverity {
+                let rule = try #require(
+                    severity.selectionRule(on: mode).sRGBComponents
+                )
+                let luminance = 0.2126 * rule.red + 0.7152 * rule.green
+                    + 0.0722 * rule.blue
+                // Not a text-contrast threshold — a 2pt rule is not being
+                // read. It has to be far enough from the page to be seen as a
+                // line somebody drew rather than as an artefact.
+                #expect(
+                    abs(luminance - page) > 0.2,
+                    Comment(rawValue: "\(severity) on \(mode) page")
+                )
+            }
+        }
+    }
 }

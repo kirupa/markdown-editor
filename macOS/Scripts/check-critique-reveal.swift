@@ -261,6 +261,18 @@ enum Harness {
             colour(of: middle, in: textView)
                 == CritiqueSeverity.medium.selectedHighlight(on: .light)
         )
+        // And the open note's passage is ruled as well as washed, which is
+        // what makes a press land visibly when the passage was already on
+        // screen and nothing scrolled.
+        check(
+            "the open note's passage is ruled",
+            rule(of: middle, in: textView)
+                == CritiqueSeverity.medium.selectionRule(on: .light)
+        )
+        check(
+            "and no other passage is",
+            rule(of: far, in: textView) == nil
+        )
 
         critique.endHover(middle.id)
         critique.selectedFindingID = nil
@@ -269,6 +281,24 @@ enum Harness {
             "and clearing the hover puts the wash back",
             colour(of: middle, in: textView) == restingColour(for: middle)
         )
+        check(
+            "and closing the note takes the rule away with it",
+            rule(of: middle, in: textView) == nil
+        )
+
+        // Hovering does not rule a passage. The reader asked a question by
+        // pointing and answered it by pressing, and the two answers have to
+        // look different or the press feels like it did nothing.
+        critique.hover(middle.id)
+        settle(for: 0.3)
+        check(
+            "hovering tints the passage without ruling it",
+            colour(of: middle, in: textView)
+                == CritiqueSeverity.medium.hoveredHighlight(on: .light)
+                && rule(of: middle, in: textView) == nil
+        )
+        critique.endHover(middle.id)
+        settle(for: 0.2)
 
         // Moving the pointer straight from one note to the next delivers the
         // arrival before the departure often enough to matter. A naive
@@ -443,6 +473,14 @@ enum Harness {
 
     private static func restingColour(for finding: CritiqueFinding) -> NSColor {
         finding.severity.highlight(on: .light)
+    }
+
+    /// The rule the view is actually drawing under a finding's passage.
+    private static func rule(
+        of finding: CritiqueFinding,
+        in textView: RichMarkdownTextView
+    ) -> NSColor? {
+        textView.critiqueHighlights.first { $0.id == finding.id }?.rule
     }
 
     private static func settle(for seconds: TimeInterval) {

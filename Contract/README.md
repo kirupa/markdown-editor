@@ -607,6 +607,24 @@ it work rather than annoy:
   hover a shade off resting cannot be seen, and one a shade off selected makes
   the press that follows look like it did nothing.
 
+**A wash cannot carry the press on its own, so the open note's passage is also
+ruled.** This is the part that reads as a nicety and is not. The three alphas
+are an order, and an order is only readable when you can see two of them at
+once — but a press replaces one wash with another in a place the reader is
+usually not looking, and **when the passage was already on screen there is no
+scroll to tell them anything happened either.** A difference of a few
+hundredths of an alpha, under text, is a difference somebody reasonably reports
+as the press having done nothing. So the open passage gets a solid rule under
+it, in the severity's own tint — the colour its note is bordered in, so the
+note and the passage read as one object.
+
+Two things a port will be tempted to do instead, both worse. Making the
+selected wash much louder puts the noise on top of the words the author is
+trying to read; a rule is loud without being in the way, because it is not on
+top of anything. And giving the hover a rule too collapses the distinction the
+previous rule just bought: the reader asks a question by pointing and answers
+it by pressing, and the two answers have to look different.
+
 Hover state is **not** document state. It is not saved, it does not enter the
 undo stack, and it does not mark the document as changed — it is where the
 pointer is, which stops being true the moment it moves.
@@ -618,10 +636,11 @@ often enough to matter. Clearing unconditionally on departure turns the new
 highlight straight back off, which on screen is a flicker rather than a move.
 Clear only when the note being left is still the one holding the pointer.
 
-The state machine and the three washes are shared and testable:
+The state machine, the three washes and the rule are shared and testable:
 `Shared/Sources/MarkdownEditorUI/CritiqueHighlight.swift`, with
-`CritiqueHighlightTests.swift` asserting the ordering, the hue, and that nine
-distinct washes come out of three severities in three states.
+`CritiqueHighlightTests.swift` asserting the ordering, the hue, that nine
+distinct washes come out of three severities in three states, and that the rule
+belongs to the open state alone.
 
 ### Noticing that the file changed underneath the editor
 

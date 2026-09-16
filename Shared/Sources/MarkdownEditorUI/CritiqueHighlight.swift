@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import MarkdownEditorCore
 
@@ -123,4 +124,59 @@ extension CritiqueSeverity {
         case .selected: return selectedHighlight(on: mode)
         }
     }
+
+    /// A solid rule drawn under the passage whose note is open, and under no
+    /// other.
+    ///
+    /// A wash cannot carry this on its own. The three alphas are an order, and
+    /// an order is readable when you can see two of them at once — but the
+    /// press that opens a note usually replaces one wash with another in a
+    /// place the reader is not looking, and when the passage was already on
+    /// screen there is no scroll to tell them anything happened either. A
+    /// difference of eighteen hundredths of an alpha, under text, is a
+    /// difference somebody reasonably reports as nothing having happened.
+    ///
+    /// Making the wash stronger instead is the obvious alternative and the
+    /// wrong one: this sits under the words the author is trying to read, and
+    /// a wash loud enough to be unmissable is a wash that fights them. A rule
+    /// is loud without being in the way, because it is not on top of anything.
+    ///
+    /// It is the severity's own **tint** — the colour the open note is
+    /// bordered in — so the note and the passage read as one object rather
+    /// than as two things that happen to be the same kind of red.
+    public func selectionRule(on mode: EditorAppearanceMode) -> PlatformColor {
+        switch (self, mode) {
+        case (.high, .light):
+            return .sRGB(red: 0.85, green: 0.24, blue: 0.24, alpha: 1)
+        case (.medium, .light):
+            return .sRGB(red: 0.90, green: 0.60, blue: 0.10, alpha: 1)
+        case (.low, .light):
+            return .sRGB(red: 0.36, green: 0.55, blue: 0.80, alpha: 1)
+        // The bright members on a dark page, matching the washes: the light
+        // theme's blue measured 2.4:1 against the dark page and reads as a
+        // smudge rather than as a line drawn on purpose.
+        case (.high, .dark):
+            return .sRGB(red: 1.00, green: 0.46, blue: 0.46, alpha: 1)
+        case (.medium, .dark):
+            return .sRGB(red: 1.00, green: 0.76, blue: 0.30, alpha: 1)
+        case (.low, .dark):
+            return .sRGB(red: 0.55, green: 0.76, blue: 1.00, alpha: 1)
+        }
+    }
+
+    /// The rule for a passage in a given state, which is `nil` for every state
+    /// but the open one.
+    ///
+    /// Hover deliberately does not get one. The reader asked a question by
+    /// pointing and answered it by pressing, and the two answers have to look
+    /// different or pressing feels like it did nothing.
+    public func selectionRule(
+        _ state: CritiqueHighlightState,
+        on mode: EditorAppearanceMode
+    ) -> PlatformColor? {
+        state == .selected ? selectionRule(on: mode) : nil
+    }
+
+    /// How thick that rule is drawn.
+    public static let selectionRuleThickness: CGFloat = 2
 }

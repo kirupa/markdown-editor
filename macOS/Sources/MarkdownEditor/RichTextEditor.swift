@@ -333,17 +333,16 @@ struct RichTextEditor: NSViewRepresentable {
                 id, sourceRange, severity -> RichMarkdownTextView.CritiqueHighlight? in
                 let rendered = model.renderedRange(for: sourceRange)
                 guard rendered.length > 0 else { return nil }
+                let state = CritiqueHighlightState.of(
+                    id,
+                    selected: critique.selectedFindingID,
+                    hovered: critique.hoveredFindingID
+                )
                 return RichMarkdownTextView.CritiqueHighlight(
                     id: id,
                     range: rendered,
-                    colour: severity.highlight(
-                        CritiqueHighlightState.of(
-                            id,
-                            selected: critique.selectedFindingID,
-                            hovered: critique.hoveredFindingID
-                        ),
-                        on: colorTheme.mode
-                    )
+                    colour: severity.highlight(state, on: colorTheme.mode),
+                    rule: severity.selectionRule(state, on: colorTheme.mode)
                 )
             }
             if highlights != shownHighlights {
