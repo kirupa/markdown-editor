@@ -77,6 +77,16 @@ for (const count of [2200, 11000, 55000]) {
   const base = corpus(count);
   // The middle of the document, which is the worst place for an edit to land.
   const cut = Math.floor(base.length / 2);
+
+  // Each source is built fresh from `base`, inside the timed region, because
+  // that is what a keystroke does: concatenation produces a rope, and whoever
+  // reads the result first pays to flatten it.
+  //
+  // Do not "tidy" this into deriving each source from the previous one. Slicing
+  // a rope flattens it, so a chain of edits arrives already flat and the timer
+  // never sees a cost the real editor pays on every keystroke. Measured at
+  // 55,000 lines, mid-document: this form pays 0.144 ms of flatten per edit, a
+  // chained one 0.006 ms. The difference is the measurement, not noise.
   const sourceAfter = (step) => `${base.slice(0, cut)}${'x'.repeat(step + 1)}${base.slice(cut)}`;
 
   let model = new MarkdownRenderModel(base);
