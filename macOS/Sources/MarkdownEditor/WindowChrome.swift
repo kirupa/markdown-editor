@@ -17,33 +17,53 @@ import SwiftUI
 /// width docked to the document, so "everything" is a specific number rather
 /// than "as much as possible".
 ///
+/// It also sizes the window to that same number when it first appears, which
+/// is the one thing the green button could never do: zoom is something a reader
+/// has to ask for, and a document that opens with its comments hanging off the
+/// trailing edge has already got it wrong by the time they could.
+///
 /// Attached as a modifier on the editor, which is the only place that knows the
 /// column's current width and whether the comments are open.
 struct WindowChrome: ViewModifier {
     let contentWidth: CGFloat
+    let railIsOpen: Bool
     let fileURL: URL?
 
     func body(content: Content) -> some View {
         content.background(
-            WindowChromeTarget(contentWidth: contentWidth, fileURL: fileURL)
+            WindowChromeTarget(
+                contentWidth: contentWidth,
+                railIsOpen: railIsOpen,
+                fileURL: fileURL
+            )
         )
     }
 }
 
 extension View {
     /// Give this window a title bar that zooms to `contentWidth` points of
-    /// content, moves when dragged, and can name the file it is showing.
+    /// content, moves when dragged, and can name the file it is showing — and,
+    /// while `railIsOpen`, a width that holds that content rather than clipping
+    /// it.
     func windowChrome(
         contentWidth: CGFloat,
+        railIsOpen: Bool,
         fileURL: URL?
     ) -> some View {
-        modifier(WindowChrome(contentWidth: contentWidth, fileURL: fileURL))
+        modifier(
+            WindowChrome(
+                contentWidth: contentWidth,
+                railIsOpen: railIsOpen,
+                fileURL: fileURL
+            )
+        )
     }
 }
 
 /// The bridge to the window. Draws nothing.
 private struct WindowChromeTarget: NSViewRepresentable {
     let contentWidth: CGFloat
+    let railIsOpen: Bool
     let fileURL: URL?
 
     func makeCoordinator() -> WindowChromeDelegate { WindowChromeDelegate() }
@@ -55,11 +75,16 @@ private struct WindowChromeTarget: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        context.coordinator.contentWidth = contentWidth
         context.coordinator.fileURL = fileURL
         // The window may arrive after the first layout pass, so this is also
         // where a late one gets picked up.
         (nsView as? AttachingView)?.attachIfPossible()
+        // Last, because it is the one thing here that needs the window: this
+        // is where a rail that has just opened asks for room.
+        context.coordinator.noteContent(
+            width: contentWidth,
+            railIsOpen: railIsOpen
+        )
     }
 
     /// A view whose only job is to notice it has a window.
@@ -93,6 +118,18 @@ private struct WindowChromeTarget: NSViewRepresentable {
 final class WindowChromeDelegate: NSObject, NSWindowDelegate {
     var contentWidth: CGFloat = 0
 
+    /// Whether the comments rail is in the row.
+    ///
+    /// Closing it does **not** narrow the window again, and that is a choice
+    /// rather than an omission. A window is a thing somebody placed; taking
+    /// 356 points off it because a panel closed would move the writing they
+    /// are reading to pay for a panel they just dismissed. The width that is
+    /// left is not empty desk either — with the rail gone the page takes back
+    /// its bleed margins, so wide pictures have somewhere to go. Zoom is still
+    /// there for anyone who does want the window sized to the writing alone:
+    /// `windowWillUseStandardFrame` answers with exactly that number.
+    private(set) var railIsOpen = false
+
     /// The document on screen, so the title menu can name it and reveal it.
     ///
     /// Kept here rather than read from the window: SwiftUI's `DocumentGroup`
@@ -117,6 +154,78 @@ final class WindowChromeDelegate: NSObject, NSWindowDelegate {
         next = window.delegate
         window.delegate = self
         watchForTitleBarClicks()
+        // One turn of the runloop later, because SwiftUI sizes and orders this
+        // window *after* the view is in it: measured now, the frame is the one
+        // about to be replaced, and widening it would be undone a moment later.
+        DispatchQueue.main.async { [weak self] in
+            self?.sizeToContentIfNeeded()
+        }
+    }
+
+    // MARK: - Making room for the comments
+
+    /// Whether the window has been measured against its content since it
+    /// appeared.
+    private var hasSizedToContent = false
+
+    /// Take the current content, and widen the window if it has just become
+    /// too narrow for it.
+    func noteContent(width: CGFloat, railIsOpen: Bool) {
+        let railJustOpened = railIsOpen && !self.railIsOpen
+        contentWidth = width
+        self.railIsOpen = railIsOpen
+        sizeToContentIfNeeded(force: railJustOpened)
+    }
+
+    /// Widen the window so the rail it is showing is inside it.
+    ///
+    /// The bug this exists for: a new document window is born with the rail
+    /// presented — `CritiqueModel.isDismissed` starts false and `attach(to:)`
+    /// resets it — while nothing sized the window for it, so SwiftUI opened it
+    /// at the view's minimum width and the rail was laid out past the trailing
+    /// edge. Measured on `scroll-test.md`: the panel's header showed, its body
+    /// text and its "Run critique" button did not.
+    ///
+    /// Twice, and only twice: when the window is first seen on screen, and at
+    /// the moment the rail opens on one that was already there. Not on every
+    /// update — the column's width changes on every drag of the gripper, and a
+    /// window that grew to "ideal" each time would be a window that cannot be
+    /// made smaller. Between those two moments the width belongs to the reader.
+    ///
+    /// Not animated, deliberately. The rail itself appears in one frame —
+    /// nothing wraps `reveal()` in `withAnimation` — so a window that took a
+    /// fifth of a second to catch up would spend that fifth of a second
+    /// showing exactly the clipped rail this is here to prevent.
+    private func sizeToContentIfNeeded(force: Bool = false) {
+        guard railIsOpen, contentWidth > 0, let window else { return }
+        // `isVisible` is what makes "first seen" precise. A window still being
+        // assembled has neither its final frame nor a screen, and counting
+        // that as the one look would spend it on a measurement of nothing.
+        guard force || (!hasSizedToContent && window.isVisible) else { return }
+        guard let screen = window.screen ?? NSScreen.main else { return }
+        // Before the work, not after: `setFrame` lays the content out again,
+        // which can re-enter this through `updateNSView`. Only once the window
+        // is really on screen, though — a forced pass over one still being
+        // assembled must not spend the single look this window gets.
+        if window.isVisible { hasSizedToContent = true }
+
+        // Content points to window points: the difference is the window's own
+        // frame, which is not a constant — a title bar's height depends on
+        // whether the window has a toolbar, and on the system's text size.
+        let target = window.frameRect(
+            forContentRect: NSRect(
+                x: 0, y: 0, width: contentWidth, height: 100
+            )
+        ).width
+        let fitted = EditorPaneGeometry.widenedFrame(
+            window.frame,
+            toWidth: target,
+            within: screen.visibleFrame
+        )
+        // A window already wide enough is left alone entirely, rather than set
+        // to the frame it is already in.
+        guard fitted != window.frame else { return }
+        window.setFrame(fitted, display: true)
     }
 
     // MARK: - Clicks in the title bar

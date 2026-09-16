@@ -46,6 +46,37 @@ public enum EditorPaneGeometry {
         return min(max(proposed, minimum), min(maximum, available))
     }
 
+    /// The same, with the comments rail taken out of the room first.
+    ///
+    /// The rail is a fixed width docked to the column, so in a window too
+    /// narrow for both, one of them has to give. Without this it was the rail,
+    /// because it is last in the row and nothing clipped the column on its
+    /// behalf: at a 620-point window the column kept 608 of it and the rail
+    /// was drawn from 608 to 964, entirely outside the window.
+    ///
+    /// The column yields instead. It is the elastic half of the pair — it has
+    /// a floor of its own and reflows to whatever it is given — while a note
+    /// card at half width is not a narrower note, it is an unreadable one.
+    ///
+    /// `railWidth` is zero with the comments shut, which is exactly the
+    /// unclamped call, so there is one rule here rather than two.
+    public static func measureWidth(
+        _ proposed: CGFloat,
+        totalWidth: CGFloat,
+        minimum: CGFloat,
+        maximum: CGFloat,
+        handleWidth: CGFloat,
+        railWidth: CGFloat
+    ) -> CGFloat {
+        measureWidth(
+            proposed,
+            totalWidth: totalWidth - railWidth,
+            minimum: minimum,
+            maximum: maximum,
+            handleWidth: handleWidth
+        )
+    }
+
     /// The leading inset that centers `measure` in `totalWidth`.
     ///
     /// Never negative: a measure wider than the window starts at its leading
@@ -106,6 +137,70 @@ public enum EditorPaneGeometry {
     ) -> CGFloat {
         guard railIsOpen else { return columnWidth + 2 * maximumImageBleed }
         return columnWidth + railWidth
+    }
+
+    // MARK: - Sizing the window around the rail
+
+    /// The narrowest a window may be made while the comments are open.
+    ///
+    /// The rail is always present on a newly opened document, and the window
+    /// had one minimum width for both states — the document's. A window at it
+    /// could not hold the pair, so the rail was drawn past the trailing edge:
+    /// measured on `scroll-test.md`, the panel's header was visible while its
+    /// body text and its "Run critique" button were both outside the window.
+    ///
+    /// The floor is the *column's* minimum plus the rail, not the column's
+    /// preferred width plus the rail. Somebody is still allowed to work in a
+    /// narrow window; what they are not allowed to end up with is half a
+    /// rail, and `measureWidth(_:…:railWidth:)` squeezes the column to keep
+    /// that true all the way down to this number.
+    ///
+    /// Clamped to the screen, and never below `documentMinimum`: on a display
+    /// too small to hold both, a minimum wider than the screen would leave a
+    /// window that cannot be resized or fully seen at all, which is worse than
+    /// a rail short of room.
+    public static func minimumContentWidth(
+        documentMinimum: CGFloat,
+        columnMinimum: CGFloat,
+        railWidth: CGFloat,
+        railIsOpen: Bool,
+        screenWidth: CGFloat
+    ) -> CGFloat {
+        guard railIsOpen else { return documentMinimum }
+        let bothFit = max(documentMinimum, columnMinimum + railWidth)
+        return max(documentMinimum, min(bothFit, screenWidth))
+    }
+
+    /// `frame` grown to `targetWidth`, or returned untouched.
+    ///
+    /// What a window does when it finds it is too narrow to show the comments
+    /// it is already showing. Three rules, and the order matters:
+    ///
+    /// 1. **Never narrower.** A window wider than it needs is a window
+    ///    somebody made that wide. Sizing "to fit" in both directions would
+    ///    shrink it out from under them every time the rail opened.
+    /// 2. **Never wider than the screen.** A window that cannot fit the pair
+    ///    fits as much of it as the display allows rather than running off the
+    ///    desk, where the part that overflows is unreachable rather than
+    ///    merely cramped.
+    /// 3. **Never moved unless it must be.** Growth is added at the trailing
+    ///    edge, where the rail is, so the writing stays under the cursor. Only
+    ///    a window that would then hang off the right is slid left, and only by
+    ///    as much as that takes.
+    ///
+    /// Returns `frame` itself when nothing is owed, so a caller can compare and
+    /// skip the resize rather than setting a window to the frame it already has.
+    public static func widenedFrame(
+        _ frame: CGRect,
+        toWidth targetWidth: CGFloat,
+        within screen: CGRect
+    ) -> CGRect {
+        let width = min(max(frame.width, targetWidth), screen.width)
+        guard width > frame.width else { return frame }
+        let x = min(max(frame.minX, screen.minX), screen.maxX - width)
+        return CGRect(
+            x: x, y: frame.minY, width: width, height: frame.height
+        )
     }
 
     /// Whether a double-click at `point` should zoom the window.

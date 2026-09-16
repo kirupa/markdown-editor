@@ -1,4 +1,4 @@
-.PHONY: app check-critique check-editor-clicks check-image-cursors check-image-handles check-image-layout check-scroll check-session clean icons install run test uninstall
+.PHONY: app check-critique check-editor-clicks check-image-cursors check-image-handles check-image-layout check-scroll check-session check-window clean icons install run test uninstall
 
 app:
 	@./Scripts/build-app.sh
@@ -23,6 +23,9 @@ check-session:
 
 check-scroll:
 	@swift Scripts/check-scroll.swift
+
+check-window:
+	@./Scripts/run-window-checks.sh
 
 icons:
 	@swift Scripts/make-icons.swift Packaging

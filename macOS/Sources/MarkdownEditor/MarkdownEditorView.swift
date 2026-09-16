@@ -107,6 +107,7 @@ struct MarkdownEditorView: View {
                         railWidth: Layout.railWidth,
                         railIsOpen: critique.isPresented
                     ),
+                    railIsOpen: critique.isPresented,
                     fileURL: fileURL
                 )
 
@@ -159,7 +160,7 @@ struct MarkdownEditorView: View {
                 }
             }
         }
-        .frame(minWidth: Layout.minimumWindowWidth, minHeight: 520)
+        .frame(minWidth: minimumWindowWidth, minHeight: 520)
         .background {
             // The desk the page lies on: a flat tone with a faint grid over
             // it, drawn behind everything rather than inside the page.
@@ -345,6 +346,29 @@ struct MarkdownEditorView: View {
             maximum: Layout.maximumExplorerWidth
         )
     }
+
+    /// The narrowest this window may be dragged.
+    ///
+    /// It rises while the comments are open, because the rail cannot yield:
+    /// it is a fixed 356 points docked to the column, so a window narrower
+    /// than the pair has to cut one of them, and the column is the half that
+    /// reflows. Without the raised floor a window sized by hand could put the
+    /// rail back off the trailing edge that this whole change is about — the
+    /// automatic sizing only covers the moment a window opens.
+    ///
+    /// `NSScreen.main` because the floor is a hard constraint: a minimum wider
+    /// than the display would leave a window that cannot be fully seen *or*
+    /// resized. See `EditorPaneGeometry.minimumContentWidth`.
+    private var minimumWindowWidth: CGFloat {
+        EditorPaneGeometry.minimumContentWidth(
+            documentMinimum: Layout.minimumWindowWidth,
+            columnMinimum: Layout.minimumPreviewWidth,
+            railWidth: Layout.railWidth,
+            railIsOpen: critique.isPresented,
+            screenWidth: NSScreen.main?.visibleFrame.width
+                ?? .greatestFiniteMagnitude
+        )
+    }
 }
 
 // Not `private`: `check-critique` renders this pane to a bitmap to measure the
@@ -375,9 +399,17 @@ struct ResizableRichTextPreview: View {
 
     var body: some View {
         GeometryReader { geometry in
+            let railIsOpen = hostsRail && critique.isPresented
+            // The rail comes out of the window's width *before* the column is
+            // measured, not after. It is a fixed width docked to the column,
+            // so in a window too narrow for both, one of them has to give —
+            // and nothing took it out first, so what gave was the rail, drawn
+            // past the trailing edge where nobody could read or click it.
+            let railWidth = railIsOpen ? Layout.railWidth : 0
             let visibleWidth = clampedWidth(
                 preferredWidth,
-                totalWidth: geometry.size.width
+                totalWidth: geometry.size.width,
+                railWidth: railWidth
             )
             // The page is wider than the column: whatever room the window has
             // to spare, up to 100pt a side, is margin a picture may spread
@@ -391,7 +423,6 @@ struct ResizableRichTextPreview: View {
             // keeping the right-hand bleed put a second faint rule and a strip
             // of empty page between the writing and the notes about it, which
             // read as a gutter between two panes rather than as one document.
-            let railIsOpen = hostsRail && critique.isPresented
             let bleed = EditorPaneGeometry.imageBleed(
                 around: visibleWidth,
                 within: geometry.size.width,
@@ -402,7 +433,6 @@ struct ResizableRichTextPreview: View {
             // With comments open the document stops being centred and is
             // placed so the rail lands in its right margin — but only as far
             // as it has to move. On a wide window it does not move at all.
-            let railWidth = railIsOpen ? Layout.railWidth : 0
             let leadingInset = EditorPaneGeometry.documentInsetWithRail(
                 documentWidth: pageWidth,
                 railWidth: railWidth,
@@ -470,19 +500,22 @@ struct ResizableRichTextPreview: View {
                         displayedWidth: visibleWidth,
                         dragGesture: resizeGesture(
                             totalWidth: geometry.size.width,
-                            visibleWidth: visibleWidth
+                            visibleWidth: visibleWidth,
+                            railWidth: railWidth
                         ),
                         onReset: {
                             preferredWidth = clampedWidth(
                                 Layout.defaultPreviewWidth,
-                                totalWidth: geometry.size.width
+                                totalWidth: geometry.size.width,
+                                railWidth: railWidth
                             )
                         },
                         onAdjust: { direction in
                             adjustWidth(
                                 direction,
                                 totalWidth: geometry.size.width,
-                                visibleWidth: visibleWidth
+                                visibleWidth: visibleWidth,
+                                railWidth: railWidth
                             )
                         },
                         helpText: """
@@ -564,7 +597,8 @@ struct ResizableRichTextPreview: View {
 
     private func resizeGesture(
         totalWidth: CGFloat,
-        visibleWidth: CGFloat
+        visibleWidth: CGFloat,
+        railWidth: CGFloat
     ) -> AnyGesture<DragGesture.Value> {
         AnyGesture(
             DragGesture(minimumDistance: 1)
@@ -575,7 +609,8 @@ struct ResizableRichTextPreview: View {
                     preferredWidth = clampedWidth(
                         (dragStartWidth ?? visibleWidth)
                             + value.translation.width,
-                        totalWidth: totalWidth
+                        totalWidth: totalWidth,
+                        railWidth: railWidth
                     )
                 }
                 .onEnded { _ in
@@ -587,7 +622,8 @@ struct ResizableRichTextPreview: View {
     private func adjustWidth(
         _ direction: AccessibilityAdjustmentDirection,
         totalWidth: CGFloat,
-        visibleWidth: CGFloat
+        visibleWidth: CGFloat,
+        railWidth: CGFloat
     ) {
         let adjustment: CGFloat
         switch direction {
@@ -601,20 +637,25 @@ struct ResizableRichTextPreview: View {
 
         preferredWidth = clampedWidth(
             visibleWidth + adjustment,
-            totalWidth: totalWidth
+            totalWidth: totalWidth,
+            railWidth: railWidth
         )
     }
 
+    /// The column, clamped to the room the window has left once the comments
+    /// have taken theirs. `railWidth` is zero with them shut.
     private func clampedWidth(
         _ proposedWidth: CGFloat,
-        totalWidth: CGFloat
+        totalWidth: CGFloat,
+        railWidth: CGFloat
     ) -> CGFloat {
         EditorPaneGeometry.measureWidth(
             proposedWidth,
             totalWidth: totalWidth,
             minimum: minimumWidth,
             maximum: Layout.maximumPreviewWidth,
-            handleWidth: Layout.gripperWidth
+            handleWidth: Layout.gripperWidth,
+            railWidth: railWidth
         )
     }
 }
