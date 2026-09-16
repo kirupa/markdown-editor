@@ -26,22 +26,10 @@ public enum RichMarkdownStyler {
         // width of the line it is on, so a picture can only be wider than the
         // column if its own line is.
         let bleed = page?.bleed ?? 0
-        let baseParagraphStyle = NSMutableParagraphStyle()
-        baseParagraphStyle.lineSpacing = 2
-        baseParagraphStyle.paragraphSpacing = 7
-        baseParagraphStyle.firstLineHeadIndent = bleed
-        baseParagraphStyle.headIndent = bleed
-        baseParagraphStyle.tailIndent = -bleed
 
         let attributedText = NSMutableAttributedString(
             string: model.text,
-            attributes: [
-                .font: PlatformFont.systemFont(
-                    ofSize: MarkdownTypography.bodyFontSize
-                ),
-                .foregroundColor: colorTheme.primaryTextColor,
-                .paragraphStyle: baseParagraphStyle
-            ]
+            attributes: baseAttributes(colorTheme: colorTheme, bleed: bleed)
         )
 
         for span in model.spans
@@ -71,13 +59,89 @@ public enum RichMarkdownStyler {
         return attributedText
     }
 
+    /// What every paragraph starts as, before any block or inline style.
+    static func baseAttributes(
+        colorTheme: EditorColorTheme,
+        bleed: CGFloat
+    ) -> [NSAttributedString.Key: Any] {
+        let baseParagraphStyle = NSMutableParagraphStyle()
+        baseParagraphStyle.lineSpacing = 2
+        baseParagraphStyle.paragraphSpacing = 7
+        baseParagraphStyle.firstLineHeadIndent = bleed
+        baseParagraphStyle.headIndent = bleed
+        baseParagraphStyle.tailIndent = -bleed
+        return [
+            .font: PlatformFont.systemFont(
+                ofSize: MarkdownTypography.bodyFontSize
+            ),
+            .foregroundColor: colorTheme.primaryTextColor,
+            .paragraphStyle: baseParagraphStyle
+        ]
+    }
+
+    /// What the caret at `location` should type with, when the line it sits on
+    /// has no characters of its own to say.
+    ///
+    /// The last line of a document is the one place an attribute cannot reach:
+    /// it has no newline, so there is nothing to carry a paragraph style, and
+    /// TextKit falls back to the character *before* the caret — which belongs
+    /// to the line above and, for a quote, is not even styled as one, because
+    /// a quote's span stops short of its own newline.
+    ///
+    /// The effect was that pressing Enter at the end of a quote wrote `> ` into
+    /// the source and drew the new line flush against the margin, so the quote
+    /// looked finished while the document said it was not.
+    ///
+    /// Returns nil wherever the line can speak for itself, which is everywhere
+    /// else; the caller then leaves the text view's own typing attributes
+    /// alone rather than freezing them at whatever was last computed.
+    public static func typingAttributes(
+        for model: MarkdownRenderModel,
+        at location: Int,
+        colorTheme: EditorColorTheme,
+        page: MarkdownPageMetrics? = nil
+    ) -> [NSAttributedString.Key: Any]? {
+        guard location >= (model.text as NSString).length else {
+            return nil
+        }
+        guard let span = model.spans.first(where: {
+            $0.style.isBlockStyle
+                && $0.renderedRange.length == 0
+                && $0.renderedRange.location == location
+        }) else {
+            return nil
+        }
+
+        // Styled by running the real thing over a scratch paragraph rather
+        // than by rebuilding the indents here, so an empty line cannot drift
+        // from the lines that have text on them.
+        let bleed = page?.bleed ?? 0
+        let scratch = NSMutableAttributedString(
+            string: "\n",
+            attributes: baseAttributes(colorTheme: colorTheme, bleed: bleed)
+        )
+        applyBlockStyle(
+            MarkdownRenderSpan(
+                style: span.style,
+                renderedRange: NSRange(location: 0, length: 1),
+                sourceRange: span.sourceRange,
+                includesMarkup: span.includesMarkup,
+                isAtomic: span.isAtomic
+            ),
+            to: scratch,
+            colorTheme: colorTheme,
+            bleed: bleed
+        )
+        return scratch.attributes(at: 0, effectiveRange: nil)
+    }
+
     private static func applyBlockStyle(
         _ span: MarkdownRenderSpan,
         to text: NSMutableAttributedString,
         colorTheme: EditorColorTheme,
         bleed: CGFloat
     ) {
-        let range = clamped(span.renderedRange, to: text.length)
+        let range = styledRange(for: span, in: text)
         guard range.length > 0 else {
             return
         }
@@ -179,6 +243,43 @@ public enum RichMarkdownStyler {
         default:
             break
         }
+    }
+
+    /// The characters a block span should be drawn over.
+    ///
+    /// Normally the span's own range. The exception is an **empty line inside
+    /// a block** — the one a quote or a list makes the moment Enter is pressed
+    /// and before anything has been typed into it. The renderer reports that
+    /// line as a zero-length span, because there genuinely is no text on it,
+    /// and a zero-length range carries no attributes: `addAttribute` over it
+    /// does nothing at all. So the new line was drawn flush against the margin
+    /// and the quote looked as though it had ended, while the source said
+    /// `> ` and the next character typed appeared indented after all.
+    ///
+    /// A paragraph style belongs to the paragraph, not to the letters in it,
+    /// so an empty paragraph still deserves one. The line's own newline is
+    /// what carries it: in TextKit a newline terminates the paragraph it ends,
+    /// so the character *at* the span is this line's, while the one before it
+    /// belongs to the line above. Extending forward is therefore safe and
+    /// extending backwards would indent the wrong paragraph — which is exactly
+    /// what a quote typed under a plain sentence would have done.
+    ///
+    /// A line with no newline after it has no character at all, which no
+    /// attribute can reach. That is the last line of the document, and it is
+    /// `typingAttributes(for:at:...)` that keeps it indented.
+    private static func styledRange(
+        for span: MarkdownRenderSpan,
+        in text: NSMutableAttributedString
+    ) -> NSRange {
+        let range = clamped(span.renderedRange, to: text.length)
+        guard range.length == 0, range.location < text.length else {
+            return range
+        }
+        let next = NSRange(location: range.location, length: 1)
+        guard (text.string as NSString).substring(with: next) == "\n" else {
+            return range
+        }
+        return next
     }
 
     private static func applyInlineStyle(

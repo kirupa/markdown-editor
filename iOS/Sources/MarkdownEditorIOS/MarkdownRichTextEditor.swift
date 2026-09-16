@@ -471,8 +471,33 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
                 location: min(max(0, renderedCaret), length), length: 0
             )
             textView.selectedRange = caret
+            applyTypingAttributes(textView, at: caret)
             parent.controller.selection = model.sourceRange(for: caret)
             return false
+        }
+
+        /// Keeps an empty last line looking like the block it belongs to.
+        ///
+        /// The same fault the Mac had: the final line of a document has no
+        /// characters, not even a newline, so no attribute can reach it and
+        /// UIKit types with whatever the character before the caret said —
+        /// which belongs to the line above. A quote continued onto a new line
+        /// was drawn flush against the margin until something was typed into
+        /// it.
+        private func applyTypingAttributes(
+            _ textView: UITextView,
+            at caret: NSRange
+        ) {
+            guard caret.length == 0,
+                let attributes = RichMarkdownStyler.typingAttributes(
+                    for: model,
+                    at: caret.location,
+                    colorTheme: parent.theme
+                )
+            else {
+                return
+            }
+            textView.typingAttributes = attributes
         }
 
         func textViewDidChangeSelection(_ textView: UITextView) {
