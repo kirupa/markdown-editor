@@ -34,6 +34,22 @@ final class CritiqueModel: ObservableObject {
     @Published private(set) var failure: CritiqueService.Failure?
     /// Which card is raised, and which highlight is drawn strongly.
     @Published var selectedFindingID: UUID?
+    /// Which card the pointer is over, so its passage can answer.
+    ///
+    /// Kept here rather than in each card's own `@State` because the thing
+    /// that has to react is not the card — it is the text, on the other side
+    /// of the window. A hover nobody publishes cannot reach it.
+    ///
+    /// Deliberately not saved, not undoable, and not a document change: it is
+    /// where the pointer is, which stops being true the moment it moves.
+    @Published private(set) var hoveredFindingID: UUID?
+    /// Bumped whenever the author asks to be taken to a passage.
+    ///
+    /// The editor scrolls once per *request*, not once per selection. Asking
+    /// again for the passage that is already selected has to be a new request
+    /// or clicking a card you have already opened does nothing — see
+    /// `reveal(_:)`.
+    @Published private(set) var revealRequests = 0
     /// The document the report was written about.
     ///
     /// Kept so the rail can say when it has gone stale. A critique describes a
@@ -192,6 +208,13 @@ final class CritiqueModel: ObservableObject {
         if resolution != nil, selectedFindingID == id {
             selectedFindingID = nil
         }
+        // And it stops answering the pointer, for the same reason: a note
+        // being dealt with moves down the rail under the pointer, and a
+        // highlight left lit by a card that is no longer there points at
+        // nothing the reader can see.
+        if resolution != nil, hoveredFindingID == id {
+            hoveredFindingID = nil
+        }
         reorder()
     }
 
@@ -210,6 +233,51 @@ final class CritiqueModel: ObservableObject {
     func item(withID id: UUID?) -> Item? {
         guard let id else { return nil }
         return items.first { $0.id == id }
+    }
+
+    /// What pressing a note in the rail does.
+    ///
+    /// Here rather than in the view because it is a decision, and a decision
+    /// in a view builder is a decision nothing can check. The one it used to
+    /// make was a toggle — see `reveal(_:)` for why that was wrong.
+    func press(_ item: Item) {
+        guard item.isOutstanding else { return }
+        reveal(item.id)
+    }
+
+    /// Open a finding's note and take the reader to its passage.
+    ///
+    /// The one thing this deliberately does not do is toggle. Pressing a card
+    /// that is already open used to turn the selection *off*, which is the
+    /// opposite of what somebody pressing it a second time is asking for —
+    /// they are asking to be taken there again, usually because the first
+    /// press did not appear to do anything. Turning the mark off at that
+    /// moment reads as the app going further backwards.
+    ///
+    /// Asking again is a new request rather than a no-op, which is what the
+    /// counter is for: the editor reveals once per request, so the same
+    /// finding can be revealed twice while an unrelated redraw still cannot
+    /// steal the reader's scroll position.
+    func reveal(_ id: UUID) {
+        selectedFindingID = id
+        revealRequests += 1
+    }
+
+    /// Note that the pointer has arrived over a finding's card.
+    func hover(_ id: UUID) {
+        hoveredFindingID = id
+    }
+
+    /// Note that the pointer has left a finding's card.
+    ///
+    /// Takes the card's own identifier and ignores the call when some other
+    /// card has since claimed the pointer. Moving between two adjacent cards
+    /// delivers the new card's arrival *before* the old card's departure often
+    /// enough to matter, and clearing unconditionally turns the new highlight
+    /// straight back off — which on screen is a flicker rather than a move.
+    func endHover(_ id: UUID) {
+        guard hoveredFindingID == id else { return }
+        hoveredFindingID = nil
     }
 
     /// The highlight ranges, worst last so a high finding is drawn over a low
@@ -306,6 +374,7 @@ final class CritiqueModel: ObservableObject {
         isDismissed = true
         failure = nil
         selectedFindingID = nil
+        hoveredFindingID = nil
     }
 
     /// Applies a report without going through the CLI. For checks only.
@@ -396,6 +465,10 @@ final class CritiqueModel: ObservableObject {
         progress = nil
         failure = nil
         selectedFindingID = nil
+        // A new set of notes is a new pad. The pointer may well still be over
+        // the same patch of screen, but it is not over the note that was
+        // there a moment ago.
+        hoveredFindingID = nil
     }
 
     /// Outstanding first in reading order, answered ones after them.
@@ -495,50 +568,6 @@ extension CritiqueSeverity {
         case (.high, .dark): return Color(red: 0.30, green: 0.15, blue: 0.16)
         case (.medium, .dark): return Color(red: 0.28, green: 0.23, blue: 0.10)
         case (.low, .dark): return Color(red: 0.14, green: 0.21, blue: 0.32)
-        }
-    }
-
-    /// The wash behind the passage in the text.
-    ///
-    /// Faint, because it sits under the words the author is trying to read.
-    /// Google Docs' comment highlight is the reference: enough to notice, not
-    /// enough to fight the text.
-    func highlight(on mode: EditorAppearanceMode) -> NSColor {
-        switch (self, mode) {
-        case (.high, .light):
-            return NSColor(srgbRed: 0.85, green: 0.24, blue: 0.24, alpha: 0.16)
-        case (.medium, .light):
-            return NSColor(srgbRed: 0.95, green: 0.66, blue: 0.13, alpha: 0.20)
-        case (.low, .light):
-            return NSColor(srgbRed: 0.36, green: 0.55, blue: 0.80, alpha: 0.15)
-        // Lighter and a shade stronger, because a wash darker than the page it
-        // is on is not a highlight. The red measured 1.11:1 against a dark
-        // page — a mark you cannot see is the same as no mark, and the comment
-        // beside it then points at nothing.
-        case (.high, .dark):
-            return NSColor(srgbRed: 1.00, green: 0.46, blue: 0.46, alpha: 0.22)
-        case (.medium, .dark):
-            return NSColor(srgbRed: 1.00, green: 0.76, blue: 0.30, alpha: 0.22)
-        case (.low, .dark):
-            return NSColor(srgbRed: 0.55, green: 0.76, blue: 1.00, alpha: 0.20)
-        }
-    }
-
-    /// The wash for the passage whose card is open.
-    func selectedHighlight(on mode: EditorAppearanceMode) -> NSColor {
-        switch (self, mode) {
-        case (.high, .light):
-            return NSColor(srgbRed: 0.85, green: 0.24, blue: 0.24, alpha: 0.34)
-        case (.medium, .light):
-            return NSColor(srgbRed: 0.95, green: 0.62, blue: 0.10, alpha: 0.42)
-        case (.low, .light):
-            return NSColor(srgbRed: 0.36, green: 0.55, blue: 0.80, alpha: 0.32)
-        case (.high, .dark):
-            return NSColor(srgbRed: 1.00, green: 0.46, blue: 0.46, alpha: 0.40)
-        case (.medium, .dark):
-            return NSColor(srgbRed: 1.00, green: 0.76, blue: 0.30, alpha: 0.40)
-        case (.low, .dark):
-            return NSColor(srgbRed: 0.55, green: 0.76, blue: 1.00, alpha: 0.38)
         }
     }
 }

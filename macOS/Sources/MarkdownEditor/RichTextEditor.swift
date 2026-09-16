@@ -184,7 +184,9 @@ struct RichTextEditor: NSViewRepresentable {
         private var renderedPage: MarkdownPageMetrics?
         weak var critique: CritiqueModel?
         private var shownHighlights: [RichMarkdownTextView.CritiqueHighlight] = []
-        private var scrolledToFinding: UUID?
+        /// The reveal this pane has already performed: which finding, and
+        /// which request for it. Both halves are needed — see `applyCritique`.
+        private var revealed: (finding: UUID?, request: Int)?
         private var isRendering = false
         private var compositionState: CompositionState?
         private let scrollSynchronizer = EditorScrollSynchronizer()
@@ -331,13 +333,17 @@ struct RichTextEditor: NSViewRepresentable {
                 id, sourceRange, severity -> RichMarkdownTextView.CritiqueHighlight? in
                 let rendered = model.renderedRange(for: sourceRange)
                 guard rendered.length > 0 else { return nil }
-                let selected = critique.selectedFindingID == id
                 return RichMarkdownTextView.CritiqueHighlight(
                     id: id,
                     range: rendered,
-                    colour: selected
-                        ? severity.selectedHighlight(on: colorTheme.mode)
-                        : severity.highlight(on: colorTheme.mode)
+                    colour: severity.highlight(
+                        CritiqueHighlightState.of(
+                            id,
+                            selected: critique.selectedFindingID,
+                            hovered: critique.hoveredFindingID
+                        ),
+                        on: colorTheme.mode
+                    )
                 )
             }
             if highlights != shownHighlights {
@@ -345,21 +351,110 @@ struct RichTextEditor: NSViewRepresentable {
                 textView.critiqueHighlights = highlights
             }
 
-            // Bring the passage into view when a card is opened, but only once
-            // per selection: doing it on every update would fight the author
+            // Bring the passage into view when a note is opened, but only once
+            // per *request*: doing it on every update would fight the author
             // for the scroll position while they read.
-            guard critique.selectedFindingID != scrolledToFinding else { return }
-            scrolledToFinding = critique.selectedFindingID
+            //
+            // The request count is what makes pressing the same card twice
+            // work. Keyed on the selected finding alone, a second press could
+            // never move the page, because the selection it compares against
+            // had not changed.
+            let request = (critique.selectedFindingID, critique.revealRequests)
+            guard revealed?.finding != request.0
+                || revealed?.request != request.1
+            else {
+                return
+            }
             guard
                 let id = critique.selectedFindingID,
                 let item = critique.item(withID: id),
                 let sourceRange = item.range
             else {
+                // Nothing to reveal — an unanchored note, or the selection
+                // being cleared. Recorded all the same, so the next real
+                // request is compared against this one.
+                revealed = (request.0, request.1)
                 return
             }
             let rendered = model.renderedRange(for: sourceRange)
+            // Deliberately *not* recorded when there is nothing to scroll to.
+            //
+            // This guard used to sit after the bookkeeping, and that is its
+            // own reported bug: a passage that could not be mapped — a stale
+            // critique against a redrafted document — was marked as revealed
+            // without anything happening, so the note could never take the
+            // reader anywhere again until they clicked a different one and
+            // came back. Leaving the request unrecorded means pressing the
+            // card again tries again.
             guard rendered.length > 0 else { return }
-            textView.scrollRangeToVisible(rendered)
+            revealed = (request.0, request.1)
+            reveal(rendered, in: textView)
+        }
+
+        /// Take the reader to a passage in the rendered text.
+        ///
+        /// Three things have to happen in order, and `scrollRangeToVisible`
+        /// does none of them.
+        ///
+        /// **Measure first.** A scroll offset is clamped to the *frame* of the
+        /// text view, and that frame only grows as the document is laid out —
+        /// re-styling throws the layout away and rebuilds no more than the
+        /// screenful the reader is looking at, because measuring a long
+        /// document per keystroke is felt as typing lag. Asking to be taken
+        /// 280,000 points down a pane that has measured 1,000 lands at 400.
+        /// Only the part above the passage has to exist, so that is all this
+        /// measures; the whole container costs about fifty times as much on a
+        /// long document and buys nothing.
+        ///
+        /// **Frame it, do not merely expose it.** The platform's reveal does
+        /// the smallest scroll that makes a rectangle visible, which leaves a
+        /// passage below the fold hard against the bottom edge with nothing
+        /// after it to read. `EditorScrollGeometry.offset(toReveal:)` places
+        /// it a third of the way down instead.
+        ///
+        /// **Leave a passage already in front of the reader alone.** Clicking
+        /// a shaded passage in the text raises its note, and this runs for
+        /// that too; moving the page under the pointer that has just landed on
+        /// it is the rudest thing the feature could do.
+        private func reveal(_ rendered: NSRange, in textView: NSTextView) {
+            guard let layoutManager = textView.layoutManager,
+                let container = textView.textContainer,
+                let scrollView = textView.enclosingScrollView
+            else {
+                return
+            }
+            layoutManager.ensureLayout(
+                forCharacterRange: NSRange(
+                    location: 0,
+                    length: NSMaxRange(rendered)
+                )
+            )
+            let glyphs = layoutManager.glyphRange(
+                forCharacterRange: rendered,
+                actualCharacterRange: nil
+            )
+            let box = layoutManager.boundingRect(
+                forGlyphRange: glyphs,
+                in: container
+            )
+            guard box.height > 0 else { return }
+            let passage = (
+                minY: box.minY + textView.textContainerInset.height,
+                height: box.height
+            )
+            let geometry = EditorScrollGeometry(
+                documentHeight: textView.frame.height,
+                viewportHeight: scrollView.contentView.bounds.height,
+                offset: scrollView.contentView.bounds.minY
+            )
+            guard !geometry.isComfortablyVisible(passage) else { return }
+            let target = geometry.offset(toReveal: passage)
+            // The clamp reaches for the frame as it stands, so the document
+            // has to have been measured past where the viewport is going or
+            // the offset is cut short — the same arithmetic that puts a reader
+            // back after a re-style, for the same reason.
+            scrollSynchronizer.prepareLayout(toRestore: target)
+            scrollSynchronizer.setDocumentOffset(target)
         }
 
         func apply(_ result: MarkdownEditResult, actionName: String) {

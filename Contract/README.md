@@ -519,6 +519,110 @@ shape of the problem is different again — assigning `attributedText` resets
 `contentOffset` outright — so a port should establish what its own toolkit does
 rather than assume this one transfers.
 
+### Taking the reader to a criticised passage
+
+Every build shades the passage each critique note is about, and every build
+lets you press the note. What the press then does is the part worth writing
+down, because the obvious spellings of it are all wrong in ways that read to
+the person holding the mouse as the feature being broken.
+
+**A press on a note is a reveal, never a toggle.** Pressing a note that is
+already open must take the reader back to its passage. The toggle is the
+tempting version — it is one line, and it gives you a way to turn the mark off
+— and it is exactly wrong: somebody pressing a note a second time is doing so
+*because the first press did not appear to do anything*, and what they get is
+the mark going out. The macOS build shipped the toggle and it was reported as
+"I have to click several times".
+
+**Frame the passage; do not merely expose it.** Every toolkit has a
+"scroll this into view" call, and every one of them does the *smallest* scroll
+that makes the rectangle visible. A passage below the fold therefore lands hard
+against the bottom edge of the window, half under the scrollbar, with nothing
+after it to read — which is not what somebody who pressed a comment asked for.
+Put it about a third of the way down instead, and let the clamp handle the rest:
+a passage near the top of the document stays where it is, one near the end stops
+at the document's last screenful, and a document shorter than the window does
+not move. A passage taller than the window is the only case that is not a
+clamp — start it at its first line, because a reader sent to a long quotation
+wants to begin at its beginning.
+
+**Do not move a passage the reader is already looking at.** Clicking a shaded
+passage in the *text* raises its note, and that runs through the same reveal.
+Moving the page under the pointer that just landed on it is the rudest thing
+the feature can do. "Visible" is the wrong test, though — a passage sitting in
+the last few points of the window is visible and is precisely what the reveal
+exists to fix. Require a margin of air above and below before doing nothing is
+the better answer.
+
+**Measure before you scroll.** This is the one that only bites on long
+documents, and it is the same trap as the previous section: a scroll offset is
+clamped to the height the document has been *laid out to*, not to its real
+height. Since re-styling throws layout away and every build rebuilds no more
+than a screenful afterwards — measuring a long document per keystroke is felt
+as typing lag — a pane the reader has just typed into has measured about a
+window's worth. Asking it to scroll 280,000 points down lands at 400. Lay out
+as far as the passage before asking where it is, and as far as the *target
+viewport* before scrolling there. Only that far: laying out the whole document
+on every press costs about fifty times as much and buys nothing.
+
+The arithmetic is shared and testable —
+`EditorScrollGeometry.offset(toReveal:)` and `isComfortablyVisible(_:)`, with
+the recorded numbers in `EditorScrollGeometryTests.swift`. The parts that are
+not pure are asserted against real views by
+`macOS/Scripts/check-critique-reveal.swift`.
+
+A trap that has nothing to do with scrolling and cost more than all of the
+above: **selectable text swallows the press.** On macOS, SwiftUI's
+`.textSelection(.enabled)` installs an AppKit view over the words, and that view
+takes the click before any gesture on the card is reached — `hitTest` in the
+middle of a note returns it rather than the hosting view. Since the words are
+most of a note's area, the card answered a press on its margin and ignored one
+on itself. Whatever the platform's equivalent is (a `<span>` with
+`user-select`, a read-only text control), a port must check which element
+actually receives the press on the note's text, and not assume that a handler
+on the container sees it.
+
+### Hovering a note tints its passage
+
+A rail of notes beside a column of prose has a pointing problem: the note names
+a passage, and on a long document the passage it names is often not the one
+beside it. Pressing to find out is a poor way to ask a question, because
+pressing also moves the page.
+
+So the pointer answers it. **When the pointer rests on a note, the passage that
+note is about changes colour where it is already on screen.** Three rules make
+it work rather than annoy:
+
+- **It never scrolls.** A hover is a question, not an instruction. If the
+  passage is off screen, nothing happens — a page that moves when the pointer
+  passes over a list is unusable.
+- **Selection outranks hover.** A reader whose pointer is resting on the note
+  they have already opened is looking at one thing, not two, and dropping the
+  passage back to the weaker wash while the pointer sits over its card reads as
+  the selection being lost.
+- **The hover wash sits between the other two** — the resting mark's own
+  colour, at an alpha halfway to the selected one. Keeping the hue means the
+  hover reads as *more of the mark already there* rather than as a different
+  kind of mark. Landing halfway is what keeps the three legible as an order: a
+  hover a shade off resting cannot be seen, and one a shade off selected makes
+  the press that follows look like it did nothing.
+
+Hover state is **not** document state. It is not saved, it does not enter the
+undo stack, and it does not mark the document as changed — it is where the
+pointer is, which stops being true the moment it moves.
+
+One implementation trap, and it is the same on every toolkit that reports hover
+as two separate events: moving the pointer from one note straight to the next
+delivers the *arrival* on the new note before the *departure* from the old one
+often enough to matter. Clearing unconditionally on departure turns the new
+highlight straight back off, which on screen is a flicker rather than a move.
+Clear only when the note being left is still the one holding the pointer.
+
+The state machine and the three washes are shared and testable:
+`Shared/Sources/MarkdownEditorUI/CritiqueHighlight.swift`, with
+`CritiqueHighlightTests.swift` asserting the ordering, the hue, and that nine
+distinct washes come out of three severities in three states.
+
 ### Noticing that the file changed underneath the editor
 
 Any build that saves on a timer needs this, and the naive version is worse than

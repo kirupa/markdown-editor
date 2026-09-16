@@ -51,7 +51,14 @@ let package = Package(
         ),
         .testTarget(
             name: "MarkdownEditorCoreTests",
-            dependencies: ["MarkdownEditorCore"]
+            // The contract corpus is a test-only dependency: the invariant
+            // tests run the parser, the codec and the formatting commands over
+            // exactly the documents the fixtures are generated from. Declared
+            // rather than merely imported — SwiftPM's older build system found
+            // the module anyway through the other test target, and the Xcode
+            // one does not, so the suite would not build at all on a current
+            // toolchain.
+            dependencies: ["MarkdownEditorCore", "MarkdownEditorContract"]
         ),
         .testTarget(
             name: "MarkdownEditorUITests",

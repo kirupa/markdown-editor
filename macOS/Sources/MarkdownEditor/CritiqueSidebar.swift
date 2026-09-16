@@ -816,10 +816,13 @@ struct CritiqueSidebar: View {
                             item: item,
                             colorTheme: colorTheme,
                             isSelected: critique.selectedFindingID == item.id,
-                            onTap: {
-                                guard item.isOutstanding else { return }
-                                critique.selectedFindingID =
-                                    critique.selectedFindingID == item.id ? nil : item.id
+                            onTap: { critique.press(item) },
+                            onHoverChange: { hovering in
+                                if hovering {
+                                    critique.hover(item.id)
+                                } else {
+                                    critique.endHover(item.id)
+                                }
                             },
                             onResolve: { resolution in
                                 withAnimation(.easeOut(duration: 0.2)) {
@@ -1227,13 +1230,32 @@ private struct StickyNote<Content: View>: View {
     var isSelected: Bool = false
     var selectionColour: Color = .clear
     var dimmed: Bool = false
+    /// What pressing this note does, if it is a note you can press.
+    var onPress: (() -> Void)?
+    /// Told when the pointer arrives over this note and when it leaves.
+    var onHoverChange: ((Bool) -> Void)?
     @ViewBuilder let content: Content
 
     @State private var isHovered = false
 
+    /// Whether the words on this note can be selected with the pointer.
+    ///
+    /// Not on a note you can press, and this is not a preference — it is the
+    /// reason pressing a note used not to work. `.textSelection(.enabled)`
+    /// puts an `AppKitTextInteractionView` over the text, and that view takes
+    /// the click: `hitTest` at the middle of a note returns it rather than the
+    /// hosting view, so the press never reaches SwiftUI's gesture at all.
+    /// Since the words are most of a note's area, what a reader saw was a card
+    /// that answered a click on its margin and ignored a click on itself —
+    /// reported, accurately, as having to click several times.
+    ///
+    /// Notes with nothing to press keep selectable text: the summary, the
+    /// repeated patterns and the keep list are prose somebody may well want to
+    /// copy, and nothing is competing for the click there.
+    private var allowsTextSelection: Bool { onPress == nil }
+
     var body: some View {
-        content
-            .textSelection(.enabled)
+        selectableContent
             .padding(10)
             .padding(.top, tag == nil ? 2 : 8)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1280,12 +1302,47 @@ private struct StickyNote<Content: View>: View {
                 value: isHovered
             )
             .zIndex(isHovered ? 1 : 0)
-            .onHover { isHovered = $0 }
+            .onHover { hovering in
+                isHovered = hovering
+                onHoverChange?(hovering)
+            }
             // Room for the corners to turn and grow into. Without it a rotated
             // note is clipped by the scroll view and the effect reads as a
             // rendering fault rather than as a note pinned at an angle.
             .padding(.horizontal, 16)
             .padding(.vertical, 4)
+            // The press lives here rather than around the whole thing outside,
+            // so it is applied to the same view the hover is and cannot be
+            // separated from the selectable-text decision above it.
+            .contentShape(Rectangle())
+            .modifier(PressAction(action: onPress))
+    }
+
+    @ViewBuilder
+    private var selectableContent: some View {
+        if allowsTextSelection {
+            content.textSelection(.enabled)
+        } else {
+            content.textSelection(.disabled)
+        }
+    }
+}
+
+/// A tap gesture, or nothing at all.
+///
+/// `onTapGesture` cannot be applied conditionally without the two branches
+/// being different types, and a note with no action must not claim the click:
+/// a gesture with an empty body still swallows it, which would take the
+/// pointer's press away from anything underneath.
+private struct PressAction: ViewModifier {
+    let action: (() -> Void)?
+
+    func body(content: Content) -> some View {
+        if let action {
+            content.onTapGesture(perform: action)
+        } else {
+            content
+        }
     }
 }
 
@@ -1343,9 +1400,9 @@ struct CritiqueCard: View {
     let colorTheme: EditorColorTheme
     let isSelected: Bool
     let onTap: () -> Void
+    /// Told when the pointer arrives over this note and when it leaves.
+    let onHoverChange: (Bool) -> Void
     let onResolve: (CritiqueResolution?) -> Void
-
-    @State private var isHovered = false
 
     private var finding: CritiqueFinding { item.finding }
     private var isAnswered: Bool { !item.isOutstanding }
@@ -1490,7 +1547,12 @@ struct CritiqueCard: View {
             tag: AnyView(severityTag),
             isSelected: isSelected,
             selectionColour: finding.severity.tint,
-            dimmed: isAnswered
+            dimmed: isAnswered,
+            // An answered note has nothing to take you to, so it keeps its
+            // selectable text: there is no press competing for the click, and
+            // it is still prose somebody may want to copy out.
+            onPress: isAnswered ? nil : onTap,
+            onHoverChange: onHoverChange
         ) {
             VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top, spacing: 6) {
@@ -1576,7 +1638,6 @@ struct CritiqueCard: View {
         }
         }
         .contentShape(Rectangle())
-        .onTapGesture(perform: onTap)
         .animation(.easeOut(duration: 0.14), value: isSelected)
     }
 }
