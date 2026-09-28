@@ -147,10 +147,26 @@ public struct KirupaPalette {
 public struct EditorColorTheme: Equatable, Hashable {
     public var color: EditorThemeColor
     public var mode: EditorAppearanceMode
+    /// The face the document is set in — Customize Theme ▸ Font.
+    ///
+    /// Part of the theme rather than beside it because it changes how every
+    /// character is drawn, exactly as a palette does, and the editors already
+    /// re-style the whole document when — and only when — the theme changes.
+    public var typeface: EditorTypeface
 
-    public init(color: EditorThemeColor, mode: EditorAppearanceMode) {
+    /// Where the document's face is remembered. Beside the colour and the
+    /// background, not inside the critique's key: the two choices are made
+    /// from the same list and are still two choices.
+    public static let typefaceStorageKey = "editorTypeface"
+
+    public init(
+        color: EditorThemeColor,
+        mode: EditorAppearanceMode,
+        typeface: EditorTypeface = .sans
+    ) {
         self.color = color
         self.mode = mode
+        self.typeface = typeface
     }
 
     public static var systemDefault: Self {

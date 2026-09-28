@@ -13,13 +13,15 @@ struct MarkdownEditorView: View {
     @StateObject private var critique = CritiqueModel()
     @Binding private var themeColorRawValue: String
     @Binding private var appearanceModeRawValue: String
+    @Binding private var typefaceRawValue: String
     private let fileURL: URL?
 
     init(
         document: Binding<MarkdownDocument>,
         fileURL: URL?,
         themeColorRawValue: Binding<String>,
-        appearanceModeRawValue: Binding<String>
+        appearanceModeRawValue: Binding<String>,
+        typefaceRawValue: Binding<String>
     ) {
         _document = document
         _session = StateObject(
@@ -30,6 +32,7 @@ struct MarkdownEditorView: View {
         )
         _themeColorRawValue = themeColorRawValue
         _appearanceModeRawValue = appearanceModeRawValue
+        _typefaceRawValue = typefaceRawValue
         self.fileURL = fileURL
     }
 
@@ -37,7 +40,11 @@ struct MarkdownEditorView: View {
         EditorColorTheme(
             color: EditorThemeColor(rawValue: themeColorRawValue) ?? .blue,
             mode: EditorAppearanceMode(rawValue: appearanceModeRawValue)
-                ?? .systemDefault
+                ?? .systemDefault,
+            // A face that has since been switched off in Font Book reads as
+            // the system face, which is what the styler would draw anyway.
+            typeface: EditorTypeface(rawValue: typefaceRawValue)
+                .flatMap { $0.isAvailable ? $0 : nil } ?? .sans
         )
     }
 
@@ -47,6 +54,7 @@ struct MarkdownEditorView: View {
             set: { newTheme in
                 themeColorRawValue = newTheme.color.rawValue
                 appearanceModeRawValue = newTheme.mode.rawValue
+                typefaceRawValue = newTheme.typeface.rawValue
             }
         )
     }

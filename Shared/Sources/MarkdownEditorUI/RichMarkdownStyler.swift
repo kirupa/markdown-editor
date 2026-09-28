@@ -99,7 +99,7 @@ public enum RichMarkdownStyler {
         baseParagraphStyle.headIndent = bleed
         baseParagraphStyle.tailIndent = -bleed
         return [
-            .font: PlatformFont.systemFont(
+            .font: colorTheme.typeface.font(
                 ofSize: MarkdownTypography.bodyFontSize
             ),
             .foregroundColor: colorTheme.primaryTextColor,
@@ -197,7 +197,7 @@ public enum RichMarkdownStyler {
         case .heading(let level):
             text.addAttribute(
                 .font,
-                value: PlatformFont.systemFont(
+                value: colorTheme.typeface.font(
                     ofSize: MarkdownTypography.headingFontSize(level: level),
                     weight: .bold
                 ),
@@ -343,9 +343,19 @@ public enum RichMarkdownStyler {
 
         switch span.style {
         case .bold:
-            applyFontTrait(.bold, to: text, range: range)
+            applyFontTrait(
+                .bold,
+                to: text,
+                range: range,
+                typeface: colorTheme.typeface
+            )
         case .italic:
-            applyFontTrait(.italic, to: text, range: range)
+            applyFontTrait(
+                .italic,
+                to: text,
+                range: range,
+                typeface: colorTheme.typeface
+            )
         case .underline:
             text.addAttribute(
                 .underlineStyle,
@@ -418,20 +428,50 @@ public enum RichMarkdownStyler {
         }
     }
 
+    /// Stroke added to a face with no bolder member, in percent of its size.
+    /// Negative, which fills the glyph as well as outlining it.
+    static let syntheticBoldStrokeWidth: CGFloat = -3.5
+    /// Skew added to a face with no italic.
+    static let syntheticItalicObliqueness: CGFloat = 0.18
+
     private static func applyFontTrait(
         _ trait: MarkdownFontTrait,
         to text: NSMutableAttributedString,
-        range: NSRange
+        range: NSRange,
+        typeface: EditorTypeface
     ) {
         text.enumerateAttribute(.font, in: range) { value, subrange, _ in
             let font = value as? PlatformFont ?? PlatformFont.systemFont(
                 ofSize: MarkdownTypography.bodyFontSize
             )
+            let converted = font.markdownFont(withTrait: trait)
             text.addAttribute(
                 .font,
-                value: font.markdownFont(withTrait: trait),
+                value: converted,
                 range: subrange
             )
+            // Every hand the document can be set in ships in one weight and
+            // upright, and asking for a bold or an italic of one hands back the
+            // same face — so ⌘B would appear to do nothing. Where that happens
+            // the emphasis is drawn instead. Never for the system face, which
+            // has every member and has always been drawn exactly as it is.
+            guard typeface != .sans, converted.fontName == font.fontName else {
+                return
+            }
+            switch trait {
+            case .bold:
+                text.addAttribute(
+                    .strokeWidth,
+                    value: syntheticBoldStrokeWidth,
+                    range: subrange
+                )
+            case .italic:
+                text.addAttribute(
+                    .obliqueness,
+                    value: syntheticItalicObliqueness,
+                    range: subrange
+                )
+            }
         }
     }
 

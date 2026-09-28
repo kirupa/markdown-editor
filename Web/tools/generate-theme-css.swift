@@ -12,6 +12,7 @@
 //     swiftc -O -o /tmp/generate-theme-css \
 //         Web/tools/generate-theme-css.swift \
 //         Shared/Sources/MarkdownEditorUI/EditorColorTheme.swift \
+//         Shared/Sources/MarkdownEditorUI/EditorTypeface.swift \
 //         Shared/Sources/MarkdownEditorUI/PlatformTypes.swift
 //     /tmp/generate-theme-css > Web/public/css/themes.css
 //

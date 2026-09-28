@@ -931,6 +931,11 @@ is closed unless it is asked for.
 | T-8 | Cancel, `Escape`, or dismissing the popover discards the draft. |
 | T-9 | Swatches use the exact fill and border colors from the site's `#themeChooser` rules, drawn as rounded squares with a 3-point border. The active swatch is scaled slightly and glows. |
 | T-10 | **Markdown ▸ Theme Color** and **Markdown ▸ Background** apply the same choices immediately from the menu bar, without the Apply step. |
+| T-16 | The popover has a **Font** chooser for the face the document is set in. It offers **exactly the faces the critique's hand menu offers** — System Sans, then the eight bundled hands, then the four from the Mac that resolve on this machine — grouped the same way and with each name set in its own face. It is one list, not two copies: the catalog moved from the Mac target into the shared `EditorTypeface`, and both menus draw it through one `TypefaceMenuItems` view, so they cannot come to disagree. |
+| T-17 | The document's face and the critique's hand are **two choices from one list**, stored under separate keys (`editorTypeface` and `critiqueHandFont`). Choosing a face for the page does not change the notes, and the reverse. The stored names are the critique's existing ones, so moving the catalog lost nobody's choice — a test holds them. |
+| T-18 | The face sets body text and headings; headings keep their sizes and every face is set at its measured optical size, as the notes are. Code stays monospaced. With **System Sans** — the default — the page is drawn with exactly the calls it was drawn with before the chooser existed; a test holds that too. |
+| T-19 | Every hand ships in one weight and upright, and AppKit answers "the bold of Patrick Hand" with Patrick Hand, so ⌘B would have appeared to do nothing. Where a face has no bold or italic of its own the emphasis is **drawn** — a filled stroke for bold, a slant for italic — and where it has one it is **used**: Noteworthy, Chalkboard and Marker Felt have real bolds, and the bundled Caveat is a variable font with a real bold, which turned up when a test assumed it had none. Never for the system face. |
+| T-20 | A stored face that no longer resolves — switched off in Font Book, or an optional download removed — reads as System Sans, which is what the page would draw anyway. The preview in the popover follows the draft face before Apply, like the colours. |
 
 ### 12.3 Coverage and contrast
 
@@ -1047,6 +1052,7 @@ layer below is macOS-specific.
     ├── PlatformTypes            AppKit/UIKit aliases and portable colour blending
     ├── PlatformTextView         NSTextView and UITextView conformances
     ├── EditorColorTheme         Palettes and derived colors
+    ├── EditorTypeface           The faces the page and the critique can be set in
     ├── MarkdownTypography       Shared type scale
     ├── RichMarkdownStyler       Applies attributes from the render model,
     │                            to a block or to the whole document
@@ -1073,7 +1079,8 @@ Sources/MarkdownEditor/          SwiftUI + AppKit application, macOS only
 ├── SourceTextEditor             Raw Markdown editing surface
 ├── EditorColorThemeAppKit       NSAppearance for a theme
 ├── FileExplorer*                Sidebar model, outline view, header
-└── ThemePickerPopover           Customize Theme UI
+├── ThemePickerPopover           Customize Theme UI
+└── TypefaceMenuItems            The face list both font menus show
 ```
 
 **Key design decisions**
@@ -1571,6 +1578,7 @@ async `@main` instead.
 
 | Change | Summary |
 | --- | --- |
+| Set the page in any of the critique's hands | Customize Theme has a **Font** chooser offering the same thirteen faces as the critique's hand menu, grouped and shown the same way — one catalog now shared by both, not a copy. The page and the notes remain separate choices. Faces with no bold or italic draw their emphasis rather than silently dropping it. Verified on screen — the chooser, the menu of faces each set in itself, the live preview, and a document re-set in Patrick Hand with visible bold and italic — and by 7 new tests; the iOS build and the generated web theme CSS are unchanged by the move. The web editor does not have the chooser yet. See [T-16 to T-20](#122-customize-theme-popover). |
 | A window that fits what it opens | A document window opened at AppKit's default 900 points and the rail is always there, so a 700-point column beside a 356-point rail never fitted — the comments were clipped before the reader touched anything. Windows open at 1056 × 820 now, computed by the same function the green button uses so the two cannot drift. Two further faults surfaced while fixing it, each hidden behind the last: the minimum width was a flat 620, where the column took 608 and the rail got 12; and once that was raised, the column was still clamped against the whole window rather than against the room the rail leaves, so a 700-point column fitted a 716-point window and squeezed the rail out anyway. Measured after each step rather than assumed, which is also how the last one turned up — a 1056-point window holding a 688-point column, because the gripper was reserving margin that does not exist when the rail is open. See [I-243 to I-246](#10a-ai-assisted-critique). |
 | Render a block at a time, not the document | A keystroke used to re-parse the whole document, build an attributed string for the whole document, and hand it to `NSTextStorage`, which throws away every glyph TextKit has laid out — three passes over the file per character, plus the offset tables the render model kept for every character in it. The longer the document, the slower it was to write in: 682 ms per keystroke at 30,000 lines, about 14 seconds at 150,000. An edit now re-parses only the blocks it reaches and splices them into the storage, so the same keystrokes cost **0.10 ms** and **0.29 ms**, and two hundred of them grow the process by about 3 MB where five used to grow it by over 110 MB. A block is the right unit because the parser carries exactly one thing across a line — whether a fence is open — so a block parses alone into precisely what the document would have given it, and that equality is checked offset for offset rather than argued. See [§9.6.1](#961-rendering-a-block-at-a-time). |
 | A title bar that behaves like one | Dragging the title bar moves the window now. SwiftUI fills that bar with a hosting view that eats the mouse, so of 900 points only two slivers — 15 by the traffic lights, 8 at the far right — ever moved it, and every grab across the middle did nothing; all five test positions move it now. The title also names its document, which gives it the menu every Mac window has: **Copy Path**, **Reveal in Finder**, and the folders above the file, on a ⌘-click or a right-click. `DocumentGroup` never sets `representedURL`, so there was no menu there at all. Verified on screen: the path reached the clipboard, Finder opened the folder with the file selected, and the toolbar buttons still fire rather than dragging the window. See [I-238 to I-242](#10a-ai-assisted-critique). |
