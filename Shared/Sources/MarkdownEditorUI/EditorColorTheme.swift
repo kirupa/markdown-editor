@@ -237,6 +237,8 @@ public struct EditorColorTheme: Equatable, Hashable {
         palette.primary
     }
 
+    /// The fill for a selected row or a pressed control. Selected *text* uses
+    /// `textSelectionBackgroundColor` instead.
     public var selectionBackgroundColor: PlatformColor {
         palette.primary
     }
@@ -248,6 +250,63 @@ public struct EditorColorTheme: Equatable, Hashable {
             >= selectionBackgroundColor.contrastRatio(with: white)
             ? black
             : white
+    }
+
+    /// The tint behind selected text.
+    ///
+    /// Not the row fill above. Under a run of words the full accent was a
+    /// slab of dark blue, and the words had to be forced to black or white to
+    /// show on it at all. This is the accent laid thinly over the page, and it
+    /// carries no text colour: selected words keep their own, so body text,
+    /// headings, links and code read the same selected as not.
+    ///
+    /// Translucent rather than mixed in advance, because a selection lands on
+    /// more than the page. A pre-mixed tint is one colour wherever it lands,
+    /// and in Blue Dark that colour is all but the web's low-severity critique
+    /// shading, so a selection inside a marked passage would disappear. A
+    /// tint shades whatever is under it, so the selected part of a marked
+    /// passage or a code block always shows.
+    ///
+    /// Composite it over what it is drawn on before measuring it:
+    /// `contrastRatio(with:)` does not look at alpha.
+    public var textSelectionBackgroundColor: PlatformColor {
+        palette.primary.withAlphaComponent(textSelectionOpacity)
+    }
+
+    /// How strongly the accent is laid down under selected text.
+    ///
+    /// Solved for each theme rather than fixed, because the eight accents are
+    /// nothing like the same weight: at one opacity black is a heavy grey and
+    /// a sky blue is barely there. Each is as strong as it takes to stand
+    /// 1.4:1 from the page, which is what leaves body text at 7.6:1 or better
+    /// on it, and weaker wherever that would take code on a code block below
+    /// 4.5:1. Never above 40%, past which a dull accent stops being a tint.
+    var textSelectionOpacity: CGFloat {
+        let accent = palette.primary
+        let page = editorBackgroundColor
+        let codeBlock = codeBlockBackgroundColor
+        let text = primaryTextColor
+        func fits(_ opacity: CGFloat) -> Bool {
+            let tint = accent.withAlphaComponent(opacity)
+            return tint.composited(over: page).contrastRatio(with: page) <= 1.4
+                && text.contrastRatio(with: tint.composited(over: codeBlock))
+                    >= 4.5
+        }
+        let ceiling: CGFloat = 0.4
+        if fits(ceiling) { return ceiling }
+        // Both measures move one way as the tint strengthens, so the
+        // strongest opacity that fits can be found by halving.
+        var fitting: CGFloat = 0
+        var failing = ceiling
+        for _ in 0..<16 {
+            let middle = (fitting + failing) / 2
+            if fits(middle) {
+                fitting = middle
+            } else {
+                failing = middle
+            }
+        }
+        return fitting
     }
 
     public var inlineCodeBackgroundColor: PlatformColor {
@@ -514,6 +573,22 @@ extension PlatformColor {
 
     public func blended(with other: PlatformColor, fraction: CGFloat) -> PlatformColor {
         mixed(withFraction: fraction, of: other) ?? self
+    }
+
+    /// This colour painted over an opaque `background`: source-over in sRGB,
+    /// which is what a browser does with an `rgba()` fill.
+    public func composited(over background: PlatformColor) -> PlatformColor {
+        guard let top = sRGBComponents, let bottom = background.sRGBComponents
+        else { return self }
+        func channel(_ over: CGFloat, _ under: CGFloat) -> CGFloat {
+            over * top.alpha + under * (1 - top.alpha)
+        }
+        return PlatformColor.sRGB(
+            red: channel(top.red, bottom.red),
+            green: channel(top.green, bottom.green),
+            blue: channel(top.blue, bottom.blue),
+            alpha: 1
+        )
     }
 
     public func contrastRatio(with other: PlatformColor) -> CGFloat {

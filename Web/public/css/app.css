@@ -74,9 +74,9 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* A tint and no text colour, so selected words keep their own. */
 ::selection {
-  background: var(--me-selection-background);
-  color: var(--me-selection-text);
+  background: var(--me-text-selection-background);
 }
 
 /* ---------------------------------------------------------------- app shell */
@@ -1169,7 +1169,7 @@ body {
 
 .me-preview__title { font-family: var(--preview-font); font-weight: 700; font-size: calc(15px * var(--preview-scale, 1)); }
 .me-preview__body { font-family: var(--preview-font); font-size: calc(12px * var(--preview-scale, 1)); opacity: 0.85; margin-top: 3px; }
-.me-preview__accent { display: inline-block; margin-top: 8px; padding: 2px 8px; border-radius: 5px; background: var(--preview-accent); color: var(--preview-accent-text); font-size: 11px; }
+.me-preview__accent { display: inline-block; margin-top: 8px; padding: 2px 8px; border-radius: 5px; background: var(--preview-accent); font-size: 11px; }
 
 .me-font-select {
   width: 100%;

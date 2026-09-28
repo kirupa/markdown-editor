@@ -4,7 +4,8 @@
 // transcribing them a second time into CSS — and letting the two drift — this
 // compiles the real EditorColorTheme and prints what it computes. That matters
 // most for the derived values: the 55% light-mode sidebar blend, the secondary
-// text blend, and the black-or-white selection text chosen by WCAG contrast.
+// text blend, the black-or-white selection text chosen by WCAG contrast, and
+// the opacity of the text-selection tint, which is solved for each theme.
 //
 // Requires macOS, because the shared blend defers to NSColor there. It is only
 // needed when the palettes change:
@@ -50,6 +51,7 @@ func variables(for theme: EditorColorTheme) -> [(String, String)] {
         ("accent", css(theme.accentColor)),
         ("selection-background", css(theme.selectionBackgroundColor)),
         ("selection-text", css(theme.selectionTextColor)),
+        ("text-selection-background", css(theme.textSelectionBackgroundColor)),
         ("inline-code-background", css(theme.inlineCodeBackgroundColor)),
         ("code-block-background", css(theme.codeBlockBackgroundColor))
     ]

@@ -69,11 +69,11 @@ struct EditorColorThemeTests {
         }
     }
 
-    /// Selected text is the case that goes wrong most easily, because the
-    /// background is the theme's saturated accent rather than a near-white or
-    /// near-black. It is picked by contrast for that reason, and this is the
-    /// check that it worked.
-    @Test("Selected text is readable on the selection fill")
+    /// A selected row or pressed control is the case that goes wrong most
+    /// easily, because the fill is the theme's saturated accent rather than a
+    /// near-white or near-black. Its label is picked by contrast for that
+    /// reason, and this is the check that it worked.
+    @Test("Row and control labels are readable on the selection fill")
     func selectionTextIsReadable() {
         for theme in Self.allThemes {
             let ratio = theme.selectionTextColor.contrastRatio(
@@ -81,9 +81,115 @@ struct EditorColorThemeTests {
             )
             #expect(
                 ratio >= 4.5,
-                "\(theme.title): selected text scores \(ratio):1"
+                "\(theme.title): selected label scores \(ratio):1"
             )
         }
+    }
+
+    /// Selected text keeps its own colour, so the tint behind it has to be
+    /// light enough to read through. It used to be the full accent, and in
+    /// Blue Dark that was a slab of dark blue with the words forced to black.
+    ///
+    /// The tint is translucent, so it is measured where it lands: over the
+    /// page, and over a code block, where the page is already a shade darker.
+    @Test("Selected text stays readable on the selection tint")
+    func textSelectionTintIsReadable() {
+        for theme in Self.allThemes {
+            let tint = theme.textSelectionBackgroundColor
+            let opacity = tint.sRGBComponents?.alpha ?? 1
+            #expect(
+                opacity > 0 && opacity <= 0.4,
+                "\(theme.title): the tint is \(opacity) opaque"
+            )
+            let page = theme.editorBackgroundColor
+            let onPage = tint.composited(over: page)
+            let weight = onPage.contrastRatio(with: page)
+            #expect(
+                weight <= 1.401,
+                "\(theme.title): the tint is \(weight):1 against the page"
+            )
+            let text = theme.primaryTextColor.contrastRatio(with: onPage)
+            #expect(
+                text >= 7,
+                "\(theme.title): selected text scores \(text):1"
+            )
+            let code = theme.primaryTextColor.contrastRatio(
+                with: tint.composited(over: theme.codeBlockBackgroundColor)
+            )
+            #expect(
+                code >= 4.5,
+                "\(theme.title): selected code scores \(code):1"
+            )
+        }
+    }
+
+    /// Subtle is not the same as invisible. The tint has to show on the page,
+    /// read as something other than inline code, and still show on a code
+    /// block.
+    ///
+    /// Measured as a CIELAB difference, not a WCAG ratio, because the ratio
+    /// only sees lightness. In the dark themes the inline-code fill and the
+    /// tint come out about equally light, and it is the hue that tells them
+    /// apart. A difference of about 2.3 is the smallest anyone can see.
+    @Test("The selection tint shows against the page and against code")
+    func textSelectionTintIsVisible() {
+        for theme in Self.allThemes {
+            let tint = theme.textSelectionBackgroundColor
+            let page = theme.editorBackgroundColor
+            let onPage = tint.composited(over: page)
+            let fromPage = Self.colorDifference(onPage, page)
+            #expect(
+                fromPage >= 10,
+                "\(theme.title): the tint is \(fromPage) from the page"
+            )
+            let inlineCode = theme.inlineCodeBackgroundColor.composited(
+                over: page
+            )
+            let fromInlineCode = Self.colorDifference(onPage, inlineCode)
+            #expect(
+                fromInlineCode >= 6,
+                "\(theme.title): the tint is \(fromInlineCode) from inline code"
+            )
+            let codeBlock = theme.codeBlockBackgroundColor
+            let fromCodeBlock = Self.colorDifference(
+                tint.composited(over: codeBlock),
+                codeBlock
+            )
+            #expect(
+                fromCodeBlock >= 7,
+                "\(theme.title): the tint is \(fromCodeBlock) from a code block"
+            )
+        }
+    }
+
+    /// CIE76: straight-line distance in CIELAB, with a D65 white.
+    private static func colorDifference(
+        _ lhs: PlatformColor,
+        _ rhs: PlatformColor
+    ) -> Double {
+        func lab(_ color: PlatformColor) -> (Double, Double, Double) {
+            guard let srgb = color.sRGBComponents else { return (0, 0, 0) }
+            func linear(_ value: CGFloat) -> Double {
+                let value = Double(value)
+                return value <= 0.04045
+                    ? value / 12.92
+                    : pow((value + 0.055) / 1.055, 2.4)
+            }
+            let red = linear(srgb.red)
+            let green = linear(srgb.green)
+            let blue = linear(srgb.blue)
+            let x = (0.4124 * red + 0.3576 * green + 0.1805 * blue) / 0.95047
+            let y = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+            let z = (0.0193 * red + 0.1192 * green + 0.9505 * blue) / 1.08883
+            func f(_ t: Double) -> Double {
+                t > 216.0 / 24389.0 ? cbrt(t) : (24389.0 / 27.0 * t + 16) / 116
+            }
+            return (116 * f(y) - 16, 500 * (f(x) - f(y)), 200 * (f(y) - f(z)))
+        }
+        let (l1, a1, b1) = lab(lhs)
+        let (l2, a2, b2) = lab(rhs)
+        return ((l1 - l2) * (l1 - l2) + (a1 - a2) * (a1 - a2)
+            + (b1 - b2) * (b1 - b2)).squareRoot()
     }
 
     /// Code has to look like code. If the fill matches the page it is on,
@@ -132,6 +238,7 @@ struct EditorColorThemeTests {
                 ("accent", theme.accentColor),
                 ("selectionBackground", theme.selectionBackgroundColor),
                 ("selectionText", theme.selectionTextColor),
+                ("textSelectionBackground", theme.textSelectionBackgroundColor),
                 ("inlineCodeBackground", theme.inlineCodeBackgroundColor),
                 ("codeBlockBackground", theme.codeBlockBackgroundColor)
             ]

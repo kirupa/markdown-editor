@@ -257,8 +257,7 @@ export function openThemePopover(anchor, onApplied = () => {}) {
     const draft = getComputedStyle(probe);
     preview.style.setProperty('--preview-page', draft.getPropertyValue('--me-page-background'));
     preview.style.setProperty('--preview-text', draft.getPropertyValue('--me-primary-text'));
-    preview.style.setProperty('--preview-accent', draft.getPropertyValue('--me-selection-background'));
-    preview.style.setProperty('--preview-accent-text', draft.getPropertyValue('--me-selection-text'));
+    preview.style.setProperty('--preview-accent', draft.getPropertyValue('--me-text-selection-background'));
     const face = resolvedTypeface(draftTypeface);
     preview.style.setProperty('--preview-font', typefaceFamily(face, 'var(--me-text-font)'));
     preview.style.setProperty('--preview-scale', String(face.scale));
