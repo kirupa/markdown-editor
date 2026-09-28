@@ -59,7 +59,7 @@ struct EditorTypefaceTests {
             "sans", "architectsDaughter", "caveat", "indieFlower",
             "patrickHand", "shadowsIntoLight", "gloriaHallelujah", "kalam",
             "permanentMarker", "bradleyHand", "markerFelt", "noteworthy",
-            "chalkboard",
+            "chalkboard", "qeDaveMergens", "qeJulianDean",
         ])
         #expect(
             EditorColorTheme(color: .blue, mode: .light).typeface == .sans
@@ -140,6 +140,22 @@ struct EditorTypefaceTests {
         let font = try #require(strong[.font] as? NSFont)
         #expect(font.fontName != face.fontName)
         #expect(strong[.strokeWidth] == nil)
+    }
+
+    @Test("A face whose licence forbids shipping it is only ever found")
+    func unshippableFacesAreNeverBundled() {
+        for face in [EditorTypeface.qeDaveMergens, .qeJulianDean] {
+            #expect(!face.isBundled, "\(face.title)")
+            #expect(
+                face.isAvailable
+                    == (NSFont(name: face.fontName, size: 12) != nil),
+                "\(face.title) is offered only where it is installed"
+            )
+            #expect(
+                EditorTypeface.available.contains(face) == face.isAvailable,
+                "\(face.title)"
+            )
+        }
     }
 
     @Test("A face that cannot be found draws in the system face")

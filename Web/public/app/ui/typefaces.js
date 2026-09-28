@@ -31,6 +31,11 @@ export const TYPEFACES = [
   { id: 'markerFelt', title: 'Marker Felt', family: 'Marker Felt', scale: 0.88, bundled: false },
   { id: 'noteworthy', title: 'Noteworthy', family: 'Noteworthy', scale: 0.94, bundled: false },
   { id: 'chalkboard', title: 'Chalkboard', family: 'Chalkboard SE', scale: 1.01, bundled: false },
+  // Offered only where somebody has installed them, and never shipped: their
+  // licence is for personal use and forbids embedding them or passing them on,
+  // so they cannot be served from here the way the bundled faces are.
+  { id: 'qeDaveMergens', title: 'QE Dave Mergens', family: 'QEDaveMergens', scale: 1.36, bundled: false },
+  { id: 'qeJulianDean', title: 'QE Julian Dean', family: 'QEJulianDean', scale: 1.57, bundled: false },
 ];
 
 /** The face to use before anybody has chosen one. */
@@ -43,25 +48,55 @@ export function typefaceByID(id) {
   return TYPEFACES.find((face) => face.id === id) ?? TYPEFACES[0];
 }
 
+const PROBE_TEXT = 'mmmmmmmmmmlli1WQ@#';
+const GENERIC_FAMILIES = ['monospace', 'serif', 'sans-serif'];
+const drawable = new Map();
+
+/**
+ * Whether the browser will draw text in `family`, a face no stylesheet here
+ * declares.
+ *
+ * Measured rather than asked. `document.fonts.check()` answers whether
+ * anything still needs loading, and for a family nothing declares, nothing
+ * ever does -- so WebKit and Chrome both say yes to a family that does not
+ * exist. A face that is really there changes the width of the sample set in
+ * front of at least one generic family; one that is not falls straight through
+ * to the generic. A browser that hides installed faces from pages, as Safari
+ * does, measures as not having them, which is the truth as far as drawing goes.
+ */
+export function isDrawableFamily(family) {
+  if (drawable.has(family)) return drawable.get(family);
+  let found = false;
+  try {
+    const context =
+      typeof document === 'undefined' ? null : document.createElement('canvas').getContext('2d');
+    found =
+      context !== null &&
+      GENERIC_FAMILIES.some((generic) => {
+        context.font = `72px ${generic}`;
+        const fallback = context.measureText(PROBE_TEXT).width;
+        context.font = `72px "${family}", ${generic}`;
+        return context.measureText(PROBE_TEXT).width !== fallback;
+      });
+  } catch {
+    found = false;
+  }
+  drawable.set(family, found);
+  return found;
+}
+
 /**
  * Which faces to offer.
  *
- * The bundled ones always; the system ones only where they resolve. This is
- * the web's version of the Mac's `NSFont(name:) != nil` check, and it exists
- * for the same reason: a picker offering a face that is not there means
- * choosing it silently draws something else, which looks like the app
- * ignoring you.
+ * The bundled ones always; the rest only where they resolve. This is the web's
+ * version of the Mac's `NSFont(name:) != nil` check, and it exists for the
+ * same reason: a picker offering a face that is not there means choosing it
+ * silently draws something else, which looks like the app ignoring you.
  */
 export function availableTypefaces() {
-  return TYPEFACES.filter((face) => {
-    if (face.id === 'sans' || face.bundled) return true;
-    if (typeof document === 'undefined' || !document.fonts?.check) return false;
-    try {
-      return document.fonts.check(`16px "${face.family}"`);
-    } catch {
-      return false;
-    }
-  });
+  return TYPEFACES.filter(
+    (face) => face.id === 'sans' || face.bundled || isDrawableFamily(face.family)
+  );
 }
 
 /**

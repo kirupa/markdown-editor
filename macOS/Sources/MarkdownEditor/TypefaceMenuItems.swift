@@ -8,7 +8,7 @@ import SwiftUI
 ///
 /// Each name is set in its own face because the names mean nothing — nobody
 /// knows what "Caveat" looks like, and a list of names in one font asks you to
-/// guess and then look. Grouped because a flat list of thirteen faces is a
+/// guess and then look. Grouped because a flat list of fifteen faces is a
 /// wall: the system face first and alone, since it is not a hand and it is the
 /// most legible at length, then what came with the app, then what came with
 /// the Mac.

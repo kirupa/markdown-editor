@@ -500,7 +500,7 @@ export class CritiqueRail {
    * Pick the hand the comments are written in.
    *
    * Each name is set in its own face, because the names mean nothing -- nobody
-   * knows what "Caveat" looks like, and a list of thirteen words in the same
+   * knows what "Caveat" looks like, and a list of fifteen words in the same
    * font asks you to guess and then look. Showing them is the whole answer to
    * the question the menu is asking.
    */

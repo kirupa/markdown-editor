@@ -5,6 +5,7 @@ import {
   INITIAL_TYPEFACE,
   TYPEFACES,
   availableTypefaces,
+  isDrawableFamily,
   isTypeface,
   resolvedTypeface,
   typefaceByID,
@@ -19,6 +20,7 @@ suite('Typefaces', () => {
         'sans', 'architectsDaughter', 'caveat', 'indieFlower', 'patrickHand',
         'shadowsIntoLight', 'gloriaHallelujah', 'kalam', 'permanentMarker',
         'bradleyHand', 'markerFelt', 'noteworthy', 'chalkboard',
+        'qeDaveMergens', 'qeJulianDean',
       ].join(',')
     );
     expectEqual(INITIAL_TYPEFACE, 'sans');
@@ -37,6 +39,23 @@ suite('Typefaces', () => {
       expect(offered.includes(face.id), `${face.id} is offered`);
     }
     expectEqual(offered[0], 'sans', 'the system face heads the list');
+  });
+
+  test('a face whose licence forbids shipping it is only ever found', () => {
+    for (const id of ['qeDaveMergens', 'qeJulianDean']) {
+      const face = typefaceByID(id);
+      expectEqual(face.id, id);
+      expect(!face.bundled, `${id} is never bundled`);
+      expectEqual(
+        availableTypefaces().includes(face),
+        isDrawableFamily(face.family),
+        `${id} is offered only where it draws`
+      );
+    }
+  });
+
+  test('a family that does not exist is not taken for one that does', () => {
+    expect(!isDrawableFamily('No Such Face 7f3a9c'), 'a made-up family is not drawable');
   });
 
   test('a face this machine cannot draw resolves to the system face, at its size', () => {

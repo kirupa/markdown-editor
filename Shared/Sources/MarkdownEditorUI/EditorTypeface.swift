@@ -47,6 +47,14 @@ public enum EditorTypeface: String, CaseIterable, Identifiable, Sendable {
     case noteworthy
     case chalkboard
 
+    // Offered only where somebody has installed them, and never shipped. Their
+    // licence is for personal use and forbids embedding them in software or
+    // passing them on, so unlike the faces above they cannot come with the
+    // app; but a face somebody installed is theirs to write in. Filtered like
+    // the system faces, by what actually resolves.
+    case qeDaveMergens
+    case qeJulianDean
+
     public var id: Self { self }
 
     public var title: String {
@@ -64,6 +72,8 @@ public enum EditorTypeface: String, CaseIterable, Identifiable, Sendable {
         case .markerFelt: return "Marker Felt"
         case .noteworthy: return "Noteworthy"
         case .chalkboard: return "Chalkboard"
+        case .qeDaveMergens: return "QE Dave Mergens"
+        case .qeJulianDean: return "QE Julian Dean"
         }
     }
 
@@ -84,6 +94,8 @@ public enum EditorTypeface: String, CaseIterable, Identifiable, Sendable {
         case .markerFelt: return "MarkerFelt-Thin"
         case .noteworthy: return "Noteworthy-Light"
         case .chalkboard: return "ChalkboardSE-Light"
+        case .qeDaveMergens: return "QEDaveMergens"
+        case .qeJulianDean: return "QEJulianDean"
         }
     }
 
@@ -111,6 +123,8 @@ public enum EditorTypeface: String, CaseIterable, Identifiable, Sendable {
         case .markerFelt: return 0.88
         case .noteworthy: return 0.94
         case .chalkboard: return 1.01
+        case .qeDaveMergens: return 1.36
+        case .qeJulianDean: return 1.57
         }
     }
 
@@ -133,12 +147,13 @@ public enum EditorTypeface: String, CaseIterable, Identifiable, Sendable {
 
     /// Whether this face is one the app ships, as opposed to one it found.
     ///
-    /// Only used to group a picker: a list of thirteen faces is a wall, and
+    /// Only used to group a picker: a list of fifteen faces is a wall, and
     /// "these came with the app / these came with your Mac" is the one division
     /// a reader can act on.
     public var isBundled: Bool {
         switch self {
-        case .sans, .bradleyHand, .markerFelt, .noteworthy, .chalkboard:
+        case .sans, .bradleyHand, .markerFelt, .noteworthy, .chalkboard,
+            .qeDaveMergens, .qeJulianDean:
             return false
         default:
             return true
