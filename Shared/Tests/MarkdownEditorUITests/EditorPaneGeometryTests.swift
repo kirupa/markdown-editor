@@ -356,7 +356,7 @@ struct EditorPaneGeometryTests {
         ]
     }
 
-    @Test("Double-clicking empty title bar zooms")
+    @Test("Double-clicking empty title bar fills the screen")
     func emptyTitleBarZooms() {
         #expect(
             EditorPaneGeometry.titleBarClaimsClick(
@@ -367,7 +367,7 @@ struct EditorPaneGeometryTests {
         )
     }
 
-    @Test("Double-clicking a toolbar button does not zoom")
+    @Test("Double-clicking a toolbar button does not fill the screen")
     func aControlDoesNotZoom() {
         // The theme button. This is the case the first implementation got
         // wrong: it hit-tested, SwiftUI answered with the one hosting view it
@@ -385,11 +385,11 @@ struct EditorPaneGeometryTests {
         }
     }
 
-    @Test("The document's title is not a control, so it zooms")
+    @Test("The document's title is not a control, so double-clicking it fills the screen")
     func theTitleZooms() {
         // Between the traffic lights and the explorer button is where the
-        // filename is drawn, and double-clicking a window's title zooms it in
-        // every other Mac application.
+        // filename is drawn, and double-clicking a window's title acts on the
+        // window in every other Mac application.
         #expect(
             EditorPaneGeometry.titleBarClaimsClick(
                 at: CGPoint(x: 200, y: 674),

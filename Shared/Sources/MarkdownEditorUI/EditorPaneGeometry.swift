@@ -84,8 +84,9 @@ public enum EditorPaneGeometry {
 
     /// The width the window wants in order to show everything it has to show.
     ///
-    /// What the green button and a double-click on the title bar should zoom
-    /// to. The point of zooming is "make this big enough", and with the
+    /// What Zoom goes to — the green button's, and Window ▸ Zoom. A
+    /// double-click on the title bar fills the screen instead (`TitleBarFill`).
+    /// The point of zooming is "make this big enough", and with the
     /// comments open the thing being read is the writing *and* the notes
     /// beside it — a window sized to the writing alone clips the rail or, once
     /// the layout centres the pair, leaves it hanging off the edge.
@@ -131,25 +132,6 @@ public enum EditorPaneGeometry {
         return columnMinimum + railWidth
     }
 
-    /// Whether a double-click at `point` should zoom the window.
-    ///
-    /// Pure, and separated from the window for one reason: the decision cannot
-    /// be made by hit-testing. SwiftUI draws the whole title bar through a
-    /// single hosting view, so a hit test at the theme button, at the document
-    /// title and at empty space between them all return the same view — the
-    /// first version trusted that and zoomed the window every time the theme
-    /// button was double-clicked. The controls have to be named by their own
-    /// frames instead, and once they are, this is arithmetic and can be checked
-    /// without a screen.
-    ///
-    /// `controls` are the toolbar's items and the traffic lights. The document
-    /// title is deliberately not among them: it is not a control, and
-    /// double-clicking it zooms in every other Mac application.
-    ///
-    /// Three behaviours ask this now — zoom on a double-click, move the window
-    /// on a drag, and the title menu on a right-click — because they are the
-    /// same question. A point that belongs to a button belongs to none of them.
-
     /// The folders containing `url`, innermost first, up to the volume root.
     ///
     /// What a title bar's path menu is made of. Pure, and here rather than in
@@ -175,6 +157,26 @@ public enum EditorPaneGeometry {
         return chain
     }
 
+    /// Whether a click at `point` belongs to the title bar itself rather than
+    /// to a control sitting in it.
+    ///
+    /// Pure, and separated from the window for one reason: the decision cannot
+    /// be made by hit-testing. SwiftUI draws the whole title bar through a
+    /// single hosting view, so a hit test at the theme button, at the document
+    /// title and at empty space between them all return the same view — the
+    /// first version trusted that and zoomed the window every time the theme
+    /// button was double-clicked. The controls have to be named by their own
+    /// frames instead, and once they are, this is arithmetic and can be checked
+    /// without a screen.
+    ///
+    /// `controls` are the toolbar's items and the traffic lights. The document
+    /// title is deliberately not among them: it is not a control, and
+    /// double-clicking it acts on the window in every other Mac application.
+    ///
+    /// Three behaviours ask this now — fill the screen on a double-click, move
+    /// the window on a drag, and the title menu on a right-click — because they
+    /// are the same question. A point that belongs to a button belongs to none
+    /// of them.
     public static func titleBarClaimsClick(
         at point: CGPoint,
         titleBar: CGRect,
