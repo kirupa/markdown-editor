@@ -2,10 +2,21 @@
 //
 // Mirrors PRD section 12: eight kirupa.com colors on a Light/Dark axis, held
 // as two attributes on <html> so themes.css does all the work. The popover
-// keeps draft state and only commits on Apply (T-6, T-7, T-8).
+// keeps draft state and only commits on Apply (T-6, T-7, T-8). The theme also
+// carries the face the document is set in, from the same catalog as the
+// critique's hand (T-16).
+
+import {
+  INITIAL_TYPEFACE,
+  isTypeface,
+  resolvedTypeface,
+  typefaceFamily,
+  typefaceSelect,
+} from './typefaces.js';
 
 const COLOR_KEY = 'editorThemeColor';
 const MODE_KEY = 'editorAppearanceMode';
+const TYPEFACE_KEY = 'editorTypeface';
 
 export const THEME_COLORS = [
   { id: 'blue', title: 'Blue' },
@@ -51,13 +62,20 @@ export const theme = {
     window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
     isMode
   ),
+  typeface: read(TYPEFACE_KEY, INITIAL_TYPEFACE, isTypeface),
 
   apply() {
-    document.documentElement.dataset.themeColor = this.color;
-    document.documentElement.dataset.appearance = this.mode;
+    const root = document.documentElement;
+    root.dataset.themeColor = this.color;
+    root.dataset.appearance = this.mode;
+    // A face this machine lacks draws as the system face, at the system
+    // face's size, rather than as a fallback scaled for somebody else's font.
+    const face = resolvedTypeface(this.typeface);
+    root.style.setProperty('--me-page-font', typefaceFamily(face, 'var(--me-text-font)'));
+    root.style.setProperty('--me-page-scale', String(face.scale));
   },
 
-  set(color, mode) {
+  set(color, mode, typeface) {
     if (isColor(color)) {
       this.color = color;
       persist(COLOR_KEY, color);
@@ -65,6 +83,10 @@ export const theme = {
     if (isMode(mode)) {
       this.mode = mode;
       persist(MODE_KEY, mode);
+    }
+    if (isTypeface(typeface)) {
+      this.typeface = typeface;
+      persist(TYPEFACE_KEY, typeface);
     }
     this.apply();
   },
@@ -111,6 +133,7 @@ export function openThemePopover(anchor, onApplied = () => {}) {
 
   let draftColor = theme.color;
   let draftMode = theme.mode;
+  let draftTypeface = resolvedTypeface(theme.typeface).id;
 
   const popover = document.createElement('div');
   popover.className = 'me-popover';
@@ -139,12 +162,30 @@ export function openThemePopover(anchor, onApplied = () => {}) {
   modes.className = 'me-radio-row';
   modeSection.append(modeLabel, modes);
 
+  // T-16: the same faces as the critique's hand menu, shown the same way.
+  const fontSection = document.createElement('div');
+  fontSection.className = 'me-popover__section';
+  const fontLabel = document.createElement('p');
+  fontLabel.className = 'me-popover__label';
+  fontLabel.textContent = 'Font';
+  const fontMenu = typefaceSelect({
+    selected: draftTypeface,
+    className: 'me-font-select',
+    onChange: (id) => {
+      draftTypeface = id;
+      repaint();
+    },
+  });
+  fontMenu.title = 'The face the document is set in';
+  fontMenu.setAttribute('aria-label', 'Font');
+  fontSection.append(fontLabel, fontMenu);
+
   const previewSection = document.createElement('div');
   previewSection.className = 'me-popover__section';
   const preview = document.createElement('div');
   preview.className = 'me-preview';
   preview.innerHTML =
-    '<div class="me-preview__title">Preview</div>' +
+    '<div class="me-preview__title">Heading</div>' +
     '<div class="me-preview__body">The quick brown fox jumps over the lazy dog.</div>' +
     '<span class="me-preview__accent">Selected text</span>';
   previewSection.append(preview);
@@ -180,7 +221,7 @@ export function openThemePopover(anchor, onApplied = () => {}) {
   apply.className = 'me-button me-button--default';
   apply.textContent = 'Apply';
   apply.addEventListener('click', () => {
-    theme.set(draftColor, draftMode);
+    theme.set(draftColor, draftMode, draftTypeface);
     close();
     onApplied();
   });
@@ -218,9 +259,12 @@ export function openThemePopover(anchor, onApplied = () => {}) {
     preview.style.setProperty('--preview-text', draft.getPropertyValue('--me-primary-text'));
     preview.style.setProperty('--preview-accent', draft.getPropertyValue('--me-selection-background'));
     preview.style.setProperty('--preview-accent-text', draft.getPropertyValue('--me-selection-text'));
+    const face = resolvedTypeface(draftTypeface);
+    preview.style.setProperty('--preview-font', typefaceFamily(face, 'var(--me-text-font)'));
+    preview.style.setProperty('--preview-scale', String(face.scale));
   }
 
-  popover.append(title, colorSection, modeSection, previewSection, buttons);
+  popover.append(title, colorSection, modeSection, fontSection, previewSection, buttons);
   layer.append(popover);
   repaint();
 

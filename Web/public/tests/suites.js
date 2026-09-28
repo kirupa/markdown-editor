@@ -26,6 +26,7 @@ export const CORE_TEST_MODULES = [
   './live.test.js',
   './new-document.test.js',
   './critique.test.js',
+  './typefaces.test.js',
 ];
 
 /** Needs a real DOM, so these run only in the browser page. */
