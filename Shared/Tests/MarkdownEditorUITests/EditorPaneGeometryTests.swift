@@ -496,3 +496,47 @@ struct FolderChainTests {
         #expect(chain.count < 12, "the walk must terminate: \(chain.map(\.path))")
     }
 }
+
+@Suite("The narrowest useful window")
+struct MinimumContentWidthTests {
+    @Test("With the comments open the floor makes room for them")
+    func theRailIsCountedIntoTheMinimum() {
+        // The rail is a fixed width docked to the document, so it does not
+        // shrink with the window — it is clipped by it. Measured at the old
+        // 620-point floor: the document took 608 and the rail got 12, which is
+        // to say it vanished.
+        #expect(
+            EditorPaneGeometry.minimumContentWidth(
+                columnMinimum: 360, documentMinimum: 620,
+                railWidth: 356, railIsOpen: true
+            ) == 716
+        )
+    }
+
+    @Test("With the comments shut the document keeps its own floor")
+    func closingTheRailLowersTheFloorAgain() {
+        // Otherwise shutting the rail would leave the window unable to shrink
+        // back to the size it could manage before it was ever opened.
+        #expect(
+            EditorPaneGeometry.minimumContentWidth(
+                columnMinimum: 360, documentMinimum: 620,
+                railWidth: 356, railIsOpen: false
+            ) == 620
+        )
+    }
+
+    @Test("The floor is never above the size the window opens at")
+    func theMinimumFitsInsideTheDefault() {
+        // A minimum wider than the default would mean a window that cannot be
+        // opened at its own declared size — the two are computed apart, so
+        // this is the check that keeps them honest about each other.
+        let ideal = EditorPaneGeometry.idealContentWidth(
+            columnWidth: 700, railWidth: 356, railIsOpen: true
+        )
+        let floor = EditorPaneGeometry.minimumContentWidth(
+            columnMinimum: 360, documentMinimum: 620,
+            railWidth: 356, railIsOpen: true
+        )
+        #expect(floor <= ideal, "floor \(floor) must fit inside default \(ideal)")
+    }
+}

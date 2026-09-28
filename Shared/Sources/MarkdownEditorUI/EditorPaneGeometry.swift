@@ -108,6 +108,29 @@ public enum EditorPaneGeometry {
         return columnWidth + railWidth
     }
 
+    /// The narrowest the window may be dragged, given what it is showing.
+    ///
+    /// The rail is a fixed width docked to the document, so it does not shrink
+    /// with the window — it is clipped by it. Measured at the old minimum of
+    /// 620 with the rail open: the document took 608 points and the rail got
+    /// 12, which is to say it disappeared, having been dragged off the edge
+    /// rather than closed. A panel that vanishes when a window is resized
+    /// reads as a bug whichever way it was meant.
+    ///
+    /// So the floor rises with the rail and falls again when it is shut. The
+    /// column keeps its own minimum either way, which is the point: the
+    /// narrowest useful window is a readable measure plus whatever is docked
+    /// beside it, not an arbitrary number that happens to be bigger.
+    public static func minimumContentWidth(
+        columnMinimum: CGFloat,
+        documentMinimum: CGFloat,
+        railWidth: CGFloat,
+        railIsOpen: Bool
+    ) -> CGFloat {
+        guard railIsOpen else { return documentMinimum }
+        return columnMinimum + railWidth
+    }
+
     /// Whether a double-click at `point` should zoom the window.
     ///
     /// Pure, and separated from the window for one reason: the decision cannot
