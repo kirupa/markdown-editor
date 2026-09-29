@@ -159,7 +159,9 @@ export function openThemePopover(anchor, onApplied = () => {}) {
   let draftTextScale = theme.textScale;
 
   const popover = document.createElement('div');
-  popover.className = 'me-popover';
+  // WT-19: a fixed width, so nothing it previews can resize it under the
+  // pointer.
+  popover.className = 'me-popover me-popover--theme';
   popover.setAttribute('role', 'dialog');
   popover.setAttribute('aria-label', 'Customize Theme');
 

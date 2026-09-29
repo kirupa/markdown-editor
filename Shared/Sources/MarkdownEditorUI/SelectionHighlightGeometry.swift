@@ -8,7 +8,9 @@ import CoreGraphics
 /// little before its first word. So a selection broken across lines still
 /// reads as one thing, rather than as blocks that stop dead at the margins —
 /// and the ends that really are ends, where the selection starts and stops,
-/// are the only ones drawn with a hard, rounded edge.
+/// are the only ones drawn with a hard, rounded edge. Those stand exactly on
+/// the caret positions either side of the selection, so a bar never reaches
+/// into a letter that is not selected.
 ///
 /// Kept apart from the text views so the shape can be checked without laying
 /// out any text. The views measure; this decides what to draw.
@@ -31,10 +33,6 @@ public struct SelectionHighlightSegment: Equatable, Sendable {
     /// on this line.
     public var fadeOut: CGFloat
 
-    /// Air between the ink and a hard end, so the first and last letters are
-    /// not touching the edge of their own highlight.
-    public static let endPadding: CGFloat = 2
-
     /// The bar for the selected run from `start` to `end` on a line whose
     /// text stands from `top` to `bottom`.
     ///
@@ -43,8 +41,11 @@ public struct SelectionHighlightSegment: Equatable, Sendable {
     /// including when the line's own break is selected, which is the same
     /// thing seen from the other side.
     ///
-    /// A run with no width — an empty line inside a selection, or a selection
-    /// that starts on a line's break — is still given a little, so it shows.
+    /// `start` and `end` are caret positions, and a hard end is drawn on its
+    /// caret, with no padding: the letter beside it is not selected. A run
+    /// with no width — an empty line inside a selection, or a selection that
+    /// starts on a line's break — is still given a little, so it shows; a
+    /// narrow one, a single "i", is not widened into its neighbours.
     public static func line(
         from start: CGFloat,
         to end: CGFloat,
@@ -55,15 +56,15 @@ public struct SelectionHighlightSegment: Equatable, Sendable {
     ) -> SelectionHighlightSegment {
         let height = max(0, bottom - top)
         let left = min(start, end)
-        let right = max(
-            narrowestRight(from: left, height: height),
-            max(start, end)
-        )
+        let measured = max(start, end)
+        let right = measured - left < noWidth
+            ? left + emptyRunWidth(forHeight: height)
+            : measured
         let fade = fadeLength(forHeight: height)
         let fadeIn = continuesFromPreviousLine ? fade : 0
         let fadeOut = continuesOntoNextLine ? fade : 0
-        let minX = left - (continuesFromPreviousLine ? fade : endPadding)
-        let maxX = right + (continuesOntoNextLine ? fade : endPadding)
+        let minX = left - fadeIn
+        let maxX = right + fadeOut
         let rect = CGRect(
             x: minX,
             y: top,
@@ -81,11 +82,12 @@ public struct SelectionHighlightSegment: Equatable, Sendable {
         )
     }
 
-    /// How rounded a bar `height` tall is: about a third of its height, so a
-    /// line of body text and a line of a heading look like the same object,
-    /// and never so much that a tall line becomes a pill.
+    /// How rounded a bar `height` tall is: a little over a fifth of its
+    /// height, so a line of body text and a line of a heading look like the
+    /// same object — softened, but still a bar — and never more than 6 points,
+    /// however tall the line.
     public static func cornerRadius(forHeight height: CGFloat) -> CGFloat {
-        min(max(0, height) * 0.32, 8)
+        min(max(0, height) * 0.22, 6)
     }
 
     /// How far a bar `height` tall runs past a line's end as it fades: most
@@ -95,14 +97,14 @@ public struct SelectionHighlightSegment: Equatable, Sendable {
         min(max(max(0, height) * 0.75, 10), 24)
     }
 
-    /// Where a run starting at `left` ends if it has no width of its own:
-    /// about a space along, so an empty line in a selection still shows.
-    private static func narrowestRight(
-        from left: CGFloat,
-        height: CGFloat
-    ) -> CGFloat {
-        left + max(4, height * 0.3)
+    /// How wide a run with no width of its own is drawn — an empty line in a
+    /// selection, or a selected break: about a space, so it still shows.
+    public static func emptyRunWidth(forHeight height: CGFloat) -> CGFloat {
+        max(4, max(0, height) * 0.3)
     }
+
+    /// Narrower than this, a run is a caret, not ink: nothing to hug.
+    private static let noWidth: CGFloat = 0.5
 
     /// How strongly the bar is shaded along its length, for a left-to-right
     /// gradient: full where it is not fading, easing to nothing across a

@@ -1161,6 +1161,12 @@ body {
   box-shadow: 0 14px 40px rgb(0 0 0 / 0.3);
 }
 
+/* WT-19: Customize Theme is one width whatever it previews. Were it to fit its
+   preview, a larger size or a wider face would widen it — and the size slider
+   with it, moving the thumb out from under the pointer as it is dragged. The
+   preview wraps instead; the popover grows downward only, below the slider. */
+.me-popover--theme { width: 316px; max-width: calc(100vw - 16px); }
+
 .me-popover__title { font-weight: 700; margin: 0 0 12px; }
 .me-popover__label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--me-secondary-text); margin: 0 0 7px; }
 .me-popover__section { margin-bottom: 14px; }
@@ -1218,8 +1224,8 @@ body {
   color: var(--preview-text);
 }
 
-.me-preview__title { font-family: var(--preview-font); font-weight: 700; font-size: calc(15px * var(--preview-scale, 1) * var(--preview-text-scale, 1)); }
-.me-preview__body { font-family: var(--preview-font); font-size: calc(12px * var(--preview-scale, 1) * var(--preview-text-scale, 1)); opacity: 0.85; margin-top: 3px; }
+.me-preview__title { font-family: var(--preview-font); font-weight: 700; font-size: calc(15px * var(--preview-scale, 1) * var(--preview-text-scale, 1)); overflow-wrap: anywhere; }
+.me-preview__body { font-family: var(--preview-font); font-size: calc(12px * var(--preview-scale, 1) * var(--preview-text-scale, 1)); opacity: 0.85; margin-top: 3px; overflow-wrap: anywhere; }
 .me-preview__accent { display: inline-block; margin-top: 8px; padding: 2px 8px; border-radius: 5px; background: var(--preview-accent); font-size: 11px; }
 
 .me-font-select {

@@ -1,12 +1,12 @@
-// The shape selected text is shaded in (T-24). The first eight tests are the
+// The shape selected text is shaded in (T-24). The first eleven tests are the
 // Mac's (SelectionHighlightGeometryTests.swift), so the two draw one shape.
 
 import { suite, test, expect, expectEqual } from './harness.js';
 import {
-  END_PADDING,
   LINE_GAP,
   barBackground,
   cornerRadius,
+  emptyRunWidth,
   fadeLength,
   groupIntoLines,
   lineBand,
@@ -20,15 +20,15 @@ import {
 const near = (a, b, tolerance = 0.0001) => Math.abs(a - b) < tolerance;
 
 suite('Selection shape', () => {
-  test('a selection on one line is a rounded bar just wider than its words', () => {
+  test('a selection on one line is a rounded bar exactly as wide as its words', () => {
     const bar = lineSegment({ start: 100, end: 180, top: 10, bottom: 29 });
-    expectEqual(bar.x, 100 - END_PADDING);
+    expectEqual(bar.x, 100);
     expectEqual(bar.y, 10);
-    expectEqual(bar.width, 80 + 2 * END_PADDING);
+    expectEqual(bar.width, 80);
     expectEqual(bar.height, 19);
     expectEqual(bar.fadeIn, 0);
     expectEqual(bar.fadeOut, 0);
-    expect(bar.cornerRadius > 5 && bar.cornerRadius < 7, `radius ${bar.cornerRadius}`);
+    expect(bar.cornerRadius > 3.5 && bar.cornerRadius < 5, `radius ${bar.cornerRadius}`);
     expectEqual(segmentStops(bar).map((stop) => stop.opacity).join(), '1,1');
   });
 
@@ -37,7 +37,7 @@ suite('Selection shape', () => {
       start: 100, end: 400, top: 0, bottom: 19, continuesOntoNextLine: true,
     });
     const fade = fadeLength(19);
-    expectEqual(bar.x, 100 - END_PADDING);
+    expectEqual(bar.x, 100);
     expectEqual(bar.x + bar.width, 400 + fade);
     expectEqual(bar.fadeIn, 0);
     expectEqual(bar.fadeOut, fade);
@@ -56,7 +56,7 @@ suite('Selection shape', () => {
     });
     const fade = fadeLength(19);
     expectEqual(bar.x, 30 - fade);
-    expectEqual(bar.x + bar.width, 90 + END_PADDING);
+    expectEqual(bar.x + bar.width, 90);
     expectEqual(bar.fadeIn, fade);
     const stops = segmentStops(bar);
     expectEqual(JSON.stringify(stops[0]), JSON.stringify({ location: 0, opacity: 0 }));
@@ -100,11 +100,40 @@ suite('Selection shape', () => {
     const fade = fadeLength(19);
     expect(bar.width > 2 * fade, 'wider than its two fades');
     expect(bar.width - 2 * fade >= 4, 'a visible core');
+    expect(near(bar.width - 2 * fade, emptyRunWidth(19)), 'a space-wide core');
+  });
+
+  test('a narrow run is hugged, not widened into its neighbours', () => {
+    // A lone "i" at 15px is about 3.5px across.
+    const bar = lineSegment({ start: 50, end: 53.5, top: 0, bottom: 19 });
+    expectEqual(bar.x, 50);
+    expectEqual(bar.x + bar.width, 53.5);
+    expect(bar.cornerRadius <= 1.75, `radius ${bar.cornerRadius}`);
+  });
+
+  test("a selection that starts on a line's break starts at its caret", () => {
+    const bar = lineSegment({
+      start: 212.5, end: 212.5, top: 0, bottom: 19, continuesOntoNextLine: true,
+    });
+    expectEqual(bar.x, 212.5);
+    expect(near(bar.x + bar.width, 212.5 + emptyRunWidth(19) + fadeLength(19)), 'a sliver, then the fade');
+  });
+
+  test('hard ends stand on their carets, for any run and any line', () => {
+    for (const height of [12, 19, 24.5, 40]) {
+      for (const [start, end] of [[0, 0.5], [10, 13.25], [180, 100], [7.75, 640.125]]) {
+        const bar = lineSegment({ start, end, top: 0, bottom: height });
+        expectEqual(bar.x, Math.min(start, end));
+        expectEqual(bar.x + bar.width, Math.max(start, end));
+      }
+    }
   });
 
   test('taller lines are rounded more, to a limit; short ones stay bars', () => {
     expect(cornerRadius(19) < cornerRadius(24), 'rounder with height');
-    expectEqual(cornerRadius(60), 8);
+    // Softened, but still a bar: well under a quarter of the line.
+    expect(cornerRadius(19) < 19 / 4, `radius ${cornerRadius(19)}`);
+    expectEqual(cornerRadius(60), 6);
     const narrow = lineSegment({ start: 10, end: 11, top: 0, bottom: 40 });
     expect(narrow.cornerRadius <= narrow.width / 2, 'no wider than the bar');
     expect(narrow.cornerRadius <= narrow.height / 2, 'no taller than the bar');

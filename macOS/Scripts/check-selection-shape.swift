@@ -1,6 +1,6 @@
-// Is a selection drawn as rounded bars fitted to its words, fading out where
-// it carries on to the next line and in where it arrives — and is AppKit's
-// square, full-width band gone?
+// Is a selection drawn as rounded bars fitted to its words, starting and
+// stopping exactly on its carets, fading out where it carries on to the next
+// line and in where it arrives — and is AppKit's square, full-width band gone?
 //
 // `SelectionHighlightSegment`'s tests prove the shape on paper. This proves
 // the drawing: a real `RichMarkdownTextView` with its real layout manager,
@@ -128,6 +128,26 @@ struct Editor {
         return Picture(rep: rep, size: size)
     }
 
+    /// Where the caret stands just before `text`, in the view.
+    func caretX(before text: String) -> CGFloat {
+        caretX(atCharacter: range(of: text).location)
+    }
+
+    /// Where the caret stands just after `text`, in the view.
+    func caretX(after text: String) -> CGFloat {
+        caretX(atCharacter: NSMaxRange(range(of: text)))
+    }
+
+    private func caretX(atCharacter index: Int) -> CGFloat {
+        let layoutManager = view.layoutManager!
+        let glyph = layoutManager.glyphIndexForCharacter(at: index)
+        let line = layoutManager.lineFragmentRect(
+            forGlyphAt: glyph, effectiveRange: nil
+        )
+        return view.textContainerOrigin.x + line.minX
+            + layoutManager.location(forGlyphAt: glyph).x
+    }
+
     /// Where a piece of text is drawn, in the view.
     func rect(of text: String) -> NSRect {
         let layoutManager = view.layoutManager!
@@ -245,6 +265,28 @@ func checkShape(theme: EditorColorTheme, name: String) {
         "a selected space is fully tinted",
         abs(seen(between) - 1) < 0.2,
         "strength \(seen(between))"
+    )
+
+    // The hard ends stand on the carets either side of the selection, with
+    // nothing reaching past them into the letters beside it.
+    let startCaret = editor.caretX(before: "brown")
+    let stopCaret = editor.caretX(after: "Then")
+    check(
+        "the selection starts on the caret before its first letter",
+        abs(first.rect.minX - startCaret) < 0.01,
+        "bar \(first.rect.minX), caret \(startCaret)"
+    )
+    check(
+        "the selection stops on the caret after its last letter",
+        abs(last.rect.maxX - stopCaret) < 0.01,
+        "bar \(last.rect.maxX), caret \(stopCaret)"
+    )
+    let before = NSPoint(x: startCaret - 0.75, y: first.rect.midY)
+    let beyond = NSPoint(x: stopCaret + 0.75, y: last.rect.midY)
+    check(
+        "nothing is drawn outside the selection's ends",
+        seen(before) < 0.1 && seen(beyond) < 0.1,
+        "before \(seen(before)), beyond \(seen(beyond))"
     )
 
     // Just past the rounding of the bar's first corner the page shows, and

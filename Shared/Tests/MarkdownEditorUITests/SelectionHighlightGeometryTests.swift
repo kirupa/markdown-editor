@@ -5,27 +5,23 @@ import Testing
 /// The shape selected text is shaded in, one line at a time.
 ///
 /// A line where the selection starts and stops is a rounded bar hugging the
-/// words. Where it carries on to the next line the bar runs past the last word
-/// and fades out, and the next line's bar fades in ahead of its first word.
+/// words, its hard ends exactly on the carets either side. Where it carries on
+/// to the next line the bar runs past the last word and fades out, and the
+/// next line's bar fades in ahead of its first word.
 @Suite("Selection highlight shape")
 struct SelectionHighlightGeometryTests {
     private typealias Segment = SelectionHighlightSegment
 
-    @Test("A selection on one line is a rounded bar just wider than its words")
+    @Test("A selection on one line is a rounded bar exactly as wide as its words")
     func singleLine() {
         let bar = Segment.line(
             from: 100, to: 180, top: 10, bottom: 29,
             continuesFromPreviousLine: false, continuesOntoNextLine: false
         )
-        #expect(bar.rect == CGRect(
-            x: 100 - Segment.endPadding,
-            y: 10,
-            width: 80 + 2 * Segment.endPadding,
-            height: 19
-        ))
+        #expect(bar.rect == CGRect(x: 100, y: 10, width: 80, height: 19))
         #expect(bar.fadeIn == 0)
         #expect(bar.fadeOut == 0)
-        #expect(bar.cornerRadius > 5 && bar.cornerRadius < 7)
+        #expect(bar.cornerRadius > 3.5 && bar.cornerRadius < 5)
         #expect(bar.stops.map(\.opacity) == [1, 1])
     }
 
@@ -36,7 +32,7 @@ struct SelectionHighlightGeometryTests {
             continuesFromPreviousLine: false, continuesOntoNextLine: true
         )
         let fade = Segment.fadeLength(forHeight: 19)
-        #expect(bar.rect.minX == 100 - Segment.endPadding)
+        #expect(bar.rect.minX == 100)
         #expect(bar.rect.maxX == 400 + fade)
         #expect(bar.fadeIn == 0)
         #expect(bar.fadeOut == fade)
@@ -57,7 +53,7 @@ struct SelectionHighlightGeometryTests {
         )
         let fade = Segment.fadeLength(forHeight: 19)
         #expect(bar.rect.minX == 30 - fade)
-        #expect(bar.rect.maxX == 90 + Segment.endPadding)
+        #expect(bar.rect.maxX == 90)
         #expect(bar.fadeIn == fade)
         #expect(bar.stops.first == .init(location: 0, opacity: 0))
         #expect(bar.stops.last == .init(location: 1, opacity: 1))
@@ -110,12 +106,55 @@ struct SelectionHighlightGeometryTests {
         #expect(bar.rect.width > 2 * fade)
         let core = bar.rect.width - 2 * fade
         #expect(core >= 4)
+        #expect(abs(core - Segment.emptyRunWidth(forHeight: 19)) < 0.0001)
+    }
+
+    @Test("A narrow run is hugged, not widened into its neighbours")
+    func narrowRunIsHugged() {
+        // A lone "i" at 15 points is about 3.5 points across.
+        let bar = Segment.line(
+            from: 50, to: 53.5, top: 0, bottom: 19,
+            continuesFromPreviousLine: false, continuesOntoNextLine: false
+        )
+        #expect(bar.rect.minX == 50)
+        #expect(bar.rect.maxX == 53.5)
+        #expect(bar.cornerRadius <= 1.75)
+    }
+
+    @Test("A selection that starts on a line's break starts at its caret")
+    func breakStartsAtItsCaret() {
+        let bar = Segment.line(
+            from: 212.5, to: 212.5, top: 0, bottom: 19,
+            continuesFromPreviousLine: false, continuesOntoNextLine: true
+        )
+        let fade = Segment.fadeLength(forHeight: 19)
+        #expect(bar.rect.minX == 212.5)
+        let sliver = Segment.emptyRunWidth(forHeight: 19)
+        #expect(abs(bar.rect.maxX - (212.5 + sliver + fade)) < 0.0001)
+    }
+
+    @Test("Hard ends stand on their carets, for any run and any line")
+    func hardEndsAreExact() {
+        for height: CGFloat in [12, 19, 24.5, 40] {
+            for (start, end): (CGFloat, CGFloat) in [
+                (0, 0.5), (10, 13.25), (180, 100), (7.75, 640.125)
+            ] {
+                let bar = Segment.line(
+                    from: start, to: end, top: 0, bottom: height,
+                    continuesFromPreviousLine: false, continuesOntoNextLine: false
+                )
+                #expect(bar.rect.minX == min(start, end))
+                #expect(bar.rect.maxX == max(start, end))
+            }
+        }
     }
 
     @Test("Taller lines are rounded more, to a limit; short ones stay bars")
     func cornersFollowTheLine() {
         #expect(Segment.cornerRadius(forHeight: 19) < Segment.cornerRadius(forHeight: 24))
-        #expect(Segment.cornerRadius(forHeight: 60) == 8)
+        // Softened, but still a bar: well under a quarter of the line.
+        #expect(Segment.cornerRadius(forHeight: 19) < 19 / 4)
+        #expect(Segment.cornerRadius(forHeight: 60) == 6)
         let narrow = Segment.line(
             from: 10, to: 11, top: 0, bottom: 40,
             continuesFromPreviousLine: false, continuesOntoNextLine: false

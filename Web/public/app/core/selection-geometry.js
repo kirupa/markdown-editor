@@ -6,23 +6,24 @@
 // last word and fades out, and the next line's bar fades in from a little
 // before its first word — so a selection broken across lines still reads as
 // one thing, and the only hard ends are where the selection really starts and
-// stops.
+// stops. Those stand exactly on the caret positions either side of the
+// selection, so a bar never reaches into a letter that is not selected.
 //
 // Pure: it is handed boxes the page has already measured and says what to
 // draw. The measuring and the drawing are ui/selection-highlight.js.
-
-/** Air between the ink and a hard end, so the first and last letters are not
- *  touching the edge of their own highlight. */
-export const END_PADDING = 2;
 
 /** Air between the bars of consecutive lines, so a paragraph's lines read as
  *  lines rather than one slab. */
 export const LINE_GAP = 2;
 
-/** About a third of the bar's height, so a line of body text and a heading
- *  look like the same object — and never so much that a tall line is a pill. */
+/** Narrower than this, a run is a caret, not ink: nothing to hug. */
+const NO_WIDTH = 0.5;
+
+/** A little over a fifth of the bar's height, so a line of body text and a
+ *  heading look like the same object — softened, but still a bar — and never
+ *  more than 6px, however tall the line. */
 export function cornerRadius(height) {
-  return Math.min(Math.max(0, height) * 0.32, 8);
+  return Math.min(Math.max(0, height) * 0.22, 6);
 }
 
 /** How far a bar runs past a line's end as it fades: most of a line's height,
@@ -32,15 +33,25 @@ export function fadeLength(height) {
   return Math.min(Math.max(Math.max(0, height) * 0.75, 10), 24);
 }
 
+/** How wide a run with no width of its own is drawn — an empty line in a
+ *  selection, or a selected break: about a space, so it still shows. */
+export function emptyRunWidth(height) {
+  return Math.max(4, Math.max(0, height) * 0.3);
+}
+
 /**
  * The bar for the selected run from `start` to `end` on a line that stands
  * from `top` to `bottom`.
  *
  * `continuesFromPreviousLine` when the selection began on an earlier line;
  * `continuesOntoNextLine` when it runs on past this one, including when only
- * this line's break is selected. A run with no width — an empty line inside a
- * selection, or one that starts on a line's break — is still given a little,
- * so it shows.
+ * this line's break is selected.
+ *
+ * `start` and `end` are caret positions, and a hard end is drawn on its caret,
+ * with no padding: the letter beside it is not selected. A run with no width —
+ * an empty line inside a selection, or one that starts on a line's break — is
+ * still given a little, so it shows; a narrow one, a single "i", is not
+ * widened into its neighbours.
  */
 export function lineSegment({
   start,
@@ -52,19 +63,21 @@ export function lineSegment({
 }) {
   const height = Math.max(0, bottom - top);
   const left = Math.min(start, end);
-  const right = Math.max(left + Math.max(4, height * 0.3), Math.max(start, end));
+  const measured = Math.max(start, end);
+  const right = measured - left < NO_WIDTH ? left + emptyRunWidth(height) : measured;
   const fade = fadeLength(height);
-  const x = left - (continuesFromPreviousLine ? fade : END_PADDING);
-  const maxX = right + (continuesOntoNextLine ? fade : END_PADDING);
-  const width = maxX - x;
+  const fadeIn = continuesFromPreviousLine ? fade : 0;
+  const fadeOut = continuesOntoNextLine ? fade : 0;
+  const x = left - fadeIn;
+  const width = right + fadeOut - x;
   return {
     x,
     y: top,
     width,
     height,
     cornerRadius: Math.min(cornerRadius(height), width / 2),
-    fadeIn: continuesFromPreviousLine ? fade : 0,
-    fadeOut: continuesOntoNextLine ? fade : 0,
+    fadeIn,
+    fadeOut,
   };
 }
 
