@@ -162,6 +162,53 @@ struct EditorColorThemeTests {
         }
     }
 
+    /// The selection an editor keeps while it is not being typed into — its
+    /// window is behind another, or the focus is elsewhere. The page's own
+    /// text colour, thinly: it has to show on the page and on code, be no
+    /// louder than the active tint, and leave what is under it readable.
+    @Test("The resting selection tint is quieter, and still readable")
+    func inactiveSelectionTint() {
+        for theme in Self.allThemes {
+            let tint = theme.inactiveTextSelectionBackgroundColor
+            let rgb = tint.sRGBComponents
+            let text = theme.primaryTextColor.sRGBComponents
+            #expect(
+                rgb?.red == text?.red && rgb?.green == text?.green
+                    && rgb?.blue == text?.blue,
+                "\(theme.title): the resting tint is the text colour"
+            )
+            let opacity = rgb?.alpha ?? 1
+            #expect(
+                opacity > 0 && opacity <= 0.25,
+                "\(theme.title): the resting tint is \(opacity) opaque"
+            )
+            let page = theme.editorBackgroundColor
+            let onPage = tint.composited(over: page)
+            let weight = onPage.contrastRatio(with: page)
+            let active = theme.textSelectionBackgroundColor
+                .composited(over: page)
+                .contrastRatio(with: page)
+            #expect(
+                weight >= 1.2 && weight <= 1.301,
+                "\(theme.title): the resting tint is \(weight):1 on the page"
+            )
+            #expect(
+                weight <= active + 0.001,
+                "\(theme.title): resting \(weight):1, active \(active):1"
+            )
+            let codeBlock = theme.codeBlockBackgroundColor
+            let onCode = tint.composited(over: codeBlock)
+            #expect(
+                onCode.contrastRatio(with: codeBlock) >= 1.2,
+                "\(theme.title): the resting tint vanishes on a code block"
+            )
+            let body = theme.primaryTextColor.contrastRatio(with: onPage)
+            #expect(body >= 7, "\(theme.title): text scores \(body):1")
+            let code = theme.primaryTextColor.contrastRatio(with: onCode)
+            #expect(code >= 4.5, "\(theme.title): code scores \(code):1")
+        }
+    }
+
     /// CIE76: straight-line distance in CIELAB, with a D65 white.
     private static func colorDifference(
         _ lhs: PlatformColor,
@@ -239,6 +286,10 @@ struct EditorColorThemeTests {
                 ("selectionBackground", theme.selectionBackgroundColor),
                 ("selectionText", theme.selectionTextColor),
                 ("textSelectionBackground", theme.textSelectionBackgroundColor),
+                (
+                    "inactiveTextSelectionBackground",
+                    theme.inactiveTextSelectionBackgroundColor
+                ),
                 ("inlineCodeBackground", theme.inlineCodeBackgroundColor),
                 ("codeBlockBackground", theme.codeBlockBackgroundColor)
             ]

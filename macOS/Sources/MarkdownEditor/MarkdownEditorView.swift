@@ -14,6 +14,7 @@ struct MarkdownEditorView: View {
     @Binding private var themeColorRawValue: String
     @Binding private var appearanceModeRawValue: String
     @Binding private var typefaceRawValue: String
+    @Binding private var textScale: Double
     private let fileURL: URL?
 
     init(
@@ -21,7 +22,8 @@ struct MarkdownEditorView: View {
         fileURL: URL?,
         themeColorRawValue: Binding<String>,
         appearanceModeRawValue: Binding<String>,
-        typefaceRawValue: Binding<String>
+        typefaceRawValue: Binding<String>,
+        textScale: Binding<Double>
     ) {
         _document = document
         _session = StateObject(
@@ -33,6 +35,7 @@ struct MarkdownEditorView: View {
         _themeColorRawValue = themeColorRawValue
         _appearanceModeRawValue = appearanceModeRawValue
         _typefaceRawValue = typefaceRawValue
+        _textScale = textScale
         self.fileURL = fileURL
     }
 
@@ -44,7 +47,8 @@ struct MarkdownEditorView: View {
             // A face that has since been switched off in Font Book reads as
             // the system face, which is what the styler would draw anyway.
             typeface: EditorTypeface(rawValue: typefaceRawValue)
-                .flatMap { $0.isAvailable ? $0 : nil } ?? .sans
+                .flatMap { $0.isAvailable ? $0 : nil } ?? .sans,
+            textScale: CGFloat(textScale)
         )
     }
 
@@ -55,6 +59,7 @@ struct MarkdownEditorView: View {
                 themeColorRawValue = newTheme.color.rawValue
                 appearanceModeRawValue = newTheme.mode.rawValue
                 typefaceRawValue = newTheme.typeface.rawValue
+                textScale = Double(newTheme.textScale)
             }
         )
     }

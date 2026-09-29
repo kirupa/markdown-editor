@@ -42,6 +42,7 @@ import { buildMenus } from './ui/menus.js';
 import { WelcomeScreen, recentDocuments, savedDocuments } from './ui/welcome.js';
 import { buildMobileUI } from './ui/mobile.js';
 import { ImageSelection } from './ui/image-selection.js';
+import { SelectionHighlight } from './ui/selection-highlight.js';
 import {
   chooseImageSource,
   confirmAction,
@@ -120,6 +121,9 @@ const richProjection = {
 };
 
 const richSurface = new EditorSurface(element('richSurface'), richProjection, model);
+
+// T-24: the selection is drawn by the editor, rounded and fading across lines.
+const selectionHighlight = new SelectionHighlight(element('richSurface'));
 
 const explorer = new Explorer({
   tree: element('explorerTree'),
@@ -522,6 +526,9 @@ function refreshSurfaces(options = {}) {
   // so it needs the model the pane was just built from.
   imageSelection.setModel(modelFor(model.source));
   imageSelection.restore();
+  // A re-render can move every word, including under a selection that did
+  // not itself change.
+  selectionHighlight.refresh();
 }
 
 // ── Selecting an image to resize (WI-17) ─────────────────────────────────────

@@ -159,14 +159,59 @@ public struct EditorColorTheme: Equatable, Hashable {
     /// from the same list and are still two choices.
     public static let typefaceStorageKey = "editorTypeface"
 
+    /// How large the document is drawn — Customize Theme ▸ Size — as a
+    /// multiple of the type scale.
+    ///
+    /// There because faces set at the same size are not the same size to the
+    /// eye: a hand that reads small can be brought up and one that shouts
+    /// brought down. It scales everything the text is set with — the type,
+    /// the space between lines and paragraphs, and the indents of lists,
+    /// quotes and code — so a page at 150% is the same page drawn larger
+    /// rather than larger words crammed into the old spacing. The column the
+    /// text is set in, and the pictures in it, stay the size they were.
+    ///
+    /// Always within `textScaleRange`, in whole percent.
+    public var textScale: CGFloat {
+        didSet { textScale = Self.clampedTextScale(textScale) }
+    }
+
+    /// Where the text size is remembered, beside the face it corrects.
+    public static let textScaleStorageKey = "editorTextScale"
+
+    /// Three quarters of the type scale to half as large again.
+    public static let textScaleRange: ClosedRange<CGFloat> = 0.75...1.5
+
+    /// `scale` brought into `textScaleRange` and rounded to a whole percent,
+    /// so that a slider's 1.0000000000000002 is the 100% it says it is and a
+    /// theme that has been round-tripped through storage compares equal to
+    /// the one that was stored. Anything that is not a number reads as 100%.
+    public static func clampedTextScale(_ scale: CGFloat) -> CGFloat {
+        guard scale.isFinite else {
+            return 1
+        }
+        let clamped = min(
+            max(scale, textScaleRange.lowerBound),
+            textScaleRange.upperBound
+        )
+        return (clamped * 100).rounded() / 100
+    }
+
     public init(
         color: EditorThemeColor,
         mode: EditorAppearanceMode,
-        typeface: EditorTypeface = .sans
+        typeface: EditorTypeface = .sans,
+        textScale: CGFloat = 1
     ) {
         self.color = color
         self.mode = mode
         self.typeface = typeface
+        self.textScale = Self.clampedTextScale(textScale)
+    }
+
+    /// `length`, a size or a space in the type scale, at this theme's text
+    /// size.
+    public func scaled(_ length: CGFloat) -> CGFloat {
+        length * textScale
     }
 
     public static var systemDefault: Self {
@@ -282,17 +327,44 @@ public struct EditorColorTheme: Equatable, Hashable {
     /// on it, and weaker wherever that would take code on a code block below
     /// 4.5:1. Never above 40%, past which a dull accent stops being a tint.
     var textSelectionOpacity: CGFloat {
-        let accent = palette.primary
+        strongestTint(of: palette.primary, standingOff: 1.4, ceiling: 0.4)
+    }
+
+    /// The tint behind selected text while the editor is not the one being
+    /// typed into: its window is behind another, or the focus is elsewhere.
+    ///
+    /// The page's own text colour, laid thinly — the way macOS greys a
+    /// selection it is not acting on. The same shape as the active selection,
+    /// without the accent, so it is plain which editor the keys will go to
+    /// and the selection is still where it was left.
+    public var inactiveTextSelectionBackgroundColor: PlatformColor {
+        primaryTextColor.withAlphaComponent(inactiveTextSelectionOpacity)
+    }
+
+    /// As strong as it takes to stand 1.3:1 from the page, a little under the
+    /// active tint, and never above 25%.
+    var inactiveTextSelectionOpacity: CGFloat {
+        strongestTint(of: primaryTextColor, standingOff: 1.3, ceiling: 0.25)
+    }
+
+    /// The strongest opacity, up to `ceiling`, at which `colour` laid over
+    /// the page stands no more than `contrast` from it and leaves code on a
+    /// code block at 4.5:1.
+    private func strongestTint(
+        of colour: PlatformColor,
+        standingOff contrast: CGFloat,
+        ceiling: CGFloat
+    ) -> CGFloat {
         let page = editorBackgroundColor
         let codeBlock = codeBlockBackgroundColor
         let text = primaryTextColor
         func fits(_ opacity: CGFloat) -> Bool {
-            let tint = accent.withAlphaComponent(opacity)
-            return tint.composited(over: page).contrastRatio(with: page) <= 1.4
+            let tint = colour.withAlphaComponent(opacity)
+            return tint.composited(over: page).contrastRatio(with: page)
+                    <= contrast
                 && text.contrastRatio(with: tint.composited(over: codeBlock))
                     >= 4.5
         }
-        let ceiling: CGFloat = 0.4
         if fits(ceiling) { return ceiling }
         // Both measures move one way as the tint strengthens, so the
         // strongest opacity that fits can be found by halving.

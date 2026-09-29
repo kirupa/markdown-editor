@@ -27,6 +27,8 @@ export const CORE_TEST_MODULES = [
   './new-document.test.js',
   './critique.test.js',
   './typefaces.test.js',
+  './text-scale.test.js',
+  './selection-geometry.test.js',
 ];
 
 /** Needs a real DOM, so these run only in the browser page. */

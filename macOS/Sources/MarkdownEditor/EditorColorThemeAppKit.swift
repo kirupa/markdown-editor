@@ -29,6 +29,7 @@ extension EditorColorTheme {
         // owns the decision; setting it here directly would undo that.
         if let rich = textView as? RichMarkdownTextView {
             rich.baseSelectedTextAttributes = selection
+            rich.inactiveSelectionColor = inactiveTextSelectionBackgroundColor
         } else {
             textView.selectedTextAttributes = selection
         }

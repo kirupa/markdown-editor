@@ -12,6 +12,8 @@ struct MarkdownEditorApp: App {
         EditorAppearanceMode.systemDefault.rawValue
     @AppStorage(EditorColorTheme.typefaceStorageKey)
     private var typefaceRawValue = EditorTypeface.sans.rawValue
+    @AppStorage(EditorColorTheme.textScaleStorageKey)
+    private var textScale = 1.0
 
     var body: some Scene {
         DocumentGroup(newDocument: MarkdownDocument()) { configuration in
@@ -20,7 +22,8 @@ struct MarkdownEditorApp: App {
                 fileURL: configuration.fileURL,
                 themeColorRawValue: $themeColorRawValue,
                 appearanceModeRawValue: $appearanceModeRawValue,
-                typefaceRawValue: $typefaceRawValue
+                typefaceRawValue: $typefaceRawValue,
+                textScale: $textScale
             )
         }
         // The window opens big enough to hold what it opens showing.

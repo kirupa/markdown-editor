@@ -52,6 +52,7 @@ func variables(for theme: EditorColorTheme) -> [(String, String)] {
         ("selection-background", css(theme.selectionBackgroundColor)),
         ("selection-text", css(theme.selectionTextColor)),
         ("text-selection-background", css(theme.textSelectionBackgroundColor)),
+        ("inactive-text-selection-background", css(theme.inactiveTextSelectionBackgroundColor)),
         ("inline-code-background", css(theme.inlineCodeBackgroundColor)),
         ("code-block-background", css(theme.codeBlockBackgroundColor))
     ]

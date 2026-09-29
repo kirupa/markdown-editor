@@ -116,7 +116,8 @@ enum Harness {
                 get: { appearance },
                 set: { appearance = $0 }
             ),
-            typefaceRawValue: .constant(EditorTypeface.sans.rawValue)
+            typefaceRawValue: .constant(EditorTypeface.sans.rawValue),
+            textScale: .constant(1)
         )
 
         let frame = NSRect(x: 0, y: 0, width: 1000, height: 700)

@@ -27,6 +27,7 @@ struct RichTextEditor: NSViewRepresentable {
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = ReflowingTextScrollView()
         let textView = RichMarkdownTextView(frame: scrollView.bounds)
+        textView.adoptSelectionLayoutManager()
         textView.minSize = NSSize(width: 0, height: 0)
         textView.maxSize = NSSize(
             width: CGFloat.greatestFiniteMagnitude,
