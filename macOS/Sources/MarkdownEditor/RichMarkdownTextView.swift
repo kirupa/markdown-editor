@@ -1912,7 +1912,7 @@ final class RichMarkdownTextView: NSTextView {
             }
 
             let horizontalInset: CGFloat = 4
-            let verticalPadding: CGFloat = 3
+            let verticalPadding = Self.codeBlockVerticalPadding
             let blockRect = NSRect(
                 x: textContainerOrigin.x + horizontalInset,
                 y: verticalBounds.minY - verticalPadding,
@@ -1937,6 +1937,10 @@ final class RichMarkdownTextView: NSTextView {
         }
     }
 
+    /// How far a code block's box reaches above its first line and below its
+    /// last.
+    private static let codeBlockVerticalPadding: CGFloat = 3
+
     /// The characters worth looking at to shade the code blocks in a rect.
     ///
     /// This used to be the whole document, and asking for a character range's
@@ -1944,6 +1948,19 @@ final class RichMarkdownTextView: NSTextView {
     /// drawing one screenful measured every line in the file, on every draw.
     /// The rect is what has to be painted, so the search starts from the
     /// characters in it.
+    ///
+    /// The rect is in this view's coordinates and the layout manager measures
+    /// in the text container's, which start at `textContainerOrigin` — 44pt
+    /// down in the rendered pane. Handed the rect unconverted, the search
+    /// looked 44pt below what was being painted. A whole-pane draw never
+    /// noticed, but a scroll asks for only the strip it uncovers, and for a
+    /// strip across a block's last lines the search found only the text after
+    /// the block, so those lines stayed bare until something redrew them.
+    ///
+    /// The search spans the column's full width, as the box does, so it
+    /// doesn't rest on what TextKit makes of a rect with no glyph in it, and
+    /// reaches past the rect by the box's padding, which lies outside every
+    /// line of the block.
     ///
     /// Grown outwards to whole runs of the attribute, because a code block
     /// taller than the window starts above the rect and ends below it, and a
@@ -1955,8 +1972,15 @@ final class RichMarkdownTextView: NSTextView {
         layoutManager: NSLayoutManager,
         textContainer: NSTextContainer
     ) -> NSRange? {
+        let padding = Self.codeBlockVerticalPadding
+        let probe = NSRect(
+            x: 0,
+            y: dirtyRect.minY - textContainerOrigin.y - padding,
+            width: max(1, textContainer.size.width),
+            height: dirtyRect.height + 2 * padding
+        )
         let glyphs = layoutManager.glyphRange(
-            forBoundingRect: dirtyRect,
+            forBoundingRect: probe,
             in: textContainer
         )
         var characters = layoutManager.characterRange(
