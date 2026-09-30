@@ -38,9 +38,9 @@ function clear() {
  * highlight that cannot be placed is a highlight that is not drawn, which is
  * the right outcome while the pane is mid-render.
  */
-function domRange(root, range) {
-  const start = positionForOffset(root, range.location);
-  const end = positionForOffset(root, range.location + range.length);
+function domRange(root, range, layout) {
+  const start = positionForOffset(root, range.location, layout);
+  const end = positionForOffset(root, range.location + range.length, layout);
   if (!start || !end) return null;
   const domRange = document.createRange();
   try {
@@ -58,7 +58,9 @@ function domRange(root, range) {
  * @param {object} options
  * @param {Array<{id: string, range: {location: number, length: number}, severity: string}>} options.highlights
  * @param {string|null} options.selectedID the open card, drawn stronger
- * @param {Array<{root: HTMLElement, map: (range: object) => object|null}>} options.surfaces
+ * @param {Array<{root: HTMLElement, map: (range: object) => object|null,
+ *   layout?: object}>} options.surfaces `layout` is the render model, which
+ *   turns placing a highlight into a lookup rather than a walk.
  */
 export function paintCritiqueHighlights({ highlights, selectedID, surfaces }) {
   if (!highlightsSupported()) return;
@@ -73,7 +75,7 @@ export function paintCritiqueHighlights({ highlights, selectedID, surfaces }) {
       if (!surface.root || surface.root.offsetParent === null) continue;
       const mapped = surface.map(entry.range);
       if (!mapped || mapped.length <= 0) continue;
-      const range = domRange(surface.root, mapped);
+      const range = domRange(surface.root, mapped, surface.layout ?? null);
       if (range) ranges.push(range);
     }
     buckets.set(name, ranges);

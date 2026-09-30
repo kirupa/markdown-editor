@@ -13,13 +13,17 @@ struct MarkdownEditorView: View {
     @StateObject private var critique = CritiqueModel()
     @Binding private var themeColorRawValue: String
     @Binding private var appearanceModeRawValue: String
+    @Binding private var typefaceRawValue: String
+    @Binding private var textScale: Double
     private let fileURL: URL?
 
     init(
         document: Binding<MarkdownDocument>,
         fileURL: URL?,
         themeColorRawValue: Binding<String>,
-        appearanceModeRawValue: Binding<String>
+        appearanceModeRawValue: Binding<String>,
+        typefaceRawValue: Binding<String>,
+        textScale: Binding<Double>
     ) {
         _document = document
         _session = StateObject(
@@ -30,6 +34,8 @@ struct MarkdownEditorView: View {
         )
         _themeColorRawValue = themeColorRawValue
         _appearanceModeRawValue = appearanceModeRawValue
+        _typefaceRawValue = typefaceRawValue
+        _textScale = textScale
         self.fileURL = fileURL
     }
 
@@ -37,7 +43,12 @@ struct MarkdownEditorView: View {
         EditorColorTheme(
             color: EditorThemeColor(rawValue: themeColorRawValue) ?? .blue,
             mode: EditorAppearanceMode(rawValue: appearanceModeRawValue)
-                ?? .systemDefault
+                ?? .systemDefault,
+            // A face that has since been switched off in Font Book reads as
+            // the system face, which is what the styler would draw anyway.
+            typeface: EditorTypeface(rawValue: typefaceRawValue)
+                .flatMap { $0.isAvailable ? $0 : nil } ?? .sans,
+            textScale: CGFloat(textScale)
         )
     }
 
@@ -47,6 +58,8 @@ struct MarkdownEditorView: View {
             set: { newTheme in
                 themeColorRawValue = newTheme.color.rawValue
                 appearanceModeRawValue = newTheme.mode.rawValue
+                typefaceRawValue = newTheme.typeface.rawValue
+                textScale = Double(newTheme.textScale)
             }
         )
     }
@@ -159,7 +172,15 @@ struct MarkdownEditorView: View {
                 }
             }
         }
-        .frame(minWidth: Layout.minimumWindowWidth, minHeight: 520)
+        .frame(
+            minWidth: EditorPaneGeometry.minimumContentWidth(
+                columnMinimum: Layout.minimumPreviewWidth,
+                documentMinimum: Layout.minimumWindowWidth,
+                railWidth: Layout.railWidth,
+                railIsOpen: critique.isPresented
+            ),
+            minHeight: 520
+        )
         .background {
             // The desk the page lies on: a flat tone with a faint grid over
             // it, drawn behind everything rather than inside the page.
@@ -375,9 +396,19 @@ struct ResizableRichTextPreview: View {
 
     var body: some View {
         GeometryReader { geometry in
+            // The rail is docked beside the column, not over it, so the room
+            // the column may claim is what the window has *left* once the rail
+            // has taken its share. Clamping against the whole window instead
+            // let a 700-point column sit in a 716-point window and squeeze the
+            // rail to 16 points — measured, and the reason the rail appeared to
+            // vanish when a window was dragged narrow.
+            let railIsOpen = hostsRail && critique.isPresented
+            let widthForColumn = geometry.size.width
+                - (railIsOpen ? Layout.railWidth : 0)
             let visibleWidth = clampedWidth(
                 preferredWidth,
-                totalWidth: geometry.size.width
+                totalWidth: widthForColumn,
+                railIsOpen: railIsOpen
             )
             // The page is wider than the column: whatever room the window has
             // to spare, up to 100pt a side, is margin a picture may spread
@@ -391,7 +422,6 @@ struct ResizableRichTextPreview: View {
             // keeping the right-hand bleed put a second faint rule and a strip
             // of empty page between the writing and the notes about it, which
             // read as a gutter between two panes rather than as one document.
-            let railIsOpen = hostsRail && critique.isPresented
             let bleed = EditorPaneGeometry.imageBleed(
                 around: visibleWidth,
                 within: geometry.size.width,
@@ -469,20 +499,23 @@ struct ResizableRichTextPreview: View {
                         colorTheme: colorTheme,
                         displayedWidth: visibleWidth,
                         dragGesture: resizeGesture(
-                            totalWidth: geometry.size.width,
-                            visibleWidth: visibleWidth
+                            totalWidth: widthForColumn,
+                            visibleWidth: visibleWidth,
+                            railIsOpen: railIsOpen
                         ),
                         onReset: {
                             preferredWidth = clampedWidth(
                                 Layout.defaultPreviewWidth,
-                                totalWidth: geometry.size.width
+                                totalWidth: widthForColumn,
+                                railIsOpen: railIsOpen
                             )
                         },
                         onAdjust: { direction in
                             adjustWidth(
                                 direction,
-                                totalWidth: geometry.size.width,
-                                visibleWidth: visibleWidth
+                                totalWidth: widthForColumn,
+                                visibleWidth: visibleWidth,
+                                railIsOpen: railIsOpen
                             )
                         },
                         helpText: """
@@ -564,7 +597,8 @@ struct ResizableRichTextPreview: View {
 
     private func resizeGesture(
         totalWidth: CGFloat,
-        visibleWidth: CGFloat
+        visibleWidth: CGFloat,
+        railIsOpen: Bool
     ) -> AnyGesture<DragGesture.Value> {
         AnyGesture(
             DragGesture(minimumDistance: 1)
@@ -575,7 +609,8 @@ struct ResizableRichTextPreview: View {
                     preferredWidth = clampedWidth(
                         (dragStartWidth ?? visibleWidth)
                             + value.translation.width,
-                        totalWidth: totalWidth
+                        totalWidth: totalWidth,
+                        railIsOpen: railIsOpen
                     )
                 }
                 .onEnded { _ in
@@ -587,7 +622,8 @@ struct ResizableRichTextPreview: View {
     private func adjustWidth(
         _ direction: AccessibilityAdjustmentDirection,
         totalWidth: CGFloat,
-        visibleWidth: CGFloat
+        visibleWidth: CGFloat,
+        railIsOpen: Bool
     ) {
         let adjustment: CGFloat
         switch direction {
@@ -601,20 +637,26 @@ struct ResizableRichTextPreview: View {
 
         preferredWidth = clampedWidth(
             visibleWidth + adjustment,
-            totalWidth: totalWidth
+            totalWidth: totalWidth,
+            railIsOpen: railIsOpen
         )
     }
 
     private func clampedWidth(
         _ proposedWidth: CGFloat,
-        totalWidth: CGFloat
+        totalWidth: CGFloat,
+        railIsOpen: Bool
     ) -> CGFloat {
         EditorPaneGeometry.measureWidth(
             proposedWidth,
             totalWidth: totalWidth,
             minimum: minimumWidth,
             maximum: Layout.maximumPreviewWidth,
-            handleWidth: Layout.gripperWidth
+            // The gripper needs room beyond the column only when it hangs in
+            // the margin. With the rail open there is no margin and it is
+            // drawn inside the edge instead (`gripperOffset`), so reserving
+            // for it there would shave 12 points off a column that fits.
+            handleWidth: railIsOpen ? 0 : Layout.gripperWidth
         )
     }
 }
@@ -727,4 +769,31 @@ enum Layout {
     // X-18: the explorer floats, so it no longer needs a column of its own for
     // the window to be usable. The window only has to fit a document.
     static let minimumWindowWidth = defaultDocumentWidth
+
+    /// The size a document window opens at when there is nothing to restore.
+    ///
+    /// The width is the same arithmetic the green button uses, asked with the
+    /// rail open — because the rail *is* open on a new window, and a window
+    /// that cannot hold what it opens showing is the wrong size by definition.
+    /// Sharing the function rather than writing 1056 here means the two cannot
+    /// drift when the rail or the column changes width.
+    ///
+    /// Before this the window opened at AppKit's own default, 900 points, and
+    /// a 700-point document beside a 356-point rail wants 1056 — so the rail
+    /// lost 156 points and every note in it was drawn in a column narrower
+    /// than it was designed for.
+    static let defaultWindowWidth = EditorPaneGeometry.idealContentWidth(
+        columnWidth: defaultPreviewWidth,
+        railWidth: railWidth,
+        railIsOpen: true
+    )
+
+    /// Tall enough to read in, short enough to fit a laptop.
+    ///
+    /// A 13-inch Air's visible frame is about 930 points once the menu bar and
+    /// the Dock are out of it; this plus the window's own chrome comes to 852,
+    /// which leaves room rather than filling the screen. On a larger display
+    /// it reads as a tall writing window instead of a panoramic one, which is
+    /// the right shape for a column of prose beside a column of notes.
+    static let defaultWindowHeight: CGFloat = 820
 }

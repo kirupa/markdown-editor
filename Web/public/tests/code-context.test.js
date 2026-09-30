@@ -18,8 +18,14 @@ import {
   isInlineStyleAvailable,
   isLinkAvailable,
 } from '../app/core/formatting.js';
-import { CodeContextKind, codeContextIn, isCodeContext } from '../app/core/code-context.js';
-import { renderMarkdown } from '../app/core/render-model.js';
+import {
+  CodeContextKind,
+  codeContextAmongAllSpans,
+  codeContextIn,
+  codeContextInModel,
+  isCodeContext,
+} from '../app/core/code-context.js';
+import { MarkdownRenderModel, renderMarkdown } from '../app/core/render-model.js';
 import { makeRange } from '../app/core/range.js';
 
 const STYLES = Object.values(InlineStyle);
@@ -262,5 +268,137 @@ suite('Formatting inside code and quotes', () => {
     const result = toggleInline(InlineStyle.bold, text, selection);
     expect(result.text === 'para\n\n    **let x** = 1\n', `got ${JSON.stringify(result.text)}`);
     expect(renderMarkdown(result.text).text === 'para\n\n    let x = 1\n', 'markers are visible');
+  });
+});
+
+// ─── Reading only the spans at the ends ───────────────────────────────────────
+
+// Documents that put code where a reading of the selection's two ends could
+// miss it: fences of each kind, unclosed ones, a fence inside a quote, spans at
+// the edges of lines, CRLF, and text outside the Basic Multilingual Plane. The
+// same list as the Swift suite's.
+const BLOCK_SCOPE_DOCUMENTS = [
+  'para\n\n```swift\nlet x = `y`\n```\n\nafter `code` here\n',
+  '```\nunclosed with `span`\nmore\n',
+  '```\nlet x',
+  'a `one` b `two` c\n```\nfence\n```\nd ``x ` y`` e\n',
+  '> ```\n> quoted fence\n>```\n`tail`',
+  '~~~\ntilde fence\n~~~\n`x`',
+  '   ```\nindented fence\n   ```\n',
+  '````\n```\nnested\n```\n````\n',
+  'a `b`\r\n```\r\ncode\r\n```\r\nc `d`\r\n',
+  '😀 `😀` **😀**\n```\n😀\n```\n',
+  '```\n```\n```\nopen\n',
+  '`a` `b`\n\n`c`',
+];
+
+const corpus = await loadCorpus();
+
+// The contract's documents live outside `Web/public`, so only node can read
+// them; the browser page runs the hand-made documents alone.
+async function loadCorpus() {
+  if (typeof process === 'undefined' || !process.versions?.node) return [];
+  const url = new URL('../../../Contract/formatting.jsonl', import.meta.url);
+  const { readFile } = await import('node:fs/promises');
+  const header = (await readFile(url, 'utf8')).split('\n')[0];
+  return JSON.parse(header).documents.map((document) => document.text);
+}
+
+/**
+ * Every caret, and every selection between two points where the answer could
+ * change: each code region's edges and the offsets either side of them, every
+ * line boundary, and the ends of the document.
+ */
+function probingSelections(text, model) {
+  const points = new Set([0, text.length]);
+  for (const span of model.spans) {
+    if (span.style.kind !== 'inlineCode' && span.style.kind !== 'codeBlock') continue;
+    const { location, length } = span.sourceRange;
+    for (const edge of [location, location + length]) {
+      points.add(edge - 1);
+      points.add(edge);
+      points.add(edge + 1);
+    }
+  }
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] === '\n' || text[index] === '\r') {
+      points.add(index);
+      points.add(index + 1);
+    }
+  }
+  const sorted = [...points].filter((p) => p >= 0 && p <= text.length).sort((a, b) => a - b);
+  const selections = [];
+  for (let location = 0; location <= text.length; location += 1) {
+    selections.push(at(location));
+  }
+  for (let first = 0; first < sorted.length; first += 1) {
+    for (let second = first + 1; second < sorted.length; second += 1) {
+      selections.push(at(sorted[first], sorted[second] - sorted[first]));
+    }
+  }
+  return selections;
+}
+
+function describe(context) {
+  const range = context.sourceRange;
+  return range === null ? context.kind : `${context.kind}(${range.location},${range.length})`;
+}
+
+suite('Code context: reading only the spans at the ends', () => {
+  test('reading the ends answers exactly what every span in the document does', () => {
+    // The toolbar asks on every caret move, and `model.spans` builds every
+    // span in the document, so the live reading takes the spans at the
+    // selection's two ends instead. It must agree with the walk of all of
+    // them — on a fresh model and on one brought up to date by an edit, which
+    // is the kind the page holds.
+    let checked = 0;
+    for (const text of [...BLOCK_SCOPE_DOCUMENTS, ...corpus]) {
+      const fresh = renderMarkdown(text);
+      const edited = new MarkdownRenderModel(text.slice(0, Math.floor(text.length / 2)));
+      edited.update(text);
+      for (const selection of probingSelections(text, fresh)) {
+        const whole = describe(codeContextAmongAllSpans(selection, fresh));
+        for (const model of [fresh, edited]) {
+          const ends = describe(codeContextInModel(selection, model));
+          if (ends !== whole) {
+            expect(
+              false,
+              `${JSON.stringify(text)} at ${selection.location},${selection.length}: ` +
+                `the ends say ${ends}, the document says ${whole}`
+            );
+            return;
+          }
+        }
+        checked += 1;
+      }
+    }
+    expect(checked > 2000, `only ${checked} selections were checked`);
+  });
+
+  test('a command given the live model refuses exactly as one that parses', () => {
+    const text = 'a `one` b\n```\nlet x = 1\n```\n';
+    const live = renderMarkdown(text);
+    for (const selection of probingSelections(text, live)) {
+      for (const style of STYLES) {
+        const parsed = toggleInline(style, text, selection);
+        const shared = toggleInline(style, text, selection, live);
+        expect(
+          parsed.text === shared.text &&
+            parsed.selection.location === shared.selection.location &&
+            parsed.selection.length === shared.selection.length,
+          `${style} at ${selection.location},${selection.length} differs with the live model`
+        );
+      }
+      const link = insertLink('https://example.com', text, selection);
+      const linkShared = insertLink('https://example.com', text, selection, live);
+      expect(link.text === linkShared.text, 'insertLink differs with the live model');
+    }
+    // A model of some other text is never trusted.
+    const stale = renderMarkdown('```\n' + text);
+    const outside = at(text.indexOf('a'), 1);
+    expect(
+      toggleInline(InlineStyle.bold, text, outside, stale).text !== text,
+      'a stale model refused bold in prose'
+    );
   });
 });

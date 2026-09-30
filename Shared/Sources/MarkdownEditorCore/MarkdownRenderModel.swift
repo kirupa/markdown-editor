@@ -47,30 +47,117 @@ public struct MarkdownRenderSpan: Equatable {
     }
 }
 
+/// One stretch of rendered text, and the source it was made from.
+///
+/// This replaces the pair of per-character offset tables the model used to
+/// carry. Those cost sixteen bytes for every character in the document and had
+/// to be built from nothing on every keystroke — eighty megabytes of churn per
+/// character on a five megabyte file, which is the memory half of the
+/// "never re-render the whole document" requirement. A run costs the same
+/// whether it covers one character or ten thousand, so the table is now
+/// proportional to the *markup* in a document rather than to its length, and
+/// small enough that a block's worth of it can be rebuilt on its own.
+struct MarkdownSourceRun: Equatable, Sendable {
+    var renderedStart: Int
+    var renderedLength: Int
+    var sourceStart: Int
+    var sourceLength: Int
+    /// A run whose rendered text is not the source text — a bullet, a tick
+    /// box, a rule — so an offset inside it is interpolated rather than
+    /// counted. Matches `RenderBuilder.appendSynthetic` exactly.
+    var isSynthetic: Bool
+
+    /// The source offset `delta` rendered characters into this run.
+    func sourceOffset(atRenderedDelta delta: Int) -> Int {
+        guard isSynthetic else {
+            return sourceStart + delta
+        }
+        let progress = Double(delta) / Double(renderedLength)
+        return sourceStart + Int((Double(sourceLength) * progress).rounded())
+    }
+}
+
 public struct MarkdownRenderModel: Equatable {
     public let text: String
     public let spans: [MarkdownRenderSpan]
 
-    private let lowerSourceOffsets: [Int]
-    private let upperSourceOffsets: [Int]
+    /// Where the rendered text came from, as runs rather than as one entry per
+    /// character. See `MarkdownSourceRun`.
+    let runs: [MarkdownSourceRun]
+    /// Length of the Markdown this was rendered from, in UTF-16 code units.
+    /// This is what the last `advanceSource` left behind, and so the source
+    /// offset every rendered position past the final run maps to.
+    let sourceLength: Int
+    let renderedLength: Int
 
-    fileprivate init(
+    init(
         text: String,
         spans: [MarkdownRenderSpan],
-        lowerSourceOffsets: [Int],
-        upperSourceOffsets: [Int]
+        runs: [MarkdownSourceRun],
+        sourceLength: Int,
+        renderedLength: Int
     ) {
         self.text = text
         self.spans = spans
-        self.lowerSourceOffsets = lowerSourceOffsets
-        self.upperSourceOffsets = upperSourceOffsets
+        self.runs = runs
+        self.sourceLength = sourceLength
+        self.renderedLength = renderedLength
+    }
+
+    /// The source offset at the *start* of whatever produced rendered
+    /// character `index` — the old `upperSourceOffsets[index]`.
+    func upperSourceOffset(at index: Int) -> Int {
+        guard index < renderedLength, let run = run(containingRendered: index)
+        else {
+            return sourceLength
+        }
+        let delta = index - run.renderedStart
+        return delta == 0
+            ? run.sourceStart
+            : run.sourceOffset(atRenderedDelta: delta)
+    }
+
+    /// The source offset at the *end* of whatever produced rendered character
+    /// `index - 1` — the old `lowerSourceOffsets[index]`.
+    func lowerSourceOffset(at index: Int) -> Int {
+        guard index > 0, let run = run(containingRendered: index - 1) else {
+            return 0
+        }
+        return run.sourceOffset(atRenderedDelta: index - run.renderedStart)
+    }
+
+    /// The run covering a rendered index. Runs tile the rendered text with no
+    /// gaps, so this is a plain binary search — the linear walk it replaces
+    /// was O(document) and sat on the selection path.
+    private func run(containingRendered index: Int) -> MarkdownSourceRun? {
+        var low = 0
+        var high = runs.count - 1
+        var found: MarkdownSourceRun?
+        while low <= high {
+            let middle = (low + high) / 2
+            let run = runs[middle]
+            if run.renderedStart <= index {
+                found = run
+                low = middle + 1
+            } else {
+                high = middle - 1
+            }
+        }
+        guard let found, index < NSMaxRange(
+            NSRange(
+                location: found.renderedStart,
+                length: found.renderedLength
+            )
+        ) else {
+            return nil
+        }
+        return found
     }
 
     public func sourceRange(
         for renderedRange: NSRange,
         includingMarkup: Bool = false
     ) -> NSRange {
-        let renderedLength = (text as NSString).length
         let location = min(max(0, renderedRange.location), renderedLength)
         let length = min(
             max(0, renderedRange.length),
@@ -79,13 +166,13 @@ public struct MarkdownRenderModel: Equatable {
         let clampedRange = NSRange(location: location, length: length)
         guard clampedRange.length > 0 else {
             return NSRange(
-                location: upperSourceOffsets[location],
+                location: upperSourceOffset(at: location),
                 length: 0
             )
         }
 
-        var sourceStart = upperSourceOffsets[location]
-        var sourceEnd = lowerSourceOffsets[NSMaxRange(clampedRange)]
+        var sourceStart = upperSourceOffset(at: location)
+        var sourceEnd = lowerSourceOffset(at: NSMaxRange(clampedRange))
         for span in spans {
             if span.isAtomic,
                 NSIntersectionRange(
@@ -116,15 +203,15 @@ public struct MarkdownRenderModel: Equatable {
         let sourceStart = max(0, sourceRange.location)
         let sourceEnd = max(sourceStart, NSMaxRange(sourceRange))
         let renderedStart = renderedOffset(
-            for: sourceStart,
-            offsets: upperSourceOffsets
+            forSourceOffset: sourceStart,
+            usingLowerEdge: false
         )
         guard sourceRange.length > 0 else {
             return NSRange(location: renderedStart, length: 0)
         }
         let renderedEnd = renderedOffset(
-            for: sourceEnd,
-            offsets: lowerSourceOffsets
+            forSourceOffset: sourceEnd,
+            usingLowerEdge: true
         )
         return NSRange(
             location: renderedStart,
@@ -132,15 +219,32 @@ public struct MarkdownRenderModel: Equatable {
         )
     }
 
-    private func renderedOffset(
-        for sourceOffset: Int,
-        offsets: [Int]
+    /// The first rendered index whose source offset has reached
+    /// `sourceOffset`, measured from either edge of the mapping.
+    ///
+    /// Both edges only ever move forwards through the source, so this is a
+    /// binary search where it used to be a walk from the beginning of the
+    /// document — which is what made placing a caret cost more the further
+    /// down the file it was. `MarkdownRenderModelInvariantTests` pins the
+    /// monotonicity the search relies on.
+    func renderedOffset(
+        forSourceOffset sourceOffset: Int,
+        usingLowerEdge: Bool
     ) -> Int {
-        for (index, mappedOffset) in offsets.enumerated()
-        where mappedOffset >= sourceOffset {
-            return index
+        var low = 0
+        var high = renderedLength
+        while low < high {
+            let middle = (low + high) / 2
+            let mapped = usingLowerEdge
+                ? lowerSourceOffset(at: middle)
+                : upperSourceOffset(at: middle)
+            if mapped >= sourceOffset {
+                high = middle
+            } else {
+                low = middle + 1
+            }
         }
-        return max(0, offsets.count - 1)
+        return low
     }
 }
 
@@ -946,39 +1050,20 @@ private final class Parser {
     private func openingFence(
         in line: String
     ) -> (marker: String, language: String?)? {
-        let trimmed = line.trimmingCharacters(in: .whitespaces)
-        guard trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~") else {
+        // The scanner that decides where one block ends and the next begins
+        // has to agree with this exactly, or a block would not render the same
+        // alone as it does in context. See `MarkdownFence`.
+        guard let fence = MarkdownFence.opening(in: line) else {
             return nil
         }
-        let markerCharacter = trimmed.first!
-        let marker = String(
-            trimmed.prefix { $0 == markerCharacter }
-        )
-        guard marker.count >= 3 else {
-            return nil
-        }
-        let language = trimmed.dropFirst(marker.count)
-            .trimmingCharacters(in: .whitespaces)
-        if markerCharacter == "`", language.contains("`") {
-            return nil
-        }
-        return (marker, language.isEmpty ? nil : language)
+        return (fence.marker, fence.language)
     }
 
     private func isClosingFence(_ line: String, for fence: CodeFence) -> Bool {
-        let trimmed = line.trimmingCharacters(in: .whitespaces)
-        guard let markerCharacter = fence.marker.first,
-            trimmed.first == markerCharacter
-        else {
-            return false
-        }
-        let markerLength = trimmed.prefix { $0 == markerCharacter }.count
-        guard markerLength >= fence.marker.count else {
-            return false
-        }
-        return trimmed.dropFirst(markerLength)
-            .trimmingCharacters(in: .whitespaces)
-            .isEmpty
+        MarkdownFence.isClosing(
+            line,
+            for: MarkdownFence(marker: fence.marker, language: fence.language)
+        )
     }
 
     private func isHorizontalRule(_ line: String) -> Bool {
@@ -1069,8 +1154,10 @@ private final class RenderBuilder {
     private let source: NSString
     private let rendered = NSMutableString()
     private(set) var spans: [MarkdownRenderSpan] = []
-    private var lowerSourceOffsets: [Int] = [0]
-    private var upperSourceOffsets: [Int] = [0]
+    private var runs: [MarkdownSourceRun] = []
+    /// Where the last `advanceSource` left the source cursor. This is the
+    /// offset every rendered position past the final run maps to.
+    private var sourceCursor = 0
 
     init(source: NSString) {
         self.source = source
@@ -1087,10 +1174,29 @@ private final class RenderBuilder {
         }
         advanceSource(to: range.location)
         rendered.append(source.substring(with: range))
-        for offset in 1...range.length {
-            lowerSourceOffsets.append(range.location + offset)
-            upperSourceOffsets.append(range.location + offset)
+        // Two copied stretches that meet in both texts are one run. Ordinary
+        // prose is a line of text followed by its newline, so merging halves
+        // the table for the documents that are mostly words.
+        if var last = runs.last,
+            !last.isSynthetic,
+            last.sourceStart + last.sourceLength == range.location
+        {
+            last.renderedLength += range.length
+            last.sourceLength += range.length
+            runs[runs.count - 1] = last
+            sourceCursor = NSMaxRange(range)
+            return
         }
+        runs.append(
+            MarkdownSourceRun(
+                renderedStart: rendered.length - range.length,
+                renderedLength: range.length,
+                sourceStart: range.location,
+                sourceLength: range.length,
+                isSynthetic: false
+            )
+        )
+        sourceCursor = NSMaxRange(range)
     }
 
     @discardableResult
@@ -1105,19 +1211,22 @@ private final class RenderBuilder {
         )
         rendered.append(string)
         if renderedRange.length > 0 {
-            for offset in 1...renderedRange.length {
-                let progress = Double(offset) / Double(renderedRange.length)
-                let sourceOffset = sourceRange.location
-                    + Int((Double(sourceRange.length) * progress).rounded())
-                lowerSourceOffsets.append(sourceOffset)
-                upperSourceOffsets.append(sourceOffset)
-            }
+            runs.append(
+                MarkdownSourceRun(
+                    renderedStart: renderedRange.location,
+                    renderedLength: renderedRange.length,
+                    sourceStart: sourceRange.location,
+                    sourceLength: sourceRange.length,
+                    isSynthetic: true
+                )
+            )
+            sourceCursor = sourceRange.location + sourceRange.length
         }
         return renderedRange
     }
 
     func advanceSource(to offset: Int) {
-        upperSourceOffsets[upperSourceOffsets.count - 1] = offset
+        sourceCursor = offset
     }
 
     func addSpan(
@@ -1142,13 +1251,12 @@ private final class RenderBuilder {
     }
 
     func model() -> MarkdownRenderModel {
-        precondition(lowerSourceOffsets.count == rendered.length + 1)
-        precondition(upperSourceOffsets.count == rendered.length + 1)
-        return MarkdownRenderModel(
+        MarkdownRenderModel(
             text: rendered as String,
             spans: spans,
-            lowerSourceOffsets: lowerSourceOffsets,
-            upperSourceOffsets: upperSourceOffsets
+            runs: runs,
+            sourceLength: sourceCursor,
+            renderedLength: rendered.length
         )
     }
 }

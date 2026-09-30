@@ -1,4 +1,5 @@
 import Foundation
+import MarkdownEditorContract
 import Testing
 
 @testable import MarkdownEditorCore
@@ -372,5 +373,80 @@ struct MarkdownCodeContextTests {
 
         #expect(result.text == "para\n\n    **let x** = 1\n")
         #expect(MarkdownRenderer.render(result.text).text == "para\n\n    let x = 1\n")
+    }
+
+    // MARK: - Reading only the blocks at the ends
+
+    /// Documents that put code where a reading of two blocks could miss it:
+    /// fences of each kind, unclosed ones, a fence inside a quote, spans at the
+    /// edges of lines, CRLF, and text outside the Basic Multilingual Plane.
+    static let blockScopeDocuments = [
+        "para\n\n```swift\nlet x = `y`\n```\n\nafter `code` here\n",
+        "```\nunclosed with `span`\nmore\n",
+        "```\nlet x",
+        "a `one` b `two` c\n```\nfence\n```\nd ``x ` y`` e\n",
+        "> ```\n> quoted fence\n>```\n`tail`",
+        "~~~\ntilde fence\n~~~\n`x`",
+        "   ```\nindented fence\n   ```\n",
+        "````\n```\nnested\n```\n````\n",
+        "a `b`\r\n```\r\ncode\r\n```\r\nc `d`\r\n",
+        "😀 `😀` **😀**\n```\n😀\n```\n",
+        "```\n```\n```\nopen\n",
+        "`a` `b`\n\n`c`",
+    ]
+
+    @Test("Reading two blocks answers exactly what the whole document does")
+    func blockScopedReadingMatchesTheWholeDocument() {
+        // The toolbar asks on every caret move, so the source-only reading
+        // parses just the blocks the selection's ends fall in, and the macOS
+        // editor reads the same blocks from the incremental renderer, which
+        // already holds them parsed. Both must agree with a walk of every span
+        // in the document, for every caret and every selection whose ends
+        // could change the answer.
+        var checked = 0
+        for text in Self.blockScopeDocuments + ContractCorpus.documents.map(\.text) {
+            let source = text as NSString
+            let model = MarkdownRenderer.render(text)
+            let renderer = MarkdownIncrementalRenderer(source: text)
+            for selection in Self.selections(probing: text, model: model) {
+                let whole = MarkdownCodeContext.containing(selection, in: model)
+                let scanned = MarkdownCodeContext.containing(selection, in: source)
+                let cached = MarkdownCodeContext.containing(selection) {
+                    renderer.spans(aroundSourceOffset: $0)
+                }
+                #expect(scanned == whole, "\(selection) in \(text.debugDescription)")
+                #expect(cached == whole, "\(selection) in \(text.debugDescription)")
+                checked += 1
+            }
+        }
+        #expect(checked > 5_000, "only \(checked) selections were checked")
+    }
+
+    /// Every caret, and every selection between two points where the answer
+    /// could change: each code region's edges and the offsets either side of
+    /// them, every line boundary, and the ends of the document.
+    private static func selections(
+        probing text: String,
+        model: MarkdownRenderModel
+    ) -> [NSRange] {
+        let source = text as NSString
+        var points: Set<Int> = [0, source.length]
+        for span in model.spans
+        where span.style == .inlineCode || span.style.isFencedCodeBlock {
+            for edge in [span.sourceRange.location, NSMaxRange(span.sourceRange)] {
+                points.formUnion([edge - 1, edge, edge + 1])
+            }
+        }
+        for selection in ContractCorpus.selections(in: text) {
+            points.formUnion([selection.location, NSMaxRange(selection)])
+        }
+        let sorted = points.filter { (0...source.length).contains($0) }.sorted()
+        var selections = (0...source.length).map { NSRange(location: $0, length: 0) }
+        for (index, start) in sorted.enumerated() {
+            for end in sorted[(index + 1)...] {
+                selections.append(NSRange(location: start, length: end - start))
+            }
+        }
+        return selections
     }
 }

@@ -84,8 +84,9 @@ public enum EditorPaneGeometry {
 
     /// The width the window wants in order to show everything it has to show.
     ///
-    /// What the green button and a double-click on the title bar should zoom
-    /// to. The point of zooming is "make this big enough", and with the
+    /// What Zoom goes to — the green button's, and Window ▸ Zoom. A
+    /// double-click on the title bar fills the screen instead (`TitleBarFill`).
+    /// The point of zooming is "make this big enough", and with the
     /// comments open the thing being read is the writing *and* the notes
     /// beside it — a window sized to the writing alone clips the rail or, once
     /// the layout centres the pair, leaves it hanging off the edge.
@@ -108,24 +109,28 @@ public enum EditorPaneGeometry {
         return columnWidth + railWidth
     }
 
-    /// Whether a double-click at `point` should zoom the window.
+    /// The narrowest the window may be dragged, given what it is showing.
     ///
-    /// Pure, and separated from the window for one reason: the decision cannot
-    /// be made by hit-testing. SwiftUI draws the whole title bar through a
-    /// single hosting view, so a hit test at the theme button, at the document
-    /// title and at empty space between them all return the same view — the
-    /// first version trusted that and zoomed the window every time the theme
-    /// button was double-clicked. The controls have to be named by their own
-    /// frames instead, and once they are, this is arithmetic and can be checked
-    /// without a screen.
+    /// The rail is a fixed width docked to the document, so it does not shrink
+    /// with the window — it is clipped by it. Measured at the old minimum of
+    /// 620 with the rail open: the document took 608 points and the rail got
+    /// 12, which is to say it disappeared, having been dragged off the edge
+    /// rather than closed. A panel that vanishes when a window is resized
+    /// reads as a bug whichever way it was meant.
     ///
-    /// `controls` are the toolbar's items and the traffic lights. The document
-    /// title is deliberately not among them: it is not a control, and
-    /// double-clicking it zooms in every other Mac application.
-    ///
-    /// Three behaviours ask this now — zoom on a double-click, move the window
-    /// on a drag, and the title menu on a right-click — because they are the
-    /// same question. A point that belongs to a button belongs to none of them.
+    /// So the floor rises with the rail and falls again when it is shut. The
+    /// column keeps its own minimum either way, which is the point: the
+    /// narrowest useful window is a readable measure plus whatever is docked
+    /// beside it, not an arbitrary number that happens to be bigger.
+    public static func minimumContentWidth(
+        columnMinimum: CGFloat,
+        documentMinimum: CGFloat,
+        railWidth: CGFloat,
+        railIsOpen: Bool
+    ) -> CGFloat {
+        guard railIsOpen else { return documentMinimum }
+        return columnMinimum + railWidth
+    }
 
     /// The folders containing `url`, innermost first, up to the volume root.
     ///
@@ -152,6 +157,26 @@ public enum EditorPaneGeometry {
         return chain
     }
 
+    /// Whether a click at `point` belongs to the title bar itself rather than
+    /// to a control sitting in it.
+    ///
+    /// Pure, and separated from the window for one reason: the decision cannot
+    /// be made by hit-testing. SwiftUI draws the whole title bar through a
+    /// single hosting view, so a hit test at the theme button, at the document
+    /// title and at empty space between them all return the same view — the
+    /// first version trusted that and zoomed the window every time the theme
+    /// button was double-clicked. The controls have to be named by their own
+    /// frames instead, and once they are, this is arithmetic and can be checked
+    /// without a screen.
+    ///
+    /// `controls` are the toolbar's items and the traffic lights. The document
+    /// title is deliberately not among them: it is not a control, and
+    /// double-clicking it acts on the window in every other Mac application.
+    ///
+    /// Three behaviours ask this now — fill the screen on a double-click, move
+    /// the window on a drag, and the title menu on a right-click — because they
+    /// are the same question. A point that belongs to a button belongs to none
+    /// of them.
     public static func titleBarClaimsClick(
         at point: CGPoint,
         titleBar: CGRect,

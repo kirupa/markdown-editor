@@ -32,38 +32,77 @@ const PROSE = Object.freeze({ kind: CodeContextKind.prose, sourceRange: null });
 /**
  * The context `selection` sits in, within `text`.
  *
+ * Pass the live model when there is one — `model.source === text` — and
+ * nothing is parsed; otherwise the document is.
+ *
  * @param {{ location: number, length: number }} selection
  * @param {string} text
+ * @param {import('./render-model.js').MarkdownRenderModel|null} [model]
  * @returns {{ kind: string, sourceRange: ({ location: number, length: number }|null) }}
  */
-export function codeContextIn(selection, text) {
-  return codeContextInModel(selection, renderMarkdown(text));
+export function codeContextIn(selection, text, model = null) {
+  const rendered = model !== null && model.source === text ? model : renderMarkdown(text);
+  return codeContextInModel(selection, rendered);
 }
 
 /**
- * The context `selection` sits in, within an already rendered model. Callers
- * holding a model should use this: rendering again costs tens of milliseconds
- * on a long document and this is asked on every caret move.
+ * The context `selection` sits in, within an already rendered model. This is
+ * asked on every caret move.
+ *
+ * Only the spans at the selection's two ends are read, and the answer is the
+ * one the whole document gives. The code a caret is in contains the caret. The
+ * code a selection is in overlaps it without lying inside it, and a region that
+ * does that holds the selection's first character or its last. A fence covers
+ * the line either one is on and a code span never leaves its line, so the
+ * model's per-offset lookup holds every candidate — where `model.spans` would
+ * build every span in the document.
  *
  * @param {{ location: number, length: number }} selection
  * @param {import('./render-model.js').MarkdownRenderModel} model
  */
 export function codeContextInModel(selection, model) {
+  let spans = model.spansAtSourceOffset(selection.location);
+  // A fence found at the start is already the answer — fences are asked first,
+  // and nothing further on precedes it.
+  if (selection.length > 0 && firstFence(selection, spans) === null) {
+    spans = spans.concat(model.spansAtSourceOffset(maxRange(selection) - 1));
+  }
+  return contextAmong(selection, spans);
+}
+
+/**
+ * The same question answered by walking every span in the document. The
+ * per-offset reading above is tested against this one.
+ *
+ * @param {{ location: number, length: number }} selection
+ * @param {import('./render-model.js').MarkdownRenderModel} model
+ */
+export function codeContextAmongAllSpans(selection, model) {
+  return contextAmong(selection, model.spans);
+}
+
+function contextAmong(selection, spans) {
   // A fenced block is asked first: backticks written inside one are not a code
   // span, and the block is the stronger statement about what the text means.
-  for (const span of model.spans) {
-    if (span.style.kind !== 'codeBlock' || !span.includesMarkup) continue;
-    if (touches(selection, span.sourceRange, true)) {
-      return { kind: CodeContextKind.codeBlock, sourceRange: span.sourceRange };
-    }
+  const fence = firstFence(selection, spans);
+  if (fence !== null) {
+    return { kind: CodeContextKind.codeBlock, sourceRange: fence };
   }
-  for (const span of model.spans) {
+  for (const span of spans) {
     if (span.style.kind !== 'inlineCode') continue;
     if (touches(selection, span.sourceRange, false)) {
       return { kind: CodeContextKind.inlineCodeSpan, sourceRange: span.sourceRange };
     }
   }
   return PROSE;
+}
+
+function firstFence(selection, spans) {
+  for (const span of spans) {
+    if (span.style.kind !== 'codeBlock' || !span.includesMarkup) continue;
+    if (touches(selection, span.sourceRange, true)) return span.sourceRange;
+  }
+  return null;
 }
 
 /** Whether a context is code of either kind. */

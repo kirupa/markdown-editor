@@ -51,9 +51,8 @@ let package = Package(
         ),
         .testTarget(
             name: "MarkdownEditorCoreTests",
-            // The invariant tests run every command over the contract corpus,
-            // so the corpus is a test-only dependency here for the same reason
-            // it is one of the UI tests.
+            // The corpus is a test-only dependency: the invariant suites run
+            // every check over the same documents the contract is dumped from.
             dependencies: ["MarkdownEditorCore", "MarkdownEditorContract"]
         ),
         .testTarget(

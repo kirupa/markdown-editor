@@ -2,13 +2,17 @@ import AppKit
 import MarkdownEditorUI
 import SwiftUI
 
-/// The three things this window's title bar does that it would not do on its
-/// own: zoom to the content, move when dragged, and name the file it is
-/// showing.
+/// The things this window's title bar does that it would not do on its own:
+/// fill the screen when double-clicked, move when dragged, and name the file it
+/// is showing — plus the size Zoom goes to, which is asked of the same delegate.
 ///
-/// All three are here together because all three are the same click, asked
-/// about in the same geometry, and splitting them across files would mean two
-/// event monitors racing for the same mouse-down.
+/// They are here together because they are the same click, asked about in the
+/// same geometry, and splitting them across files would mean two event
+/// monitors racing for the same mouse-down.
+///
+/// A double-click fills the screen rather than zooming: see `TitleBarFill`.
+/// Zoom — the green button's, and Window ▸ Zoom — keeps its own meaning, the
+/// best size for the content, which is what the rest of this comment is about.
 ///
 /// macOS asks the window's delegate `windowWillUseStandardFrame(_:defaultFrame:)`
 /// and, with no answer, offers the whole screen. That is the wrong answer here
@@ -31,8 +35,9 @@ struct WindowChrome: ViewModifier {
 }
 
 extension View {
-    /// Give this window a title bar that zooms to `contentWidth` points of
-    /// content, moves when dragged, and can name the file it is showing.
+    /// Give this window a title bar that moves when dragged, fills the screen
+    /// when double-clicked and can name the file it is showing, and a Zoom
+    /// that goes to `contentWidth` points of content.
     func windowChrome(
         contentWidth: CGFloat,
         fileURL: URL?
@@ -124,14 +129,14 @@ final class WindowChromeDelegate: NSObject, NSWindowDelegate {
     private var monitor: Any?
     private var rightMonitor: Any?
 
-    /// Zoom on a double-click, and move the window on a drag.
+    /// Fill the screen on a double-click, and move the window on a drag.
     ///
     /// Both are things the system does for an ordinary window and does not do
-    /// for this one. Zoom, because macOS only sends `zoom:` from a title-bar
-    /// double-click when "Double-click a window's title bar to" is set to Zoom,
-    /// and measured on this machine it is not — `AppleMiniaturizeOnDoubleClick`
-    /// is 0 and `AppleActionOnDoubleClick` is unset, so the gesture does
-    /// nothing at all, in every app.
+    /// for this one. The double-click, because macOS only acts on it when
+    /// "Double-click a window's title bar to" is set to something, and measured
+    /// on this machine it is not — `AppleMiniaturizeOnDoubleClick` is 0 and
+    /// `AppleActionOnDoubleClick` is unset, so the gesture does nothing at all,
+    /// in every app.
     ///
     /// Dragging, because SwiftUI fills the title bar with a hosting view that
     /// swallows the mouse. Measured before this: of a 900-point bar, only a
@@ -149,7 +154,7 @@ final class WindowChromeDelegate: NSObject, NSWindowDelegate {
         monitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) {
             [weak self] event in
             guard let self else { return event }
-            if self.zoomIfTitleBarDoubleClick(event) { return nil }
+            if self.fillIfTitleBarDoubleClick(event) { return nil }
             // Command-click, which is how every Mac title bar has opened its
             // path menu since long before this app existed. Checked before the
             // drag, because a command-drag would otherwise move the window and
@@ -191,12 +196,42 @@ final class WindowChromeDelegate: NSObject, NSWindowDelegate {
         return true
     }
 
+    /// What the last double-click did, so the next one can undo it.
+    private var fill = TitleBarFill()
+
+    /// Fills the screen, or puts the window back where it was before it did.
+    ///
+    /// All the room there is — the screen's visible frame, so the menu bar and
+    /// the Dock stay reachable — rather than `zoom(nil)`, which goes to the
+    /// best size for the content: the document plus its comments, a window
+    /// barely different from the one a document opens in.
     @discardableResult
-    private func zoomIfTitleBarDoubleClick(_ event: NSEvent) -> Bool {
+    private func fillIfTitleBarDoubleClick(_ event: NSEvent) -> Bool {
         guard event.clickCount == 2, claimsTitleBarClick(event),
               let window
         else { return false }
-        window.zoom(nil)
+        // A full-screen window already has all of it, and its frame is the
+        // system's to manage.
+        guard !window.styleMask.contains(.fullScreen),
+              let screen = window.screen ?? NSScreen.main
+        else { return true }
+        // Where a window that already fills the screen goes when there is
+        // nowhere earlier to return to: the size a new one opens at.
+        let fallback = window.frameRect(
+            forContentRect: NSRect(
+                x: 0,
+                y: 0,
+                width: contentWidth > 0 ? contentWidth : Layout.defaultWindowWidth,
+                height: Layout.defaultWindowHeight
+            )
+        ).size
+        let target = fill.toggle(
+            from: window.frame,
+            available: screen.visibleFrame,
+            fallbackSize: fallback
+        )
+        window.setFrame(target, display: true, animate: true)
+        fill.settle(at: window.frame)
         return true
     }
 
@@ -328,7 +363,7 @@ final class WindowChromeDelegate: NSObject, NSWindowDelegate {
     /// window every time the theme button was double-clicked.
     ///
     /// The title text is deliberately not counted. It is not a control, and
-    /// double-clicking it zooms in every other Mac application.
+    /// in every other Mac application double-clicking it acts on the window.
     private func controlFrames(in window: NSWindow) -> [CGRect] {
         var frames: [CGRect] = []
         for item in window.toolbar?.items ?? [] {

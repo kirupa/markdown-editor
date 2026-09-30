@@ -113,12 +113,7 @@ struct DocumentEditorView: View {
     /// The editor itself. Split from `body` only to keep each
     /// expression small enough for the type checker to solve.
     private var editorBody: some View {
-        // One parse for the whole bar. Both questions it has to answer — is
-        // the caret on a picture, and is it in code — are answered from the
-        // same spans, so asking the renderer twice would be paying twice for
-        // one answer.
-        let model = MarkdownRenderer.render(document.text)
-        return VStack(spacing: 0) {
+        VStack(spacing: 0) {
             MarkdownFormattingBar(
                 text: $document.text,
                 controller: controller,
@@ -126,10 +121,13 @@ struct DocumentEditorView: View {
                 onInsertLink: { isAskingForLink = true },
                 onInsertImage: { isChoosingImageSource = true },
                 onSizeImage: { isSizingImage = true },
-                canSizeImage: imageAtSelection(in: model) != nil,
+                canSizeImage: imageAtSelection() != nil,
+                // Read from the blocks at the selection's two ends, never from
+                // a render of the whole document: this is a view body, asked
+                // several times per keystroke.
                 codeContext: MarkdownCodeContext.containing(
                     controller.selection,
-                    in: model
+                    in: document.text as NSString
                 )
             )
             Divider()
@@ -347,15 +345,20 @@ struct DocumentEditorView: View {
     ///
     /// A rendered image is a single atomic character, so "on" means the caret
     /// is inside or immediately after it.
-    private func imageAtSelection(
-        in model: MarkdownRenderModel? = nil
-    ) -> (range: NSRange, tag: MarkdownImageTag.Parsed)? {
+    private func imageAtSelection()
+        -> (range: NSRange, tag: MarkdownImageTag.Parsed)?
+    {
         let text = document.text as NSString
         let selection = controller.selection
         guard selection.location <= text.length else { return nil }
 
-        let spans = (model ?? MarkdownRenderer.render(document.text)).spans
-        for span in spans {
+        // Scoped to the block the caret is in: this is read from a view body,
+        // so rendering the document here cost a full parse on every SwiftUI
+        // pass, several times per keystroke.
+        for span in MarkdownFormatting.spansAroundBlock(
+            at: selection.location,
+            in: text
+        ) {
             guard case .image = span.style else { continue }
             guard
                 selection.location >= span.sourceRange.location,

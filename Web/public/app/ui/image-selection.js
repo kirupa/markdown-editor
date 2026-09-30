@@ -24,7 +24,7 @@
 // on the text — so neither half can reintroduce a mid-word splice alone.
 
 import { proportionalSize } from '../core/image-tag.js';
-import { setBlockImageWidth } from './renderer.js';
+import { ensureBlockOffsets, setBlockImageWidth } from './renderer.js';
 
 const MIN_SIZE = 1;
 const MAX_SIZE = 10000;
@@ -77,6 +77,9 @@ export class ImageSelection {
    */
   beginMove(event, wrapper) {
     if (!this._onMove || event.button !== 0 || !wrapper) return false;
+    // Offsets below the last edit are only brought up to date when something
+    // is about to read them, and this is one of the two places that does.
+    ensureBlockOffsets(this._surface(wrapper));
     const range = {
       location: Number(wrapper.dataset.sourceLocation),
       length: Number(wrapper.dataset.sourceLength),
@@ -116,6 +119,7 @@ export class ImageSelection {
    * Returns true when something was selected.
    */
   select(wrapper) {
+    if (wrapper) ensureBlockOffsets(this._surface(wrapper));
     if (this._image) this._image.classList.remove('me-image--selected');
     this._image = wrapper ?? null;
     if (!this._image) {
@@ -151,12 +155,25 @@ export class ImageSelection {
    */
   restore() {
     if (!this._image) return;
+    // A redraw only replaces the blocks an edit disturbed, so the picture is
+    // usually still the element it was. Looking for it again would mean a
+    // query across the whole document on every keystroke.
+    if (this._image.isConnected) {
+      this._position();
+      return;
+    }
+    ensureBlockOffsets(this._surface(this._host.querySelector('.me-image')));
     const location = this._image.dataset.sourceLocation;
     const replacement = this._host.querySelector(
       `.me-image[data-source-location="${CSS.escape(location)}"]`
     );
     this._image = null;
     this.select(replacement);
+  }
+
+  /** The editing surface a rendered element belongs to. */
+  _surface(node) {
+    return node?.closest?.('[contenteditable]') ?? null;
   }
 
   /** Keep the controls over the image when the pane scrolls or is resized. */
@@ -210,6 +227,7 @@ export class ImageSelection {
    * instead is what put a picture inside a word on macOS.
    */
   _dropBoundary(clientX, clientY, move) {
+    ensureBlockOffsets(this._surface(move.wrapper));
     const blocks = [...this._host.querySelectorAll('.me-block[data-rendered-start]')];
     if (blocks.length === 0) return null;
 
@@ -525,6 +543,7 @@ export class ImageSelection {
   }
 
   _commit(size) {
+    ensureBlockOffsets(this._surface(this._image));
     this._onResize(
       {
         location: Number(this._image.dataset.sourceLocation),

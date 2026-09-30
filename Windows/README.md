@@ -216,7 +216,7 @@ written down so the Windows port does not pay it again.
 | Where | What |
 | --- | --- |
 | `MarkdownFormatting.moveImage` | The whole text transform. Covered by `Contract/formatting.jsonl` (451 `moveImage` cases). Port it and make the fixture pass before writing any UI. |
-| `MarkdownCodeContext` | Whether a selection is in a fenced block, a code span, or prose — read off the render model, not a scanner of its own, so the commands refuse in exactly the places the reading view draws as code. It is also what the toolbar asks to grey a button out. |
+| `MarkdownCodeContext` | Whether a selection is in a fenced block, a code span, or prose — read off the render model, not a scanner of its own, so the commands refuse in exactly the places the reading view draws as code. It is also what the toolbar asks to grey a button out, on every caret move, so read it from the **two blocks at the selection's ends** (`containing(_:spansAround:)`), never the whole document. |
 | `EditorImageGeometry` | Handle rects, hit rects, the corner tie-break, `draggedWidth`. Pointer *and* touch variants. |
 | `MarkdownImageTag.proportionalSize` | Turning a dragged width into a written width/height pair. |
 | `EditorPaneGeometry` | The page, the column inside it, and how far a picture may reach past it: `imageBleed`, `maximumImageWidth`, `imageParagraphIndent`. |
