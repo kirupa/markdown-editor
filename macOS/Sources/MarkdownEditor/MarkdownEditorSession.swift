@@ -111,6 +111,35 @@ final class MarkdownEditorSession: ObservableObject {
     /// because replacing the text storage moves it.
     func noteSelection(_ selection: NSRange) {
         rememberedSelection = selection
+        refreshCodeContext()
+    }
+
+    /// What the caret is sitting in, as the panes last reported it.
+    ///
+    /// Published so the formatting bar and the Format menu redraw when the
+    /// caret crosses into or out of code: inside a fence or a code span the
+    /// commands below do nothing, and a control that silently does nothing is
+    /// worse than one that says so.
+    @Published private(set) var codeContext: MarkdownCodeContext = .prose
+
+    /// Whether `style` would do anything where the caret is.
+    func isAvailable(_ style: MarkdownInlineStyle) -> Bool {
+        MarkdownFormatting.isAvailable(style, context: codeContext)
+    }
+
+    var isLinkAvailable: Bool {
+        MarkdownFormatting.isLinkAvailable(context: codeContext)
+    }
+
+    /// Read from `activeEditor` rather than through `currentEditor()`, which
+    /// re-elects the focused pane and remembers its selection — re-entering
+    /// that from inside `noteSelection` would be a loop.
+    private func refreshCodeContext() {
+        let context = activeEditor?.codeContext ?? .prose
+        guard context != codeContext else {
+            return
+        }
+        codeContext = context
     }
 
     func selectionForEditorUpdate(fallback: NSRange) -> NSRange {

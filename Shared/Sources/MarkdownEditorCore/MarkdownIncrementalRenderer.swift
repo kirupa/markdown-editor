@@ -177,6 +177,21 @@ public final class MarkdownIncrementalRenderer {
         return spans
     }
 
+    /// The spans of the block a source offset falls in, in document
+    /// coordinates. The end of the document belongs to the last block, as it
+    /// does for `isInsideCodeBlock`.
+    ///
+    /// What the toolbar reads, on every caret move, to ask whether the caret
+    /// is in code — from blocks already parsed, so without parsing anything.
+    public func spans(aroundSourceOffset offset: Int) -> [MarkdownRenderSpan] {
+        guard let index = blockIndex(containingSource: offset)
+            ?? (offset == source.length ? blocks.indices.last : nil)
+        else {
+            return []
+        }
+        return rebased(blocks[index].model.spans, in: blocks[index])
+    }
+
     /// Whether a source offset sits in a fenced code block.
     ///
     /// Answered from the block it lands in, which is what a fence *is* here,

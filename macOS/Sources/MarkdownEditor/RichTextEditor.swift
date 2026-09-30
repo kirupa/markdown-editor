@@ -266,6 +266,15 @@ struct RichTextEditor: NSViewRepresentable {
             return renderer.sourceRange(for: textView.selectedRange())
         }
 
+        /// Asked on every caret move, so it reads the blocks at the
+        /// selection's two ends from the renderer, which already holds them
+        /// parsed, rather than walking the document.
+        var codeContext: MarkdownCodeContext {
+            MarkdownCodeContext.containing(selectedSourceRange) { offset in
+                renderer.spans(aroundSourceOffset: offset)
+            }
+        }
+
         var hostingWindow: NSWindow? {
             textView?.window
         }

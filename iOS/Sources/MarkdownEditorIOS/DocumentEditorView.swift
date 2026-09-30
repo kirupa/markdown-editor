@@ -121,7 +121,14 @@ struct DocumentEditorView: View {
                 onInsertLink: { isAskingForLink = true },
                 onInsertImage: { isChoosingImageSource = true },
                 onSizeImage: { isSizingImage = true },
-                canSizeImage: imageAtSelection() != nil
+                canSizeImage: imageAtSelection() != nil,
+                // Read from the blocks at the selection's two ends, never from
+                // a render of the whole document: this is a view body, asked
+                // several times per keystroke.
+                codeContext: MarkdownCodeContext.containing(
+                    controller.selection,
+                    in: document.text as NSString
+                )
             )
             Divider()
             ExternalChangeBanner(
