@@ -322,4 +322,125 @@ struct EditorScrollGeometryTests {
         let target = try! #require(measured.offset(forNormalizedPosition: 0.8))
         #expect(abs(target - 108_333.6) < 1)
     }
+    // MARK: - Being taken to a passage
+
+    /// The numbers are the ones the reveal check recorded against real views
+    /// on a 1,200-paragraph draft: a pane 600pt tall onto a document
+    /// 112,951pt tall, with the criticised passage 112,590pt down.
+    @Test("A passage is framed a third down, not pinned to an edge")
+    func revealFramesThePassage() {
+        let pane = EditorScrollGeometry(
+            documentHeight: 30_000,
+            viewportHeight: 600,
+            offset: 0
+        )
+
+        // A third of 600 is 200, so a passage 10,000pt down is shown with
+        // 200pt of what came before it still on screen.
+        #expect(
+            pane.offset(toReveal: (minY: 10_000, height: 18)) == 9_800
+        )
+    }
+
+    @Test("A passage near the top is not dragged down to meet the rule")
+    func revealClampsAtTheTop() {
+        let pane = EditorScrollGeometry(
+            documentHeight: 30_000,
+            viewportHeight: 600,
+            offset: 5_000
+        )
+
+        // 40 - 200 is negative, and the document has no room above its first
+        // line. The clamp is the whole answer; there is no separate rule.
+        #expect(pane.offset(toReveal: (minY: 40, height: 18)) == 0)
+    }
+
+    @Test("A passage near the end stops at the document's last screenful")
+    func revealClampsAtTheEnd() {
+        let pane = EditorScrollGeometry(
+            documentHeight: 112_951,
+            viewportHeight: 600,
+            offset: 0
+        )
+
+        // The recorded case: the rule asks for 112,390 and the document only
+        // has 112,351 of travel, so the passage ends up lower in the window
+        // than a third — which is correct, and is why the check compares
+        // against this function rather than against a fraction of the window.
+        #expect(
+            pane.offset(toReveal: (minY: 112_590, height: 18)) == 112_351
+        )
+    }
+
+    @Test("A passage taller than the window starts at its first line")
+    func revealTopsOutALongPassage() {
+        let pane = EditorScrollGeometry(
+            documentHeight: 30_000,
+            viewportHeight: 600,
+            offset: 0
+        )
+
+        // Framing something that cannot be framed would begin the reader a
+        // third of the way into a quotation they were sent to read.
+        #expect(pane.offset(toReveal: (minY: 10_000, height: 900)) == 10_000)
+        // And exactly the height of the window counts as too tall: framing it
+        // would push its last line off the bottom.
+        #expect(pane.offset(toReveal: (minY: 10_000, height: 600)) == 10_000)
+    }
+
+    @Test("A document shorter than its window never moves")
+    func revealDoesNothingWithNoTravel() {
+        let pane = EditorScrollGeometry(
+            documentHeight: 400,
+            viewportHeight: 600,
+            offset: 0
+        )
+
+        #expect(pane.offset(toReveal: (minY: 300, height: 18)) == 0)
+    }
+
+    @Test("A passage the reader is already looking at is left alone")
+    func comfortablyVisiblePassagesAreNotMoved() {
+        let pane = EditorScrollGeometry(
+            documentHeight: 30_000,
+            viewportHeight: 600,
+            offset: 10_000
+        )
+
+        // Well inside the window: clicking this passage in the *text* must not
+        // move the page under the pointer that just landed on it.
+        #expect(pane.isComfortablyVisible((minY: 10_300, height: 18)))
+
+        // Visible, but jammed against the bottom edge with nothing after it.
+        // That is exactly what the reveal exists to fix, so it does not count.
+        #expect(!pane.isComfortablyVisible((minY: 10_590, height: 18)))
+        // And the same against the top edge.
+        #expect(!pane.isComfortablyVisible((minY: 10_010, height: 18)))
+        // Off screen entirely.
+        #expect(!pane.isComfortablyVisible((minY: 20_000, height: 18)))
+    }
+
+    @Test("A passage taller than the window is judged by its first line")
+    func longPassagesAreJudgedByTheirStart() {
+        let pane = EditorScrollGeometry(
+            documentHeight: 30_000,
+            viewportHeight: 600,
+            offset: 10_000
+        )
+
+        // It cannot be shown whole, so requiring that would re-reveal it on
+        // every press and drag the page each time.
+        #expect(pane.isComfortablyVisible((minY: 10_100, height: 5_000)))
+    }
+
+    @Test("An unmeasured pane cannot say a passage is visible")
+    func unmeasuredPaneIsNeverComfortable() {
+        let fresh = EditorScrollGeometry(
+            documentHeight: 600,
+            viewportHeight: 0,
+            offset: 0
+        )
+
+        #expect(!fresh.isComfortablyVisible((minY: 0, height: 18)))
+    }
 }

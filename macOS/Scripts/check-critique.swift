@@ -16,6 +16,7 @@ import AppKit
 import CoreText
 import Foundation
 import SwiftUI
+import Vision
 import MarkdownEditorCore
 import MarkdownEditorUI
 
@@ -1000,6 +1001,19 @@ func checkTheRailRenders() {
     )
     model.setResolution(.dismissed, for: answered!.id)
 
+    // The notes are written in whatever hand the reader picked, and a
+    // handwriting face is not something the words can be reliably read back
+    // from, so this drawing uses the system face and puts the choice back.
+    let storedRailHand = UserDefaults.standard.string(forKey: CritiqueHand.storageKey)
+    UserDefaults.standard.set(CritiqueHand.sans.rawValue, forKey: CritiqueHand.storageKey)
+    defer {
+        if let storedRailHand {
+            UserDefaults.standard.set(storedRailHand, forKey: CritiqueHand.storageKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: CritiqueHand.storageKey)
+        }
+    }
+
     let rail = CritiqueSidebar(
         critique: model,
         colorTheme: EditorColorTheme(color: .blue, mode: .light),
@@ -1039,6 +1053,24 @@ func checkTheRailRenders() {
     collect(host)
     let all = shown.joined(separator: "\n")
 
+    // Most of what a note says cannot be found that way. A note you can press
+    // draws its words unselectable — the selectable-text view laid over them
+    // took the press — and with that view gone nothing in AppKit's tree holds
+    // the string. So the words are read back from the drawing, which is also
+    // the stronger claim: legible on the rail, not merely somewhere in a tree.
+    // The tree is not consulted as a fallback, because it still holds the
+    // words of a selectable note that has stopped drawing them.
+    let drawnLines = recognisedText(in: host)
+    let drawn = readable(drawnLines.joined(separator: " "))
+    check(
+        "the rail's drawing can be read back",
+        !drawnLines.isEmpty,
+        "the text recogniser found nothing on it"
+    )
+    func railShows(_ phrase: String) -> Bool {
+        drawn.contains(readable(phrase))
+    }
+
     for expected in [
         "Nothing supports it.",
         "Generic opening.",
@@ -1050,13 +1082,14 @@ func checkTheRailRenders() {
     ] {
         check(
             "the rail shows \"\(expected)\"",
-            all.contains(expected),
-            "not found among \(shown.count) labels"
+            railShows(expected),
+            "not legible in the drawing (\(drawnLines.count) lines read; "
+                + "the view tree has it: \(all.contains(expected)))"
         )
     }
     check(
         "an unanchored finding still gets a card, and says so",
-        all.contains("Not found in the document"),
+        railShows("Not found in the document"),
         "the unanchored card is missing or silent"
     )
     // Drawn to a bitmap rather than captured from the screen: this has to
@@ -1071,6 +1104,8 @@ func checkTheRailRenders() {
     if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
         print("---- labels ----")
         for label in shown where !label.isEmpty { print("  · \(label)") }
+        print("---- read from the drawing ----")
+        for line in drawnLines { print("  · \(line)") }
         print("----------------")
     }
     // The header and the stale notice are drawn by SwiftUI without a backing
@@ -2871,9 +2906,10 @@ func checkTheKonvoSkillIsReported() async {
         )
         // The section heading and the button are SwiftUI's own drawing rather
         // than AppKit controls, so the walk above cannot see them — it finds
-        // the version because `LabeledContent` puts its value in a real text
-        // field. Checked in the source instead, which is weaker but honest,
-        // and paired with the unit tests that cover what pressing it does.
+        // the version only because the version is selectable text, whose
+        // string SwiftUI hands to a view. Checked in the source instead, which
+        // is weaker but honest, and paired with the unit tests that cover what
+        // pressing it does.
         let settingsSource = (try? String(
             contentsOfFile: "Sources/MarkdownEditor/CritiqueSettingsView.swift",
             encoding: .utf8
@@ -2928,12 +2964,12 @@ func checkTheKonvoSkillIsReported() async {
 }
 
 
-/// Every label a rendered SwiftUI view exposes.
+/// Every label a rendered SwiftUI view exposes to a reader in this process.
 ///
-/// The rail's own cards expose nothing this way — measured earlier in this
-/// file, and the reason the rail's state is asserted through `CritiqueSidebar.State`
-/// instead. A `Form`, though, is built from real AppKit controls, so its labels
-/// are there to be read, and that is what makes this check possible at all.
+/// Button titles, text fields, and the strings behind selectable text. That is
+/// less than it sounds: on macOS 27 a `Form` no longer puts its values in real
+/// text fields, and words drawn unselectable are in no view at all — the rail
+/// is checked from its drawing, through `recognisedText(in:)`, for that reason.
 @MainActor
 func accessibleStrings(in view: NSView) -> [String] {
     var found: [String] = []
@@ -2949,9 +2985,81 @@ func accessibleStrings(in view: NSView) -> [String] {
             if let field = v as? NSTextField, !field.stringValue.isEmpty {
                 found.append(field.stringValue)
             }
+            // Selectable text. SwiftUI draws it itself and hands the string
+            // to the view beneath its text-interaction view as that view's
+            // accessibility value, which on macOS 27 is the only place the
+            // settings' version can be read from in this process.
+            if let value = v.accessibilityValue() as? String, !value.isEmpty {
+                found.append(value)
+            }
             for child in v.subviews { walk(child, depth + 1) }
         }
     }
     walk(view, 0)
     return found
+}
+
+/// The lines of text legible in a view's drawing, top to bottom.
+///
+/// For words SwiftUI draws itself with nothing in AppKit's tree holding them.
+/// The accessibility tree would, but SwiftUI builds it only once an assistive
+/// client connects, and in this process none has: an `NSHostingView` answers
+/// `accessibilityChildren()` with nothing at all.
+///
+/// Drawn at twice the view's size on whatever screen this runs on, and onto
+/// white, so the recogniser never meets a transparent background. The first
+/// call on a machine loads the recogniser, which can take half a minute;
+/// later ones take a fraction of a second.
+@MainActor
+func recognisedText(in view: NSView) -> [String] {
+    let size = view.bounds.size
+    guard size.width > 0, size.height > 0,
+          let rep = NSBitmapImageRep(
+              bitmapDataPlanes: nil,
+              pixelsWide: Int(size.width * 2), pixelsHigh: Int(size.height * 2),
+              bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+              colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+          )
+    else { return [] }
+    rep.size = size
+    view.cacheDisplay(in: view.bounds, to: rep)
+    guard let drawn = rep.cgImage,
+          let context = CGContext(
+              data: nil, width: drawn.width, height: drawn.height,
+              bitsPerComponent: 8, bytesPerRow: 0,
+              space: CGColorSpace(name: CGColorSpace.sRGB)!,
+              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+          )
+    else { return [] }
+    let whole = CGRect(x: 0, y: 0, width: drawn.width, height: drawn.height)
+    context.setFillColor(CGColor(gray: 1, alpha: 1))
+    context.fill(whole)
+    context.draw(drawn, in: whole)
+    guard let image = context.makeImage() else { return [] }
+
+    let request = VNRecognizeTextRequest()
+    request.recognitionLevel = .accurate
+    // Correction would "fix" the words being looked for into words that are
+    // not on the page, and a check has to read what is there.
+    request.usesLanguageCorrection = false
+    do {
+        try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
+    } catch {
+        print("  (the drawing could not be read: \(error.localizedDescription))")
+        return []
+    }
+    // Vision measures from the bottom-left corner, so the top line has the
+    // largest y.
+    return (request.results ?? [])
+        .sorted { $0.boundingBox.midY > $1.boundingBox.midY }
+        .compactMap { $0.topCandidates(1).first?.string }
+}
+
+/// Text reduced to what reading it back can be trusted with: lower case, and
+/// every run of spacing one space, so a phrase the rail wrapped across two
+/// lines is still found.
+func readable(_ text: String) -> String {
+    text.lowercased()
+        .split(whereSeparator: \.isWhitespace)
+        .joined(separator: " ")
 }

@@ -28,16 +28,24 @@ undismissed — so this is the ordinary case, not an edge one. It is a fixed
 width, `Layout.railWidth` in `macOS/Sources/MarkdownEditor/MarkdownEditorView.swift`,
 currently 356 points. The window must hold that *plus* the column beside it.
 
-Two functions answer the width questions, both in
-`Shared/Sources/MarkdownEditorUI/EditorPaneGeometry.swift`, both pure and both
+Four functions answer the width questions, all in
+`Shared/Sources/MarkdownEditorUI/EditorPaneGeometry.swift`, all pure and all
 covered by `Shared/Tests/MarkdownEditorUITests/EditorPaneGeometryTests.swift`:
 
 - `idealContentWidth(columnWidth:railWidth:railIsOpen:)` — how wide the window
-  needs to be. `WindowChrome` sizes a new window to it and zooms to it.
-- `minimumContentWidth(documentMinimum:columnMinimum:railWidth:railIsOpen:screenWidth:)`
-  — how narrow it may be dragged before the rail would be clipped again.
+  needs to be. Zoom goes to it, and so does every widening below.
+- `defaultWindowContentSize(ideal:minimum:available:)` — the size a new window
+  opens at (`Layout.defaultWindowContentSize`): the ideal, capped to the screen,
+  never under the minimum.
+- `minimumContentWidth(columnMinimum:documentMinimum:railWidth:railIsOpen:)` —
+  how narrow it may be dragged before the rail would be clipped again. Below
+  the ideal width the column gives way, never the rail: the view clamps the
+  column against the room the rail leaves.
+- `widenedFrame(_:toWidth:within:)` — how `WindowChrome` grows a window that is
+  too narrow for the rail it is showing, when it is first seen and when the
+  rail opens: never narrower, never past the screen, moved only if it must be.
 
-Do not re-derive either by hand in a view. They are in one place so that
+Do not re-derive any of them by hand in a view. They are in one place so that
 "does the rail fit" is a test rather than a thing somebody has to remember,
 and so a screen too small for both degrades in one known way instead of three
 invented ones.
@@ -45,8 +53,7 @@ invented ones.
 ### Why the rule is written down
 
 The code makes it true when a window opens, and `make check-window` keeps it
-true. What neither covers is the moment somebody looks at a window restored
-from an old saved frame, or reads a screenshot taken on a machine set up
+true. What neither covers is a screenshot taken on a machine set up
 differently. So when you verify by eye: look at the rail's body text and its
 **Run critique** button, not just its header. The header was visible in the
 screenshot that reported this bug; everything under it was outside the window.
@@ -56,8 +63,10 @@ capture still succeeds, so a locked machine looks like a broken check rather
 than a failing one. `MDE_WINDOW_PNG=/tmp/window.png make check-window` draws
 the window's own content instead, and works either way.
 
-See §10a (I-218 to I-223) and §16.9 of [`macOS/README.md`](macOS/README.md) for
-the full requirements and what each decision was weighed against.
+See §10a (I-243 to I-246 and I-267 to I-272) and §16.9 of
+[`macOS/README.md`](macOS/README.md) for the full requirements and what each
+decision was weighed against, and "The size a document window opens at" in
+[`Contract/README.md`](Contract/README.md) for what every port has to match.
 
 ## House style for comments
 

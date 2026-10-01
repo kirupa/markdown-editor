@@ -2,10 +2,29 @@
 //
 // Mirrors PRD section 12: eight kirupa.com colors on a Light/Dark axis, held
 // as two attributes on <html> so themes.css does all the work. The popover
-// keeps draft state and only commits on Apply (T-6, T-7, T-8).
+// keeps draft state and only commits on Apply (T-6, T-7, T-8). The theme also
+// carries the face the document is set in, from the same catalog as the
+// critique's hand (T-16), and how large it is drawn (T-23).
+
+import {
+  INITIAL_TYPEFACE,
+  isTypeface,
+  resolvedTypeface,
+  typefaceFamily,
+  typefaceSelect,
+} from './typefaces.js';
+import {
+  TEXT_SCALE_KEY,
+  TEXT_SCALE_MAX,
+  TEXT_SCALE_MIN,
+  TEXT_SCALE_STEP,
+  clampedTextScale,
+  textScalePercent,
+} from '../core/text-scale.js';
 
 const COLOR_KEY = 'editorThemeColor';
 const MODE_KEY = 'editorAppearanceMode';
+const TYPEFACE_KEY = 'editorTypeface';
 
 export const THEME_COLORS = [
   { id: 'blue', title: 'Blue' },
@@ -35,6 +54,14 @@ function read(key, fallback, valid) {
   }
 }
 
+function readTextScale() {
+  try {
+    return clampedTextScale(localStorage.getItem(TEXT_SCALE_KEY));
+  } catch {
+    return 1;
+  }
+}
+
 function persist(key, value) {
   try {
     localStorage.setItem(key, value);
@@ -51,13 +78,22 @@ export const theme = {
     window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
     isMode
   ),
+  typeface: read(TYPEFACE_KEY, INITIAL_TYPEFACE, isTypeface),
+  textScale: readTextScale(),
 
   apply() {
-    document.documentElement.dataset.themeColor = this.color;
-    document.documentElement.dataset.appearance = this.mode;
+    const root = document.documentElement;
+    root.dataset.themeColor = this.color;
+    root.dataset.appearance = this.mode;
+    // A face this machine lacks draws as the system face, at the system
+    // face's size, rather than as a fallback scaled for somebody else's font.
+    const face = resolvedTypeface(this.typeface);
+    root.style.setProperty('--me-page-font', typefaceFamily(face, 'var(--me-text-font)'));
+    root.style.setProperty('--me-page-scale', String(face.scale));
+    root.style.setProperty('--me-text-scale', String(this.textScale));
   },
 
-  set(color, mode) {
+  set(color, mode, typeface, textScale) {
     if (isColor(color)) {
       this.color = color;
       persist(COLOR_KEY, color);
@@ -65,6 +101,14 @@ export const theme = {
     if (isMode(mode)) {
       this.mode = mode;
       persist(MODE_KEY, mode);
+    }
+    if (isTypeface(typeface)) {
+      this.typeface = typeface;
+      persist(TYPEFACE_KEY, typeface);
+    }
+    if (textScale !== undefined) {
+      this.textScale = clampedTextScale(textScale);
+      persist(TEXT_SCALE_KEY, String(this.textScale));
     }
     this.apply();
   },
@@ -111,9 +155,13 @@ export function openThemePopover(anchor, onApplied = () => {}) {
 
   let draftColor = theme.color;
   let draftMode = theme.mode;
+  let draftTypeface = resolvedTypeface(theme.typeface).id;
+  let draftTextScale = theme.textScale;
 
   const popover = document.createElement('div');
-  popover.className = 'me-popover';
+  // WT-19: a fixed width, so nothing it previews can resize it under the
+  // pointer.
+  popover.className = 'me-popover me-popover--theme';
   popover.setAttribute('role', 'dialog');
   popover.setAttribute('aria-label', 'Customize Theme');
 
@@ -139,12 +187,67 @@ export function openThemePopover(anchor, onApplied = () => {}) {
   modes.className = 'me-radio-row';
   modeSection.append(modeLabel, modes);
 
+  // T-16: the same faces as the critique's hand menu, shown the same way.
+  const fontSection = document.createElement('div');
+  fontSection.className = 'me-popover__section';
+  const fontLabel = document.createElement('p');
+  fontLabel.className = 'me-popover__label';
+  fontLabel.textContent = 'Font';
+  const fontMenu = typefaceSelect({
+    selected: draftTypeface,
+    className: 'me-font-select',
+    onChange: (id) => {
+      draftTypeface = id;
+      repaint();
+    },
+  });
+  fontMenu.title = 'The face the document is set in';
+  fontMenu.setAttribute('aria-label', 'Font');
+  fontSection.append(fontLabel, fontMenu);
+
+  // T-23: beneath the face because it is the face's correction — two hands at
+  // the same size can look a size apart. Whole percents, so 100% is a stop.
+  const sizeSection = document.createElement('div');
+  sizeSection.className = 'me-popover__section';
+  const sizeHeader = document.createElement('div');
+  sizeHeader.className = 'me-size-header';
+  const sizeLabel = document.createElement('p');
+  sizeLabel.className = 'me-popover__label';
+  sizeLabel.textContent = 'Size';
+  const sizeValue = document.createElement('span');
+  sizeValue.className = 'me-size-value';
+  sizeHeader.append(sizeLabel, sizeValue);
+  const sizeRow = document.createElement('div');
+  sizeRow.className = 'me-size-row';
+  const sizeSlider = document.createElement('input');
+  sizeSlider.type = 'range';
+  sizeSlider.className = 'me-size-slider';
+  sizeSlider.min = String(Math.round(TEXT_SCALE_MIN * 100));
+  sizeSlider.max = String(Math.round(TEXT_SCALE_MAX * 100));
+  sizeSlider.step = String(Math.round(TEXT_SCALE_STEP * 100));
+  sizeSlider.value = String(Math.round(draftTextScale * 100));
+  sizeSlider.title = 'How large the document\u2019s text is drawn';
+  sizeSlider.setAttribute('aria-label', 'Text size');
+  sizeSlider.addEventListener('input', () => {
+    draftTextScale = clampedTextScale(Number(sizeSlider.value) / 100);
+    repaint();
+  });
+  const sizeGlyph = (modifier) => {
+    const glyph = document.createElement('span');
+    glyph.className = `me-size-glyph me-size-glyph--${modifier}`;
+    glyph.textContent = 'A';
+    glyph.setAttribute('aria-hidden', 'true');
+    return glyph;
+  };
+  sizeRow.append(sizeGlyph('small'), sizeSlider, sizeGlyph('large'));
+  sizeSection.append(sizeHeader, sizeRow);
+
   const previewSection = document.createElement('div');
   previewSection.className = 'me-popover__section';
   const preview = document.createElement('div');
   preview.className = 'me-preview';
   preview.innerHTML =
-    '<div class="me-preview__title">Preview</div>' +
+    '<div class="me-preview__title">Heading</div>' +
     '<div class="me-preview__body">The quick brown fox jumps over the lazy dog.</div>' +
     '<span class="me-preview__accent">Selected text</span>';
   previewSection.append(preview);
@@ -180,7 +283,7 @@ export function openThemePopover(anchor, onApplied = () => {}) {
   apply.className = 'me-button me-button--default';
   apply.textContent = 'Apply';
   apply.addEventListener('click', () => {
-    theme.set(draftColor, draftMode);
+    theme.set(draftColor, draftMode, draftTypeface, draftTextScale);
     close();
     onApplied();
   });
@@ -216,11 +319,17 @@ export function openThemePopover(anchor, onApplied = () => {}) {
     const draft = getComputedStyle(probe);
     preview.style.setProperty('--preview-page', draft.getPropertyValue('--me-page-background'));
     preview.style.setProperty('--preview-text', draft.getPropertyValue('--me-primary-text'));
-    preview.style.setProperty('--preview-accent', draft.getPropertyValue('--me-selection-background'));
-    preview.style.setProperty('--preview-accent-text', draft.getPropertyValue('--me-selection-text'));
+    preview.style.setProperty('--preview-accent', draft.getPropertyValue('--me-text-selection-background'));
+    const face = resolvedTypeface(draftTypeface);
+    preview.style.setProperty('--preview-font', typefaceFamily(face, 'var(--me-text-font)'));
+    preview.style.setProperty('--preview-scale', String(face.scale));
+    preview.style.setProperty('--preview-text-scale', String(draftTextScale));
+    const percent = textScalePercent(draftTextScale);
+    sizeValue.textContent = percent;
+    sizeSlider.setAttribute('aria-valuetext', percent);
   }
 
-  popover.append(title, colorSection, modeSection, previewSection, buttons);
+  popover.append(title, colorSection, modeSection, fontSection, sizeSection, previewSection, buttons);
   layer.append(popover);
   repaint();
 

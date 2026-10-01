@@ -339,43 +339,83 @@ struct EditorPaneGeometryTests {
         }
     }
 
-    // MARK: - How narrow the window may be made
+    // MARK: - What a window opens at
 
-    /// The app's own numbers: a 620-point document minimum, a column that
-    /// clamps down to 360, and a 356-point rail.
-    private func minimumWidth(
-        railIsOpen: Bool,
-        screenWidth: CGFloat = 1_800
-    ) -> CGFloat {
-        EditorPaneGeometry.minimumContentWidth(
-            documentMinimum: 620,
-            columnMinimum: 360,
-            railWidth: 356,
-            railIsOpen: railIsOpen,
-            screenWidth: screenWidth
+    /// The app's own numbers: a 700pt column, a 356pt rail, a 620×520 floor.
+    private func defaultWindowSize(
+        onScreenOf available: CGSize,
+        railIsOpen: Bool = true
+    ) -> CGSize {
+        EditorPaneGeometry.defaultWindowContentSize(
+            ideal: CGSize(
+                width: EditorPaneGeometry.idealContentWidth(
+                    columnWidth: 700, railWidth: 356, railIsOpen: railIsOpen
+                ),
+                height: 820
+            ),
+            minimum: CGSize(width: 620, height: 520),
+            available: available
         )
     }
 
-    @Test("With the comments open the window must stay wide enough for them")
-    func minimumWidthMakesRoomForTheRail() {
-        #expect(minimumWidth(railIsOpen: true) == 716)
+    @Test("A window opens wide enough for the writing and its comments")
+    func defaultSizeFitsTheRail() {
+        // The whole point: the rail is open from the moment a document is, so
+        // a window that opens at the column's width alone opens with the notes
+        // already squeezing the writing they are about.
+        let size = defaultWindowSize(
+            onScreenOf: CGSize(width: 1_800, height: 1_100)
+        )
+        #expect(size.width == 1_056)
+        #expect(size.height == 820)
     }
 
-    @Test("Closing the comments lets the window get narrow again")
-    func minimumWidthDropsBackWithTheRailShut() {
-        // The point of the raised floor is the rail. With no rail there is
-        // nothing to protect, and a floor left high would be a window that
-        // could not be tidied away after the panel was closed.
-        #expect(minimumWidth(railIsOpen: false) == 620)
+    @Test("A window never opens wider than the screen it lands on")
+    func defaultSizeIsCappedToTheScreen() {
+        let size = defaultWindowSize(
+            onScreenOf: CGSize(width: 900, height: 700)
+        )
+        #expect(size.width == 900)
+        #expect(size.height == 700)
     }
 
-    @Test("A screen too narrow for both is not made unusable")
-    func minimumWidthNeverExceedsTheScreen() {
-        #expect(minimumWidth(railIsOpen: true, screenWidth: 700) == 700)
-        // And never below the document's own minimum, even on a display that
-        // cannot show that either: a window that cannot be resized at all is
-        // worse than a rail with less room than it wants.
-        #expect(minimumWidth(railIsOpen: true, screenWidth: 500) == 620)
+    @Test("The window's own minimum wins over a screen smaller than it")
+    func defaultSizeNeverGoesUnderTheMinimum() {
+        // Nothing useful is left to do on a desk this small, and a window
+        // clamped under the size its content refuses to go to is worse than
+        // one that overflows: the content would be squeezed either way, and
+        // this way the window can at least be moved.
+        let size = defaultWindowSize(
+            onScreenOf: CGSize(width: 400, height: 300)
+        )
+        #expect(size.width == 620)
+        #expect(size.height == 520)
+    }
+
+    @Test("A roomy screen changes nothing")
+    func defaultSizeDoesNotGrowToFillTheScreen() {
+        // Zoom is what "as much as possible" is for. Opening should be the
+        // size the content asks for, on a laptop and on a 6K display alike.
+        for width in [CGFloat(1_100), 1_800, 3_000, 6_016] {
+            let size = defaultWindowSize(
+                onScreenOf: CGSize(width: width, height: 3_384)
+            )
+            #expect(size.width == 1_056, "on a screen \(width) wide")
+            #expect(size.height == 820)
+        }
+    }
+
+    @Test("The opening width is the width the green button zooms to")
+    func defaultSizeMatchesTheZoomTarget() {
+        // Two names for one measurement. If these ever disagree, zooming a
+        // freshly opened window would visibly resize it for no reason.
+        let roomy = CGSize(width: 4_000, height: 3_000)
+        #expect(
+            defaultWindowSize(onScreenOf: roomy).width
+                == EditorPaneGeometry.idealContentWidth(
+                    columnWidth: 700, railWidth: 356, railIsOpen: true
+                )
+        )
     }
 
     // MARK: - Widening a window that cannot hold its rail
@@ -467,56 +507,6 @@ struct EditorPaneGeometryTests {
         #expect(fitted.minX >= second.minX)
     }
 
-    // MARK: - The column yields to the rail, not the other way round
-
-    private func measure(
-        _ proposed: CGFloat,
-        totalWidth: CGFloat,
-        railWidth: CGFloat
-    ) -> CGFloat {
-        EditorPaneGeometry.measureWidth(
-            proposed,
-            totalWidth: totalWidth,
-            minimum: 360,
-            maximum: 1_100,
-            handleWidth: 12,
-            railWidth: railWidth
-        )
-    }
-
-    @Test("A window with room to spare sets the column at its own width")
-    func railDoesNotSqueezeAWideWindow() {
-        #expect(measure(700, totalWidth: 1_600, railWidth: 356) == 700)
-    }
-
-    @Test("A narrow window squeezes the column rather than clipping the rail")
-    func theColumnGivesWayToTheRail() {
-        // At the window's own minimum the pair fits exactly: 360 of column
-        // against 356 of rail. Before this the column took 704 of a 716-point
-        // window and the rail was drawn from 704 to 1,060 — past the edge.
-        #expect(measure(700, totalWidth: 716, railWidth: 356) == 360)
-        for window in [CGFloat(716), 800, 900, 1_000, 1_056] {
-            let column = measure(700, totalWidth: window, railWidth: 356)
-            #expect(column + 356 <= window, "at a window of \(window)")
-        }
-    }
-
-    @Test("With no rail the clamp is the one it always was")
-    func noRailIsTheUnclampedRule() {
-        for window in [CGFloat(400), 620, 900, 1_600] {
-            #expect(
-                measure(700, totalWidth: window, railWidth: 0)
-                    == EditorPaneGeometry.measureWidth(
-                        700,
-                        totalWidth: window,
-                        minimum: 360,
-                        maximum: 1_100,
-                        handleWidth: 12
-                    )
-            )
-        }
-    }
-
     // MARK: - Double-clicking the title bar
 
     /// The bar and its controls, at the geometry measured from the running app:
@@ -534,7 +524,7 @@ struct EditorPaneGeometryTests {
         ]
     }
 
-    @Test("Double-clicking empty title bar zooms")
+    @Test("Double-clicking empty title bar fills the screen")
     func emptyTitleBarZooms() {
         #expect(
             EditorPaneGeometry.titleBarClaimsClick(
@@ -545,7 +535,7 @@ struct EditorPaneGeometryTests {
         )
     }
 
-    @Test("Double-clicking a toolbar button does not zoom")
+    @Test("Double-clicking a toolbar button does not fill the screen")
     func aControlDoesNotZoom() {
         // The theme button. This is the case the first implementation got
         // wrong: it hit-tested, SwiftUI answered with the one hosting view it
@@ -563,11 +553,11 @@ struct EditorPaneGeometryTests {
         }
     }
 
-    @Test("The document's title is not a control, so it zooms")
+    @Test("The document's title is not a control, so double-clicking it fills the screen")
     func theTitleZooms() {
         // Between the traffic lights and the explorer button is where the
-        // filename is drawn, and double-clicking a window's title zooms it in
-        // every other Mac application.
+        // filename is drawn, and double-clicking a window's title acts on the
+        // window in every other Mac application.
         #expect(
             EditorPaneGeometry.titleBarClaimsClick(
                 at: CGPoint(x: 200, y: 674),
@@ -672,5 +662,49 @@ struct FolderChainTests {
         // about.
         let chain = EditorPaneGeometry.folderChain(from: URL(fileURLWithPath: "Trip.md"))
         #expect(chain.count < 12, "the walk must terminate: \(chain.map(\.path))")
+    }
+}
+
+@Suite("The narrowest useful window")
+struct MinimumContentWidthTests {
+    @Test("With the comments open the floor makes room for them")
+    func theRailIsCountedIntoTheMinimum() {
+        // The rail is a fixed width docked to the document, so it does not
+        // shrink with the window — it is clipped by it. Measured at the old
+        // 620-point floor: the document took 608 and the rail got 12, which is
+        // to say it vanished.
+        #expect(
+            EditorPaneGeometry.minimumContentWidth(
+                columnMinimum: 360, documentMinimum: 620,
+                railWidth: 356, railIsOpen: true
+            ) == 716
+        )
+    }
+
+    @Test("With the comments shut the document keeps its own floor")
+    func closingTheRailLowersTheFloorAgain() {
+        // Otherwise shutting the rail would leave the window unable to shrink
+        // back to the size it could manage before it was ever opened.
+        #expect(
+            EditorPaneGeometry.minimumContentWidth(
+                columnMinimum: 360, documentMinimum: 620,
+                railWidth: 356, railIsOpen: false
+            ) == 620
+        )
+    }
+
+    @Test("The floor is never above the size the window opens at")
+    func theMinimumFitsInsideTheDefault() {
+        // A minimum wider than the default would mean a window that cannot be
+        // opened at its own declared size — the two are computed apart, so
+        // this is the check that keeps them honest about each other.
+        let ideal = EditorPaneGeometry.idealContentWidth(
+            columnWidth: 700, railWidth: 356, railIsOpen: true
+        )
+        let floor = EditorPaneGeometry.minimumContentWidth(
+            columnMinimum: 360, documentMinimum: 620,
+            railWidth: 356, railIsOpen: true
+        )
+        #expect(floor <= ideal, "floor \(floor) must fit inside default \(ideal)")
     }
 }

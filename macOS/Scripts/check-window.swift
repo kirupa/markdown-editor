@@ -66,7 +66,9 @@ struct EditorWindow {
             appearanceModeRawValue: Binding(
                 get: { appearance },
                 set: { appearance = $0 }
-            )
+            ),
+            typefaceRawValue: .constant(EditorTypeface.sans.rawValue),
+            textScale: .constant(1)
         )
 
         let frame = NSRect(x: 0, y: 0, width: contentWidth, height: 620)
@@ -244,12 +246,10 @@ enum Harness {
             "the floor rises to hold the rail while it is open",
             narrow.window.contentMinSize.width
                 == EditorPaneGeometry.minimumContentWidth(
-                    documentMinimum: documentMinimum,
                     columnMinimum: columnMinimum,
+                    documentMinimum: documentMinimum,
                     railWidth: rail,
-                    railIsOpen: true,
-                    screenWidth: NSScreen.main?.visibleFrame.width
-                        ?? .greatestFiniteMagnitude
+                    railIsOpen: true
                 ),
             "the window's minimum is \(narrow.window.contentMinSize.width)"
         )
@@ -288,6 +288,110 @@ enum Harness {
             wide.window.frame.origin == before.origin,
             "it moved from \(before.origin) to \(wide.window.frame.origin)"
         )
+
+        print("")
+        print("Opening the rail on a window already on screen")
+
+        // The second of the two moments, driven through the real delegate. The
+        // rail opens from the toolbar, ⌃⌘C or a critique starting, and none of
+        // those can be pressed from here without spending a critique, so this
+        // tells the delegate what `updateNSView` would and reads the frame.
+        //
+        // The window is first seen with the rail open and room for it, as a
+        // real one is, so its one first look is spent before the rail closes.
+        // Seen with the rail shut instead, that look would still be owed when
+        // the rail opened and would widen the window on its own — and this
+        // section would pass with the rail-opening path removed. It did, once.
+        if let screen = NSScreen.main {
+            let start = NSRect(
+                x: screen.visibleFrame.minX + 40,
+                y: screen.visibleFrame.minY + 40,
+                width: wanted,
+                height: 500
+            )
+            let plain = NSWindow(
+                contentRect: start,
+                styleMask: [.titled, .resizable],
+                backing: .buffered,
+                defer: false
+            )
+            plain.isReleasedWhenClosed = false
+            plain.alphaValue = 0
+            plain.orderBack(nil)
+            let chrome = WindowChromeDelegate()
+            chrome.attach(to: plain)
+            func content() -> CGFloat {
+                plain.contentRect(forFrameRect: plain.frame).width
+            }
+            func frame(content width: CGFloat) -> NSRect {
+                var frame = plain.frame
+                frame.size.width = plain.frameRect(
+                    forContentRect: NSRect(x: 0, y: 0, width: width, height: 100)
+                ).width
+                return frame
+            }
+            let shutWidth = EditorPaneGeometry.idealContentWidth(
+                columnWidth: column, railWidth: rail, railIsOpen: false
+            )
+
+            chrome.noteContent(width: wanted, railIsOpen: true)
+            // Long enough for the first-seen pass `attach` queues to run too.
+            let settle = Date().addingTimeInterval(0.3)
+            while Date() < settle {
+                RunLoop.current.run(
+                    mode: .default, before: Date().addingTimeInterval(0.02)
+                )
+            }
+            check(
+                "seen with room for the rail, the window is left as it was",
+                content() == wanted,
+                "it became \(content())"
+            )
+
+            chrome.noteContent(width: shutWidth, railIsOpen: false)
+            check(
+                "closing the rail leaves the width alone",
+                content() == wanted,
+                "it became \(content())"
+            )
+
+            // Narrowed by hand while the rail is shut: the case a window's
+            // first look cannot cover, because it has already had it.
+            let narrow = frame(content: 700)
+            plain.setFrame(narrow, display: false)
+            chrome.noteContent(width: shutWidth, railIsOpen: false)
+            check(
+                "narrowed while it is shut, the window stays narrow",
+                plain.frame == narrow,
+                "it went from \(narrow) to \(plain.frame)"
+            )
+
+            chrome.noteContent(width: wanted, railIsOpen: true)
+            check(
+                "opening the rail widens it to hold the pair",
+                content() == wanted,
+                "it is \(content()), and needs \(wanted)"
+            )
+            check(
+                "at the trailing edge, so the writing does not move",
+                plain.frame.minX == narrow.minX,
+                "it moved from \(narrow.minX) to \(plain.frame.minX)"
+            )
+
+            // Narrowed by hand while the rail stays open: the width now belongs
+            // to the reader, and later updates must not take it back.
+            let narrowed = frame(content: 800)
+            plain.setFrame(narrowed, display: false)
+            chrome.noteContent(width: wanted, railIsOpen: true)
+            check(
+                "and not again while it stays open",
+                plain.frame == narrowed,
+                "it went from \(narrowed) to \(plain.frame)"
+            )
+            plain.close()
+        } else {
+            check("there is a screen to widen against", false)
+        }
 
         print("")
         if failures == 0 {

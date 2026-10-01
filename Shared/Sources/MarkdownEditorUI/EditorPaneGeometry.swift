@@ -46,37 +46,6 @@ public enum EditorPaneGeometry {
         return min(max(proposed, minimum), min(maximum, available))
     }
 
-    /// The same, with the comments rail taken out of the room first.
-    ///
-    /// The rail is a fixed width docked to the column, so in a window too
-    /// narrow for both, one of them has to give. Without this it was the rail,
-    /// because it is last in the row and nothing clipped the column on its
-    /// behalf: at a 620-point window the column kept 608 of it and the rail
-    /// was drawn from 608 to 964, entirely outside the window.
-    ///
-    /// The column yields instead. It is the elastic half of the pair — it has
-    /// a floor of its own and reflows to whatever it is given — while a note
-    /// card at half width is not a narrower note, it is an unreadable one.
-    ///
-    /// `railWidth` is zero with the comments shut, which is exactly the
-    /// unclamped call, so there is one rule here rather than two.
-    public static func measureWidth(
-        _ proposed: CGFloat,
-        totalWidth: CGFloat,
-        minimum: CGFloat,
-        maximum: CGFloat,
-        handleWidth: CGFloat,
-        railWidth: CGFloat
-    ) -> CGFloat {
-        measureWidth(
-            proposed,
-            totalWidth: totalWidth - railWidth,
-            minimum: minimum,
-            maximum: maximum,
-            handleWidth: handleWidth
-        )
-    }
-
     /// The leading inset that centers `measure` in `totalWidth`.
     ///
     /// Never negative: a measure wider than the window starts at its leading
@@ -115,8 +84,9 @@ public enum EditorPaneGeometry {
 
     /// The width the window wants in order to show everything it has to show.
     ///
-    /// What the green button and a double-click on the title bar should zoom
-    /// to. The point of zooming is "make this big enough", and with the
+    /// What Zoom goes to — the green button's, and Window ▸ Zoom. A
+    /// double-click on the title bar fills the screen instead (`TitleBarFill`).
+    /// The point of zooming is "make this big enough", and with the
     /// comments open the thing being read is the writing *and* the notes
     /// beside it — a window sized to the writing alone clips the rail or, once
     /// the layout centres the pair, leaves it hanging off the edge.
@@ -139,42 +109,62 @@ public enum EditorPaneGeometry {
         return columnWidth + railWidth
     }
 
-    // MARK: - Sizing the window around the rail
+    /// The content size a document window should open at when nothing has been
+    /// saved for it yet.
+    ///
+    /// `ideal` is what the window wants — on this app that is the writing
+    /// column plus the comments rail docked beside it, because the rail starts
+    /// open, so a window sized to the writing alone opens with the notes
+    /// already squeezing the column they dock to. `available` is what the
+    /// screen can actually show, so a default worked out from constants does
+    /// not open a window taller or wider than the desk it lands on.
+    ///
+    /// The minimum wins over the ceiling, for the same reason it does in
+    /// `explorerWidth(_:totalWidth:minimum:maximum:)`: on a display too small
+    /// for the window's own minimum, a window that overflows is better than one
+    /// asked to be smaller than its content will go.
+    ///
+    /// This is the *default*, not a rule. A window whose size was restored or
+    /// set by hand keeps it; this only answers the first run.
+    public static func defaultWindowContentSize(
+        ideal: CGSize,
+        minimum: CGSize,
+        available: CGSize
+    ) -> CGSize {
+        CGSize(
+            width: max(minimum.width, min(ideal.width, available.width)),
+            height: max(minimum.height, min(ideal.height, available.height))
+        )
+    }
 
-    /// The narrowest a window may be made while the comments are open.
+    /// The narrowest the window may be dragged, given what it is showing.
     ///
-    /// The rail is always present on a newly opened document, and the window
-    /// had one minimum width for both states — the document's. A window at it
-    /// could not hold the pair, so the rail was drawn past the trailing edge:
-    /// measured on `scroll-test.md`, the panel's header was visible while its
-    /// body text and its "Run critique" button were both outside the window.
+    /// The rail is a fixed width docked to the document, so it does not shrink
+    /// with the window — it is clipped by it. Measured at the old minimum of
+    /// 620 with the rail open: the document took 608 points and the rail got
+    /// 12, which is to say it disappeared, having been dragged off the edge
+    /// rather than closed. A panel that vanishes when a window is resized
+    /// reads as a bug whichever way it was meant.
     ///
-    /// The floor is the *column's* minimum plus the rail, not the column's
-    /// preferred width plus the rail. Somebody is still allowed to work in a
-    /// narrow window; what they are not allowed to end up with is half a
-    /// rail, and `measureWidth(_:…:railWidth:)` squeezes the column to keep
-    /// that true all the way down to this number.
-    ///
-    /// Clamped to the screen, and never below `documentMinimum`: on a display
-    /// too small to hold both, a minimum wider than the screen would leave a
-    /// window that cannot be resized or fully seen at all, which is worse than
-    /// a rail short of room.
+    /// So the floor rises with the rail and falls again when it is shut. The
+    /// column keeps its own minimum either way, which is the point: the
+    /// narrowest useful window is a readable measure plus whatever is docked
+    /// beside it, not an arbitrary number that happens to be bigger.
     public static func minimumContentWidth(
-        documentMinimum: CGFloat,
         columnMinimum: CGFloat,
+        documentMinimum: CGFloat,
         railWidth: CGFloat,
-        railIsOpen: Bool,
-        screenWidth: CGFloat
+        railIsOpen: Bool
     ) -> CGFloat {
         guard railIsOpen else { return documentMinimum }
-        let bothFit = max(documentMinimum, columnMinimum + railWidth)
-        return max(documentMinimum, min(bothFit, screenWidth))
+        return columnMinimum + railWidth
     }
 
     /// `frame` grown to `targetWidth`, or returned untouched.
     ///
     /// What a window does when it finds it is too narrow to show the comments
-    /// it is already showing. Three rules, and the order matters:
+    /// it is already showing — when it is first seen, and when the rail opens
+    /// on one that was already there. Three rules, and the order matters:
     ///
     /// 1. **Never narrower.** A window wider than it needs is a window
     ///    somebody made that wide. Sizing "to fit" in both directions would
@@ -203,25 +193,6 @@ public enum EditorPaneGeometry {
         )
     }
 
-    /// Whether a double-click at `point` should zoom the window.
-    ///
-    /// Pure, and separated from the window for one reason: the decision cannot
-    /// be made by hit-testing. SwiftUI draws the whole title bar through a
-    /// single hosting view, so a hit test at the theme button, at the document
-    /// title and at empty space between them all return the same view — the
-    /// first version trusted that and zoomed the window every time the theme
-    /// button was double-clicked. The controls have to be named by their own
-    /// frames instead, and once they are, this is arithmetic and can be checked
-    /// without a screen.
-    ///
-    /// `controls` are the toolbar's items and the traffic lights. The document
-    /// title is deliberately not among them: it is not a control, and
-    /// double-clicking it zooms in every other Mac application.
-    ///
-    /// Three behaviours ask this now — zoom on a double-click, move the window
-    /// on a drag, and the title menu on a right-click — because they are the
-    /// same question. A point that belongs to a button belongs to none of them.
-
     /// The folders containing `url`, innermost first, up to the volume root.
     ///
     /// What a title bar's path menu is made of. Pure, and here rather than in
@@ -247,6 +218,26 @@ public enum EditorPaneGeometry {
         return chain
     }
 
+    /// Whether a click at `point` belongs to the title bar itself rather than
+    /// to a control sitting in it.
+    ///
+    /// Pure, and separated from the window for one reason: the decision cannot
+    /// be made by hit-testing. SwiftUI draws the whole title bar through a
+    /// single hosting view, so a hit test at the theme button, at the document
+    /// title and at empty space between them all return the same view — the
+    /// first version trusted that and zoomed the window every time the theme
+    /// button was double-clicked. The controls have to be named by their own
+    /// frames instead, and once they are, this is arithmetic and can be checked
+    /// without a screen.
+    ///
+    /// `controls` are the toolbar's items and the traffic lights. The document
+    /// title is deliberately not among them: it is not a control, and
+    /// double-clicking it acts on the window in every other Mac application.
+    ///
+    /// Three behaviours ask this now — fill the screen on a double-click, move
+    /// the window on a drag, and the title menu on a right-click — because they
+    /// are the same question. A point that belongs to a button belongs to none
+    /// of them.
     public static func titleBarClaimsClick(
         at point: CGPoint,
         titleBar: CGRect,

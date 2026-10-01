@@ -39,7 +39,7 @@ the Mac build, verified by 14,148 differential test cases, but the harness that
 produced that number was never committed, so the claim could not be repeated.
 
 That gap is what [`../Contract/`](../Contract/) closes. It holds the compiled
-Swift's actual behaviour dumped as language-neutral fixtures: 8,180 formatting
+Swift's actual behaviour dumped as language-neutral fixtures: 9,471 formatting
 cases, every render-model span with its source mapping, and 123 path cases.
 
 So, concretely:
@@ -86,6 +86,12 @@ suite that runs in a third of a second and one that needs a UI.
    `Contract/formatting.jsonl`. 9,471 cases; expect the astral and CRLF
    documents to find real bugs. `moveImage` is in there too — see
    "[Direct manipulation of pictures](#direct-manipulation-of-pictures)".
+   Port `MarkdownCodeContext.swift` with it: the inline commands and the link
+   command **do nothing inside a fenced block or a code span**, and the fixture
+   records those cases as empty edits that a port can pass by accident and then
+   get wrong in the app. Read `Contract/README.md` § "Inside code, the inline
+   commands do nothing" first — especially the part about a block quote *not*
+   being code, which is the half that is easy to over-apply.
 3. **Render model.** Port `MarkdownRenderModel.swift` against
    `Contract/render-model.json`. Do not skip the `source` ranges — the reading
    view is not usable without them.
@@ -115,6 +121,37 @@ suite that runs in a third of a second and one that needs a UI.
   definitions and committed, so it is a flat list of hex values for all sixteen
   palettes — including the blended ones, which are genuinely hard to reproduce
   (see `Contract/README.md`).
+- **The window has to open wide enough for the comments.** The critique rail is
+  open from the moment a document is, so the window's opening size is the
+  document column plus the rail — on the macOS build 700 + 356 = 1056 wide by
+  820 tall — clamped to the monitor's work area and applied only when no frame
+  has been persisted for that window. Derive it from your own two layout
+  constants rather than copying 1056, and compute it in the same place as your
+  "size to fit" behaviour so the two cannot disagree. `Contract/README.md`
+  §"The size a document window opens at" has the full rule and the traps.
+- **The rail must survive a narrow window.** It keeps a fixed width, so the
+  window's minimum width is the column's minimum *plus* the rail while the rail
+  is open (360 + 356 = 716 on the macOS build) and the plain document minimum
+  when it is shut; the column is clamped into the width the rail leaves, not
+  the window's; and the column's resize handle moves inside the column's edge
+  with the rail open, reserving no margin. Miss any one and the rail is squeezed
+  or clipped when the window is dragged narrow. `Contract/README.md` §"The
+  narrowest a window may be, with the rail in it".
+- **A window too narrow for its rail widens, twice and only twice.** When a
+  window is first seen on screen, and when the rail opens on one already there,
+  grow it to the opening width: never narrower than it is, never past the
+  monitor's work area, growing on the trailing edge and sliding left only as far
+  as it must. Not on every layout pass, and not animated; closing the rail
+  leaves the width alone. This is what gives a restored window, or one narrowed
+  while the rail was shut, its column back. `Contract/README.md` §"Widening a
+  window that is too narrow for its rail".
+- **The icon is generated, and the landing screen shows it.** Add an `.ico`
+  output to `macOS/Scripts/make-icons.swift` rather than drawing the kirupa mark
+  again: it already writes the Mac `.icns`, the iOS PNG and the web `icon.svg`
+  from `macOS/Packaging/Logo.svg`, placing the mark by its round body rather
+  than its bounding box. The landing screen is that icon and the word KONVO —
+  no version number and no tagline. `Contract/README.md` §"The mark, and where
+  it comes from" has the measurements.
 - **Firebase** has a .NET path, but it is not the same shape as the Apple or JS
   SDKs. `FirebaseAdmin` is server-side and must not ship in a desktop app —
   it holds credentials that trust the client completely. For a client app the
@@ -210,6 +247,7 @@ written down so the Windows port does not pay it again.
 | Where | What |
 | --- | --- |
 | `MarkdownFormatting.moveImage` | The whole text transform. Covered by `Contract/formatting.jsonl` (451 `moveImage` cases). Port it and make the fixture pass before writing any UI. |
+| `MarkdownCodeContext` | Whether a selection is in a fenced block, a code span, or prose — read off the render model, not a scanner of its own, so the commands refuse in exactly the places the reading view draws as code. It is also what the toolbar asks to grey a button out, on every caret move, so read it from the **two blocks at the selection's ends** (`containing(_:spansAround:)`), never the whole document. |
 | `EditorImageGeometry` | Handle rects, hit rects, the corner tie-break, `draggedWidth`. Pointer *and* touch variants. |
 | `MarkdownImageTag.proportionalSize` | Turning a dragged width into a written width/height pair. |
 | `EditorPaneGeometry` | The page, the column inside it, and how far a picture may reach past it: `imageBleed`, `maximumImageWidth`, `imageParagraphIndent`. |
@@ -396,6 +434,42 @@ never the fault. Three separate "fixes" shipped on that evidence.
   the bug you are measuring. A locked screen also refuses region captures while
   still allowing full-screen ones, which reads as a broken app rather than an
   unavailable check.
+
+## Pressing and hovering a critique note
+
+The behaviour is specified in [`Contract/README.md`](../Contract/README.md)
+§ "Taking the reader to a criticised passage" and § "Hovering a note tints its
+passage". In short:
+
+- A press on a note **reveals its passage**. It never toggles the note off.
+- The passage is framed about **a third of the way down** the window.
+- A passage that is already comfortably visible **does not move**.
+- **Hovering** tints a passage that is already on screen, and never scrolls.
+- **Selection outranks hover.** The open note's passage also gets a solid
+  rule underneath it.
+
+The arithmetic and the state are already written. Port them; do not re-derive
+them.
+
+| Where | What |
+| --- | --- |
+| `EditorScrollGeometry.offset(toReveal:)`, `isComfortablyVisible(_:)` | Where to scroll, and whether to scroll at all. The recorded numbers are in `EditorScrollGeometryTests.swift`. |
+| `CritiqueHighlight` (`Shared/Sources/MarkdownEditorUI/`) | The press/hover state machine, the three washes per severity, and the rule. `CritiqueHighlightTests.swift` asserts their order and hue. |
+
+Two traps cost the Mac build real time:
+
+- **Lay out before you scroll.** A scroll offset is clamped to the height laid
+  out so far. After an edit, that is about a screenful. Measure as far as the
+  passage, then as far as the target viewport, and no further.
+- **Selectable text swallows the press.** If a note's words can be selected,
+  the text control takes the press and the card never sees it. Make a pressable
+  note's text non-selectable (on a WinUI `TextBlock`, leave
+  `IsTextSelectionEnabled` at its default, `False`). Then press the middle of a
+  note's words and confirm which element receives it.
+
+When the pointer moves straight from one note to the next, the new note's
+*entered* event can arrive before the old note's *exited* event. On *exited*,
+clear the hover only if the note being left still holds it.
 
 ## Validating the port
 

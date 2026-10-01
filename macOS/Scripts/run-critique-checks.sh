@@ -31,11 +31,20 @@ if ! swift build --configuration "$CONFIG" >"$BUILD_LOG" 2>&1; then
 fi
 
 SOURCES=$(find Sources/MarkdownEditor -name '*.swift' ! -name 'MarkdownEditorApp.swift')
-OBJECTS=$(find "$BIN_DIR" -name '*.o' -path '*.build*' \
-    \( -path '*MarkdownEditorCore.build*' \
-    -o -path '*MarkdownEditorUI.build*' \
-    -o -path '*MarkdownEditorContract.build*' \
-    -o -path '*MarkdownEditorCloud.build*' \) 2>/dev/null)
+# Two build layouts. SwiftPM's own keeps each module's objects in
+# `<Module>.build/` and the interfaces in `Modules/`; the newer swift-build one
+# links each module into a single `<Module>.o` beside its `.swiftmodule`.
+if [ -d "$BIN_DIR/Modules" ]; then
+    MODULES="$BIN_DIR/Modules"
+    OBJECTS=$(find "$BIN_DIR" -name '*.o' -path '*.build*' \
+        \( -path '*MarkdownEditorCore.build*' \
+        -o -path '*MarkdownEditorUI.build*' \
+        -o -path '*MarkdownEditorContract.build*' \
+        -o -path '*MarkdownEditorCloud.build*' \) 2>/dev/null)
+else
+    MODULES="$BIN_DIR"
+    OBJECTS=$(find "$BIN_DIR" -maxdepth 1 -name 'MarkdownEditor*.o' 2>/dev/null)
+fi
 
 if [ -z "$OBJECTS" ]; then
     echo "could not find the shared package objects under $BIN_DIR" >&2
@@ -45,6 +54,6 @@ fi
 # shellcheck disable=SC2086
 swiftc -parse-as-library -o "$OUT/check-critique" \
     $SOURCES Scripts/check-critique.swift $OBJECTS \
-    -I "$BIN_DIR/Modules"
+    -I "$MODULES"
 
 "$OUT/check-critique" "$@"

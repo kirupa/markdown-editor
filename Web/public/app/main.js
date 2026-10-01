@@ -18,7 +18,7 @@ import {
 import { MarkdownDocumentModel } from './document.js';
 import { startLiveUpdates } from './live.js';
 import { makeRange, maxRange } from './core/range.js';
-import { renderMarkdown } from './core/render-model.js';
+import { MarkdownRenderModel } from './core/render-model.js';
 import {
   InlineStyle,
   ListStyle,
@@ -32,7 +32,10 @@ import {
   toggleList,
   toggleQuote,
   wrapCodeBlock,
+  isInlineStyleAvailable,
+  isLinkAvailable,
 } from './core/formatting.js';
+import { codeContextInModel } from './core/code-context.js';
 import { renderInto } from './ui/renderer.js';
 import { EditorSurface } from './ui/editor-surface.js';
 import { positionForOffset } from './dom-text.js';
@@ -42,6 +45,7 @@ import { buildMenus } from './ui/menus.js';
 import { WelcomeScreen, recentDocuments, savedDocuments } from './ui/welcome.js';
 import { buildMobileUI } from './ui/mobile.js';
 import { ImageSelection } from './ui/image-selection.js';
+import { SelectionHighlight } from './ui/selection-highlight.js';
 import {
   chooseImageSource,
   confirmAction,
@@ -68,16 +72,19 @@ const element = (id) => document.getElementById(id);
 theme.apply();
 
 const model = new MarkdownDocumentModel();
-let renderModel = renderMarkdown('');
-let renderModelSource = '';
 
-/** Rebuilds the render model only when the source it was built from changed. */
+/**
+ * The one render model, kept up to date rather than rebuilt.
+ *
+ * It holds a reference to the source it describes — the same string the
+ * document holds, not a copy — so asking it for the model of a source it is
+ * already on costs a comparison, and asking it for the model of a source one
+ * character away costs one line.
+ */
+const renderModel = new MarkdownRenderModel();
+
 function modelFor(source) {
-  if (renderModelSource !== source) {
-    renderModel = renderMarkdown(source);
-    renderModelSource = source;
-  }
-  return renderModel;
+  return renderModel.update(source, model.lastChange);
 }
 /**
  * WT-13: the explorer starts closed. A first visit opens on the document alone;
@@ -111,9 +118,15 @@ const richProjection = {
   textFor: (source) => modelFor(source).text,
   toSource: (source, range) => modelFor(source).sourceRange(range),
   toSurface: (source, range) => modelFor(source).renderedRange(range),
+  // Block-level access, so an edit can be read from the blocks it touched
+  // instead of from the whole surface.
+  layoutFor: (source) => modelFor(source),
 };
 
 const richSurface = new EditorSurface(element('richSurface'), richProjection, model);
+
+// T-24: the selection is drawn by the editor, rounded and fading across lines.
+const selectionHighlight = new SelectionHighlight(element('richSurface'));
 
 const explorer = new Explorer({
   tree: element('explorerTree'),
@@ -329,7 +342,9 @@ const commands = {
   },
 
   inline(name) {
-    applyResult(toggleInline(InlineStyle[name], model.source, currentSelection()));
+    applyResult(
+      toggleInline(InlineStyle[name], model.source, currentSelection(), modelFor(model.source))
+    );
   },
   heading(level) {
     applyResult(applyHeading(level, model.source, currentSelection()));
@@ -354,7 +369,9 @@ const commands = {
       confirmLabel: 'Insert',
     });
     if (destination === null) return;
-    applyResult(insertLink(destination, model.source, currentSelection()));
+    applyResult(
+      insertLink(destination, model.source, currentSelection(), modelFor(model.source))
+    );
   },
   image: () => addImage(),
   undo: () => model.undo(),
@@ -483,7 +500,7 @@ function refreshActiveStyles() {
   let quote = false;
   let heading = 0;
 
-  for (const span of rendered.spans) {
+  for (const span of rendered.spansAtSourceOffset(selection.location)) {
     const start = span.sourceRange.location;
     const end = start + span.sourceRange.length;
     if (selection.location < start || selection.location > end) continue;
@@ -505,6 +522,17 @@ function refreshActiveStyles() {
   }
   toolbar.setActiveStyles({ inline, list, quote, heading });
   mobileUI.setActiveStyles({ inline, list, quote, heading });
+
+  // What can work here, from the same model: inside a fence or a code span
+  // Markdown is literal, so the inline commands refuse and their buttons say
+  // so rather than clicking through to nothing.
+  const context = codeContextInModel(selection, rendered);
+  const available = new Set(
+    Object.values(InlineStyle).filter((style) => isInlineStyleAvailable(style, context))
+  );
+  const availability = { inline: available, link: isLinkAvailable(context) };
+  toolbar.setAvailability(availability);
+  mobileUI.setAvailability(availability);
 }
 
 function refreshSurfaces(options = {}) {
@@ -516,6 +544,9 @@ function refreshSurfaces(options = {}) {
   // so it needs the model the pane was just built from.
   imageSelection.setModel(modelFor(model.source));
   imageSelection.restore();
+  // A re-render can move every word, including under a selection that did
+  // not itself change.
+  selectionHighlight.refresh();
 }
 
 // ── Selecting an image to resize (WI-17) ─────────────────────────────────────
@@ -583,7 +614,11 @@ function repaintCritique() {
     highlights: critique.highlights,
     selectedID: critique.selectedID,
     surfaces: [
-      { root: element('richSurface'), map: (range) => richProjection.toSurface(model.source, range) },
+      {
+        root: element('richSurface'),
+        map: (range) => richProjection.toSurface(model.source, range),
+        layout: modelFor(model.source),
+      },
     ],
   });
 }

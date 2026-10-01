@@ -6,6 +6,15 @@ import MarkdownEditorUI
 protocol MarkdownEditingSurface: AnyObject {
     var sourceText: String { get }
     var selectedSourceRange: NSRange { get }
+    /// What the selection is sitting in, so the bar and the menu can grey out
+    /// what cannot work there.
+    ///
+    /// Answered by the pane rather than by the session because the pane
+    /// already holds the rendered model. Parsing the document again would
+    /// cost tens of milliseconds on a long one and this is asked on every
+    /// caret move; reading the spans it already has costs under a
+    /// millisecond, and cannot disagree with what is drawn.
+    var codeContext: MarkdownCodeContext { get }
     var hostingWindow: NSWindow? { get }
     var hasFocus: Bool { get }
     var normalizedScrollPosition: CGFloat? { get }

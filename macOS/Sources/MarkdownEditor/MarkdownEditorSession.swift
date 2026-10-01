@@ -111,6 +111,35 @@ final class MarkdownEditorSession: ObservableObject {
     /// because replacing the text storage moves it.
     func noteSelection(_ selection: NSRange) {
         rememberedSelection = selection
+        refreshCodeContext()
+    }
+
+    /// What the caret is sitting in, as the panes last reported it.
+    ///
+    /// Published so the formatting bar and the Format menu redraw when the
+    /// caret crosses into or out of code: inside a fence or a code span the
+    /// commands below do nothing, and a control that silently does nothing is
+    /// worse than one that says so.
+    @Published private(set) var codeContext: MarkdownCodeContext = .prose
+
+    /// Whether `style` would do anything where the caret is.
+    func isAvailable(_ style: MarkdownInlineStyle) -> Bool {
+        MarkdownFormatting.isAvailable(style, context: codeContext)
+    }
+
+    var isLinkAvailable: Bool {
+        MarkdownFormatting.isLinkAvailable(context: codeContext)
+    }
+
+    /// Read from `activeEditor` rather than through `currentEditor()`, which
+    /// re-elects the focused pane and remembers its selection — re-entering
+    /// that from inside `noteSelection` would be a loop.
+    private func refreshCodeContext() {
+        let context = activeEditor?.codeContext ?? .prose
+        guard context != codeContext else {
+            return
+        }
+        codeContext = context
     }
 
     func selectionForEditorUpdate(fallback: NSRange) -> NSRange {
@@ -331,6 +360,11 @@ final class MarkdownEditorSession: ObservableObject {
     }
 
     /// The image span covering `location` in `editor`'s source.
+    ///
+    /// Scoped to the block the caret is in. This is read from a view body, so
+    /// it runs on every SwiftUI pass — rendering the document here meant the
+    /// toolbar asking "is the caret on a picture?" cost a full parse of the
+    /// file several times per keystroke.
     private func image(
         at location: Int,
         in editor: any MarkdownEditingSurface
@@ -341,7 +375,10 @@ final class MarkdownEditorSession: ObservableObject {
             to: text.length
         )
 
-        for span in MarkdownRenderer.render(editor.sourceText).spans {
+        for span in MarkdownFormatting.spansAroundBlock(
+            at: selection.location,
+            in: text
+        ) {
             guard case .image = span.style else { continue }
             let start = span.sourceRange.location
             let end = NSMaxRange(span.sourceRange)

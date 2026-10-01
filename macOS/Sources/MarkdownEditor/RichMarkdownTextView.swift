@@ -26,6 +26,9 @@ final class RichMarkdownTextView: NSTextView {
         let id: UUID
         let range: NSRange
         let colour: NSColor
+        /// Drawn as a solid rule under the passage, for the one whose note is
+        /// open. Nil for every other passage — see `selectionRule`.
+        var rule: NSColor?
     }
 
     /// Told to the view rather than worked out by it: turning a source range
@@ -470,6 +473,7 @@ final class RichMarkdownTextView: NSTextView {
         guard hidden != isSelectionHighlightHidden else { return }
         isSelectionHighlightHidden = hidden
         applySelectedTextAttributes()
+        redrawSelectionHighlight()
     }
 
     /// The theme's selection colours, kept apart from what is on screen.
@@ -479,7 +483,22 @@ final class RichMarkdownTextView: NSTextView {
     /// would come back and stay back, so the theme sets this and the view
     /// decides what to show.
     var baseSelectedTextAttributes: [NSAttributedString.Key: Any] = [:] {
-        didSet { applySelectedTextAttributes() }
+        didSet {
+            applySelectedTextAttributes()
+            redrawSelectionHighlight()
+        }
+    }
+
+    /// The theme's tint for a selection this view is not being typed into:
+    /// its window is behind another, or the focus is elsewhere in it.
+    ///
+    /// AppKit would use the system's grey here whatever the theme, which on a
+    /// dark page is a slab. Nil falls back to that grey.
+    var inactiveSelectionColor: NSColor? {
+        didSet {
+            guard inactiveSelectionColor != oldValue else { return }
+            redrawSelectionHighlight()
+        }
     }
 
     private func applySelectedTextAttributes() {
@@ -921,11 +940,33 @@ final class RichMarkdownTextView: NSTextView {
             name: NSView.frameDidChangeNotification,
             object: nil
         )
-        guard window != nil else {
+        for name in [
+            NSWindow.didBecomeKeyNotification,
+            NSWindow.didResignKeyNotification
+        ] {
+            NotificationCenter.default.removeObserver(
+                self, name: name, object: nil
+            )
+        }
+        guard let window else {
             // Leaving the window mid-drag would otherwise strand a pushed
             // cursor on the process-wide stack for every other app to inherit.
             imageHandles.hide()
             return
+        }
+        // The selection is tinted differently while the window is in the
+        // background, and part of it is drawn in the margin, where AppKit's
+        // own redraw of its selection does not reach.
+        for name in [
+            NSWindow.didBecomeKeyNotification,
+            NSWindow.didResignKeyNotification
+        ] {
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(keyWindowDidChange),
+                name: name,
+                object: window
+            )
         }
         guard let clipView = enclosingScrollView?.contentView else { return }
         // Only the images near the visible area get a cursor rect, so scrolling
@@ -1332,6 +1373,9 @@ final class RichMarkdownTextView: NSTextView {
             affinity: affinity,
             stillSelecting: stillSelecting
         )
+        // AppKit redraws the lines its selection was on and is now on. The
+        // ends that fade out into the margin are this view's to clear.
+        redrawSelectionHighlight()
         guard !stillSelecting else { return }
         updateImageHandles()
     }
@@ -1340,21 +1384,376 @@ final class RichMarkdownTextView: NSTextView {
         super.drawBackground(in: rect)
         drawCodeBlockBackgrounds(in: rect)
         drawCritiqueHighlights(in: rect)
+        drawSelectionHighlight(in: rect)
+    }
+
+    // MARK: - Selection
+
+    /// Whether the selection is drawn here rather than by AppKit. Set once the
+    /// layout manager that stands AppKit's band down is in place.
+    private(set) var drawsOwnSelection = false
+
+    /// Everywhere a selection bar has been drawn since the selection last
+    /// changed how it looks, in this view's coordinates.
+    private var drawnSelectionBounds = NSRect.null
+
+    /// Hand the selection over from AppKit to this view.
+    ///
+    /// AppKit paints a selection as one square band per line, running the full
+    /// width of every line it crosses. This view draws it as rounded bars
+    /// fitted to the words instead, fading where the selection runs on to the
+    /// next line. Called once, straight after the view is made; a view made
+    /// without it keeps AppKit's band.
+    func adoptSelectionLayoutManager() {
+        // Reading the layout manager is what moves a text view off TextKit 2,
+        // so it goes first: the container is only settled after that.
+        guard !(layoutManager is RichMarkdownLayoutManager),
+              let textContainer
+        else { return }
+        textContainer.replaceLayoutManager(RichMarkdownLayoutManager())
+        drawsOwnSelection = true
+    }
+
+    /// Whether a background AppKit is about to fill is its selection band.
+    ///
+    /// AppKit fills the selection in one call covering the whole selected
+    /// range, and each background colour in the text in one call per run of
+    /// it. So a fill is the band when it overlaps the selection and is not a
+    /// colour the text itself asks for at that point — inline code keeps its
+    /// shading when it is selected.
+    func isSelectionBandFill(characterRange: NSRange, color: NSColor) -> Bool {
+        guard drawsOwnSelection,
+              characterRange.length > 0,
+              let textStorage,
+              characterRange.location < textStorage.length
+        else { return false }
+        let location = characterRange.location
+        if let own = textStorage.attribute(
+            .backgroundColor, at: location, effectiveRange: nil
+        ) as? NSColor, own == color {
+            return false
+        }
+        if let temporary = layoutManager?.temporaryAttribute(
+            .backgroundColor, atCharacterIndex: location, effectiveRange: nil
+        ) as? NSColor, temporary == color {
+            return false
+        }
+        return selectedRanges.contains {
+            NSIntersectionRange($0.rangeValue, characterRange).length > 0
+        }
+    }
+
+    /// Whether the selection is the one being worked on: this view has the
+    /// focus, in the key window.
+    private var isSelectionEmphasized: Bool {
+        guard let window else { return false }
+        return window.isKeyWindow && window.firstResponder === self
+    }
+
+    private var selectionTint: NSColor {
+        if isSelectionEmphasized {
+            return baseSelectedTextAttributes[.backgroundColor] as? NSColor
+                ?? .selectedTextBackgroundColor
+        }
+        return inactiveSelectionColor ?? .unemphasizedSelectedTextBackgroundColor
+    }
+
+    private var hasSelectedText: Bool {
+        selectedRanges.contains { $0.rangeValue.length > 0 }
+    }
+
+    /// Redraw the selection where it has been drawn, to change its colour or
+    /// clear it. Where it is going to be drawn next, AppKit redraws itself.
+    func redrawSelectionHighlight() {
+        guard !drawnSelectionBounds.isNull else { return }
+        let drawn = drawnSelectionBounds
+        drawnSelectionBounds = .null
+        setNeedsDisplay(drawn, avoidAdditionalLayout: true)
+    }
+
+    // Both ways into a redraw, since which one AppKit's own calls go through
+    // is not documented.
+    override func setNeedsDisplay(
+        _ rect: NSRect,
+        avoidAdditionalLayout flag: Bool
+    ) {
+        super.setNeedsDisplay(
+            widenedForSelection(rect),
+            avoidAdditionalLayout: flag
+        )
+    }
+
+    override func setNeedsDisplay(_ invalidRect: NSRect) {
+        super.setNeedsDisplay(widenedForSelection(invalidRect))
+    }
+
+    /// A redraw of part of a line, stretched across the whole view while
+    /// there is a selection to draw.
+    ///
+    /// AppKit redraws a line's text when its selection changes, which is the
+    /// text's width. The selection's fading ends run past the text into the
+    /// margin, and a redraw that stopped at the text left them behind.
+    private func widenedForSelection(_ rect: NSRect) -> NSRect {
+        guard drawsOwnSelection,
+              !rect.isEmpty,
+              !drawnSelectionBounds.isNull || hasSelectedText
+        else { return rect }
+        return NSRect(
+            x: bounds.minX,
+            y: rect.minY,
+            width: bounds.width,
+            height: rect.height
+        )
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        let became = super.becomeFirstResponder()
+        if became { redrawSelectionHighlight() }
+        return became
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        if resigned { redrawSelectionHighlight() }
+        return resigned
+    }
+
+    @objc private func keyWindowDidChange() {
+        redrawSelectionHighlight()
+    }
+
+    /// Shade the selection, one rounded bar per line, under the text.
+    private func drawSelectionHighlight(in rect: NSRect) {
+        guard drawsOwnSelection,
+              !isSelectionHighlightHidden,
+              NSGraphicsContext.current?.isDrawingToScreen ?? true
+        else { return }
+        let segments = selectionHighlightSegments(in: rect)
+        guard !segments.isEmpty else { return }
+        let tint = selectionTint.usingColorSpace(.sRGB) ?? selectionTint
+        for segment in segments where segment.rect.intersects(rect) {
+            drawnSelectionBounds = drawnSelectionBounds.union(segment.rect)
+            let path = NSBezierPath(
+                roundedRect: segment.rect,
+                xRadius: segment.cornerRadius,
+                yRadius: segment.cornerRadius
+            )
+            guard segment.fadeIn > 0 || segment.fadeOut > 0 else {
+                tint.setFill()
+                path.fill()
+                continue
+            }
+            let stops = segment.stops
+            let colors = stops.map {
+                tint.withAlphaComponent(tint.alphaComponent * $0.opacity)
+            }
+            let locations = stops.map(\.location)
+            NSGradient(
+                colors: colors,
+                atLocations: locations,
+                colorSpace: .sRGB
+            )?.draw(in: path, angle: 0)
+        }
+    }
+
+    /// The bars the selection is drawn as, for every line crossing `rect`, in
+    /// this view's coordinates.
+    func selectionHighlightSegments(
+        in rect: NSRect
+    ) -> [SelectionHighlightSegment] {
+        guard let layoutManager, let textContainer, let textStorage,
+              textStorage.length > 0
+        else { return [] }
+        let whole = NSRange(location: 0, length: textStorage.length)
+        let selections = selectedRanges
+            .map { NSIntersectionRange($0.rangeValue, whole) }
+            .filter { $0.length > 0 }
+        guard !selections.isEmpty else { return [] }
+        let origin = textContainerOrigin
+        // Whole lines, not just the part of each inside the rect: a bar fades
+        // out past its line's text, so it can reach a rect the text does not.
+        let probe = NSRect(
+            x: 0,
+            y: rect.minY - origin.y,
+            width: max(1, textContainer.size.width),
+            height: rect.height
+        )
+        let lines = layoutManager.glyphRange(
+            forBoundingRect: probe, in: textContainer
+        )
+        guard lines.length > 0 else { return [] }
+        let text = textStorage.string as NSString
+        var segments: [SelectionHighlightSegment] = []
+        for selection in selections {
+            let selected = layoutManager.glyphRange(
+                forCharacterRange: selection, actualCharacterRange: nil
+            )
+            let shown = NSIntersectionRange(selected, lines)
+            guard shown.length > 0 else { continue }
+            layoutManager.enumerateLineFragments(forGlyphRange: shown) {
+                line, used, _, lineGlyphs, _ in
+                if let segment = self.selectionSegment(
+                    selected: selected,
+                    line: line,
+                    used: used,
+                    lineGlyphs: lineGlyphs,
+                    text: text,
+                    origin: origin
+                ) {
+                    segments.append(segment)
+                }
+            }
+        }
+        return segments
+    }
+
+    /// One line's bar: from its first selected word to its last, fading
+    /// in where the selection came from the line before and out where it
+    /// carries on to the next.
+    private func selectionSegment(
+        selected: NSRange,
+        line: NSRect,
+        used: NSRect,
+        lineGlyphs: NSRange,
+        text: NSString,
+        origin: NSPoint
+    ) -> SelectionHighlightSegment? {
+        guard let layoutManager, let textContainer else { return nil }
+        let run = NSIntersectionRange(selected, lineGlyphs)
+        guard run.length > 0 else { return nil }
+        let characters = layoutManager.characterRange(
+            forGlyphRange: run, actualGlyphRange: nil
+        )
+        guard characters.length > 0 else { return nil }
+        // A line's break is laid out as a glyph running to the end of the
+        // line, so it is measured separately: selecting it is what carrying
+        // on to the next line means.
+        var end = NSMaxRange(characters)
+        var selectsBreak = false
+        while end > characters.location,
+              Self.isLineBreak(text.character(at: end - 1)) {
+            end -= 1
+            selectsBreak = true
+        }
+        let fromPreviousLine = selected.location < lineGlyphs.location
+        let ontoNextLine = selectsBreak
+            || NSMaxRange(selected) > NSMaxRange(lineGlyphs)
+        if ontoNextLine {
+            // The space a line wraps at belongs to the line but was not
+            // chosen as a word, so the bar fades out from the last word.
+            while end > characters.location,
+                  Self.isSpaceOrTab(text.character(at: end - 1)) {
+                end -= 1
+            }
+        }
+        let start: CGFloat
+        let finish: CGFloat
+        if end > characters.location {
+            let measured = layoutManager.glyphRange(
+                forCharacterRange: NSRange(
+                    location: characters.location,
+                    length: end - characters.location
+                ),
+                actualCharacterRange: nil
+            )
+            let box = layoutManager.boundingRect(
+                forGlyphRange: measured, in: textContainer
+            )
+            start = box.minX
+            finish = box.maxX
+        } else {
+            // Nothing selected on this line but its break: an empty line, or
+            // a selection starting at a line's end. The bar starts there.
+            let x = line.minX + layoutManager.location(forGlyphAt: run.location).x
+            start = x
+            finish = x
+        }
+        let height = selectionBarHeight(
+            used: used,
+            firstCharacter: layoutManager.characterIndexForGlyph(
+                at: lineGlyphs.location
+            )
+        )
+        return .line(
+            from: origin.x + start,
+            to: origin.x + finish,
+            top: origin.y + used.minY,
+            bottom: origin.y + used.minY + height,
+            continuesFromPreviousLine: fromPreviousLine,
+            continuesOntoNextLine: ontoNextLine
+        )
+    }
+
+    /// How tall a line's text stands, leaving out the line spacing TextKit
+    /// adds beneath it — so a bar sits evenly on its words, and the bars of a
+    /// paragraph's lines do not run into one another.
+    ///
+    /// The last line of the document has no spacing added. Rather than guess
+    /// which line that is, a line is only trimmed by as much as it is taller
+    /// than its font's own line height.
+    private func selectionBarHeight(
+        used: NSRect,
+        firstCharacter: Int
+    ) -> CGFloat {
+        guard let textStorage, let layoutManager,
+              firstCharacter < textStorage.length
+        else { return used.height }
+        let style = textStorage.attribute(
+            .paragraphStyle, at: firstCharacter, effectiveRange: nil
+        ) as? NSParagraphStyle
+        let spacing = max(0, style?.lineSpacing ?? 0)
+        guard spacing > 0 else { return used.height }
+        let font = textStorage.attribute(
+            .font, at: firstCharacter, effectiveRange: nil
+        ) as? NSFont ?? self.font ?? .systemFont(ofSize: NSFont.systemFontSize)
+        let natural = layoutManager.defaultLineHeight(for: font)
+        return used.height - min(spacing, max(0, used.height - natural))
+    }
+
+    private static func isLineBreak(_ character: unichar) -> Bool {
+        switch character {
+        case 0x0A, 0x0D, 0x85, 0x2028, 0x2029: true
+        default: false
+        }
+    }
+
+    private static func isSpaceOrTab(_ character: unichar) -> Bool {
+        character == 0x20 || character == 0x09
     }
 
     /// Shade the passages a critique points at, under the text.
     private func drawCritiqueHighlights(in rect: NSRect) {
         guard !critiqueHighlights.isEmpty else { return }
         for highlight in critiqueHighlights {
+            let boxes = critiqueHighlightBoxes(for: highlight.range)
             highlight.colour.setFill()
-            for box in critiqueHighlightBoxes(for: highlight.range)
-            where box.intersects(rect) {
+            for box in boxes where box.intersects(rect) {
                 // Rounded, but by no more than half the line height, so a mark
                 // on one line and a mark across three look like the same
                 // object rather than a pill and a rectangle.
                 let radius = min(5, box.height / 2)
                 NSBezierPath(roundedRect: box, xRadius: radius, yRadius: radius)
                     .fill()
+            }
+            // The open note's passage is ruled as well as washed. A wash on
+            // its own is a difference of a few hundredths of an alpha under
+            // text, which a reader whose passage was already on screen — so
+            // there was no scroll to tell them anything happened — reasonably
+            // reports as the press having done nothing.
+            guard let rule = highlight.rule else { continue }
+            rule.setFill()
+            let thickness = CritiqueSeverity.selectionRuleThickness
+            for box in boxes {
+                // Square, while the wash it sits under is rounded: a rule that
+                // tapers at both ends stops looking like a rule.
+                let under = NSRect(
+                    x: box.minX + 3,
+                    y: box.maxY - thickness,
+                    width: max(0, box.width - 6),
+                    height: thickness
+                )
+                guard under.width > 0, under.intersects(rect) else { continue }
+                under.fill()
             }
         }
     }
@@ -1484,10 +1883,19 @@ final class RichMarkdownTextView: NSTextView {
             return
         }
 
+        guard let searched = codeBlockSearchRange(
+            for: dirtyRect,
+            in: textStorage,
+            layoutManager: layoutManager,
+            textContainer: textContainer
+        ) else {
+            return
+        }
+
         let textContainerOrigin = self.textContainerOrigin
         textStorage.enumerateAttribute(
             .markdownCodeBlockBackground,
-            in: NSRange(location: 0, length: textStorage.length)
+            in: searched
         ) { value, characterRange, _ in
             guard let backgroundColor = value as? NSColor else {
                 return
@@ -1527,7 +1935,7 @@ final class RichMarkdownTextView: NSTextView {
             }
 
             let horizontalInset: CGFloat = 4
-            let verticalPadding: CGFloat = 3
+            let verticalPadding = Self.codeBlockVerticalPadding
             let blockRect = NSRect(
                 x: textContainerOrigin.x + horizontalInset,
                 y: verticalBounds.minY - verticalPadding,
@@ -1550,6 +1958,85 @@ final class RichMarkdownTextView: NSTextView {
                 yRadius: 5
             ).fill()
         }
+    }
+
+    /// How far a code block's box reaches above its first line and below its
+    /// last.
+    private static let codeBlockVerticalPadding: CGFloat = 3
+
+    /// The characters worth looking at to shade the code blocks in a rect.
+    ///
+    /// This used to be the whole document, and asking for a character range's
+    /// glyphs is what forces that part of the document to be laid out — so
+    /// drawing one screenful measured every line in the file, on every draw.
+    /// The rect is what has to be painted, so the search starts from the
+    /// characters in it.
+    ///
+    /// The rect is in this view's coordinates and the layout manager measures
+    /// in the text container's, which start at `textContainerOrigin` — 44pt
+    /// down in the rendered pane. Handed the rect unconverted, the search
+    /// looked 44pt below what was being painted. A whole-pane draw never
+    /// noticed, but a scroll asks for only the strip it uncovers, and for a
+    /// strip across a block's last lines the search found only the text after
+    /// the block, so those lines stayed bare until something redrew them.
+    ///
+    /// The search spans the column's full width, as the box does, so it
+    /// doesn't rest on what TextKit makes of a rect with no glyph in it, and
+    /// reaches past the rect by the box's padding, which lies outside every
+    /// line of the block.
+    ///
+    /// Grown outwards to whole runs of the attribute, because a code block
+    /// taller than the window starts above the rect and ends below it, and a
+    /// box measured from the clipped part would put a rounded corner across
+    /// the middle of it. Growing is bounded by the block, not by the document.
+    private func codeBlockSearchRange(
+        for dirtyRect: NSRect,
+        in textStorage: NSTextStorage,
+        layoutManager: NSLayoutManager,
+        textContainer: NSTextContainer
+    ) -> NSRange? {
+        let padding = Self.codeBlockVerticalPadding
+        let probe = NSRect(
+            x: 0,
+            y: dirtyRect.minY - textContainerOrigin.y - padding,
+            width: max(1, textContainer.size.width),
+            height: dirtyRect.height + 2 * padding
+        )
+        let glyphs = layoutManager.glyphRange(
+            forBoundingRect: probe,
+            in: textContainer
+        )
+        var characters = layoutManager.characterRange(
+            forGlyphRange: glyphs,
+            actualGlyphRange: nil
+        )
+        characters = NSIntersectionRange(
+            characters,
+            NSRange(location: 0, length: textStorage.length)
+        )
+        guard characters.length > 0 else { return nil }
+
+        let whole = NSRange(location: 0, length: textStorage.length)
+        var start = characters.location
+        var end = NSMaxRange(characters)
+        var run = NSRange(location: 0, length: 0)
+        if textStorage.attribute(
+            .markdownCodeBlockBackground,
+            at: start,
+            longestEffectiveRange: &run,
+            in: whole
+        ) != nil {
+            start = run.location
+        }
+        if textStorage.attribute(
+            .markdownCodeBlockBackground,
+            at: end - 1,
+            longestEffectiveRange: &run,
+            in: whole
+        ) != nil {
+            end = NSMaxRange(run)
+        }
+        return NSRange(location: start, length: end - start)
     }
 }
 
