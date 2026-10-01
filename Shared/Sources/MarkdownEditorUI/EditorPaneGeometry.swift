@@ -160,6 +160,39 @@ public enum EditorPaneGeometry {
         return columnMinimum + railWidth
     }
 
+    /// `frame` grown to `targetWidth`, or returned untouched.
+    ///
+    /// What a window does when it finds it is too narrow to show the comments
+    /// it is already showing — when it is first seen, and when the rail opens
+    /// on one that was already there. Three rules, and the order matters:
+    ///
+    /// 1. **Never narrower.** A window wider than it needs is a window
+    ///    somebody made that wide. Sizing "to fit" in both directions would
+    ///    shrink it out from under them every time the rail opened.
+    /// 2. **Never wider than the screen.** A window that cannot fit the pair
+    ///    fits as much of it as the display allows rather than running off the
+    ///    desk, where the part that overflows is unreachable rather than
+    ///    merely cramped.
+    /// 3. **Never moved unless it must be.** Growth is added at the trailing
+    ///    edge, where the rail is, so the writing stays under the cursor. Only
+    ///    a window that would then hang off the right is slid left, and only by
+    ///    as much as that takes.
+    ///
+    /// Returns `frame` itself when nothing is owed, so a caller can compare and
+    /// skip the resize rather than setting a window to the frame it already has.
+    public static func widenedFrame(
+        _ frame: CGRect,
+        toWidth targetWidth: CGFloat,
+        within screen: CGRect
+    ) -> CGRect {
+        let width = min(max(frame.width, targetWidth), screen.width)
+        guard width > frame.width else { return frame }
+        let x = min(max(frame.minX, screen.minX), screen.maxX - width)
+        return CGRect(
+            x: x, y: frame.minY, width: width, height: frame.height
+        )
+    }
+
     /// The folders containing `url`, innermost first, up to the volume root.
     ///
     /// What a title bar's path menu is made of. Pure, and here rather than in

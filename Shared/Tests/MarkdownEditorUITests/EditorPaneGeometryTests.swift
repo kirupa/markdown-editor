@@ -418,6 +418,95 @@ struct EditorPaneGeometryTests {
         )
     }
 
+    // MARK: - Widening a window that cannot hold its rail
+
+    private let desk = CGRect(x: 0, y: 0, width: 1_800, height: 1_000)
+
+    private func widened(
+        _ frame: CGRect,
+        to width: CGFloat,
+        within screen: CGRect? = nil
+    ) -> CGRect {
+        EditorPaneGeometry.widenedFrame(
+            frame, toWidth: width, within: screen ?? desk
+        )
+    }
+
+    @Test("A window too narrow for the rail is grown to fit it")
+    func tooNarrowGrows() {
+        let frame = CGRect(x: 100, y: 80, width: 620, height: 700)
+        let fitted = widened(frame, to: 1_056)
+        #expect(fitted.width == 1_056)
+        // Grown at the trailing edge, where the rail is: the writing does not
+        // move out from under the cursor to make room for the notes.
+        #expect(fitted.minX == 100)
+        #expect(fitted.minY == 80)
+        #expect(fitted.height == 700)
+    }
+
+    @Test("A window already wide enough is left exactly alone")
+    func wideEnoughIsUntouched() {
+        let frame = CGRect(x: 100, y: 80, width: 1_400, height: 700)
+        #expect(widened(frame, to: 1_056) == frame)
+        // Including one that is exactly the width asked for, which must not
+        // count as growth and trigger a resize of zero points.
+        let exact = CGRect(x: 100, y: 80, width: 1_056, height: 700)
+        #expect(widened(exact, to: 1_056) == exact)
+    }
+
+    @Test("Fitting never shrinks a window, even one wider than the screen")
+    func neverShrinks() {
+        // Spanning two displays, or simply dragged bigger than `visibleFrame`
+        // by someone who wanted it that way. The screen clamp is a ceiling on
+        // *growth*, not a size the window is pulled back to.
+        let frame = CGRect(x: -200, y: 80, width: 2_400, height: 700)
+        #expect(widened(frame, to: 1_056) == frame)
+    }
+
+    @Test("Growth stops at the screen rather than running off the desk")
+    func clampsToTheScreen() {
+        let small = CGRect(x: 0, y: 0, width: 800, height: 600)
+        let fitted = widened(
+            CGRect(x: 0, y: 0, width: 620, height: 500), to: 1_056, within: small
+        )
+        // Degrades to the widest the display can actually show. The rail is
+        // then short of room, but every point of it that exists is reachable.
+        #expect(fitted.width == 800)
+        #expect(fitted.minX == 0)
+    }
+
+    @Test("A window near the right edge slides left, only as far as it must")
+    func slidesLeftOnlyAsFarAsNeeded() {
+        // 1,200 across a 1,800 desk: growing in place would end at 2,256.
+        let frame = CGRect(x: 1_200, y: 0, width: 620, height: 600)
+        let fitted = widened(frame, to: 1_056)
+        #expect(fitted.maxX == desk.maxX)
+        #expect(fitted.minX == desk.width - 1_056)
+    }
+
+    @Test("Growing pulls a window back onto the screen it is hanging off")
+    func growthLandsOnTheScreen() {
+        // Not a window that needed moving on its own account — it is being
+        // resized anyway, and finishing that resize with the window half off
+        // the left of the desk would put the writing where the rail was.
+        let frame = CGRect(x: -150, y: 0, width: 620, height: 600)
+        let fitted = widened(frame, to: 1_056)
+        #expect(fitted.minX == 0)
+        #expect(fitted.width == 1_056)
+    }
+
+    @Test("A screen that is not at the origin is respected")
+    func honoursAScreenOffset() {
+        // A second display to the right of the built-in one, which is where
+        // `visibleFrame` stops being a rectangle that starts at zero.
+        let second = CGRect(x: 1_800, y: 0, width: 1_200, height: 800)
+        let frame = CGRect(x: 2_500, y: 0, width: 620, height: 600)
+        let fitted = widened(frame, to: 1_056, within: second)
+        #expect(fitted.width == 1_056)
+        #expect(fitted.maxX == second.maxX)
+        #expect(fitted.minX >= second.minX)
+    }
+
     // MARK: - Double-clicking the title bar
 
     /// The bar and its controls, at the geometry measured from the running app:

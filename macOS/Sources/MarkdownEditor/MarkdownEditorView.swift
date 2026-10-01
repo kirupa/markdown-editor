@@ -107,7 +107,9 @@ struct MarkdownEditorView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                // Zoom sizes the window to the writing plus its comments.
+                // Zoom sizes the window to the writing plus its comments, and
+                // so does a window that finds itself too narrow for the rail it
+                // is showing — when it is first seen, and when the rail opens.
                 //
                 // `previewWidth` unclamped rather than the value the pane is
                 // currently drawing at: a window too narrow to hold the column
@@ -120,6 +122,7 @@ struct MarkdownEditorView: View {
                         railWidth: Layout.railWidth,
                         railIsOpen: critique.isPresented
                     ),
+                    railIsOpen: critique.isPresented,
                     fileURL: fileURL
                 )
 

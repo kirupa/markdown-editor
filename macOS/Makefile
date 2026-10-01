@@ -1,4 +1,4 @@
-.PHONY: app check-code-block-scroll check-critique check-critique-reveal check-editor-clicks check-formatting check-image-cursors check-image-handles check-image-layout check-scroll check-selection-shape check-session check-title-bar-fill clean icons install run test uninstall
+.PHONY: app check-code-block-scroll check-critique check-critique-reveal check-editor-clicks check-formatting check-image-cursors check-image-handles check-image-layout check-scroll check-selection-shape check-session check-title-bar-fill check-window clean icons install run test uninstall
 
 app:
 	@./Scripts/build-app.sh
@@ -38,6 +38,9 @@ check-session:
 
 check-scroll:
 	@swift Scripts/check-scroll.swift
+
+check-window:
+	@./Scripts/run-window-checks.sh
 
 icons:
 	@swift Scripts/make-icons.swift Packaging ../iOS/Resources/Assets.xcassets/AppIcon.appiconset ../Web/public

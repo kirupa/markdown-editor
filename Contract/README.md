@@ -839,11 +839,13 @@ Four rules go with it, and each was paid for:
   width uses.
 - **It is a default, not a rule.** It applies when nothing has been saved for
   the window — a genuine first run. A restored window, or one the reader sized
-  by hand, keeps what it had. Do not re-apply it on every launch, and do not add
-  a mechanism that overrides state restoration to enforce it. On SwiftUI that is
-  `Scene.defaultSize`; the equivalents are WinUI's `AppWindow.Resize` guarded by
-  "no persisted frame", and on the web a size written only when the stored
-  layout is absent.
+  by hand, keeps what it had, with one exception: a window too narrow for the
+  rail it is showing is widened once when it is first seen (see "Widening a
+  window that is too narrow for its rail", below). Do not re-apply the default
+  size on every launch, and never shrink a restored window to it. On SwiftUI
+  that is `Scene.defaultSize`; the equivalents are WinUI's `AppWindow.Resize`
+  guarded by "no persisted frame", and on the web a size written only when the
+  stored layout is absent.
 
 One thing measured on the macOS build that will save a port an hour: SwiftUI's
 `defaultSize` is documented as the window's *content* size, but the number handed
@@ -894,6 +896,52 @@ and `gripperOffset(gripperWidth:bleed:railIsOpen:)`, both tested in
 `EditorPaneGeometryTests`; the column clamp is `clampedWidth` in
 `macOS/Sources/MarkdownEditor/MarkdownEditorView.swift`. The macOS README
 records the reasoning as I-244 to I-246, and I-199 for where the gripper goes.
+
+### Widening a window that is too narrow for its rail
+
+The opening size covers a window with nothing saved, and the minimum keeps the
+rail whole at any width by squeezing the column. Between the two is a window
+that holds the rail only by taking the room from the writing: one restored at a
+narrower width, which comes back with the rail open whatever it was showing
+when it was sized, or one narrowed while the rail was shut and then shown the
+rail again. Such a window is widened to the opening size's ideal width, at two
+moments and no others:
+
+- **When it is first seen**, once it is really on screen. Measured any earlier,
+  the frame is the one the framework is about to replace and the widening is
+  undone a moment later; the macOS build waits one turn of the run loop after
+  the view lands in its window.
+- **When the rail opens** on a window that is already on screen.
+
+Not on every layout pass. The column's width changes on every drag of its
+gripper, and a window that grew back to the ideal each time could never be made
+smaller. Between those two moments the width belongs to the reader.
+
+Three rules decide the new frame, and the order matters:
+
+- **Never narrower.** A window wider than it needs is one somebody made that
+  wide, including one wider than the screen.
+- **Never wider than the screen's working area.** A display that cannot hold
+  the pair gets the widest window it can show, rather than one running off the
+  desk where the overflow cannot be reached.
+- **Never moved unless it must be.** Grow on the trailing edge, where the rail
+  is, so the writing stays where the reader left it. Slide the window left only
+  when growing in place would push it off the right edge, and only by as much as
+  that takes. A window that already fits is not touched at all, not even set to
+  the frame it already has.
+
+Closing the rail does **not** narrow the window again: taking the rail's width
+back would move the writing to pay for a panel that was just dismissed, and
+with the rail gone the page takes its bleed margins back, so the room is not
+wasted. Zoom still offers the writing alone. Nor is the widening animated: the
+rail appears in a single frame, so a window that took a moment to catch up would
+spend that moment showing exactly the clipped rail this exists to prevent.
+
+Reference: `EditorPaneGeometry.widenedFrame(_:toWidth:within:)`, tested in
+`EditorPaneGeometryTests`, and called from `sizeToContentIfNeeded` in
+`macOS/Sources/MarkdownEditor/WindowChrome.swift`; `make -C macOS check-window`
+asserts it against a real window. The macOS README records the reasoning as
+I-269 to I-272.
 
 ### The mark, and where it comes from
 

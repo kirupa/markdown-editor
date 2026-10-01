@@ -137,6 +137,14 @@ suite that runs in a third of a second and one that needs a UI.
   with the rail open, reserving no margin. Miss any one and the rail is squeezed
   or clipped when the window is dragged narrow. `Contract/README.md` §"The
   narrowest a window may be, with the rail in it".
+- **A window too narrow for its rail widens, twice and only twice.** When a
+  window is first seen on screen, and when the rail opens on one already there,
+  grow it to the opening width: never narrower than it is, never past the
+  monitor's work area, growing on the trailing edge and sliding left only as far
+  as it must. Not on every layout pass, and not animated; closing the rail
+  leaves the width alone. This is what gives a restored window, or one narrowed
+  while the rail was shut, its column back. `Contract/README.md` §"Widening a
+  window that is too narrow for its rail".
 - **The icon is generated, and the landing screen shows it.** Add an `.ico`
   output to `macOS/Scripts/make-icons.swift` rather than drawing the kirupa mark
   again: it already writes the Mac `.icns`, the iOS PNG and the web `icon.svg`

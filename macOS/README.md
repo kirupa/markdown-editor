@@ -830,7 +830,11 @@ can fail says so.
 | I-245 | The column is clamped against **the room the rail leaves**, not against the window. Raising the floor alone was not enough: at 716 a 700-point column still fitted the window and squeezed the rail to 16 points, because the clamp had never been told the rail was there. This is the fault that made the first two fixes look like they had not worked. |
 | I-246 | With the rail open the gripper claims **no room beyond the column**. It is drawn inside the edge there rather than hanging in a margin that no longer exists (`gripperOffset`), so reserving for it shaved 12 points off a column that fitted exactly — which is how a 1056-point window came to hold a 688-point column instead of 700. Caught by measuring after the fix rather than by assuming it. |
 | I-267 | The opening size is **capped to the screen it lands on**: between the window's own minimum — with the rail open, the 716 of I-244 — and the main screen's `visibleFrame`, less 52pt for the chrome, with the **minimum winning over the ceiling**, as it does for the explorer. On a display too small for it, a window that overflows beats one asked to be smaller than its own minimum, which the window would overrule anyway. The 52 is measured: a first launch with the saved state cleared opens at a frame of 1056 × 820 and a content rect of 1056 × 768. SwiftUI is not specific about whether `defaultSize` is the window's size or its content's; measured, it is the window's, and the allowance is correct under either reading. |
-| I-268 | It is a **default, not a rule**. A restored window keeps the size it had, and so does one sized by hand; `defaultSize` only answers the case where nothing has been saved. Nothing was added to fight state restoration, and nothing has to be undone to hide the rail — with the comments shut the window is simply wider than the column, which is what the bleed margins exist for. The arithmetic lives in `EditorPaneGeometry.defaultWindowContentSize(ideal:minimum:available:)`, where it is tested, not in the view, where it could not be. |
+| I-268 | It is a **default, not a rule**. `defaultSize` only answers the case where nothing has been saved, and a window sized by hand keeps its size. A restored window keeps its size too, unless that is too narrow for the document and its comments — then it is widened once, when it is first seen, and only ever widened (I-269). Nothing has to be undone to hide the rail — with the comments shut the window is simply wider than the column, which is what the bleed margins exist for. The arithmetic lives in `EditorPaneGeometry.defaultWindowContentSize(ideal:minimum:available:)`, where it is tested, not in the view, where it could not be. |
+| I-269 | A window **first seen too narrow for the document column and the whole rail** is widened to hold them. A new window needs nothing, because it opens at the size of I-243; this is for the windows that size does not reach. A restored window is the one that matters: it comes back with the rail open whatever it was showing when it was sized, because `attach(to:)` resets `CritiqueModel.isDismissed`. The bug this was written for came before any of the sizing: measured on `scroll-test.md` at a 620-point window, the rail's header showed while its body text and its "Run critique" button were outside the window. The width asked for is `EditorPaneGeometry.idealContentWidth`, the same number the green button zooms to — 1,056 points at the default 700-point column. |
+| I-270 | Opening the rail on a window **already on screen** widens it too, if it has to. `EditorPaneGeometry.widenedFrame` decides, and it is deliberately conservative: never narrower than the window already is, never wider than the screen's visible frame, and never moved unless growing in place would push it off the right — then left by exactly as much as that takes. Growth is added at the trailing edge, where the rail is, so the writing stays where the reader left it. A window that already fits is returned untouched rather than set to the frame it is in. |
+| I-271 | It happens **twice and only twice**: the first time the window is seen on screen, and the moment the rail opens on one that was not showing it. Not on every layout pass — the column's width changes on every drag of the gripper — and not when the window is focused. Between those two moments the width belongs to the reader — the rising minimum of I-244 and the column clamp of I-245 keep the rail whole however it is dragged — and a window that grew back to "ideal" whenever it was touched is a window that cannot be made smaller. |
+| I-272 | **Closing the rail does not narrow the window**, and that is a choice. A window is a thing somebody placed; taking 356 points off it because a panel closed moves the writing they are reading to pay for a panel they just dismissed. The width left over is not empty desk either — with the rail gone the page takes its bleed margins back, so wide pictures have somewhere to go. Zoom still offers the writing alone for anyone who wants it. |
 | I-257 | **Pressing a note takes you to its passage, every time.** It used to toggle: a press on the note that was already open turned the selection *off*. Somebody pressing a note a second time is doing so because the first press did not appear to land, and what they got was the mark going out — reported, accurately, as having to click several times. The press is a reveal now, and asking again is a fresh request rather than a no-op, so the same note can take you back twice running while an unrelated redraw still cannot steal the reader's scroll position. |
 | I-258 | **A press on a note's words reaches the note.** This was the half of that report no scroll arithmetic could explain. `.textSelection(.enabled)` puts an `AppKitTextInteractionView` over the text, and an AppKit view that takes the hit swallows the press before SwiftUI's gesture system is reached — `hitTest` in the middle of a note returned it rather than the hosting view. The words are most of a note's area, so the card answered a click on its margin and ignored a click on itself. Notes you can press are no longer selectable; the summary, the repeated patterns and the keep list still are, because nothing is competing for the click there and they are prose somebody may want to copy. |
 | I-259 | The passage is **framed, not merely exposed**. `scrollRangeToVisible` does the smallest scroll that makes a rectangle visible, which leaves a passage that was below the fold hard against the bottom edge with nothing after it to read. It is placed about a third of the way down the window instead, and three cases fall out of the clamp rather than needing rules of their own: a passage near the top stays where it is, one near the end stops at the document's last screenful, and a document shorter than the window does not move. A passage taller than the window starts at its first line, because a reader sent to a long quotation wants to begin at its beginning. |
@@ -939,7 +943,7 @@ is closed unless it is asked for.
 
 | ID | Requirement |
 | --- | --- |
-| X-16 | The rendered preview has its own draggable width, defaulting to 700 points, clamped between 360 and 1100 (220 minimum inside Split). |
+| X-16 | The rendered preview has its own draggable width, defaulting to 700 points, clamped between 360 and 1100 (220 minimum inside Split). With the critique rail open the ceiling is whatever the window has left once the rail has taken its 356 points, so the column narrows rather than the rail being pushed off the edge (I-245). |
 | X-17 | Content **reflows live while the divider is being dragged**, not only on release. |
 
 ---
@@ -1162,6 +1166,7 @@ make install
 | `make icons` | Regenerates `Packaging/AppIcon.icns` and `Packaging/MarkdownDocument.icns` |
 | `make test` | Runs the unit test suite |
 | `make check-scroll` | Drives real AppKit text views and asserts the "never jump" scroll rules |
+| `make check-window` | Opens a **real document window** around the real editor and reads its frame back: that a window born too narrow grows to hold the document column and the whole critique rail, that it is not moved off its screen doing so, that the rail is really drawn in the room made for it, that the minimum width rises while the rail is open, that a window dragged back to the width the bug was photographed at still shows the rail whole, that a window already wide enough is neither narrowed nor moved, and — through the real window delegate — that opening the rail on a window narrowed while it was shut widens it at the trailing edge, once, and that closing the rail leaves the width alone. Set `MDE_WINDOW_PNG` to write out what it drew |
 | `make check-session` | Compiles the real session against a recording pane: what happens when another app rewrites the open file |
 | `make check-image-handles` | Renders real attachments and finds them by pixel: proves the picture rect is the drawn picture and not its line box, and guards the baseline-offset rule across seven offsets |
 | `make check-image-layout` | The same geometry through the **real** `RichMarkdownStyler`, at the app's own container inset — a bug whose size *is* the inset cannot happen in a view that has none — plus the pointer shape at each place it matters — and, through the real `mouseMoved`, the places it *does not* matter, where the view must set nothing and hand the shape back on the way out — the clicks that select a picture, dragging a picture to a new place in the document, and the four ways a resize used to go wrong: focus, reflow, a refused commit, and a cursor stranded by teardown |
@@ -1217,7 +1222,7 @@ the code they cover, so this one command covers the iOS build's engine too.
 
 ### 16.1 Test coverage
 
-707 tests in the shared package: 685 across 50 Swift Testing suites, and 22 in
+714 tests in the shared package: 692 across 50 Swift Testing suites, and 22 in
 the two XCTest classes. The table below names the larger ones:
 
 | Suite | Tests | Covers |
@@ -1242,7 +1247,7 @@ the two XCTest classes. The table below names the larger ones:
 | External change watching | 18 | Reporting another app's writes without ever reporting our own, including atomic replacement |
 | External document change | 13 | The decision itself: adopt, hold, or stay quiet, and what autosave may do while a notice is up |
 | Editor image geometry | 19 | Where a picture is, where its handles are, which corner a point belongs to, and the aspect-ratio vote; finger-sized targets on iOS, and a small picture keeping both a middle and reachable corners |
-| Editor pane geometry | 41 | Pane widths, centring, and the minimums each layout has to respect; the page column and a picture's bleed; the document and its comments centred together; zooming and opening the comments asking for a wider window; the size a new window opens at, capped to the screen without going under its minimum; which double-clicks in the title bar fill the screen |
+| Editor pane geometry | 48 | Pane widths, centring, and the minimums each layout has to respect; the page column and a picture's bleed; the document and its comments centred together; zooming and opening the comments asking for a wider window; the size a new window opens at, capped to the screen without going under its minimum; widening a window too narrow for the rail it is showing — never narrower, never past the screen, moved only as far as it must be, and left alone when it already fits; which double-clicks in the title bar fill the screen |
 | Double-clicking the title bar | 8 | Fill, go back and fill again; AppKit's rounding; a window resized by hand; an already-full window with nowhere to go back to; a way back that no longer fits the screen |
 | Image handle source guards | 3 | That the pointer, the click, and the drag all still go through one rect function, and that a pushed cursor is popped |
 | Recent documents catalog | 10 | Merge order, de-duplication, Markdown filtering, caps, promotion, removal, pruning of missing files, home-relative paths |
@@ -1627,12 +1632,48 @@ and a deadlock presents as a hung network call — the stack shows a live
 `NSURLConnectionLoader` thread and nothing about keychains. The probe uses an
 async `@main` instead.
 
+### 16.9 Checking the window holds its rail
+
+The arithmetic is unit tested and needs no screen: `EditorPaneGeometry` answers
+how wide a window has to be and how narrow it may be dragged. What those tests
+cannot see is the wiring — whether the window uses the answer — and the
+clipped-rail bug lived entirely in that gap. Every number was already right;
+nothing asked the window for them.
+
+`make check-window` closes it. It builds the real `MarkdownEditorView`, puts it
+in a real `NSWindow` the size a fresh document window is born, and reads the
+frame back. The window is fully transparent and ordered behind everything, so
+it can run on a machine somebody is using — and, unlike a screen capture, it
+works behind a lock screen, which is where `screencapture -l` fails (see the
+note in [16.4](#164-scroll-checks) and I-180 for the other two ways a
+screen-reading check has been fooled here).
+
+It cannot be placed off-screen instead. A window that intersects no display has
+no `screen`, and the screen is half of what is being tested.
+
+The second moment — the rail opening on a window already on screen — is
+checked through the real `WindowChromeDelegate` on a plain window, because the
+rail opens from the toolbar, ⌃⌘C or a critique starting, and none of those can
+be pressed from a check without spending a critique. That window is first seen
+**with the rail open** and room for it, as a real one is. Seen with the rail
+shut, its one first look would still be owed when the rail opened and would
+widen it by itself: the section passed with the rail-opening path deleted,
+which is how this was found.
+
+For eyes rather than assertions, `MDE_WINDOW_PNG=/tmp/window.png make
+check-window` writes out what it drew, and `make run` opens the real app: open a
+document, make sure the critique panel is showing, and confirm the whole rail is
+inside the window — its header, the body text under it, and the **Run
+critique** button at its foot. A screenshot with any of that cut off at the
+trailing edge is the bug I-269 describes, not a finished job.
+
 ---
 
 ## 17. Release history
 
 | Change | Summary |
 | --- | --- |
+| A window that makes room for its comments | A window that finds itself too narrow for the writing *and* the critique rail now widens to hold them: once when it is first seen, which matters for a window restored at a narrower width, and again whenever the rail opens on a window already on screen — say one narrowed while the comments were shut. It grows at the trailing edge, where the rail is, never past the screen and never smaller than it was, and closing the rail leaves the width alone. New windows already opened at the right size, and the rail was already kept whole at any width by the column giving way; this gives the column back its room. `make check-window` opens a real document window and measures all of it. See [I-269 to I-272](#10a-ai-assisted-critique) and [§16.9](#169-checking-the-window-holds-its-rail). |
 | The kirupa mark | The application icon is the kirupa logo on white, in the Dock, in Finder, on the landing screen and on the iOS build — drawn from `Packaging/Logo.svg` and placed by its round body, as though the leaves were not there, so the orange sits dead centre and the leaves hang off one corner. See [P-7 to P-13](#3-platform-and-technical-requirements). |
 | Just KONVO | The landing screen shows the app's own logo and its name, and nothing else — the generic document symbol and the version line under it are gone. See [W-29 and W-30](#4-welcome-window). |
 | A window that fits the desk it opens on | A new document window still opens at 1056 × 820 — the 700pt column plus the 356pt rail — but that size is now **capped to the screen it lands on**: the main screen's visible frame, less the 52pt of title bar and toolbar. On a display too small for it the cap stops at the narrowest the window may be with the rail open, so the window overflows rather than being asked for less than its own minimum. It is still only a default: a restored window, or one sized by hand, keeps what it had. See [I-267 and I-268](#10a-ai-assisted-critique). |
