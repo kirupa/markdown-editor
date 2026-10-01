@@ -45,6 +45,10 @@ final class RecordingSurface: NSObject, MarkdownEditingSurface {
     let name: String
     var sourceText: String
     var selectedSourceRange = NSRange(location: 0, length: 0)
+    /// Read from this pane's own text, as the real panes read theirs.
+    var codeContext: MarkdownCodeContext {
+        .containing(selectedSourceRange, in: sourceText)
+    }
     var hostingWindow: NSWindow? { nil }
     var hasFocus = false
     var normalizedScrollPosition: CGFloat?

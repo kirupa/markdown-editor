@@ -13,6 +13,7 @@ import {
   encodeDestination,
 } from './image-tag.js';
 import { renderMarkdown } from './render-model.js';
+import { CodeContextKind, codeContextIn } from './code-context.js';
 
 // ── Exported constants ───────────────────────────────────────────────────────
 
@@ -33,14 +34,64 @@ export const ListStyle = Object.freeze({
 // ── Public API ───────────────────────────────────────────────────────────────
 
 /**
+ * Whether `style` can do anything in `context`, and so whether the control
+ * that runs it should be offered at all.
+ *
+ * Inside code the answer is no, because Markdown is inert there: the command
+ * could only write literal punctuation into the writer's code. The one
+ * exception is inline code itself while the selection is inside a code span —
+ * that is how a span is taken off again.
+ *
+ * @param {string} style - One of the InlineStyle constants.
+ * @param {{ kind: string }} context - From `codeContextIn`.
+ */
+export function isInlineStyleAvailable(style, context) {
+  switch (context.kind) {
+    case CodeContextKind.codeBlock:
+      return false;
+    case CodeContextKind.inlineCodeSpan:
+      return style === InlineStyle.inlineCode;
+    default:
+      return true;
+  }
+}
+
+/**
+ * Whether a link can be written in `context`. `[text](url)` inside code is six
+ * characters of punctuation and no link.
+ */
+export function isLinkAvailable(context) {
+  return context.kind === CodeContextKind.prose;
+}
+
+/**
  * Toggle an inline style around the selection.
  * @param {string} style - One of the InlineStyle constants.
  * @param {string} text
  * @param {{ location: number, length: number }} selection
+ * @param {import('./render-model.js').MarkdownRenderModel|null} [model] - The
+ *   live model, if the caller has one, so the code check parses nothing.
  * @returns {{ text: string, selection: { location: number, length: number } }}
  */
-export function toggleInline(style, text, selection) {
+export function toggleInline(style, text, selection, model = null) {
   const sel = clampRange(selection, text.length);
+  const context = codeContextIn(sel, text, model);
+
+  if (!isInlineStyleAvailable(style, context)) {
+    return { text, selection: sel };
+  }
+
+  // Inline code is the one command still answering inside a code span, and
+  // what it means there is "take this off". The paths below already do that
+  // for a selection that names the span's contents; this covers the two they
+  // cannot see — a bare caret between the backticks, and a selection that
+  // crosses one of the backtick runs — which would otherwise wrap a second
+  // span around part of the first.
+  if (context.kind === CodeContextKind.inlineCodeSpan) {
+    const removal = removingCodeSpan(context.sourceRange, text, sel);
+    if (removal !== null) return removal;
+  }
+
   const selectedContent = substringWithRange(text, sel);
   const markers = markersForStyle(style, selectedContent);
   const openingLength = markers.opening.length;
@@ -304,17 +355,18 @@ export function wrapCodeBlock(text, selection) {
  * cursor is at the end of a non-empty continuation line.  An empty list item
  * (marker with no content) removes the marker instead of adding another item.
  */
-export function insertNewline(text, selection) {
+export function insertNewline(text, selection, model = null) {
   const requested = clampRange(selection, text.length);
   // Emphasis is matched within a line, so a break in the middle of a bold word
   // leaves `**` unpaired on both sides of it and the reader is shown the
   // asterisks instead of bold text. The markers are closed before the break and
   // opened again after it — see `inlineMending`.
+  const spans = mendableSpans(text, requested.location, model);
   const sel =
     requested.length === 0
-      ? absorbingSpace(breakLocation(text, requested.location), text)
+      ? absorbingSpace(breakLocation(text, requested.location, spans), text, spans)
       : requested;
-  const mend = inlineMending(text, sel);
+  const mend = inlineMending(text, sel, spans);
 
   if (sel.length !== 0) {
     const rep = mend.closing + '\n' + mend.opening;
@@ -361,6 +413,19 @@ const MENDABLE = Object.freeze({
 });
 
 /**
+ * The spans that could need mending around `offset`.
+ *
+ * Every mendable style is an inline one, and inline emphasis is matched within
+ * a line — so this was always a question about one line, asked by reading the
+ * whole document. `model`, when the caller has one already on this text,
+ * answers it without parsing anything.
+ */
+function mendableSpans(text, offset, model) {
+  const rendered = model !== null && model.source === text ? model : renderMarkdown(text);
+  return rendered.spansForSourceLine(offset);
+}
+
+/**
  * The markers a span was actually written with.
  *
  * Not the ones the toolbar would write. `_italic_` and `*italic*` are the same
@@ -405,8 +470,7 @@ function mendableContent(span, text) {
  * Applied repeatedly because emphasis nests, and stepping out of one run can
  * land on the edge of another.
  */
-function breakLocation(text, location) {
-  const spans = renderMarkdown(text).spans;
+function breakLocation(text, location, spans) {
   let at = location;
   for (let pass = 0; pass < 4; pass += 1) {
     let moved = false;
@@ -440,9 +504,9 @@ function breakLocation(text, location) {
  * two would be a hard break — and outside emphasis the space is kept, because
  * there the break is harmless and the text is not ours to tidy.
  */
-function absorbingSpace(location, text) {
+function absorbingSpace(location, text, spans) {
   let range = makeRange(location, 0);
-  if (!isInsideMendableRun(range, text)) return range;
+  if (!isInsideMendableRun(range, text, spans)) return range;
   const isSpace = (offset) =>
     offset >= 0 && offset < text.length && (text[offset] === ' ' || text[offset] === '\t');
   while (range.location > 0 && isSpace(range.location - 1)) {
@@ -454,8 +518,8 @@ function absorbingSpace(location, text) {
   return range;
 }
 
-function isInsideMendableRun(range, text) {
-  return renderMarkdown(text).spans.some((span) => {
+function isInsideMendableRun(range, text, spans) {
+  return spans.some((span) => {
     const content = mendableContent(span, text);
     if (content === null) return false;
     return range.location > content.start && maxRange(range) < content.end;
@@ -479,9 +543,9 @@ function isInsideMendableRun(range, text) {
  * Nesting is closed innermost-first and reopened outermost-first, so the pairs
  * come back nested rather than crossed.
  */
-function inlineMending(text, range) {
+function inlineMending(text, range, spans) {
   if (!isFlanked(range, text)) return { closing: '', opening: '' };
-  const straddling = renderMarkdown(text).spans.filter((span) => {
+  const straddling = spans.filter((span) => {
     const content = mendableContent(span, text);
     if (content === null) return false;
     return range.location > content.start && maxRange(range) < content.end;
@@ -519,9 +583,14 @@ function isFlanked(range, text) {
  * @param {string} destination - The raw URL (not yet percent-encoded).
  * @param {string} text
  * @param {{ location: number, length: number }} selection
+ * @param {import('./render-model.js').MarkdownRenderModel|null} [model] - As
+ *   for `toggleInline`.
  */
-export function insertLink(destination, text, selection) {
+export function insertLink(destination, text, selection, model = null) {
   const sel = clampRange(selection, text.length);
+  if (!isLinkAvailable(codeContextIn(sel, text, model))) {
+    return { text, selection: sel };
+  }
   const label = sel.length > 0 ? substringWithRange(text, sel) : 'link text';
   const escapedLabel = escapeLabel(label);
   const encodedDestination = encodeDestination(destination);
@@ -937,6 +1006,54 @@ function longestBacktickRun(text) {
     }
   }
   return longest;
+}
+
+/**
+ * Takes the backticks off the code span at `span`, for a selection the
+ * ordinary unwrapping paths cannot recognise as naming it.
+ *
+ * Returns null — leaving those paths to run — when the selection does name the
+ * span's contents, so every selection that already toggled a span off keeps
+ * doing it, and keeps landing where it used to.
+ */
+function removingCodeSpan(span, text, selection) {
+  let fenceLength = 0;
+  while (
+    span.location + fenceLength < maxRange(span) &&
+    text.charCodeAt(span.location + fenceLength) === 0x60
+  ) {
+    fenceLength += 1;
+  }
+  if (fenceLength === 0) return null;
+
+  const contents = makeRange(
+    span.location + fenceLength,
+    Math.max(0, span.length - fenceLength * 2),
+  );
+  const namesContents =
+    selection.length > 0 &&
+    selection.location >= contents.location &&
+    maxRange(selection) <= maxRange(contents);
+  if (namesContents) return null;
+
+  const unwrapped = unwrappedCodeSpan(substringWithRange(text, span));
+  if (unwrapped === null) return null;
+
+  // How much came off the front: the backticks, and the padding space
+  // `unwrappedCodeSpan` strips when there is one on both sides.
+  const removedBefore = fenceLength + (unwrapped.length === contents.length - 2 ? 1 : 0);
+  const contentStart = span.location;
+  const contentEnd = contentStart + unwrapped.length;
+  const location = Math.min(
+    Math.max(contentStart, selection.location - removedBefore),
+    contentEnd,
+  );
+  return replacing(
+    text,
+    span,
+    unwrapped,
+    makeRange(location, Math.min(selection.length, contentEnd - location)),
+  );
 }
 
 /**

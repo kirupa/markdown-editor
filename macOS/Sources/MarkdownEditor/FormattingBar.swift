@@ -23,10 +23,24 @@ struct FormattingBar: View {
             headingMenu
             separator
             group {
-                button("Bold", "bold") { session.toggleInline(.bold) }
-                button("Italic", "italic") { session.toggleInline(.italic) }
-                button("Underline", "underline") { session.toggleInline(.underline) }
-                button("Strikethrough", "strikethrough") {
+                button("Bold", "bold", isEnabled: session.isAvailable(.bold)) {
+                    session.toggleInline(.bold)
+                }
+                button("Italic", "italic", isEnabled: session.isAvailable(.italic)) {
+                    session.toggleInline(.italic)
+                }
+                button(
+                    "Underline",
+                    "underline",
+                    isEnabled: session.isAvailable(.underline)
+                ) {
+                    session.toggleInline(.underline)
+                }
+                button(
+                    "Strikethrough",
+                    "strikethrough",
+                    isEnabled: session.isAvailable(.strikethrough)
+                ) {
                     session.toggleInline(.strikethrough)
                 }
             }
@@ -41,7 +55,9 @@ struct FormattingBar: View {
             }
             separator
             group {
-                button("Link", "link") { session.chooseLink() }
+                button("Link", "link", isEnabled: session.isLinkAvailable) {
+                    session.chooseLink()
+                }
                 button("Horizontal Rule", "minus") { session.insertHorizontalRule() }
                 button("Add Image", "photo.badge.plus") {
                     session.chooseAndInsertImage()
@@ -78,12 +94,14 @@ struct FormattingBar: View {
     private func button(
         _ title: String,
         _ symbol: String,
+        isEnabled: Bool = true,
         action: @escaping () -> Void
     ) -> some View {
         PixelBarButton(
             title: title,
             symbol: symbol,
             colorTheme: colorTheme,
+            isEnabled: isEnabled,
             action: action
         )
     }
@@ -115,6 +133,7 @@ struct FormattingBar: View {
             } label: {
                 Label("Inline Code (Single Line)", systemImage: "curlybraces")
             }
+            .disabled(!session.isAvailable(.inlineCode))
             Button {
                 session.insertFencedCodeBlock()
             } label: {
@@ -158,6 +177,12 @@ private struct PixelBarButton: View {
     let title: String
     let symbol: String
     let colorTheme: EditorColorTheme
+    /// Off where the command could not do anything — inside a fenced block or
+    /// a code span, where Markdown is inert and the only thing bold could
+    /// write is two asterisks into somebody's code. Greyed rather than hidden:
+    /// a control that vanishes teaches nothing, and a bar that changes shape
+    /// as the caret moves is its own problem.
+    var isEnabled: Bool = true
     let action: () -> Void
 
     @State private var isHovered = false
@@ -167,18 +192,28 @@ private struct PixelBarButton: View {
             Image(systemName: symbol)
                 .font(Self.glyph)
                 .frame(width: Self.side, height: Self.side)
-                .foregroundStyle(PixelStyle.ink(colorTheme))
+                .foregroundStyle(
+                    PixelStyle.ink(colorTheme).opacity(isEnabled ? 1 : 0.3)
+                )
                 .background(
-                    PixelStyle.ink(colorTheme).opacity(isHovered ? 0.10 : 0)
+                    PixelStyle.ink(colorTheme)
+                        .opacity(isHovered && isEnabled ? 0.10 : 0)
                 )
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .overlay(PointerShapeArea(cursor: .pointingHand))
+        .disabled(!isEnabled)
+        .overlay(
+            PointerShapeArea(cursor: isEnabled ? .pointingHand : .arrow)
+        )
         .onHover { inside in
             isHovered = inside
         }
-        .help(title)
+        .help(
+            isEnabled
+                ? title
+                : "\(title) — not available inside code, where Markdown is literal"
+        )
     }
 }
 

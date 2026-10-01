@@ -36,6 +36,37 @@ function blockText(block) {
   return text;
 }
 
+export { blockText as textOfBlock };
+
+/** The block `node` sits in, or null when it is not inside one. */
+export function blockContaining(root, node) {
+  let current = node;
+  while (current !== null && current.parentNode !== root) current = current.parentNode;
+  return current instanceof Element ? current : null;
+}
+
+/**
+ * Which block this is, without counting from the beginning.
+ *
+ * The children are in document order, so the DOM can answer "before or after"
+ * and the search halves each time. Counting instead would make every caret
+ * move cost a walk of the document.
+ */
+export function blockIndexOf(root, block) {
+  const children = root.childNodes;
+  let low = 0;
+  let high = children.length - 1;
+  while (low <= high) {
+    const middle = (low + high) >> 1;
+    const other = children[middle];
+    if (other === block) return middle;
+    const where = other.compareDocumentPosition(block);
+    if (where & Node.DOCUMENT_POSITION_FOLLOWING) low = middle + 1;
+    else high = middle - 1;
+  }
+  return -1;
+}
+
 /** The plain text the DOM represents. */
 export function readPlainText(root) {
   return blocksOf(root).map(blockText).join('\n');
@@ -46,9 +77,27 @@ export function readPlainText(root) {
  *
  * `node` may be a text node or an element; for an element, `offset` counts
  * child nodes, which is what the Selection API reports at block boundaries.
+ *
+ * `layout` is the render model when the DOM is known to agree with it, which
+ * turns finding the block's own offset into a lookup instead of a walk. It is
+ * only ever an accelerator: without it the answer is measured.
  */
-export function offsetForPosition(root, node, offset) {
+export function offsetForPosition(root, node, offset, layout = null) {
   if (!root.contains(node) && node !== root) return 0;
+
+  if (layout !== null && node !== root && layout.blockCount === root.childNodes.length) {
+    const block = blockContaining(root, node);
+    if (block !== null) {
+      const index = blockIndexOf(root, block);
+      if (index !== -1 && index < layout.blockCount) {
+        const within =
+          block === node
+            ? textLengthOfChildrenBefore(block, offset)
+            : offsetWithinBlock(block, node, offset);
+        return layout.blockRenderedStart(index) + within;
+      }
+    }
+  }
 
   const blocks = blocksOf(root);
   let total = 0;
@@ -127,7 +176,15 @@ function textLengthOfPrecedingSiblings(node) {
  *
  * @returns {{ node: Node, offset: number } | null}
  */
-export function positionForOffset(root, target) {
+export function positionForOffset(root, target, layout = null) {
+  if (layout !== null && layout.blockCount > 0 && layout.blockCount === root.childNodes.length) {
+    const index = blockCovering(layout, Math.max(0, target));
+    const block = root.childNodes[index];
+    if (block instanceof Element) {
+      return positionWithinBlock(block, Math.max(0, target) - layout.blockRenderedStart(index));
+    }
+  }
+
   const blocks = blocksOf(root);
   if (blocks.length === 0) return { node: root, offset: 0 };
 
@@ -152,6 +209,24 @@ export function positionForOffset(root, target) {
   }
 
   return endPositionOf(blocks[blocks.length - 1]);
+}
+
+/**
+ * First block whose text reaches `target`.
+ *
+ * The end of one block and the start of the next are the same offset, and the
+ * earlier block wins — a caret on a line break belongs to the line it ends,
+ * not the one it begins.
+ */
+function blockCovering(layout, target) {
+  let low = 0;
+  let high = layout.blockCount - 1;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (layout.blockRenderedEnd(middle) >= target) high = middle;
+    else low = middle + 1;
+  }
+  return low;
 }
 
 function positionWithinBlock(block, target) {
@@ -185,7 +260,7 @@ function endPositionOf(block) {
 }
 
 /** Current selection as an offset range, or null when it is elsewhere. */
-export function selectionRange(root) {
+export function selectionRange(root, layout = null) {
   const selection = window.getSelection();
   if (!selection || selection.rangeCount === 0) return null;
 
@@ -194,15 +269,15 @@ export function selectionRange(root) {
     return null;
   }
 
-  const start = offsetForPosition(root, range.startContainer, range.startOffset);
-  const end = offsetForPosition(root, range.endContainer, range.endOffset);
+  const start = offsetForPosition(root, range.startContainer, range.startOffset, layout);
+  const end = offsetForPosition(root, range.endContainer, range.endOffset, layout);
   return makeRange(Math.min(start, end), Math.abs(end - start));
 }
 
 /** Places the selection at an offset range. */
-export function setSelectionRange(root, range) {
-  const start = positionForOffset(root, range.location);
-  const end = positionForOffset(root, range.location + range.length);
+export function setSelectionRange(root, range, layout = null) {
+  const start = positionForOffset(root, range.location, layout);
+  const end = positionForOffset(root, range.location + range.length, layout);
   if (!start || !end) return;
 
   const domRange = document.createRange();

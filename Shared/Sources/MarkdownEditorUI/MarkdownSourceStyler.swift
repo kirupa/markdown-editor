@@ -91,6 +91,76 @@ public enum MarkdownSourceStyler {
             string: markdown,
             attributes: baseAttributes(colorTheme: colorTheme)
         )
+        applySpans(to: text, of: markdown, at: 0)
+        return text
+    }
+
+    /// Re-applies the styling over the one block an edit landed in.
+    ///
+    /// The source pane used to build an attributed string for the whole
+    /// document and hand it to the text storage on every keystroke, which
+    /// threw away the layout of every line in the file to restyle one of them.
+    /// Here the characters are not touched at all — only the attributes over
+    /// the affected block — so nothing outside it is disturbed and the caret
+    /// and undo stack are left alone.
+    ///
+    /// Sound for the same reason the rendered pane's version is: both rules
+    /// this styler has reach no further than the span they came from, and a
+    /// block never shares a line with another. `MarkdownSourceStylerTests`
+    /// checks it against a full restyle.
+    public static func restyle(
+        blockContaining changedRange: NSRange,
+        in textView: some MarkdownSourceTextView,
+        colorTheme: EditorColorTheme
+    ) {
+        guard let textStorage = textView.sourceTextStorage,
+            textStorage.length > 0
+        else {
+            updateTypingAttributes(in: textView, colorTheme: colorTheme)
+            return
+        }
+        let source = textStorage.string as NSString
+        let start = min(max(0, changedRange.location), source.length)
+        let end = min(max(start, NSMaxRange(changedRange)), source.length)
+        let first = MarkdownBlockScanner.blockRange(
+            containing: start,
+            in: source
+        )
+        let last = end > start
+            ? MarkdownBlockScanner.blockRange(
+                containing: max(start, end - 1),
+                in: source
+            )
+            : first
+        let block = NSIntersectionRange(
+            NSUnionRange(first, last),
+            NSRange(location: 0, length: source.length)
+        )
+        guard block.length > 0 else {
+            updateTypingAttributes(in: textView, colorTheme: colorTheme)
+            return
+        }
+
+        textStorage.beginEditing()
+        textStorage.setAttributes(
+            baseAttributes(colorTheme: colorTheme),
+            range: block
+        )
+        applySpans(
+            to: textStorage,
+            of: source.substring(with: block),
+            at: block.location
+        )
+        textStorage.endEditing()
+        updateTypingAttributes(in: textView, colorTheme: colorTheme)
+    }
+
+    /// The two rules this styler has, applied over `text` starting at `offset`.
+    private static func applySpans(
+        to text: NSMutableAttributedString,
+        of markdown: String,
+        at offset: Int
+    ) {
         let source = markdown as NSString
         let fullRange = NSRange(location: 0, length: source.length)
 
@@ -117,7 +187,10 @@ public enum MarkdownSourceStyler {
                         ),
                         .paragraphStyle: paragraphStyle
                     ],
-                    range: paragraphRange
+                    range: NSRange(
+                        location: paragraphRange.location + offset,
+                        length: paragraphRange.length
+                    )
                 )
             case .codeBlock where span.includesMarkup:
                 let codeRange = NSIntersectionRange(
@@ -133,14 +206,15 @@ public enum MarkdownSourceStyler {
                         ofSize: MarkdownTypography.codeFontSize,
                         weight: .regular
                     ),
-                    range: codeRange
+                    range: NSRange(
+                        location: codeRange.location + offset,
+                        length: codeRange.length
+                    )
                 )
             default:
                 continue
             }
         }
-
-        return text
     }
 
     public static func baseAttributes(

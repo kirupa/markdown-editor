@@ -44,40 +44,27 @@ import {
 } from '../core/critique-credentials.js';
 import { dialogParts, presentDialog } from './dialogs.js';
 import { keepFocus } from './keep-focus.js';
+import {
+  INITIAL_TYPEFACE,
+  TYPEFACES,
+  availableTypefaces,
+  typefaceByID,
+  typefaceFamily,
+  typefaceSelect,
+} from './typefaces.js';
 
 const HAND_KEY = 'markdown-editor.critiqueHand';
 const VISIBLE_KEY = 'markdown-editor.critiqueVisible';
 const RESOLUTIONS_KEY = 'markdown-editor.critiqueResolutions';
 
 /**
- * The hands the critique can be written in.
- *
- * A choice rather than a decision, because this one is taste: a marker, a
- * drafting hand and a pen are three different tones of voice for the same
- * comment, and which one reads as "somebody wrote on my draft" rather than "a
- * machine generated this" is not something to settle on somebody's behalf.
- *
- * `scale` is what to multiply a requested size by so every face lands at the
- * same *read* size, measured from x-height rather than cap height -- these
- * faces disagree about capitals far more than about lowercase, and almost
- * every word here is lowercase. The numbers are the macOS build's, measured
- * from the same font files.
+ * The hands the critique can be written in: the same faces the document can
+ * be set in, from the one catalog in typefaces.js, so the two menus never
+ * offer different lists.
  */
-export const HANDS = [
-  { id: 'sans', title: 'System Sans', family: '', scale: 1.0, bundled: false },
-  { id: 'architectsDaughter', title: 'Architects Daughter', family: 'Architects Daughter', scale: 1.19, bundled: true },
-  { id: 'caveat', title: 'Caveat', family: 'Caveat', scale: 1.28, bundled: true },
-  { id: 'indieFlower', title: 'Indie Flower', family: 'Indie Flower', scale: 1.12, bundled: true },
-  { id: 'patrickHand', title: 'Patrick Hand', family: 'Patrick Hand', scale: 1.09, bundled: true },
-  { id: 'shadowsIntoLight', title: 'Shadows Into Light', family: 'Shadows Into Light', scale: 0.84, bundled: true },
-  { id: 'gloriaHallelujah', title: 'Gloria Hallelujah', family: 'Gloria Hallelujah', scale: 0.90, bundled: true },
-  { id: 'kalam', title: 'Kalam', family: 'Kalam', scale: 0.97, bundled: true },
-  { id: 'permanentMarker', title: 'Permanent Marker', family: 'Permanent Marker', scale: 0.84, bundled: true },
-  { id: 'bradleyHand', title: 'Bradley Hand', family: 'Bradley Hand', scale: 1.03, bundled: false },
-  { id: 'markerFelt', title: 'Marker Felt', family: 'Marker Felt', scale: 0.88, bundled: false },
-  { id: 'noteworthy', title: 'Noteworthy', family: 'Noteworthy', scale: 0.94, bundled: false },
-  { id: 'chalkboard', title: 'Chalkboard', family: 'Chalkboard SE', scale: 1.01, bundled: false },
-];
+export const HANDS = TYPEFACES;
+export const availableHands = availableTypefaces;
+export const handByID = typefaceByID;
 
 /**
  * The face to use before anybody has chosen one.
@@ -87,32 +74,7 @@ export const HANDS = [
  * writing in -- a control lying about its own state, which is the worst kind
  * of wrong a picker can be.
  */
-export const INITIAL_HAND = 'sans';
-
-/**
- * Which faces to offer.
- *
- * The bundled ones always; the system ones only where they resolve. This is
- * the web's version of the Mac's `NSFont(name:) != nil` check, and it exists
- * for the same reason: a picker offering a face that is not there means
- * choosing it silently draws something else, which looks like the app
- * ignoring you.
- */
-export function availableHands() {
-  return HANDS.filter((hand) => {
-    if (hand.id === 'sans' || hand.bundled) return true;
-    if (typeof document === 'undefined' || !document.fonts?.check) return false;
-    try {
-      return document.fonts.check(`16px "${hand.family}"`);
-    } catch {
-      return false;
-    }
-  });
-}
-
-export function handByID(id) {
-  return HANDS.find((hand) => hand.id === id) ?? HANDS[0];
-}
+export const INITIAL_HAND = INITIAL_TYPEFACE;
 
 const SEVERITY_LABELS = { high: 'High', medium: 'Medium', low: 'Low' };
 
@@ -246,10 +208,7 @@ export class CritiqueRail {
   applyHand() {
     const hand = handByID(this.hand);
     const root = document.documentElement;
-    root.style.setProperty(
-      '--me-critique-hand',
-      hand.family === '' ? 'var(--me-ui-font)' : `"${hand.family}", var(--me-ui-font)`
-    );
+    root.style.setProperty('--me-critique-hand', typefaceFamily(hand, 'var(--me-ui-font)'));
     // Type is specified in points but read at whatever size it happens to
     // draw, and these faces are not the same size at the same number. The rail
     // asks for an *optical* size and this is what turns that into one each
@@ -277,6 +236,9 @@ export class CritiqueRail {
     const previous = this.currentText;
     this.currentText = text;
     if (previous === '' || previous === text) return;
+    // Nothing anchored, nothing to move — and working out what changed means
+    // comparing the whole draft against the whole draft.
+    if (this.items.length === 0) return;
     const before = this.items;
     this.items = trackItems(this.items, previous, text);
     if (before.some((item, index) => item.range !== this.items[index].range)) {
@@ -538,40 +500,20 @@ export class CritiqueRail {
    * Pick the hand the comments are written in.
    *
    * Each name is set in its own face, because the names mean nothing -- nobody
-   * knows what "Caveat" looks like, and a list of thirteen words in the same
+   * knows what "Caveat" looks like, and a list of fifteen words in the same
    * font asks you to guess and then look. Showing them is the whole answer to
    * the question the menu is asking.
    */
   #handMenu() {
     const wrapper = build('span', 'me-critique__hand-menu');
-    const select = build('select', 'me-critique__hand-select');
+    const select = typefaceSelect({
+      selected: this.hand,
+      className: 'me-critique__hand-select',
+      onChange: (id) => this.setHand(id),
+    });
     select.title = 'The hand the comments are written in';
     select.setAttribute('aria-label', 'Comments are written in');
 
-    const hands = availableHands();
-    const system = hands.filter((hand) => !hand.bundled && hand.id !== 'sans');
-
-    const add = (parent, hand) => {
-      const option = build('option', '', hand.title);
-      option.value = hand.id;
-      if (hand.family !== '') option.style.fontFamily = `"${hand.family}"`;
-      if (hand.id === this.hand) option.selected = true;
-      parent.append(option);
-    };
-
-    add(select, hands[0]);
-    const bundled = build('optgroup');
-    bundled.label = 'Bundled';
-    for (const hand of hands.filter((entry) => entry.bundled)) add(bundled, hand);
-    select.append(bundled);
-    if (system.length > 0) {
-      const group = build('optgroup');
-      group.label = 'From your computer';
-      for (const hand of system) add(group, hand);
-      select.append(group);
-    }
-
-    select.addEventListener('change', () => this.setHand(select.value));
     const glyph = build('span', 'me-critique__hand-glyph');
     glyph.innerHTML = icon('pen');
     wrapper.append(glyph, select);

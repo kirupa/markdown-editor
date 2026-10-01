@@ -1868,11 +1868,11 @@
 {"argument":"https://example.com","command":"insertLink","document":"code","replace":[0,0],"selection":[0,0],"selectionAfter":[1,9],"with":"[link text](https://example.com)"}
 {"command":"insertHorizontalRule","document":"code","replace":[0,0],"selection":[0,0],"selectionAfter":[5,0],"with":"***\n\n"}
 {"command":"moveImage","document":"code","replace":[93,0],"selection":[0,0],"selectionAfter":[0,0],"with":""}
-{"argument":"bold","command":"toggleInline","document":"code","replace":[31,0],"selection":[31,0],"selectionAfter":[33,9],"with":"**bold text**"}
-{"argument":"italic","command":"toggleInline","document":"code","replace":[31,0],"selection":[31,0],"selectionAfter":[32,11],"with":"*italic text*"}
-{"argument":"underline","command":"toggleInline","document":"code","replace":[31,0],"selection":[31,0],"selectionAfter":[34,15],"with":"<u>underlined text</u>"}
-{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[31,0],"selection":[31,0],"selectionAfter":[33,11],"with":"~~struck text~~"}
-{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[31,0],"selection":[31,0],"selectionAfter":[32,4],"with":"`code`"}
+{"argument":"bold","command":"toggleInline","document":"code","replace":[93,0],"selection":[31,0],"selectionAfter":[31,0],"with":""}
+{"argument":"italic","command":"toggleInline","document":"code","replace":[93,0],"selection":[31,0],"selectionAfter":[31,0],"with":""}
+{"argument":"underline","command":"toggleInline","document":"code","replace":[93,0],"selection":[31,0],"selectionAfter":[31,0],"with":""}
+{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[93,0],"selection":[31,0],"selectionAfter":[31,0],"with":""}
+{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[18,19],"selection":[31,0],"selectionAfter":[29,0],"with":"a `tick` inside"}
 {"argument":"0","command":"applyHeading","document":"code","replace":[93,0],"selection":[31,0],"selectionAfter":[31,0],"with":""}
 {"argument":"1","command":"applyHeading","document":"code","replace":[0,0],"selection":[31,0],"selectionAfter":[33,0],"with":"# "}
 {"argument":"2","command":"applyHeading","document":"code","replace":[0,0],"selection":[31,0],"selectionAfter":[34,0],"with":"## "}
@@ -1886,14 +1886,14 @@
 {"command":"toggleQuote","document":"code","replace":[0,0],"selection":[31,0],"selectionAfter":[33,0],"with":"> "}
 {"command":"wrapCodeBlock","document":"code","replace":[31,0],"selection":[31,0],"selectionAfter":[36,0],"with":"\n```\n\n```\n"}
 {"command":"insertNewline","document":"code","replace":[31,0],"selection":[31,0],"selectionAfter":[34,0],"with":"`\n`"}
-{"argument":"https://example.com","command":"insertLink","document":"code","replace":[31,0],"selection":[31,0],"selectionAfter":[32,9],"with":"[link text](https://example.com)"}
+{"argument":"https://example.com","command":"insertLink","document":"code","replace":[93,0],"selection":[31,0],"selectionAfter":[31,0],"with":""}
 {"command":"insertHorizontalRule","document":"code","replace":[31,0],"selection":[31,0],"selectionAfter":[37,0],"with":"\n***\n\n"}
 {"command":"moveImage","document":"code","replace":[93,0],"selection":[31,0],"selectionAfter":[0,0],"with":""}
-{"argument":"bold","command":"toggleInline","document":"code","replace":[46,0],"selection":[46,0],"selectionAfter":[48,9],"with":"**bold text**"}
-{"argument":"italic","command":"toggleInline","document":"code","replace":[46,0],"selection":[46,0],"selectionAfter":[47,11],"with":"*italic text*"}
-{"argument":"underline","command":"toggleInline","document":"code","replace":[46,0],"selection":[46,0],"selectionAfter":[49,15],"with":"<u>underlined text</u>"}
-{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[46,0],"selection":[46,0],"selectionAfter":[48,11],"with":"~~struck text~~"}
-{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[46,0],"selection":[46,0],"selectionAfter":[47,4],"with":"`code`"}
+{"argument":"bold","command":"toggleInline","document":"code","replace":[93,0],"selection":[46,0],"selectionAfter":[46,0],"with":""}
+{"argument":"italic","command":"toggleInline","document":"code","replace":[93,0],"selection":[46,0],"selectionAfter":[46,0],"with":""}
+{"argument":"underline","command":"toggleInline","document":"code","replace":[93,0],"selection":[46,0],"selectionAfter":[46,0],"with":""}
+{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[93,0],"selection":[46,0],"selectionAfter":[46,0],"with":""}
+{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[42,10],"selection":[46,0],"selectionAfter":[44,0],"with":"padded"}
 {"argument":"0","command":"applyHeading","document":"code","replace":[93,0],"selection":[46,0],"selectionAfter":[46,0],"with":""}
 {"argument":"1","command":"applyHeading","document":"code","replace":[0,0],"selection":[46,0],"selectionAfter":[48,0],"with":"# "}
 {"argument":"2","command":"applyHeading","document":"code","replace":[0,0],"selection":[46,0],"selectionAfter":[49,0],"with":"## "}
@@ -1907,7 +1907,7 @@
 {"command":"toggleQuote","document":"code","replace":[0,0],"selection":[46,0],"selectionAfter":[48,0],"with":"> "}
 {"command":"wrapCodeBlock","document":"code","replace":[46,0],"selection":[46,0],"selectionAfter":[51,0],"with":"\n```\n\n```\n"}
 {"command":"insertNewline","document":"code","replace":[46,0],"selection":[46,0],"selectionAfter":[49,0],"with":"`\n`"}
-{"argument":"https://example.com","command":"insertLink","document":"code","replace":[46,0],"selection":[46,0],"selectionAfter":[47,9],"with":"[link text](https://example.com)"}
+{"argument":"https://example.com","command":"insertLink","document":"code","replace":[93,0],"selection":[46,0],"selectionAfter":[46,0],"with":""}
 {"command":"insertHorizontalRule","document":"code","replace":[46,0],"selection":[46,0],"selectionAfter":[52,0],"with":"\n***\n\n"}
 {"command":"moveImage","document":"code","replace":[93,0],"selection":[46,0],"selectionAfter":[0,0],"with":""}
 {"argument":"bold","command":"toggleInline","document":"code","replace":[53,0],"selection":[53,0],"selectionAfter":[55,9],"with":"**bold text**"}
@@ -1952,11 +1952,11 @@
 {"argument":"https://example.com","command":"insertLink","document":"code","replace":[54,0],"selection":[54,0],"selectionAfter":[55,9],"with":"[link text](https://example.com)"}
 {"command":"insertHorizontalRule","document":"code","replace":[54,0],"selection":[54,0],"selectionAfter":[58,0],"with":"***\n"}
 {"command":"moveImage","document":"code","replace":[93,0],"selection":[54,0],"selectionAfter":[0,0],"with":""}
-{"argument":"bold","command":"toggleInline","document":"code","replace":[55,0],"selection":[55,0],"selectionAfter":[57,9],"with":"**bold text**"}
-{"argument":"italic","command":"toggleInline","document":"code","replace":[55,0],"selection":[55,0],"selectionAfter":[56,11],"with":"*italic text*"}
-{"argument":"underline","command":"toggleInline","document":"code","replace":[55,0],"selection":[55,0],"selectionAfter":[58,15],"with":"<u>underlined text</u>"}
-{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[55,0],"selection":[55,0],"selectionAfter":[57,11],"with":"~~struck text~~"}
-{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[56,0],"selection":[55,0],"selectionAfter":[56,4],"with":"code``"}
+{"argument":"bold","command":"toggleInline","document":"code","replace":[93,0],"selection":[55,0],"selectionAfter":[55,0],"with":""}
+{"argument":"italic","command":"toggleInline","document":"code","replace":[93,0],"selection":[55,0],"selectionAfter":[55,0],"with":""}
+{"argument":"underline","command":"toggleInline","document":"code","replace":[93,0],"selection":[55,0],"selectionAfter":[55,0],"with":""}
+{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[93,0],"selection":[55,0],"selectionAfter":[55,0],"with":""}
+{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[93,0],"selection":[55,0],"selectionAfter":[55,0],"with":""}
 {"argument":"0","command":"applyHeading","document":"code","replace":[93,0],"selection":[55,0],"selectionAfter":[55,0],"with":""}
 {"argument":"1","command":"applyHeading","document":"code","replace":[55,0],"selection":[55,0],"selectionAfter":[57,0],"with":"# "}
 {"argument":"2","command":"applyHeading","document":"code","replace":[55,0],"selection":[55,0],"selectionAfter":[58,0],"with":"## "}
@@ -1970,14 +1970,14 @@
 {"command":"toggleQuote","document":"code","replace":[55,0],"selection":[55,0],"selectionAfter":[57,0],"with":"> "}
 {"command":"wrapCodeBlock","document":"code","replace":[58,0],"selection":[55,0],"selectionAfter":[59,0],"with":"\n\n```\n```"}
 {"command":"insertNewline","document":"code","replace":[55,0],"selection":[55,0],"selectionAfter":[56,0],"with":"\n"}
-{"argument":"https://example.com","command":"insertLink","document":"code","replace":[55,0],"selection":[55,0],"selectionAfter":[56,9],"with":"[link text](https://example.com)"}
+{"argument":"https://example.com","command":"insertLink","document":"code","replace":[93,0],"selection":[55,0],"selectionAfter":[55,0],"with":""}
 {"command":"insertHorizontalRule","document":"code","replace":[55,0],"selection":[55,0],"selectionAfter":[60,0],"with":"***\n\n"}
 {"command":"moveImage","document":"code","replace":[93,0],"selection":[55,0],"selectionAfter":[0,0],"with":""}
-{"argument":"bold","command":"toggleInline","document":"code","replace":[63,0],"selection":[63,0],"selectionAfter":[65,9],"with":"**bold text**"}
-{"argument":"italic","command":"toggleInline","document":"code","replace":[63,0],"selection":[63,0],"selectionAfter":[64,11],"with":"*italic text*"}
-{"argument":"underline","command":"toggleInline","document":"code","replace":[63,0],"selection":[63,0],"selectionAfter":[66,15],"with":"<u>underlined text</u>"}
-{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[63,0],"selection":[63,0],"selectionAfter":[65,11],"with":"~~struck text~~"}
-{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[63,0],"selection":[63,0],"selectionAfter":[64,4],"with":"`code`"}
+{"argument":"bold","command":"toggleInline","document":"code","replace":[93,0],"selection":[63,0],"selectionAfter":[63,0],"with":""}
+{"argument":"italic","command":"toggleInline","document":"code","replace":[93,0],"selection":[63,0],"selectionAfter":[63,0],"with":""}
+{"argument":"underline","command":"toggleInline","document":"code","replace":[93,0],"selection":[63,0],"selectionAfter":[63,0],"with":""}
+{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[93,0],"selection":[63,0],"selectionAfter":[63,0],"with":""}
+{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[93,0],"selection":[63,0],"selectionAfter":[63,0],"with":""}
 {"argument":"0","command":"applyHeading","document":"code","replace":[93,0],"selection":[63,0],"selectionAfter":[63,0],"with":""}
 {"argument":"1","command":"applyHeading","document":"code","replace":[55,0],"selection":[63,0],"selectionAfter":[65,0],"with":"# "}
 {"argument":"2","command":"applyHeading","document":"code","replace":[55,0],"selection":[63,0],"selectionAfter":[66,0],"with":"## "}
@@ -1991,14 +1991,14 @@
 {"command":"toggleQuote","document":"code","replace":[55,0],"selection":[63,0],"selectionAfter":[65,0],"with":"> "}
 {"command":"wrapCodeBlock","document":"code","replace":[64,0],"selection":[63,0],"selectionAfter":[68,0],"with":"```\n\n```\n\n"}
 {"command":"insertNewline","document":"code","replace":[64,0],"selection":[63,0],"selectionAfter":[64,0],"with":"\n"}
-{"argument":"https://example.com","command":"insertLink","document":"code","replace":[63,0],"selection":[63,0],"selectionAfter":[64,9],"with":"[link text](https://example.com)"}
+{"argument":"https://example.com","command":"insertLink","document":"code","replace":[93,0],"selection":[63,0],"selectionAfter":[63,0],"with":""}
 {"command":"insertHorizontalRule","document":"code","replace":[64,0],"selection":[63,0],"selectionAfter":[68,0],"with":"***\n\n"}
 {"command":"moveImage","document":"code","replace":[93,0],"selection":[63,0],"selectionAfter":[0,0],"with":""}
-{"argument":"bold","command":"toggleInline","document":"code","replace":[64,0],"selection":[64,0],"selectionAfter":[66,9],"with":"**bold text**"}
-{"argument":"italic","command":"toggleInline","document":"code","replace":[64,0],"selection":[64,0],"selectionAfter":[65,11],"with":"*italic text*"}
-{"argument":"underline","command":"toggleInline","document":"code","replace":[64,0],"selection":[64,0],"selectionAfter":[67,15],"with":"<u>underlined text</u>"}
-{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[64,0],"selection":[64,0],"selectionAfter":[66,11],"with":"~~struck text~~"}
-{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[64,0],"selection":[64,0],"selectionAfter":[65,4],"with":"`code`"}
+{"argument":"bold","command":"toggleInline","document":"code","replace":[93,0],"selection":[64,0],"selectionAfter":[64,0],"with":""}
+{"argument":"italic","command":"toggleInline","document":"code","replace":[93,0],"selection":[64,0],"selectionAfter":[64,0],"with":""}
+{"argument":"underline","command":"toggleInline","document":"code","replace":[93,0],"selection":[64,0],"selectionAfter":[64,0],"with":""}
+{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[93,0],"selection":[64,0],"selectionAfter":[64,0],"with":""}
+{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[93,0],"selection":[64,0],"selectionAfter":[64,0],"with":""}
 {"argument":"0","command":"applyHeading","document":"code","replace":[93,0],"selection":[64,0],"selectionAfter":[64,0],"with":""}
 {"argument":"1","command":"applyHeading","document":"code","replace":[64,0],"selection":[64,0],"selectionAfter":[66,0],"with":"# "}
 {"argument":"2","command":"applyHeading","document":"code","replace":[64,0],"selection":[64,0],"selectionAfter":[67,0],"with":"## "}
@@ -2012,14 +2012,14 @@
 {"command":"toggleQuote","document":"code","replace":[64,0],"selection":[64,0],"selectionAfter":[66,0],"with":"> "}
 {"command":"wrapCodeBlock","document":"code","replace":[64,0],"selection":[64,0],"selectionAfter":[68,0],"with":"```\n\n```\n"}
 {"command":"insertNewline","document":"code","replace":[64,0],"selection":[64,0],"selectionAfter":[65,0],"with":"\n"}
-{"argument":"https://example.com","command":"insertLink","document":"code","replace":[64,0],"selection":[64,0],"selectionAfter":[65,9],"with":"[link text](https://example.com)"}
+{"argument":"https://example.com","command":"insertLink","document":"code","replace":[93,0],"selection":[64,0],"selectionAfter":[64,0],"with":""}
 {"command":"insertHorizontalRule","document":"code","replace":[64,0],"selection":[64,0],"selectionAfter":[69,0],"with":"***\n\n"}
 {"command":"moveImage","document":"code","replace":[93,0],"selection":[64,0],"selectionAfter":[0,0],"with":""}
-{"argument":"bold","command":"toggleInline","document":"code","replace":[73,0],"selection":[73,0],"selectionAfter":[75,9],"with":"**bold text**"}
-{"argument":"italic","command":"toggleInline","document":"code","replace":[73,0],"selection":[73,0],"selectionAfter":[74,11],"with":"*italic text*"}
-{"argument":"underline","command":"toggleInline","document":"code","replace":[73,0],"selection":[73,0],"selectionAfter":[76,15],"with":"<u>underlined text</u>"}
-{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[73,0],"selection":[73,0],"selectionAfter":[75,11],"with":"~~struck text~~"}
-{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[73,0],"selection":[73,0],"selectionAfter":[74,4],"with":"`code`"}
+{"argument":"bold","command":"toggleInline","document":"code","replace":[93,0],"selection":[73,0],"selectionAfter":[73,0],"with":""}
+{"argument":"italic","command":"toggleInline","document":"code","replace":[93,0],"selection":[73,0],"selectionAfter":[73,0],"with":""}
+{"argument":"underline","command":"toggleInline","document":"code","replace":[93,0],"selection":[73,0],"selectionAfter":[73,0],"with":""}
+{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[93,0],"selection":[73,0],"selectionAfter":[73,0],"with":""}
+{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[93,0],"selection":[73,0],"selectionAfter":[73,0],"with":""}
 {"argument":"0","command":"applyHeading","document":"code","replace":[93,0],"selection":[73,0],"selectionAfter":[73,0],"with":""}
 {"argument":"1","command":"applyHeading","document":"code","replace":[64,0],"selection":[73,0],"selectionAfter":[75,0],"with":"# "}
 {"argument":"2","command":"applyHeading","document":"code","replace":[64,0],"selection":[73,0],"selectionAfter":[76,0],"with":"## "}
@@ -2033,14 +2033,14 @@
 {"command":"toggleQuote","document":"code","replace":[64,0],"selection":[73,0],"selectionAfter":[75,0],"with":"> "}
 {"command":"wrapCodeBlock","document":"code","replace":[79,0],"selection":[73,0],"selectionAfter":[78,0],"with":"```\n\n```\n\n"}
 {"command":"insertNewline","document":"code","replace":[74,0],"selection":[73,0],"selectionAfter":[74,0],"with":"\n"}
-{"argument":"https://example.com","command":"insertLink","document":"code","replace":[73,0],"selection":[73,0],"selectionAfter":[74,9],"with":"[link text](https://example.com)"}
+{"argument":"https://example.com","command":"insertLink","document":"code","replace":[93,0],"selection":[73,0],"selectionAfter":[73,0],"with":""}
 {"command":"insertHorizontalRule","document":"code","replace":[74,0],"selection":[73,0],"selectionAfter":[78,0],"with":"***\n\n"}
 {"command":"moveImage","document":"code","replace":[93,0],"selection":[73,0],"selectionAfter":[0,0],"with":""}
-{"argument":"bold","command":"toggleInline","document":"code","replace":[74,0],"selection":[74,0],"selectionAfter":[76,9],"with":"**bold text**"}
-{"argument":"italic","command":"toggleInline","document":"code","replace":[74,0],"selection":[74,0],"selectionAfter":[75,11],"with":"*italic text*"}
-{"argument":"underline","command":"toggleInline","document":"code","replace":[74,0],"selection":[74,0],"selectionAfter":[77,15],"with":"<u>underlined text</u>"}
-{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[74,0],"selection":[74,0],"selectionAfter":[76,11],"with":"~~struck text~~"}
-{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[75,0],"selection":[74,0],"selectionAfter":[75,4],"with":"code``"}
+{"argument":"bold","command":"toggleInline","document":"code","replace":[93,0],"selection":[74,0],"selectionAfter":[74,0],"with":""}
+{"argument":"italic","command":"toggleInline","document":"code","replace":[93,0],"selection":[74,0],"selectionAfter":[74,0],"with":""}
+{"argument":"underline","command":"toggleInline","document":"code","replace":[93,0],"selection":[74,0],"selectionAfter":[74,0],"with":""}
+{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[93,0],"selection":[74,0],"selectionAfter":[74,0],"with":""}
+{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[93,0],"selection":[74,0],"selectionAfter":[74,0],"with":""}
 {"argument":"0","command":"applyHeading","document":"code","replace":[93,0],"selection":[74,0],"selectionAfter":[74,0],"with":""}
 {"argument":"1","command":"applyHeading","document":"code","replace":[74,0],"selection":[74,0],"selectionAfter":[76,0],"with":"# "}
 {"argument":"2","command":"applyHeading","document":"code","replace":[74,0],"selection":[74,0],"selectionAfter":[77,0],"with":"## "}
@@ -2054,14 +2054,14 @@
 {"command":"toggleQuote","document":"code","replace":[74,0],"selection":[74,0],"selectionAfter":[76,0],"with":"> "}
 {"command":"wrapCodeBlock","document":"code","replace":[79,0],"selection":[74,0],"selectionAfter":[78,0],"with":"```\n```\n\n"}
 {"command":"insertNewline","document":"code","replace":[74,0],"selection":[74,0],"selectionAfter":[75,0],"with":"\n"}
-{"argument":"https://example.com","command":"insertLink","document":"code","replace":[74,0],"selection":[74,0],"selectionAfter":[75,9],"with":"[link text](https://example.com)"}
+{"argument":"https://example.com","command":"insertLink","document":"code","replace":[93,0],"selection":[74,0],"selectionAfter":[74,0],"with":""}
 {"command":"insertHorizontalRule","document":"code","replace":[74,0],"selection":[74,0],"selectionAfter":[79,0],"with":"***\n\n"}
 {"command":"moveImage","document":"code","replace":[93,0],"selection":[74,0],"selectionAfter":[0,0],"with":""}
-{"argument":"bold","command":"toggleInline","document":"code","replace":[77,0],"selection":[77,0],"selectionAfter":[79,9],"with":"**bold text**"}
-{"argument":"italic","command":"toggleInline","document":"code","replace":[77,0],"selection":[77,0],"selectionAfter":[78,11],"with":"*italic text*"}
-{"argument":"underline","command":"toggleInline","document":"code","replace":[77,0],"selection":[77,0],"selectionAfter":[80,15],"with":"<u>underlined text</u>"}
-{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[77,0],"selection":[77,0],"selectionAfter":[79,11],"with":"~~struck text~~"}
-{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[77,0],"selection":[77,0],"selectionAfter":[78,4],"with":"`code`"}
+{"argument":"bold","command":"toggleInline","document":"code","replace":[93,0],"selection":[77,0],"selectionAfter":[77,0],"with":""}
+{"argument":"italic","command":"toggleInline","document":"code","replace":[93,0],"selection":[77,0],"selectionAfter":[77,0],"with":""}
+{"argument":"underline","command":"toggleInline","document":"code","replace":[93,0],"selection":[77,0],"selectionAfter":[77,0],"with":""}
+{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[93,0],"selection":[77,0],"selectionAfter":[77,0],"with":""}
+{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[93,0],"selection":[77,0],"selectionAfter":[77,0],"with":""}
 {"argument":"0","command":"applyHeading","document":"code","replace":[93,0],"selection":[77,0],"selectionAfter":[77,0],"with":""}
 {"argument":"1","command":"applyHeading","document":"code","replace":[74,0],"selection":[77,0],"selectionAfter":[79,0],"with":"# "}
 {"argument":"2","command":"applyHeading","document":"code","replace":[74,0],"selection":[77,0],"selectionAfter":[80,0],"with":"## "}
@@ -2075,7 +2075,7 @@
 {"command":"toggleQuote","document":"code","replace":[74,0],"selection":[77,0],"selectionAfter":[79,0],"with":"> "}
 {"command":"wrapCodeBlock","document":"code","replace":[78,0],"selection":[77,0],"selectionAfter":[82,0],"with":"```\n\n```\n\n"}
 {"command":"insertNewline","document":"code","replace":[79,0],"selection":[77,0],"selectionAfter":[78,0],"with":"\n"}
-{"argument":"https://example.com","command":"insertLink","document":"code","replace":[77,0],"selection":[77,0],"selectionAfter":[78,9],"with":"[link text](https://example.com)"}
+{"argument":"https://example.com","command":"insertLink","document":"code","replace":[93,0],"selection":[77,0],"selectionAfter":[77,0],"with":""}
 {"command":"insertHorizontalRule","document":"code","replace":[78,0],"selection":[77,0],"selectionAfter":[82,0],"with":"***\n\n"}
 {"command":"moveImage","document":"code","replace":[93,0],"selection":[77,0],"selectionAfter":[0,0],"with":""}
 {"argument":"bold","command":"toggleInline","document":"code","replace":[78,0],"selection":[78,0],"selectionAfter":[80,9],"with":"**bold text**"}
@@ -2141,11 +2141,11 @@
 {"argument":"https://example.com","command":"insertLink","document":"code","replace":[93,0],"selection":[93,0],"selectionAfter":[94,9],"with":"[link text](https://example.com)"}
 {"command":"insertHorizontalRule","document":"code","replace":[93,0],"selection":[93,0],"selectionAfter":[98,0],"with":"\n***\n"}
 {"command":"moveImage","document":"code","replace":[93,0],"selection":[93,0],"selectionAfter":[0,0],"with":""}
-{"argument":"bold","command":"toggleInline","document":"code","replace":[0,31],"selection":[0,31],"selectionAfter":[2,31],"with":"**Inline `code` and ``a `tick` in**"}
-{"argument":"italic","command":"toggleInline","document":"code","replace":[0,31],"selection":[0,31],"selectionAfter":[1,31],"with":"*Inline `code` and ``a `tick` in*"}
-{"argument":"underline","command":"toggleInline","document":"code","replace":[0,31],"selection":[0,31],"selectionAfter":[3,31],"with":"<u>Inline `code` and ``a `tick` in</u>"}
-{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[0,31],"selection":[0,31],"selectionAfter":[2,31],"with":"~~Inline `code` and ``a `tick` in~~"}
-{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[0,31],"selection":[0,31],"selectionAfter":[3,31],"with":"```Inline `code` and ``a `tick` in```"}
+{"argument":"bold","command":"toggleInline","document":"code","replace":[93,0],"selection":[0,31],"selectionAfter":[0,31],"with":""}
+{"argument":"italic","command":"toggleInline","document":"code","replace":[93,0],"selection":[0,31],"selectionAfter":[0,31],"with":""}
+{"argument":"underline","command":"toggleInline","document":"code","replace":[93,0],"selection":[0,31],"selectionAfter":[0,31],"with":""}
+{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[93,0],"selection":[0,31],"selectionAfter":[0,31],"with":""}
+{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[18,19],"selection":[0,31],"selectionAfter":[18,15],"with":"a `tick` inside"}
 {"argument":"0","command":"applyHeading","document":"code","replace":[93,0],"selection":[0,31],"selectionAfter":[0,31],"with":""}
 {"argument":"1","command":"applyHeading","document":"code","replace":[0,0],"selection":[0,31],"selectionAfter":[2,31],"with":"# "}
 {"argument":"2","command":"applyHeading","document":"code","replace":[0,0],"selection":[0,31],"selectionAfter":[3,31],"with":"## "}
@@ -2159,14 +2159,14 @@
 {"command":"toggleQuote","document":"code","replace":[0,0],"selection":[0,31],"selectionAfter":[2,31],"with":"> "}
 {"command":"wrapCodeBlock","document":"code","replace":[0,53],"selection":[0,31],"selectionAfter":[4,31],"with":"```\nInline `code` and ``a `tick` inside`` and ` padded `.\n```"}
 {"command":"insertNewline","document":"code","replace":[0,31],"selection":[0,31],"selectionAfter":[1,0],"with":"\n"}
-{"argument":"https://example.com","command":"insertLink","document":"code","replace":[0,31],"selection":[0,31],"selectionAfter":[1,31],"with":"[Inline `code` and ``a `tick` in](https://example.com)"}
+{"argument":"https://example.com","command":"insertLink","document":"code","replace":[93,0],"selection":[0,31],"selectionAfter":[0,31],"with":""}
 {"command":"insertHorizontalRule","document":"code","replace":[0,31],"selection":[0,31],"selectionAfter":[5,0],"with":"***\n\n"}
 {"command":"moveImage","document":"code","replace":[93,0],"selection":[0,31],"selectionAfter":[0,0],"with":""}
-{"argument":"bold","command":"toggleInline","document":"code","replace":[0,46],"selection":[0,46],"selectionAfter":[2,46],"with":"**Inline `code` and ``a `tick` inside`` and ` pa**"}
-{"argument":"italic","command":"toggleInline","document":"code","replace":[0,46],"selection":[0,46],"selectionAfter":[1,46],"with":"*Inline `code` and ``a `tick` inside`` and ` pa*"}
-{"argument":"underline","command":"toggleInline","document":"code","replace":[0,46],"selection":[0,46],"selectionAfter":[3,46],"with":"<u>Inline `code` and ``a `tick` inside`` and ` pa</u>"}
-{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[0,46],"selection":[0,46],"selectionAfter":[2,46],"with":"~~Inline `code` and ``a `tick` inside`` and ` pa~~"}
-{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[0,46],"selection":[0,46],"selectionAfter":[3,46],"with":"```Inline `code` and ``a `tick` inside`` and ` pa```"}
+{"argument":"bold","command":"toggleInline","document":"code","replace":[93,0],"selection":[0,46],"selectionAfter":[0,46],"with":""}
+{"argument":"italic","command":"toggleInline","document":"code","replace":[93,0],"selection":[0,46],"selectionAfter":[0,46],"with":""}
+{"argument":"underline","command":"toggleInline","document":"code","replace":[93,0],"selection":[0,46],"selectionAfter":[0,46],"with":""}
+{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[93,0],"selection":[0,46],"selectionAfter":[0,46],"with":""}
+{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[42,10],"selection":[0,46],"selectionAfter":[42,6],"with":"padded"}
 {"argument":"0","command":"applyHeading","document":"code","replace":[93,0],"selection":[0,46],"selectionAfter":[0,46],"with":""}
 {"argument":"1","command":"applyHeading","document":"code","replace":[0,0],"selection":[0,46],"selectionAfter":[2,46],"with":"# "}
 {"argument":"2","command":"applyHeading","document":"code","replace":[0,0],"selection":[0,46],"selectionAfter":[3,46],"with":"## "}
@@ -2180,14 +2180,14 @@
 {"command":"toggleQuote","document":"code","replace":[0,0],"selection":[0,46],"selectionAfter":[2,46],"with":"> "}
 {"command":"wrapCodeBlock","document":"code","replace":[0,53],"selection":[0,46],"selectionAfter":[4,46],"with":"```\nInline `code` and ``a `tick` inside`` and ` padded `.\n```"}
 {"command":"insertNewline","document":"code","replace":[0,46],"selection":[0,46],"selectionAfter":[1,0],"with":"\n"}
-{"argument":"https://example.com","command":"insertLink","document":"code","replace":[0,46],"selection":[0,46],"selectionAfter":[1,46],"with":"[Inline `code` and ``a `tick` inside`` and ` pa](https://example.com)"}
+{"argument":"https://example.com","command":"insertLink","document":"code","replace":[93,0],"selection":[0,46],"selectionAfter":[0,46],"with":""}
 {"command":"insertHorizontalRule","document":"code","replace":[0,46],"selection":[0,46],"selectionAfter":[5,0],"with":"***\n\n"}
 {"command":"moveImage","document":"code","replace":[93,0],"selection":[0,46],"selectionAfter":[0,0],"with":""}
-{"argument":"bold","command":"toggleInline","document":"code","replace":[31,15],"selection":[31,15],"selectionAfter":[33,15],"with":"**side`` and ` pa**"}
-{"argument":"italic","command":"toggleInline","document":"code","replace":[31,15],"selection":[31,15],"selectionAfter":[32,15],"with":"*side`` and ` pa*"}
-{"argument":"underline","command":"toggleInline","document":"code","replace":[31,15],"selection":[31,15],"selectionAfter":[34,15],"with":"<u>side`` and ` pa</u>"}
-{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[31,15],"selection":[31,15],"selectionAfter":[33,15],"with":"~~side`` and ` pa~~"}
-{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[31,15],"selection":[31,15],"selectionAfter":[34,15],"with":"```side`` and ` pa```"}
+{"argument":"bold","command":"toggleInline","document":"code","replace":[93,0],"selection":[31,15],"selectionAfter":[31,15],"with":""}
+{"argument":"italic","command":"toggleInline","document":"code","replace":[93,0],"selection":[31,15],"selectionAfter":[31,15],"with":""}
+{"argument":"underline","command":"toggleInline","document":"code","replace":[93,0],"selection":[31,15],"selectionAfter":[31,15],"with":""}
+{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[93,0],"selection":[31,15],"selectionAfter":[31,15],"with":""}
+{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[18,19],"selection":[31,15],"selectionAfter":[29,4],"with":"a `tick` inside"}
 {"argument":"0","command":"applyHeading","document":"code","replace":[93,0],"selection":[31,15],"selectionAfter":[31,15],"with":""}
 {"argument":"1","command":"applyHeading","document":"code","replace":[0,0],"selection":[31,15],"selectionAfter":[33,15],"with":"# "}
 {"argument":"2","command":"applyHeading","document":"code","replace":[0,0],"selection":[31,15],"selectionAfter":[34,15],"with":"## "}
@@ -2201,14 +2201,14 @@
 {"command":"toggleQuote","document":"code","replace":[0,0],"selection":[31,15],"selectionAfter":[33,15],"with":"> "}
 {"command":"wrapCodeBlock","document":"code","replace":[0,53],"selection":[31,15],"selectionAfter":[35,15],"with":"```\nInline `code` and ``a `tick` inside`` and ` padded `.\n```"}
 {"command":"insertNewline","document":"code","replace":[31,15],"selection":[31,15],"selectionAfter":[32,0],"with":"\n"}
-{"argument":"https://example.com","command":"insertLink","document":"code","replace":[31,15],"selection":[31,15],"selectionAfter":[32,15],"with":"[side`` and ` pa](https://example.com)"}
+{"argument":"https://example.com","command":"insertLink","document":"code","replace":[93,0],"selection":[31,15],"selectionAfter":[31,15],"with":""}
 {"command":"insertHorizontalRule","document":"code","replace":[31,15],"selection":[31,15],"selectionAfter":[37,0],"with":"\n***\n\n"}
 {"command":"moveImage","document":"code","replace":[93,0],"selection":[31,15],"selectionAfter":[0,0],"with":""}
-{"argument":"bold","command":"toggleInline","document":"code","replace":[31,22],"selection":[31,22],"selectionAfter":[33,22],"with":"**side`` and ` padded `.**"}
-{"argument":"italic","command":"toggleInline","document":"code","replace":[31,22],"selection":[31,22],"selectionAfter":[32,22],"with":"*side`` and ` padded `.*"}
-{"argument":"underline","command":"toggleInline","document":"code","replace":[31,22],"selection":[31,22],"selectionAfter":[34,22],"with":"<u>side`` and ` padded `.</u>"}
-{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[31,22],"selection":[31,22],"selectionAfter":[33,22],"with":"~~side`` and ` padded `.~~"}
-{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[31,22],"selection":[31,22],"selectionAfter":[34,22],"with":"```side`` and ` padded `.```"}
+{"argument":"bold","command":"toggleInline","document":"code","replace":[93,0],"selection":[31,22],"selectionAfter":[31,22],"with":""}
+{"argument":"italic","command":"toggleInline","document":"code","replace":[93,0],"selection":[31,22],"selectionAfter":[31,22],"with":""}
+{"argument":"underline","command":"toggleInline","document":"code","replace":[93,0],"selection":[31,22],"selectionAfter":[31,22],"with":""}
+{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[93,0],"selection":[31,22],"selectionAfter":[31,22],"with":""}
+{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[18,19],"selection":[31,22],"selectionAfter":[29,4],"with":"a `tick` inside"}
 {"argument":"0","command":"applyHeading","document":"code","replace":[93,0],"selection":[31,22],"selectionAfter":[31,22],"with":""}
 {"argument":"1","command":"applyHeading","document":"code","replace":[0,0],"selection":[31,22],"selectionAfter":[33,22],"with":"# "}
 {"argument":"2","command":"applyHeading","document":"code","replace":[0,0],"selection":[31,22],"selectionAfter":[34,22],"with":"## "}
@@ -2222,14 +2222,14 @@
 {"command":"toggleQuote","document":"code","replace":[0,0],"selection":[31,22],"selectionAfter":[33,22],"with":"> "}
 {"command":"wrapCodeBlock","document":"code","replace":[0,53],"selection":[31,22],"selectionAfter":[35,22],"with":"```\nInline `code` and ``a `tick` inside`` and ` padded `.\n```"}
 {"command":"insertNewline","document":"code","replace":[31,22],"selection":[31,22],"selectionAfter":[32,0],"with":"\n"}
-{"argument":"https://example.com","command":"insertLink","document":"code","replace":[31,22],"selection":[31,22],"selectionAfter":[32,22],"with":"[side`` and ` padded `.](https://example.com)"}
+{"argument":"https://example.com","command":"insertLink","document":"code","replace":[93,0],"selection":[31,22],"selectionAfter":[31,22],"with":""}
 {"command":"insertHorizontalRule","document":"code","replace":[31,22],"selection":[31,22],"selectionAfter":[36,0],"with":"\n***\n"}
 {"command":"moveImage","document":"code","replace":[93,0],"selection":[31,22],"selectionAfter":[0,0],"with":""}
-{"argument":"bold","command":"toggleInline","document":"code","replace":[46,7],"selection":[46,7],"selectionAfter":[48,7],"with":"**dded `.**"}
-{"argument":"italic","command":"toggleInline","document":"code","replace":[46,7],"selection":[46,7],"selectionAfter":[47,7],"with":"*dded `.*"}
-{"argument":"underline","command":"toggleInline","document":"code","replace":[46,7],"selection":[46,7],"selectionAfter":[49,7],"with":"<u>dded `.</u>"}
-{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[46,7],"selection":[46,7],"selectionAfter":[48,7],"with":"~~dded `.~~"}
-{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[46,7],"selection":[46,7],"selectionAfter":[48,7],"with":"``dded `.``"}
+{"argument":"bold","command":"toggleInline","document":"code","replace":[93,0],"selection":[46,7],"selectionAfter":[46,7],"with":""}
+{"argument":"italic","command":"toggleInline","document":"code","replace":[93,0],"selection":[46,7],"selectionAfter":[46,7],"with":""}
+{"argument":"underline","command":"toggleInline","document":"code","replace":[93,0],"selection":[46,7],"selectionAfter":[46,7],"with":""}
+{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[93,0],"selection":[46,7],"selectionAfter":[46,7],"with":""}
+{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[42,10],"selection":[46,7],"selectionAfter":[44,4],"with":"padded"}
 {"argument":"0","command":"applyHeading","document":"code","replace":[93,0],"selection":[46,7],"selectionAfter":[46,7],"with":""}
 {"argument":"1","command":"applyHeading","document":"code","replace":[0,0],"selection":[46,7],"selectionAfter":[48,7],"with":"# "}
 {"argument":"2","command":"applyHeading","document":"code","replace":[0,0],"selection":[46,7],"selectionAfter":[49,7],"with":"## "}
@@ -2243,14 +2243,14 @@
 {"command":"toggleQuote","document":"code","replace":[0,0],"selection":[46,7],"selectionAfter":[48,7],"with":"> "}
 {"command":"wrapCodeBlock","document":"code","replace":[0,53],"selection":[46,7],"selectionAfter":[50,7],"with":"```\nInline `code` and ``a `tick` inside`` and ` padded `.\n```"}
 {"command":"insertNewline","document":"code","replace":[46,7],"selection":[46,7],"selectionAfter":[47,0],"with":"\n"}
-{"argument":"https://example.com","command":"insertLink","document":"code","replace":[46,7],"selection":[46,7],"selectionAfter":[47,7],"with":"[dded `.](https://example.com)"}
+{"argument":"https://example.com","command":"insertLink","document":"code","replace":[93,0],"selection":[46,7],"selectionAfter":[46,7],"with":""}
 {"command":"insertHorizontalRule","document":"code","replace":[46,7],"selection":[46,7],"selectionAfter":[51,0],"with":"\n***\n"}
 {"command":"moveImage","document":"code","replace":[93,0],"selection":[46,7],"selectionAfter":[0,0],"with":""}
-{"argument":"bold","command":"toggleInline","document":"code","replace":[46,7],"selection":[46,8],"selectionAfter":[48,7],"with":"**dded `.**"}
-{"argument":"italic","command":"toggleInline","document":"code","replace":[46,7],"selection":[46,8],"selectionAfter":[47,7],"with":"*dded `.*"}
-{"argument":"underline","command":"toggleInline","document":"code","replace":[46,7],"selection":[46,8],"selectionAfter":[49,7],"with":"<u>dded `.</u>"}
-{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[46,7],"selection":[46,8],"selectionAfter":[48,7],"with":"~~dded `.~~"}
-{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[46,8],"selection":[46,8],"selectionAfter":[48,8],"with":"``dded `.\n``"}
+{"argument":"bold","command":"toggleInline","document":"code","replace":[93,0],"selection":[46,8],"selectionAfter":[46,8],"with":""}
+{"argument":"italic","command":"toggleInline","document":"code","replace":[93,0],"selection":[46,8],"selectionAfter":[46,8],"with":""}
+{"argument":"underline","command":"toggleInline","document":"code","replace":[93,0],"selection":[46,8],"selectionAfter":[46,8],"with":""}
+{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[93,0],"selection":[46,8],"selectionAfter":[46,8],"with":""}
+{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[42,10],"selection":[46,8],"selectionAfter":[44,4],"with":"padded"}
 {"argument":"0","command":"applyHeading","document":"code","replace":[93,0],"selection":[46,8],"selectionAfter":[46,8],"with":""}
 {"argument":"1","command":"applyHeading","document":"code","replace":[0,0],"selection":[46,8],"selectionAfter":[48,8],"with":"# "}
 {"argument":"2","command":"applyHeading","document":"code","replace":[0,0],"selection":[46,8],"selectionAfter":[49,8],"with":"## "}
@@ -2264,7 +2264,7 @@
 {"command":"toggleQuote","document":"code","replace":[0,0],"selection":[46,8],"selectionAfter":[48,8],"with":"> "}
 {"command":"wrapCodeBlock","document":"code","replace":[0,53],"selection":[46,8],"selectionAfter":[50,8],"with":"```\nInline `code` and ``a `tick` inside`` and ` padded `.\n```"}
 {"command":"insertNewline","document":"code","replace":[46,7],"selection":[46,8],"selectionAfter":[47,0],"with":""}
-{"argument":"https://example.com","command":"insertLink","document":"code","replace":[46,8],"selection":[46,8],"selectionAfter":[47,8],"with":"[dded `.\n](https://example.com)"}
+{"argument":"https://example.com","command":"insertLink","document":"code","replace":[93,0],"selection":[46,8],"selectionAfter":[46,8],"with":""}
 {"command":"insertHorizontalRule","document":"code","replace":[46,7],"selection":[46,8],"selectionAfter":[51,0],"with":"\n***"}
 {"command":"moveImage","document":"code","replace":[93,0],"selection":[46,8],"selectionAfter":[0,0],"with":""}
 {"argument":"bold","command":"toggleInline","document":"code","replace":[93,0],"selection":[53,1],"selectionAfter":[53,1],"with":""}
@@ -2330,11 +2330,11 @@
 {"argument":"https://example.com","command":"insertLink","document":"code","replace":[54,1],"selection":[54,1],"selectionAfter":[55,1],"with":"[\n](https://example.com)"}
 {"command":"insertHorizontalRule","document":"code","replace":[54,0],"selection":[54,1],"selectionAfter":[59,0],"with":"***\n"}
 {"command":"moveImage","document":"code","replace":[93,0],"selection":[54,1],"selectionAfter":[0,0],"with":""}
-{"argument":"bold","command":"toggleInline","document":"code","replace":[55,8],"selection":[54,9],"selectionAfter":[57,8],"with":"**```swift**"}
-{"argument":"italic","command":"toggleInline","document":"code","replace":[55,8],"selection":[54,9],"selectionAfter":[56,8],"with":"*```swift*"}
-{"argument":"underline","command":"toggleInline","document":"code","replace":[55,8],"selection":[54,9],"selectionAfter":[58,8],"with":"<u>```swift</u>"}
-{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[55,8],"selection":[54,9],"selectionAfter":[57,8],"with":"~~```swift~~"}
-{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[54,9],"selection":[54,9],"selectionAfter":[58,9],"with":"````\n```swift````"}
+{"argument":"bold","command":"toggleInline","document":"code","replace":[93,0],"selection":[54,9],"selectionAfter":[54,9],"with":""}
+{"argument":"italic","command":"toggleInline","document":"code","replace":[93,0],"selection":[54,9],"selectionAfter":[54,9],"with":""}
+{"argument":"underline","command":"toggleInline","document":"code","replace":[93,0],"selection":[54,9],"selectionAfter":[54,9],"with":""}
+{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[93,0],"selection":[54,9],"selectionAfter":[54,9],"with":""}
+{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[93,0],"selection":[54,9],"selectionAfter":[54,9],"with":""}
 {"argument":"0","command":"applyHeading","document":"code","replace":[93,0],"selection":[54,9],"selectionAfter":[54,9],"with":""}
 {"argument":"1","command":"applyHeading","document":"code","replace":[54,1],"selection":[54,9],"selectionAfter":[56,11],"with":"# \n# "}
 {"argument":"2","command":"applyHeading","document":"code","replace":[54,1],"selection":[54,9],"selectionAfter":[57,12],"with":"## \n## "}
@@ -2348,14 +2348,14 @@
 {"command":"toggleQuote","document":"code","replace":[55,0],"selection":[54,9],"selectionAfter":[54,11],"with":"> "}
 {"command":"wrapCodeBlock","document":"code","replace":[54,9],"selection":[54,9],"selectionAfter":[59,9],"with":"````\n\n```swift\n````"}
 {"command":"insertNewline","document":"code","replace":[55,8],"selection":[54,9],"selectionAfter":[55,0],"with":""}
-{"argument":"https://example.com","command":"insertLink","document":"code","replace":[54,9],"selection":[54,9],"selectionAfter":[55,9],"with":"[\n```swift](https://example.com)"}
+{"argument":"https://example.com","command":"insertLink","document":"code","replace":[93,0],"selection":[54,9],"selectionAfter":[54,9],"with":""}
 {"command":"insertHorizontalRule","document":"code","replace":[54,9],"selection":[54,9],"selectionAfter":[58,0],"with":"***\n"}
 {"command":"moveImage","document":"code","replace":[93,0],"selection":[54,9],"selectionAfter":[0,0],"with":""}
-{"argument":"bold","command":"toggleInline","document":"code","replace":[55,8],"selection":[55,8],"selectionAfter":[57,8],"with":"**```swift**"}
-{"argument":"italic","command":"toggleInline","document":"code","replace":[55,8],"selection":[55,8],"selectionAfter":[56,8],"with":"*```swift*"}
-{"argument":"underline","command":"toggleInline","document":"code","replace":[55,8],"selection":[55,8],"selectionAfter":[58,8],"with":"<u>```swift</u>"}
-{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[55,8],"selection":[55,8],"selectionAfter":[57,8],"with":"~~```swift~~"}
-{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[58,5],"selection":[55,8],"selectionAfter":[60,8],"with":"` ```swift ````"}
+{"argument":"bold","command":"toggleInline","document":"code","replace":[93,0],"selection":[55,8],"selectionAfter":[55,8],"with":""}
+{"argument":"italic","command":"toggleInline","document":"code","replace":[93,0],"selection":[55,8],"selectionAfter":[55,8],"with":""}
+{"argument":"underline","command":"toggleInline","document":"code","replace":[93,0],"selection":[55,8],"selectionAfter":[55,8],"with":""}
+{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[93,0],"selection":[55,8],"selectionAfter":[55,8],"with":""}
+{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[93,0],"selection":[55,8],"selectionAfter":[55,8],"with":""}
 {"argument":"0","command":"applyHeading","document":"code","replace":[93,0],"selection":[55,8],"selectionAfter":[55,8],"with":""}
 {"argument":"1","command":"applyHeading","document":"code","replace":[55,0],"selection":[55,8],"selectionAfter":[57,8],"with":"# "}
 {"argument":"2","command":"applyHeading","document":"code","replace":[55,0],"selection":[55,8],"selectionAfter":[58,8],"with":"## "}
@@ -2369,14 +2369,14 @@
 {"command":"toggleQuote","document":"code","replace":[55,0],"selection":[55,8],"selectionAfter":[57,8],"with":"> "}
 {"command":"wrapCodeBlock","document":"code","replace":[58,5],"selection":[55,8],"selectionAfter":[60,8],"with":"`\n```swift\n````"}
 {"command":"insertNewline","document":"code","replace":[55,8],"selection":[55,8],"selectionAfter":[56,0],"with":"\n"}
-{"argument":"https://example.com","command":"insertLink","document":"code","replace":[55,8],"selection":[55,8],"selectionAfter":[56,8],"with":"[```swift](https://example.com)"}
+{"argument":"https://example.com","command":"insertLink","document":"code","replace":[93,0],"selection":[55,8],"selectionAfter":[55,8],"with":""}
 {"command":"insertHorizontalRule","document":"code","replace":[55,8],"selection":[55,8],"selectionAfter":[59,0],"with":"***\n"}
 {"command":"moveImage","document":"code","replace":[93,0],"selection":[55,8],"selectionAfter":[0,0],"with":""}
-{"argument":"bold","command":"toggleInline","document":"code","replace":[55,8],"selection":[55,9],"selectionAfter":[57,8],"with":"**```swift**"}
-{"argument":"italic","command":"toggleInline","document":"code","replace":[55,8],"selection":[55,9],"selectionAfter":[56,8],"with":"*```swift*"}
-{"argument":"underline","command":"toggleInline","document":"code","replace":[55,8],"selection":[55,9],"selectionAfter":[58,8],"with":"<u>```swift</u>"}
-{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[55,8],"selection":[55,9],"selectionAfter":[57,8],"with":"~~```swift~~"}
-{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[58,6],"selection":[55,9],"selectionAfter":[60,9],"with":"` ```swift\n ````"}
+{"argument":"bold","command":"toggleInline","document":"code","replace":[93,0],"selection":[55,9],"selectionAfter":[55,9],"with":""}
+{"argument":"italic","command":"toggleInline","document":"code","replace":[93,0],"selection":[55,9],"selectionAfter":[55,9],"with":""}
+{"argument":"underline","command":"toggleInline","document":"code","replace":[93,0],"selection":[55,9],"selectionAfter":[55,9],"with":""}
+{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[93,0],"selection":[55,9],"selectionAfter":[55,9],"with":""}
+{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[93,0],"selection":[55,9],"selectionAfter":[55,9],"with":""}
 {"argument":"0","command":"applyHeading","document":"code","replace":[93,0],"selection":[55,9],"selectionAfter":[55,9],"with":""}
 {"argument":"1","command":"applyHeading","document":"code","replace":[55,0],"selection":[55,9],"selectionAfter":[57,9],"with":"# "}
 {"argument":"2","command":"applyHeading","document":"code","replace":[55,0],"selection":[55,9],"selectionAfter":[58,9],"with":"## "}
@@ -2390,14 +2390,14 @@
 {"command":"toggleQuote","document":"code","replace":[55,0],"selection":[55,9],"selectionAfter":[57,9],"with":"> "}
 {"command":"wrapCodeBlock","document":"code","replace":[58,5],"selection":[55,9],"selectionAfter":[60,9],"with":"`\n```swift\n````"}
 {"command":"insertNewline","document":"code","replace":[55,8],"selection":[55,9],"selectionAfter":[56,0],"with":""}
-{"argument":"https://example.com","command":"insertLink","document":"code","replace":[55,9],"selection":[55,9],"selectionAfter":[56,9],"with":"[```swift\n](https://example.com)"}
+{"argument":"https://example.com","command":"insertLink","document":"code","replace":[93,0],"selection":[55,9],"selectionAfter":[55,9],"with":""}
 {"command":"insertHorizontalRule","document":"code","replace":[55,8],"selection":[55,9],"selectionAfter":[60,0],"with":"***\n"}
 {"command":"moveImage","document":"code","replace":[93,0],"selection":[55,9],"selectionAfter":[0,0],"with":""}
 {"argument":"bold","command":"toggleInline","document":"code","replace":[93,0],"selection":[63,1],"selectionAfter":[63,1],"with":""}
 {"argument":"italic","command":"toggleInline","document":"code","replace":[93,0],"selection":[63,1],"selectionAfter":[63,1],"with":""}
 {"argument":"underline","command":"toggleInline","document":"code","replace":[93,0],"selection":[63,1],"selectionAfter":[63,1],"with":""}
 {"argument":"strikethrough","command":"toggleInline","document":"code","replace":[93,0],"selection":[63,1],"selectionAfter":[63,1],"with":""}
-{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[63,1],"selection":[63,1],"selectionAfter":[64,1],"with":"`\n`"}
+{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[93,0],"selection":[63,1],"selectionAfter":[63,1],"with":""}
 {"argument":"0","command":"applyHeading","document":"code","replace":[93,0],"selection":[63,1],"selectionAfter":[63,1],"with":""}
 {"argument":"1","command":"applyHeading","document":"code","replace":[55,0],"selection":[63,1],"selectionAfter":[65,1],"with":"# "}
 {"argument":"2","command":"applyHeading","document":"code","replace":[55,0],"selection":[63,1],"selectionAfter":[66,1],"with":"## "}
@@ -2411,14 +2411,14 @@
 {"command":"toggleQuote","document":"code","replace":[55,0],"selection":[63,1],"selectionAfter":[65,1],"with":"> "}
 {"command":"wrapCodeBlock","document":"code","replace":[58,5],"selection":[63,1],"selectionAfter":[68,1],"with":"`\n```swift\n````"}
 {"command":"insertNewline","document":"code","replace":[93,0],"selection":[63,1],"selectionAfter":[64,0],"with":""}
-{"argument":"https://example.com","command":"insertLink","document":"code","replace":[63,1],"selection":[63,1],"selectionAfter":[64,1],"with":"[\n](https://example.com)"}
+{"argument":"https://example.com","command":"insertLink","document":"code","replace":[93,0],"selection":[63,1],"selectionAfter":[63,1],"with":""}
 {"command":"insertHorizontalRule","document":"code","replace":[64,0],"selection":[63,1],"selectionAfter":[69,0],"with":"***\n\n"}
 {"command":"moveImage","document":"code","replace":[93,0],"selection":[63,1],"selectionAfter":[0,0],"with":""}
-{"argument":"bold","command":"toggleInline","document":"code","replace":[64,9],"selection":[63,10],"selectionAfter":[66,9],"with":"**let x = 1**"}
-{"argument":"italic","command":"toggleInline","document":"code","replace":[64,9],"selection":[63,10],"selectionAfter":[65,9],"with":"*let x = 1*"}
-{"argument":"underline","command":"toggleInline","document":"code","replace":[64,9],"selection":[63,10],"selectionAfter":[67,9],"with":"<u>let x = 1</u>"}
-{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[64,9],"selection":[63,10],"selectionAfter":[66,9],"with":"~~let x = 1~~"}
-{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[63,10],"selection":[63,10],"selectionAfter":[64,10],"with":"`\nlet x = 1`"}
+{"argument":"bold","command":"toggleInline","document":"code","replace":[93,0],"selection":[63,10],"selectionAfter":[63,10],"with":""}
+{"argument":"italic","command":"toggleInline","document":"code","replace":[93,0],"selection":[63,10],"selectionAfter":[63,10],"with":""}
+{"argument":"underline","command":"toggleInline","document":"code","replace":[93,0],"selection":[63,10],"selectionAfter":[63,10],"with":""}
+{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[93,0],"selection":[63,10],"selectionAfter":[63,10],"with":""}
+{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[93,0],"selection":[63,10],"selectionAfter":[63,10],"with":""}
 {"argument":"0","command":"applyHeading","document":"code","replace":[93,0],"selection":[63,10],"selectionAfter":[63,10],"with":""}
 {"argument":"1","command":"applyHeading","document":"code","replace":[55,9],"selection":[63,10],"selectionAfter":[65,12],"with":"# ```swift\n# "}
 {"argument":"2","command":"applyHeading","document":"code","replace":[55,9],"selection":[63,10],"selectionAfter":[66,13],"with":"## ```swift\n## "}
@@ -2432,14 +2432,14 @@
 {"command":"toggleQuote","document":"code","replace":[55,9],"selection":[63,10],"selectionAfter":[65,12],"with":"> ```swift\n> "}
 {"command":"wrapCodeBlock","document":"code","replace":[58,15],"selection":[63,10],"selectionAfter":[68,10],"with":"`\n```swift\nlet x = 1\n````"}
 {"command":"insertNewline","document":"code","replace":[64,9],"selection":[63,10],"selectionAfter":[64,0],"with":""}
-{"argument":"https://example.com","command":"insertLink","document":"code","replace":[63,10],"selection":[63,10],"selectionAfter":[64,10],"with":"[\nlet x = 1](https://example.com)"}
+{"argument":"https://example.com","command":"insertLink","document":"code","replace":[93,0],"selection":[63,10],"selectionAfter":[63,10],"with":""}
 {"command":"insertHorizontalRule","document":"code","replace":[64,9],"selection":[63,10],"selectionAfter":[68,0],"with":"***\n"}
 {"command":"moveImage","document":"code","replace":[93,0],"selection":[63,10],"selectionAfter":[0,0],"with":""}
-{"argument":"bold","command":"toggleInline","document":"code","replace":[64,9],"selection":[64,9],"selectionAfter":[66,9],"with":"**let x = 1**"}
-{"argument":"italic","command":"toggleInline","document":"code","replace":[64,9],"selection":[64,9],"selectionAfter":[65,9],"with":"*let x = 1*"}
-{"argument":"underline","command":"toggleInline","document":"code","replace":[64,9],"selection":[64,9],"selectionAfter":[67,9],"with":"<u>let x = 1</u>"}
-{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[64,9],"selection":[64,9],"selectionAfter":[66,9],"with":"~~let x = 1~~"}
-{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[64,9],"selection":[64,9],"selectionAfter":[65,9],"with":"`let x = 1`"}
+{"argument":"bold","command":"toggleInline","document":"code","replace":[93,0],"selection":[64,9],"selectionAfter":[64,9],"with":""}
+{"argument":"italic","command":"toggleInline","document":"code","replace":[93,0],"selection":[64,9],"selectionAfter":[64,9],"with":""}
+{"argument":"underline","command":"toggleInline","document":"code","replace":[93,0],"selection":[64,9],"selectionAfter":[64,9],"with":""}
+{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[93,0],"selection":[64,9],"selectionAfter":[64,9],"with":""}
+{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[93,0],"selection":[64,9],"selectionAfter":[64,9],"with":""}
 {"argument":"0","command":"applyHeading","document":"code","replace":[93,0],"selection":[64,9],"selectionAfter":[64,9],"with":""}
 {"argument":"1","command":"applyHeading","document":"code","replace":[64,0],"selection":[64,9],"selectionAfter":[66,9],"with":"# "}
 {"argument":"2","command":"applyHeading","document":"code","replace":[64,0],"selection":[64,9],"selectionAfter":[67,9],"with":"## "}
@@ -2453,14 +2453,14 @@
 {"command":"toggleQuote","document":"code","replace":[64,0],"selection":[64,9],"selectionAfter":[66,9],"with":"> "}
 {"command":"wrapCodeBlock","document":"code","replace":[64,9],"selection":[64,9],"selectionAfter":[68,9],"with":"```\nlet x = 1\n```"}
 {"command":"insertNewline","document":"code","replace":[64,9],"selection":[64,9],"selectionAfter":[65,0],"with":"\n"}
-{"argument":"https://example.com","command":"insertLink","document":"code","replace":[64,9],"selection":[64,9],"selectionAfter":[65,9],"with":"[let x = 1](https://example.com)"}
+{"argument":"https://example.com","command":"insertLink","document":"code","replace":[93,0],"selection":[64,9],"selectionAfter":[64,9],"with":""}
 {"command":"insertHorizontalRule","document":"code","replace":[64,9],"selection":[64,9],"selectionAfter":[68,0],"with":"***\n"}
 {"command":"moveImage","document":"code","replace":[93,0],"selection":[64,9],"selectionAfter":[0,0],"with":""}
-{"argument":"bold","command":"toggleInline","document":"code","replace":[64,9],"selection":[64,10],"selectionAfter":[66,9],"with":"**let x = 1**"}
-{"argument":"italic","command":"toggleInline","document":"code","replace":[64,9],"selection":[64,10],"selectionAfter":[65,9],"with":"*let x = 1*"}
-{"argument":"underline","command":"toggleInline","document":"code","replace":[64,9],"selection":[64,10],"selectionAfter":[67,9],"with":"<u>let x = 1</u>"}
-{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[64,9],"selection":[64,10],"selectionAfter":[66,9],"with":"~~let x = 1~~"}
-{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[64,10],"selection":[64,10],"selectionAfter":[65,10],"with":"`let x = 1\n`"}
+{"argument":"bold","command":"toggleInline","document":"code","replace":[93,0],"selection":[64,10],"selectionAfter":[64,10],"with":""}
+{"argument":"italic","command":"toggleInline","document":"code","replace":[93,0],"selection":[64,10],"selectionAfter":[64,10],"with":""}
+{"argument":"underline","command":"toggleInline","document":"code","replace":[93,0],"selection":[64,10],"selectionAfter":[64,10],"with":""}
+{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[93,0],"selection":[64,10],"selectionAfter":[64,10],"with":""}
+{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[93,0],"selection":[64,10],"selectionAfter":[64,10],"with":""}
 {"argument":"0","command":"applyHeading","document":"code","replace":[93,0],"selection":[64,10],"selectionAfter":[64,10],"with":""}
 {"argument":"1","command":"applyHeading","document":"code","replace":[64,0],"selection":[64,10],"selectionAfter":[66,10],"with":"# "}
 {"argument":"2","command":"applyHeading","document":"code","replace":[64,0],"selection":[64,10],"selectionAfter":[67,10],"with":"## "}
@@ -2474,14 +2474,14 @@
 {"command":"toggleQuote","document":"code","replace":[64,0],"selection":[64,10],"selectionAfter":[66,10],"with":"> "}
 {"command":"wrapCodeBlock","document":"code","replace":[64,9],"selection":[64,10],"selectionAfter":[68,10],"with":"```\nlet x = 1\n```"}
 {"command":"insertNewline","document":"code","replace":[64,9],"selection":[64,10],"selectionAfter":[65,0],"with":""}
-{"argument":"https://example.com","command":"insertLink","document":"code","replace":[64,10],"selection":[64,10],"selectionAfter":[65,10],"with":"[let x = 1\n](https://example.com)"}
+{"argument":"https://example.com","command":"insertLink","document":"code","replace":[93,0],"selection":[64,10],"selectionAfter":[64,10],"with":""}
 {"command":"insertHorizontalRule","document":"code","replace":[64,9],"selection":[64,10],"selectionAfter":[69,0],"with":"***\n"}
 {"command":"moveImage","document":"code","replace":[93,0],"selection":[64,10],"selectionAfter":[0,0],"with":""}
 {"argument":"bold","command":"toggleInline","document":"code","replace":[93,0],"selection":[73,1],"selectionAfter":[73,1],"with":""}
 {"argument":"italic","command":"toggleInline","document":"code","replace":[93,0],"selection":[73,1],"selectionAfter":[73,1],"with":""}
 {"argument":"underline","command":"toggleInline","document":"code","replace":[93,0],"selection":[73,1],"selectionAfter":[73,1],"with":""}
 {"argument":"strikethrough","command":"toggleInline","document":"code","replace":[93,0],"selection":[73,1],"selectionAfter":[73,1],"with":""}
-{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[73,1],"selection":[73,1],"selectionAfter":[74,1],"with":"`\n`"}
+{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[93,0],"selection":[73,1],"selectionAfter":[73,1],"with":""}
 {"argument":"0","command":"applyHeading","document":"code","replace":[93,0],"selection":[73,1],"selectionAfter":[73,1],"with":""}
 {"argument":"1","command":"applyHeading","document":"code","replace":[64,0],"selection":[73,1],"selectionAfter":[75,1],"with":"# "}
 {"argument":"2","command":"applyHeading","document":"code","replace":[64,0],"selection":[73,1],"selectionAfter":[76,1],"with":"## "}
@@ -2495,14 +2495,14 @@
 {"command":"toggleQuote","document":"code","replace":[64,0],"selection":[73,1],"selectionAfter":[75,1],"with":"> "}
 {"command":"wrapCodeBlock","document":"code","replace":[64,9],"selection":[73,1],"selectionAfter":[77,1],"with":"```\nlet x = 1\n```"}
 {"command":"insertNewline","document":"code","replace":[93,0],"selection":[73,1],"selectionAfter":[74,0],"with":""}
-{"argument":"https://example.com","command":"insertLink","document":"code","replace":[73,1],"selection":[73,1],"selectionAfter":[74,1],"with":"[\n](https://example.com)"}
+{"argument":"https://example.com","command":"insertLink","document":"code","replace":[93,0],"selection":[73,1],"selectionAfter":[73,1],"with":""}
 {"command":"insertHorizontalRule","document":"code","replace":[74,0],"selection":[73,1],"selectionAfter":[79,0],"with":"***\n\n"}
 {"command":"moveImage","document":"code","replace":[93,0],"selection":[73,1],"selectionAfter":[0,0],"with":""}
-{"argument":"bold","command":"toggleInline","document":"code","replace":[74,3],"selection":[73,4],"selectionAfter":[76,3],"with":"**```**"}
-{"argument":"italic","command":"toggleInline","document":"code","replace":[74,3],"selection":[73,4],"selectionAfter":[75,3],"with":"*```*"}
-{"argument":"underline","command":"toggleInline","document":"code","replace":[74,3],"selection":[73,4],"selectionAfter":[77,3],"with":"<u>```</u>"}
-{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[74,3],"selection":[73,4],"selectionAfter":[76,3],"with":"~~```~~"}
-{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[73,1],"selection":[73,4],"selectionAfter":[78,4],"with":"```` \n``` `"}
+{"argument":"bold","command":"toggleInline","document":"code","replace":[93,0],"selection":[73,4],"selectionAfter":[73,4],"with":""}
+{"argument":"italic","command":"toggleInline","document":"code","replace":[93,0],"selection":[73,4],"selectionAfter":[73,4],"with":""}
+{"argument":"underline","command":"toggleInline","document":"code","replace":[93,0],"selection":[73,4],"selectionAfter":[73,4],"with":""}
+{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[93,0],"selection":[73,4],"selectionAfter":[73,4],"with":""}
+{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[93,0],"selection":[73,4],"selectionAfter":[73,4],"with":""}
 {"argument":"0","command":"applyHeading","document":"code","replace":[93,0],"selection":[73,4],"selectionAfter":[73,4],"with":""}
 {"argument":"1","command":"applyHeading","document":"code","replace":[64,10],"selection":[73,4],"selectionAfter":[75,6],"with":"# let x = 1\n# "}
 {"argument":"2","command":"applyHeading","document":"code","replace":[64,10],"selection":[73,4],"selectionAfter":[76,7],"with":"## let x = 1\n## "}
@@ -2516,14 +2516,14 @@
 {"command":"toggleQuote","document":"code","replace":[64,10],"selection":[73,4],"selectionAfter":[75,6],"with":"> let x = 1\n> "}
 {"command":"wrapCodeBlock","document":"code","replace":[64,10],"selection":[73,4],"selectionAfter":[78,4],"with":"````\nlet x = 1\n```\n`"}
 {"command":"insertNewline","document":"code","replace":[74,3],"selection":[73,4],"selectionAfter":[74,0],"with":""}
-{"argument":"https://example.com","command":"insertLink","document":"code","replace":[73,4],"selection":[73,4],"selectionAfter":[74,4],"with":"[\n```](https://example.com)"}
+{"argument":"https://example.com","command":"insertLink","document":"code","replace":[93,0],"selection":[73,4],"selectionAfter":[73,4],"with":""}
 {"command":"insertHorizontalRule","document":"code","replace":[74,3],"selection":[73,4],"selectionAfter":[78,0],"with":"***\n"}
 {"command":"moveImage","document":"code","replace":[93,0],"selection":[73,4],"selectionAfter":[0,0],"with":""}
-{"argument":"bold","command":"toggleInline","document":"code","replace":[74,3],"selection":[74,3],"selectionAfter":[76,3],"with":"**```**"}
-{"argument":"italic","command":"toggleInline","document":"code","replace":[74,3],"selection":[74,3],"selectionAfter":[75,3],"with":"*```*"}
-{"argument":"underline","command":"toggleInline","document":"code","replace":[74,3],"selection":[74,3],"selectionAfter":[77,3],"with":"<u>```</u>"}
-{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[74,3],"selection":[74,3],"selectionAfter":[76,3],"with":"~~```~~"}
-{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[77,0],"selection":[74,3],"selectionAfter":[79,3],"with":"` ``` ````"}
+{"argument":"bold","command":"toggleInline","document":"code","replace":[93,0],"selection":[74,3],"selectionAfter":[74,3],"with":""}
+{"argument":"italic","command":"toggleInline","document":"code","replace":[93,0],"selection":[74,3],"selectionAfter":[74,3],"with":""}
+{"argument":"underline","command":"toggleInline","document":"code","replace":[93,0],"selection":[74,3],"selectionAfter":[74,3],"with":""}
+{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[93,0],"selection":[74,3],"selectionAfter":[74,3],"with":""}
+{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[93,0],"selection":[74,3],"selectionAfter":[74,3],"with":""}
 {"argument":"0","command":"applyHeading","document":"code","replace":[93,0],"selection":[74,3],"selectionAfter":[74,3],"with":""}
 {"argument":"1","command":"applyHeading","document":"code","replace":[74,0],"selection":[74,3],"selectionAfter":[76,3],"with":"# "}
 {"argument":"2","command":"applyHeading","document":"code","replace":[74,0],"selection":[74,3],"selectionAfter":[77,3],"with":"## "}
@@ -2537,14 +2537,14 @@
 {"command":"toggleQuote","document":"code","replace":[74,0],"selection":[74,3],"selectionAfter":[76,3],"with":"> "}
 {"command":"wrapCodeBlock","document":"code","replace":[77,0],"selection":[74,3],"selectionAfter":[79,3],"with":"`\n```\n````"}
 {"command":"insertNewline","document":"code","replace":[74,3],"selection":[74,3],"selectionAfter":[75,0],"with":"\n"}
-{"argument":"https://example.com","command":"insertLink","document":"code","replace":[74,3],"selection":[74,3],"selectionAfter":[75,3],"with":"[```](https://example.com)"}
+{"argument":"https://example.com","command":"insertLink","document":"code","replace":[93,0],"selection":[74,3],"selectionAfter":[74,3],"with":""}
 {"command":"insertHorizontalRule","document":"code","replace":[74,3],"selection":[74,3],"selectionAfter":[78,0],"with":"***\n"}
 {"command":"moveImage","document":"code","replace":[93,0],"selection":[74,3],"selectionAfter":[0,0],"with":""}
-{"argument":"bold","command":"toggleInline","document":"code","replace":[74,3],"selection":[74,4],"selectionAfter":[76,3],"with":"**```**"}
-{"argument":"italic","command":"toggleInline","document":"code","replace":[74,3],"selection":[74,4],"selectionAfter":[75,3],"with":"*```*"}
-{"argument":"underline","command":"toggleInline","document":"code","replace":[74,3],"selection":[74,4],"selectionAfter":[77,3],"with":"<u>```</u>"}
-{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[74,3],"selection":[74,4],"selectionAfter":[76,3],"with":"~~```~~"}
-{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[77,1],"selection":[74,4],"selectionAfter":[79,4],"with":"` ```\n ````"}
+{"argument":"bold","command":"toggleInline","document":"code","replace":[93,0],"selection":[74,4],"selectionAfter":[74,4],"with":""}
+{"argument":"italic","command":"toggleInline","document":"code","replace":[93,0],"selection":[74,4],"selectionAfter":[74,4],"with":""}
+{"argument":"underline","command":"toggleInline","document":"code","replace":[93,0],"selection":[74,4],"selectionAfter":[74,4],"with":""}
+{"argument":"strikethrough","command":"toggleInline","document":"code","replace":[93,0],"selection":[74,4],"selectionAfter":[74,4],"with":""}
+{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[93,0],"selection":[74,4],"selectionAfter":[74,4],"with":""}
 {"argument":"0","command":"applyHeading","document":"code","replace":[93,0],"selection":[74,4],"selectionAfter":[74,4],"with":""}
 {"argument":"1","command":"applyHeading","document":"code","replace":[74,0],"selection":[74,4],"selectionAfter":[76,4],"with":"# "}
 {"argument":"2","command":"applyHeading","document":"code","replace":[74,0],"selection":[74,4],"selectionAfter":[77,4],"with":"## "}
@@ -2558,14 +2558,14 @@
 {"command":"toggleQuote","document":"code","replace":[74,0],"selection":[74,4],"selectionAfter":[76,4],"with":"> "}
 {"command":"wrapCodeBlock","document":"code","replace":[77,0],"selection":[74,4],"selectionAfter":[79,4],"with":"`\n```\n````"}
 {"command":"insertNewline","document":"code","replace":[74,3],"selection":[74,4],"selectionAfter":[75,0],"with":""}
-{"argument":"https://example.com","command":"insertLink","document":"code","replace":[74,4],"selection":[74,4],"selectionAfter":[75,4],"with":"[```\n](https://example.com)"}
+{"argument":"https://example.com","command":"insertLink","document":"code","replace":[93,0],"selection":[74,4],"selectionAfter":[74,4],"with":""}
 {"command":"insertHorizontalRule","document":"code","replace":[74,3],"selection":[74,4],"selectionAfter":[78,0],"with":"***"}
 {"command":"moveImage","document":"code","replace":[93,0],"selection":[74,4],"selectionAfter":[0,0],"with":""}
 {"argument":"bold","command":"toggleInline","document":"code","replace":[93,0],"selection":[77,1],"selectionAfter":[77,1],"with":""}
 {"argument":"italic","command":"toggleInline","document":"code","replace":[93,0],"selection":[77,1],"selectionAfter":[77,1],"with":""}
 {"argument":"underline","command":"toggleInline","document":"code","replace":[93,0],"selection":[77,1],"selectionAfter":[77,1],"with":""}
 {"argument":"strikethrough","command":"toggleInline","document":"code","replace":[93,0],"selection":[77,1],"selectionAfter":[77,1],"with":""}
-{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[77,1],"selection":[77,1],"selectionAfter":[78,1],"with":"`\n`"}
+{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[93,0],"selection":[77,1],"selectionAfter":[77,1],"with":""}
 {"argument":"0","command":"applyHeading","document":"code","replace":[93,0],"selection":[77,1],"selectionAfter":[77,1],"with":""}
 {"argument":"1","command":"applyHeading","document":"code","replace":[74,0],"selection":[77,1],"selectionAfter":[79,1],"with":"# "}
 {"argument":"2","command":"applyHeading","document":"code","replace":[74,0],"selection":[77,1],"selectionAfter":[80,1],"with":"## "}
@@ -2579,14 +2579,14 @@
 {"command":"toggleQuote","document":"code","replace":[74,0],"selection":[77,1],"selectionAfter":[79,1],"with":"> "}
 {"command":"wrapCodeBlock","document":"code","replace":[77,0],"selection":[77,1],"selectionAfter":[82,1],"with":"`\n```\n````"}
 {"command":"insertNewline","document":"code","replace":[93,0],"selection":[77,1],"selectionAfter":[78,0],"with":""}
-{"argument":"https://example.com","command":"insertLink","document":"code","replace":[77,1],"selection":[77,1],"selectionAfter":[78,1],"with":"[\n](https://example.com)"}
+{"argument":"https://example.com","command":"insertLink","document":"code","replace":[93,0],"selection":[77,1],"selectionAfter":[77,1],"with":""}
 {"command":"insertHorizontalRule","document":"code","replace":[78,0],"selection":[77,1],"selectionAfter":[82,0],"with":"***\n"}
 {"command":"moveImage","document":"code","replace":[93,0],"selection":[77,1],"selectionAfter":[0,0],"with":""}
 {"argument":"bold","command":"toggleInline","document":"code","replace":[93,0],"selection":[77,2],"selectionAfter":[77,2],"with":""}
 {"argument":"italic","command":"toggleInline","document":"code","replace":[93,0],"selection":[77,2],"selectionAfter":[77,2],"with":""}
 {"argument":"underline","command":"toggleInline","document":"code","replace":[93,0],"selection":[77,2],"selectionAfter":[77,2],"with":""}
 {"argument":"strikethrough","command":"toggleInline","document":"code","replace":[93,0],"selection":[77,2],"selectionAfter":[77,2],"with":""}
-{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[77,2],"selection":[77,2],"selectionAfter":[78,2],"with":"`\n\n`"}
+{"argument":"inlineCode","command":"toggleInline","document":"code","replace":[93,0],"selection":[77,2],"selectionAfter":[77,2],"with":""}
 {"argument":"0","command":"applyHeading","document":"code","replace":[93,0],"selection":[77,2],"selectionAfter":[77,2],"with":""}
 {"argument":"1","command":"applyHeading","document":"code","replace":[74,0],"selection":[77,2],"selectionAfter":[79,2],"with":"# "}
 {"argument":"2","command":"applyHeading","document":"code","replace":[74,0],"selection":[77,2],"selectionAfter":[80,2],"with":"## "}
@@ -2600,7 +2600,7 @@
 {"command":"toggleQuote","document":"code","replace":[74,0],"selection":[77,2],"selectionAfter":[79,2],"with":"> "}
 {"command":"wrapCodeBlock","document":"code","replace":[77,0],"selection":[77,2],"selectionAfter":[82,2],"with":"`\n```\n````"}
 {"command":"insertNewline","document":"code","replace":[78,1],"selection":[77,2],"selectionAfter":[78,0],"with":""}
-{"argument":"https://example.com","command":"insertLink","document":"code","replace":[77,2],"selection":[77,2],"selectionAfter":[78,2],"with":"[\n\n](https://example.com)"}
+{"argument":"https://example.com","command":"insertLink","document":"code","replace":[93,0],"selection":[77,2],"selectionAfter":[77,2],"with":""}
 {"command":"insertHorizontalRule","document":"code","replace":[78,0],"selection":[77,2],"selectionAfter":[83,0],"with":"***\n"}
 {"command":"moveImage","document":"code","replace":[93,0],"selection":[77,2],"selectionAfter":[0,0],"with":""}
 {"argument":"bold","command":"toggleInline","document":"code","replace":[93,0],"selection":[78,1],"selectionAfter":[78,1],"with":""}

@@ -2,7 +2,8 @@ import MarkdownEditorUI
 import SwiftUI
 
 /// A popover modeled on the "Customize Theme" dialog at kirupa.com: a color
-/// row, a light/dark background toggle, and explicit Apply/Cancel buttons.
+/// row, a light/dark background toggle, the face the document is set in and
+/// how large it is drawn, and explicit Apply/Cancel buttons.
 struct ThemePickerPopover: View {
     @Binding var colorTheme: EditorColorTheme
     @Binding var isPresented: Bool
@@ -58,6 +59,18 @@ struct ThemePickerPopover: View {
                 .labelsHidden()
             }
 
+            Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Font")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                fontMenu
+
+                textSizeSlider
+            }
+
             preview
 
             Divider()
@@ -81,6 +94,60 @@ struct ThemePickerPopover: View {
         .frame(width: 304)
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear { draft = colorTheme }
+    }
+
+    /// The face the document is set in, chosen from exactly the faces the
+    /// critique's hand menu offers, shown the same way.
+    private var fontMenu: some View {
+        Menu {
+            TypefaceMenuItems(selected: draft.typeface) { candidate in
+                draft.typeface = candidate
+            }
+        } label: {
+            Text(draft.typeface.title)
+        }
+        .accessibilityLabel("Font")
+        .help("The face the document is set in")
+    }
+
+    /// How large the document is drawn, beneath the face because it is the
+    /// face's correction: two hands at the same size can look a size apart.
+    /// 75% to 150% in steps of 5%, so 100% is always a stop.
+    private var textSizeSlider: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text("Size")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(verbatim: textScalePercent)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            Slider(
+                value: $draft.textScale,
+                in: EditorColorTheme.textScaleRange,
+                step: 0.05
+            ) {
+                Text("Size")
+            } minimumValueLabel: {
+                Text(verbatim: "A")
+                    .font(.system(size: 10))
+                    .accessibilityHidden(true)
+            } maximumValueLabel: {
+                Text(verbatim: "A")
+                    .font(.system(size: 16))
+                    .accessibilityHidden(true)
+            }
+            .labelsHidden()
+            .accessibilityLabel("Text size")
+            .accessibilityValue(textScalePercent)
+            .help("How large the document's text is drawn")
+        }
+    }
+
+    private var textScalePercent: String {
+        "\(Int((draft.textScale * 100).rounded()))%"
     }
 
     private func swatch(for themeColor: EditorThemeColor) -> some View {
@@ -118,13 +185,20 @@ struct ThemePickerPopover: View {
     private var preview: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(verbatim: "Heading")
-                .font(.system(size: 15, weight: .bold))
+                .font(
+                    Font(
+                        draft.typeface.font(
+                            ofSize: draft.scaled(15),
+                            weight: .bold
+                        )
+                    )
+                )
                 .foregroundColor(Color(nsColor: draft.primaryTextColor))
             Text(verbatim: "Body paragraph text")
-                .font(.system(size: 12))
+                .font(Font(draft.typeface.font(ofSize: draft.scaled(12))))
                 .foregroundColor(Color(nsColor: draft.primaryTextColor))
             Text(verbatim: "let code = true")
-                .font(.system(size: 11, design: .monospaced))
+                .font(.system(size: draft.scaled(11), design: .monospaced))
                 .foregroundColor(Color(nsColor: draft.primaryTextColor))
                 .padding(.horizontal, 5)
                 .padding(.vertical, 3)

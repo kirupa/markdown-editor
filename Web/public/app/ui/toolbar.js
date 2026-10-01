@@ -126,6 +126,8 @@ export function buildToolbar(root, commands) {
     commands.toggleSidebar()
   );
 
+  const linkButton = iconButton('link', 'Insert Link (⌘K)', () => commands.link());
+
   root.replaceChildren(
     group(sidebarButton),
     separator(),
@@ -138,7 +140,7 @@ export function buildToolbar(root, commands) {
     group(...listButtons.values()),
     separator(),
     group(
-      iconButton('link', 'Insert Link (⌘K)', () => commands.link()),
+      linkButton,
       iconButton('image', 'Add Image (⇧⌘I)', () => commands.image()),
       iconButton('rule', 'Horizontal Rule (⌃⌘H)', () => commands.horizontalRule())
     ),
@@ -165,6 +167,25 @@ export function buildToolbar(root, commands) {
       }
       quoteButton.setAttribute('aria-pressed', String(quote));
       if (document.activeElement !== headings) headings.value = String(heading);
+    },
+
+    /**
+     * Greys out what cannot work where the caret sits.
+     *
+     * Inside a fenced block or a code span Markdown is literal, so bold there
+     * could only write two asterisks into somebody's code. The command already
+     * refuses; this is what says so before the click rather than after it.
+     * Greyed rather than hidden: a control that vanishes teaches nothing, and
+     * a toolbar that changes shape as the caret moves is its own problem.
+     */
+    setAvailability({ inline = null, link = true } = {}) {
+      for (const [name, button] of inlineButtons) {
+        const allowed = inline === null || inline.has(name);
+        button.disabled = !allowed;
+        button.setAttribute('aria-disabled', String(!allowed));
+      }
+      linkButton.disabled = !link;
+      linkButton.setAttribute('aria-disabled', String(!link));
     },
   };
 }

@@ -121,7 +121,14 @@ struct DocumentEditorView: View {
                 onInsertLink: { isAskingForLink = true },
                 onInsertImage: { isChoosingImageSource = true },
                 onSizeImage: { isSizingImage = true },
-                canSizeImage: imageAtSelection() != nil
+                canSizeImage: imageAtSelection() != nil,
+                // Read from the blocks at the selection's two ends, never from
+                // a render of the whole document: this is a view body, asked
+                // several times per keystroke.
+                codeContext: MarkdownCodeContext.containing(
+                    controller.selection,
+                    in: document.text as NSString
+                )
             )
             Divider()
             ExternalChangeBanner(
@@ -345,7 +352,13 @@ struct DocumentEditorView: View {
         let selection = controller.selection
         guard selection.location <= text.length else { return nil }
 
-        for span in MarkdownRenderer.render(document.text).spans {
+        // Scoped to the block the caret is in: this is read from a view body,
+        // so rendering the document here cost a full parse on every SwiftUI
+        // pass, several times per keystroke.
+        for span in MarkdownFormatting.spansAroundBlock(
+            at: selection.location,
+            in: text
+        ) {
             guard case .image = span.style else { continue }
             guard
                 selection.location >= span.sourceRange.location,

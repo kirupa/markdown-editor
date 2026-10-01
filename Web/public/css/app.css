@@ -50,6 +50,19 @@
   --me-ui-font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --me-text-font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --me-mono-font: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  /* The face the document is set in, and what to multiply its sizes by so it
+     reads at the size the numbers above promise (T-16). theme.js sets both
+     from Customize Theme; code keeps --me-mono-font whatever the face. */
+  --me-page-font: var(--me-text-font);
+  --me-page-scale: 1;
+
+  /* How large the document is drawn, from Customize Theme ▸ Size (T-23):
+     0.75 to 1.5, set by theme.js. It multiplies everything the text is set
+     with — type, the gaps between paragraphs, the indents of lists, quotes
+     and code — so 150% is the same page drawn larger. The column and the
+     pictures in it keep their size. */
+  --me-text-scale: 1;
 }
 
 * { box-sizing: border-box; }
@@ -68,9 +81,17 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* A tint and no text colour, so selected words keep their own. */
 ::selection {
-  background: var(--me-selection-background);
-  color: var(--me-selection-text);
+  background: var(--me-text-selection-background);
+}
+
+/* T-24: in the document the editor draws the selection itself — rounded, and
+   fading where it runs on across lines — so the browser's square one is
+   switched off there, but only while selection-highlight.js is drawing. */
+.me-surface[data-draws-selection]::selection,
+.me-surface[data-draws-selection] ::selection {
+  background: transparent;
 }
 
 /* ---------------------------------------------------------------- app shell */
@@ -567,8 +588,8 @@ body {
   min-height: 100%;
   padding: 20px var(--me-surface-padding);      /* Y-7 */
   outline: none;
-  font-family: var(--me-text-font);
-  font-size: var(--me-body-size);
+  font-family: var(--me-page-font);
+  font-size: calc(var(--me-body-size) * var(--me-page-scale) * var(--me-text-scale));
   line-height: var(--me-line-height);
   color: var(--me-primary-text);
   caret-color: var(--me-primary-text);
@@ -580,7 +601,7 @@ body {
 /* ------------------------------------------------------- rendered block styles */
 
 .me-block { margin: 0; }
-.me-block + .me-block { margin-top: var(--me-paragraph-gap); }
+.me-block + .me-block { margin-top: calc(var(--me-paragraph-gap) * var(--me-text-scale)); }
 
 .me-h1, .me-h2, .me-h3, .me-h4, .me-h5, .me-h6 {
   font-weight: 700;
@@ -588,35 +609,35 @@ body {
   margin: 0;
 }
 
-.me-block.me-h1, .me-block.me-h2 { margin-top: var(--me-heading-gap-large); }
+.me-block.me-h1, .me-block.me-h2 { margin-top: calc(var(--me-heading-gap-large) * var(--me-text-scale)); }
 .me-block.me-h3, .me-block.me-h4,
-.me-block.me-h5, .me-block.me-h6 { margin-top: var(--me-heading-gap-small); }
+.me-block.me-h5, .me-block.me-h6 { margin-top: calc(var(--me-heading-gap-small) * var(--me-text-scale)); }
 .me-h1 + .me-block, .me-h2 + .me-block,
 .me-h3 + .me-block, .me-h4 + .me-block,
-.me-h5 + .me-block, .me-h6 + .me-block { margin-top: var(--me-heading-gap-below); }
+.me-h5 + .me-block, .me-h6 + .me-block { margin-top: calc(var(--me-heading-gap-below) * var(--me-text-scale)); }
 
-.me-h1 { font-size: var(--me-h1-size); }
-.me-h2 { font-size: var(--me-h2-size); }
-.me-h3 { font-size: var(--me-h3-size); }
-.me-h4 { font-size: var(--me-h4-size); }
-.me-h5 { font-size: var(--me-h5-size); }
-.me-h6 { font-size: var(--me-h6-size); }
+.me-h1 { font-size: calc(var(--me-h1-size) * var(--me-page-scale) * var(--me-text-scale)); }
+.me-h2 { font-size: calc(var(--me-h2-size) * var(--me-page-scale) * var(--me-text-scale)); }
+.me-h3 { font-size: calc(var(--me-h3-size) * var(--me-page-scale) * var(--me-text-scale)); }
+.me-h4 { font-size: calc(var(--me-h4-size) * var(--me-page-scale) * var(--me-text-scale)); }
+.me-h5 { font-size: calc(var(--me-h5-size) * var(--me-page-scale) * var(--me-text-scale)); }
+.me-h6 { font-size: calc(var(--me-h6-size) * var(--me-page-scale) * var(--me-text-scale)); }
 
 /* Y-3: a hanging indent so wrapped lines align under the text, not the bullet. */
 .me-list {
-  padding-left: var(--me-list-indent);
-  text-indent: calc(-1 * var(--me-list-indent) + 5px);
+  padding-left: calc(var(--me-list-indent) * var(--me-text-scale));
+  text-indent: calc((-1 * var(--me-list-indent) + 5px) * var(--me-text-scale));
 }
 
 .me-quote {
-  padding-left: var(--me-quote-inset);
-  padding-right: 8px;                          /* Y-4 */
+  padding-left: calc(var(--me-quote-inset) * var(--me-text-scale));
+  padding-right: calc(8px * var(--me-text-scale));   /* Y-4 */
   border-left: 3px solid color-mix(in srgb, var(--me-primary-text) 28%, transparent);
 }
 
 .me-rule {
   text-align: center;
-  margin: 8px 0;                               /* Y-6 */
+  margin: calc(8px * var(--me-text-scale)) 0;         /* Y-6 */
   color: var(--me-secondary-text);
 }
 
@@ -624,9 +645,9 @@ body {
    the opening line flush with every following line. */
 .me-code-block {
   font-family: var(--me-mono-font);
-  font-size: var(--me-code-size);
+  font-size: calc(var(--me-code-size) * var(--me-text-scale));
   background: var(--me-code-block-background);
-  padding: 2px 12px;
+  padding: calc(2px * var(--me-text-scale)) calc(12px * var(--me-text-scale));
   margin: 0;
 }
 
@@ -634,8 +655,12 @@ body {
    breaks into stripes (Y-5). */
 .me-block.me-code-block + .me-block.me-code-block { margin-top: 0; }
 
-.me-code-block--first { padding-top: 9px; border-radius: 7px 7px 0 0; margin-top: var(--me-paragraph-gap); }
-.me-code-block--last { padding-bottom: 9px; border-radius: 0 0 7px 7px; }
+.me-code-block--first {
+  padding-top: calc(9px * var(--me-text-scale));
+  border-radius: 7px 7px 0 0;
+  margin-top: calc(var(--me-paragraph-gap) * var(--me-text-scale));
+}
+.me-code-block--last { padding-bottom: calc(9px * var(--me-text-scale)); border-radius: 0 0 7px 7px; }
 .me-code-block--first.me-code-block--last { border-radius: 7px; }
 
 .me-bold { font-weight: 700; }
@@ -645,7 +670,7 @@ body {
 
 .me-code {
   font-family: var(--me-mono-font);
-  font-size: var(--me-code-size);
+  font-size: calc(var(--me-code-size) * var(--me-text-scale));
   background: var(--me-inline-code-background);
   border-radius: 4px;
   padding: 1px 4px;
@@ -753,6 +778,38 @@ body {
 [data-moving-image] .me-block,
 [data-moving-image] .me-image { cursor: grabbing; }
 
+/* T-24: the selection's bars (selection-highlight.js).
+
+   The layer follows the surface inside the scrolling pane, so the bars scroll
+   with the words for free; it takes no room and no clicks. The clip covers
+   exactly the surface, so a fade reaching past the pane's edge cannot make the
+   pane scroll sideways. Neither may start a stacking context — no z-index,
+   opacity, transform or isolation — because each bar blends with the text
+   beneath it, and that only works if the text is in the same group. */
+.me-selection-layer {
+  position: relative;
+  flex: none;
+  height: 0;
+  pointer-events: none;
+  user-select: none;
+}
+
+.me-selection-layer__clip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  overflow: hidden;
+}
+
+/* Over the words, blended so they keep their colours: multiply on a light
+   page, screen on a dark one. The colour and the fades are set per bar. */
+.me-selection-bar {
+  position: absolute;
+  mix-blend-mode: multiply;
+}
+
+.me-selection-layer[data-blend="screen"] .me-selection-bar { mix-blend-mode: screen; }
+
 /* The rule marking where the picture would land.
 
    Drawn across the whole column rather than as a caret between two characters,
@@ -823,7 +880,7 @@ body {
 
 .me-image--broken {
   font-family: var(--me-mono-font);
-  font-size: var(--me-code-size);
+  font-size: calc(var(--me-code-size) * var(--me-text-scale));
   color: var(--me-secondary-text);
   background: var(--me-inline-code-background);
   border-radius: 4px;
@@ -1104,6 +1161,12 @@ body {
   box-shadow: 0 14px 40px rgb(0 0 0 / 0.3);
 }
 
+/* WT-19: Customize Theme is one width whatever it previews. Were it to fit its
+   preview, a larger size or a wider face would widen it — and the size slider
+   with it, moving the thumb out from under the pointer as it is dragged. The
+   preview wraps instead; the popover grows downward only, below the slider. */
+.me-popover--theme { width: 316px; max-width: calc(100vw - 16px); }
+
 .me-popover__title { font-weight: 700; margin: 0 0 12px; }
 .me-popover__label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--me-secondary-text); margin: 0 0 7px; }
 .me-popover__section { margin-bottom: 14px; }
@@ -1161,9 +1224,33 @@ body {
   color: var(--preview-text);
 }
 
-.me-preview__title { font-weight: 700; font-size: 15px; }
-.me-preview__body { font-size: 12px; opacity: 0.85; margin-top: 3px; }
-.me-preview__accent { display: inline-block; margin-top: 8px; padding: 2px 8px; border-radius: 5px; background: var(--preview-accent); color: var(--preview-accent-text); font-size: 11px; }
+.me-preview__title { font-family: var(--preview-font); font-weight: 700; font-size: calc(15px * var(--preview-scale, 1) * var(--preview-text-scale, 1)); overflow-wrap: anywhere; }
+.me-preview__body { font-family: var(--preview-font); font-size: calc(12px * var(--preview-scale, 1) * var(--preview-text-scale, 1)); opacity: 0.85; margin-top: 3px; overflow-wrap: anywhere; }
+.me-preview__accent { display: inline-block; margin-top: 8px; padding: 2px 8px; border-radius: 5px; background: var(--preview-accent); font-size: 11px; }
+
+.me-font-select {
+  width: 100%;
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+  padding: 6px 8px;
+  border-radius: 7px;
+  border: 1px solid var(--me-separator);
+  background: var(--me-page-background);
+}
+
+/* T-23: the size slider, a small A and a large A either side of it. */
+.me-size-header { display: flex; align-items: baseline; justify-content: space-between; }
+.me-size-value {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--me-secondary-text);
+}
+.me-size-row { display: flex; align-items: center; gap: 8px; }
+.me-size-slider { flex: 1; min-width: 0; margin: 0; accent-color: var(--me-accent); }
+.me-size-glyph { color: var(--me-secondary-text); line-height: 1; }
+.me-size-glyph--small { font-size: 10px; }
+.me-size-glyph--large { font-size: 16px; }
 
 .me-popover__buttons { display: flex; justify-content: flex-end; gap: 8px; }
 .me-popover__buttons .me-button { text-align: center; }
@@ -1463,7 +1550,15 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-.me-format__button:active { background: color-mix(in srgb, var(--me-accent) 22%, transparent); }
+.me-format__button:active:not(:disabled) {
+  background: color-mix(in srgb, var(--me-accent) 22%, transparent);
+}
+
+/* Off where the command could not work: inside a fenced block or a code span,
+   where Markdown is literal and bold could only write two asterisks into
+   somebody's code. Greyed rather than hidden, so the bar does not change shape
+   as the caret moves. Matches `.me-tool:disabled` on the desktop toolbar. */
+.me-format__button:disabled { opacity: 0.35; }
 
 .me-format__button[aria-pressed="true"] {
   background: var(--me-selection-background);

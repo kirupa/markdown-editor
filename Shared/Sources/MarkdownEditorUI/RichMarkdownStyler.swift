@@ -16,6 +16,34 @@ public enum RichMarkdownStyler {
         colorTheme: EditorColorTheme,
         page: MarkdownPageMetrics? = nil
     ) -> NSAttributedString {
+        attributedString(
+            forFragment: model.text,
+            spans: model.spans,
+            documentURL: documentURL,
+            colorTheme: colorTheme,
+            page: page
+        )
+    }
+
+    /// Styles part of a document as if the rest of it were not there.
+    ///
+    /// This is what lets a keystroke cost one block instead of one document.
+    /// It is only sound because every rule below is confined to a span's own
+    /// range or to the paragraph that range sits in, and the fragments handed
+    /// to it always begin and end on a block boundary — which is a paragraph
+    /// boundary in the rendered text. So a fragment styled alone comes out
+    /// identical, attribute for attribute, to the same stretch of a document
+    /// styled whole. `RichMarkdownStylerFragmentTests` checks that over the
+    /// contract corpus rather than leaving it as an argument.
+    ///
+    /// `spans` are in the fragment's own coordinates.
+    public static func attributedString(
+        forFragment fragment: String,
+        spans: [MarkdownRenderSpan],
+        documentURL: URL?,
+        colorTheme: EditorColorTheme,
+        page: MarkdownPageMetrics? = nil
+    ) -> NSAttributedString {
         // The page is wider than the column prose is set in, and every
         // paragraph is indented by the difference so it wraps at the column.
         // A picture is the one thing allowed to give that indent up — see
@@ -28,11 +56,11 @@ public enum RichMarkdownStyler {
         let bleed = page?.bleed ?? 0
 
         let attributedText = NSMutableAttributedString(
-            string: model.text,
+            string: fragment,
             attributes: baseAttributes(colorTheme: colorTheme, bleed: bleed)
         )
 
-        for span in model.spans
+        for span in spans
         where span.style.isBlockStyle
             && (!span.isAtomic || span.style.usesAtomicBlockStyling)
         {
@@ -43,7 +71,7 @@ public enum RichMarkdownStyler {
                 bleed: bleed
             )
         }
-        for span in model.spans
+        for span in spans
         where !span.style.isBlockStyle
             || (span.isAtomic && !span.style.usesAtomicBlockStyling)
         {
@@ -65,14 +93,14 @@ public enum RichMarkdownStyler {
         bleed: CGFloat
     ) -> [NSAttributedString.Key: Any] {
         let baseParagraphStyle = NSMutableParagraphStyle()
-        baseParagraphStyle.lineSpacing = 2
-        baseParagraphStyle.paragraphSpacing = 7
+        baseParagraphStyle.lineSpacing = colorTheme.scaled(2)
+        baseParagraphStyle.paragraphSpacing = colorTheme.scaled(7)
         baseParagraphStyle.firstLineHeadIndent = bleed
         baseParagraphStyle.headIndent = bleed
         baseParagraphStyle.tailIndent = -bleed
         return [
-            .font: PlatformFont.systemFont(
-                ofSize: MarkdownTypography.bodyFontSize
+            .font: colorTheme.typeface.font(
+                ofSize: colorTheme.scaled(MarkdownTypography.bodyFontSize)
             ),
             .foregroundColor: colorTheme.primaryTextColor,
             .paragraphStyle: baseParagraphStyle
@@ -101,10 +129,29 @@ public enum RichMarkdownStyler {
         colorTheme: EditorColorTheme,
         page: MarkdownPageMetrics? = nil
     ) -> [NSAttributedString.Key: Any]? {
-        guard location >= (model.text as NSString).length else {
+        typingAttributes(
+            spans: model.spans,
+            renderedLength: (model.text as NSString).length,
+            at: location,
+            colorTheme: colorTheme,
+            page: page
+        )
+    }
+
+    /// The same question, asked of the spans around the caret rather than of
+    /// every span in the document. Only the last line of the document can
+    /// answer it, so the caller only has to supply the spans there.
+    public static func typingAttributes(
+        spans: [MarkdownRenderSpan],
+        renderedLength: Int,
+        at location: Int,
+        colorTheme: EditorColorTheme,
+        page: MarkdownPageMetrics? = nil
+    ) -> [NSAttributedString.Key: Any]? {
+        guard location >= renderedLength else {
             return nil
         }
-        guard let span = model.spans.first(where: {
+        guard let span = spans.first(where: {
             $0.style.isBlockStyle
                 && $0.renderedRange.length == 0
                 && $0.renderedRange.location == location
@@ -150,15 +197,18 @@ public enum RichMarkdownStyler {
         case .heading(let level):
             text.addAttribute(
                 .font,
-                value: PlatformFont.systemFont(
-                    ofSize: MarkdownTypography.headingFontSize(level: level),
+                value: colorTheme.typeface.font(
+                    ofSize: colorTheme.scaled(
+                        MarkdownTypography.headingFontSize(level: level)
+                    ),
                     weight: .bold
                 ),
                 range: range
             )
             let paragraphStyle = paragraphStyle(in: text, at: range.location)
-            paragraphStyle.paragraphSpacingBefore = level <= 2 ? 14 : 9
-            paragraphStyle.paragraphSpacing = 8
+            paragraphStyle.paragraphSpacingBefore =
+                colorTheme.scaled(level <= 2 ? 14 : 9)
+            paragraphStyle.paragraphSpacing = colorTheme.scaled(8)
             text.addAttribute(
                 .paragraphStyle,
                 value: paragraphStyle,
@@ -171,7 +221,9 @@ public enum RichMarkdownStyler {
             text.addAttributes(
                 [
                     .font: PlatformFont.monospacedSystemFont(
-                        ofSize: MarkdownTypography.codeFontSize,
+                        ofSize: colorTheme.scaled(
+                            MarkdownTypography.codeFontSize
+                        ),
                         weight: .regular
                     ),
                     .markdownCodeBlockBackground:
@@ -180,10 +232,11 @@ public enum RichMarkdownStyler {
                 range: range
             )
             let paragraphStyle = paragraphStyle(in: text, at: range.location)
-            paragraphStyle.firstLineHeadIndent = bleed + 14
-            paragraphStyle.headIndent = bleed + 14
-            paragraphStyle.tailIndent = -(bleed + 14)
-            paragraphStyle.lineSpacing = 1
+            let codeInset = bleed + colorTheme.scaled(14)
+            paragraphStyle.firstLineHeadIndent = codeInset
+            paragraphStyle.headIndent = codeInset
+            paragraphStyle.tailIndent = -codeInset
+            paragraphStyle.lineSpacing = colorTheme.scaled(1)
             paragraphStyle.paragraphSpacingBefore = 0
             paragraphStyle.paragraphSpacing = 0
             text.addAttribute(
@@ -194,7 +247,8 @@ public enum RichMarkdownStyler {
             applyCodeBlockSpacing(
                 paragraphStyle,
                 range: range,
-                to: text
+                to: text,
+                spacing: colorTheme.scaled(7)
             )
         case .quote:
             text.addAttribute(
@@ -203,9 +257,9 @@ public enum RichMarkdownStyler {
                 range: range
             )
             let paragraphStyle = paragraphStyle(in: text, at: range.location)
-            paragraphStyle.firstLineHeadIndent = bleed + 20
-            paragraphStyle.headIndent = bleed + 20
-            paragraphStyle.tailIndent = -(bleed + 8)
+            paragraphStyle.firstLineHeadIndent = bleed + colorTheme.scaled(20)
+            paragraphStyle.headIndent = bleed + colorTheme.scaled(20)
+            paragraphStyle.tailIndent = -(bleed + colorTheme.scaled(8))
             text.addAttribute(
                 .paragraphStyle,
                 value: paragraphStyle,
@@ -213,12 +267,12 @@ public enum RichMarkdownStyler {
             )
         case .bulletedList, .numberedList, .taskList:
             let paragraphStyle = paragraphStyle(in: text, at: range.location)
-            paragraphStyle.firstLineHeadIndent = bleed + 5
-            paragraphStyle.headIndent = bleed + 24
+            paragraphStyle.firstLineHeadIndent = bleed + colorTheme.scaled(5)
+            paragraphStyle.headIndent = bleed + colorTheme.scaled(24)
             paragraphStyle.tabStops = [
                 NSTextTab(
                     textAlignment: .left,
-                    location: bleed + 24
+                    location: bleed + colorTheme.scaled(24)
                 )
             ]
             text.addAttribute(
@@ -229,13 +283,16 @@ public enum RichMarkdownStyler {
         case .horizontalRule:
             let paragraphStyle = paragraphStyle(in: text, at: range.location)
             paragraphStyle.alignment = .center
-            paragraphStyle.paragraphSpacingBefore = 8
-            paragraphStyle.paragraphSpacing = 8
+            paragraphStyle.paragraphSpacingBefore = colorTheme.scaled(8)
+            paragraphStyle.paragraphSpacing = colorTheme.scaled(8)
             text.addAttributes(
                 [
                     .foregroundColor: colorTheme.separatorColor,
-                    .font: PlatformFont.systemFont(ofSize: 24, weight: .light),
-                    .kern: 6,
+                    .font: PlatformFont.systemFont(
+                        ofSize: colorTheme.scaled(24),
+                        weight: .light
+                    ),
+                    .kern: colorTheme.scaled(6),
                     .paragraphStyle: paragraphStyle
                 ],
                 range: range
@@ -296,9 +353,19 @@ public enum RichMarkdownStyler {
 
         switch span.style {
         case .bold:
-            applyFontTrait(.bold, to: text, range: range)
+            applyFontTrait(
+                .bold,
+                to: text,
+                range: range,
+                colorTheme: colorTheme
+            )
         case .italic:
-            applyFontTrait(.italic, to: text, range: range)
+            applyFontTrait(
+                .italic,
+                to: text,
+                range: range,
+                colorTheme: colorTheme
+            )
         case .underline:
             text.addAttribute(
                 .underlineStyle,
@@ -315,7 +382,9 @@ public enum RichMarkdownStyler {
             text.addAttributes(
                 [
                     .font: PlatformFont.monospacedSystemFont(
-                        ofSize: MarkdownTypography.codeFontSize,
+                        ofSize: colorTheme.scaled(
+                            MarkdownTypography.codeFontSize
+                        ),
                         weight: .regular
                     ),
                     .backgroundColor:
@@ -371,27 +440,59 @@ public enum RichMarkdownStyler {
         }
     }
 
+    /// Stroke added to a face with no bolder member, in percent of its size.
+    /// Negative, which fills the glyph as well as outlining it.
+    static let syntheticBoldStrokeWidth: CGFloat = -3.5
+    /// Skew added to a face with no italic.
+    static let syntheticItalicObliqueness: CGFloat = 0.18
+
     private static func applyFontTrait(
         _ trait: MarkdownFontTrait,
         to text: NSMutableAttributedString,
-        range: NSRange
+        range: NSRange,
+        colorTheme: EditorColorTheme
     ) {
+        let typeface = colorTheme.typeface
         text.enumerateAttribute(.font, in: range) { value, subrange, _ in
             let font = value as? PlatformFont ?? PlatformFont.systemFont(
-                ofSize: MarkdownTypography.bodyFontSize
+                ofSize: colorTheme.scaled(MarkdownTypography.bodyFontSize)
             )
+            let converted = font.markdownFont(withTrait: trait)
             text.addAttribute(
                 .font,
-                value: font.markdownFont(withTrait: trait),
+                value: converted,
                 range: subrange
             )
+            // Every hand the document can be set in ships in one weight and
+            // upright, and asking for a bold or an italic of one hands back the
+            // same face — so ⌘B would appear to do nothing. Where that happens
+            // the emphasis is drawn instead. Never for the system face, which
+            // has every member and has always been drawn exactly as it is.
+            guard typeface != .sans, converted.fontName == font.fontName else {
+                return
+            }
+            switch trait {
+            case .bold:
+                text.addAttribute(
+                    .strokeWidth,
+                    value: syntheticBoldStrokeWidth,
+                    range: subrange
+                )
+            case .italic:
+                text.addAttribute(
+                    .obliqueness,
+                    value: syntheticItalicObliqueness,
+                    range: subrange
+                )
+            }
         }
     }
 
     private static func applyCodeBlockSpacing(
         _ paragraphStyle: NSParagraphStyle,
         range: NSRange,
-        to text: NSMutableAttributedString
+        to text: NSMutableAttributedString,
+        spacing: CGFloat
     ) {
         let string = text.string as NSString
         let firstParagraphRange = NSIntersectionRange(
@@ -414,8 +515,8 @@ public enum RichMarkdownStyler {
             let singleParagraphStyle = paragraphStyle.mutableCopy()
                 as? NSMutableParagraphStyle
                 ?? NSMutableParagraphStyle()
-            singleParagraphStyle.paragraphSpacingBefore = 7
-            singleParagraphStyle.paragraphSpacing = 7
+            singleParagraphStyle.paragraphSpacingBefore = spacing
+            singleParagraphStyle.paragraphSpacing = spacing
             text.addAttribute(
                 .paragraphStyle,
                 value: singleParagraphStyle,
@@ -427,7 +528,7 @@ public enum RichMarkdownStyler {
         let firstParagraphStyle = paragraphStyle.mutableCopy()
             as? NSMutableParagraphStyle
             ?? NSMutableParagraphStyle()
-        firstParagraphStyle.paragraphSpacingBefore = 7
+        firstParagraphStyle.paragraphSpacingBefore = spacing
         text.addAttribute(
             .paragraphStyle,
             value: firstParagraphStyle,
@@ -437,7 +538,7 @@ public enum RichMarkdownStyler {
         let lastParagraphStyle = paragraphStyle.mutableCopy()
             as? NSMutableParagraphStyle
             ?? NSMutableParagraphStyle()
-        lastParagraphStyle.paragraphSpacing = 7
+        lastParagraphStyle.paragraphSpacing = spacing
         text.addAttribute(
             .paragraphStyle,
             value: lastParagraphStyle,

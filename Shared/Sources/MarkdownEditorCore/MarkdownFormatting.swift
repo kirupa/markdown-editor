@@ -40,6 +40,85 @@ public enum MarkdownListStyle {
 }
 
 public enum MarkdownFormatting {
+    /// Whether `style` can do anything at `selection`, and so whether the
+    /// control that runs it should be offered at all.
+    ///
+    /// Inside code the answer is no, because Markdown is inert there: the
+    /// command could only write literal punctuation into the writer's code.
+    /// The one exception is inline code itself while the selection is inside a
+    /// code span — that is how a span is taken off again, and a rule that
+    /// refused it would make a code span impossible to undo from the caret.
+    public static func isAvailable(
+        _ style: MarkdownInlineStyle,
+        in text: String,
+        selection: NSRange
+    ) -> Bool {
+        isAvailable(
+            style,
+            context: MarkdownCodeContext.containing(
+                clamped(selection, to: (text as NSString).length),
+                in: text
+            )
+        )
+    }
+
+    /// The same question asked of an already rendered model, for a caller —
+    /// a toolbar, a menu — that has one and should not parse the document
+    /// again to draw a button.
+    public static func isAvailable(
+        _ style: MarkdownInlineStyle,
+        in model: MarkdownRenderModel,
+        sourceSelection selection: NSRange
+    ) -> Bool {
+        isAvailable(
+            style,
+            context: MarkdownCodeContext.containing(selection, in: model)
+        )
+    }
+
+    public static func isAvailable(
+        _ style: MarkdownInlineStyle,
+        context: MarkdownCodeContext
+    ) -> Bool {
+        switch context {
+        case .prose:
+            true
+        case .codeBlock:
+            false
+        case .inlineCodeSpan:
+            style == .inlineCode
+        }
+    }
+
+    /// Whether a link can be written at `selection`. `[text](url)` inside code
+    /// is six characters of punctuation and no link.
+    public static func isLinkAvailable(
+        in text: String,
+        selection: NSRange
+    ) -> Bool {
+        isLinkAvailable(
+            context: MarkdownCodeContext.containing(
+                clamped(selection, to: (text as NSString).length),
+                in: text
+            )
+        )
+    }
+
+    public static func isLinkAvailable(
+        in model: MarkdownRenderModel,
+        sourceSelection selection: NSRange
+    ) -> Bool {
+        isLinkAvailable(
+            context: MarkdownCodeContext.containing(selection, in: model)
+        )
+    }
+
+    public static func isLinkAvailable(
+        context: MarkdownCodeContext
+    ) -> Bool {
+        context == .prose
+    }
+
     public static func toggleInline(
         _ style: MarkdownInlineStyle,
         in text: String,
@@ -47,6 +126,24 @@ public enum MarkdownFormatting {
     ) -> MarkdownEditResult {
         let source = text as NSString
         let selection = clamped(requestedSelection, to: source.length)
+        let context = MarkdownCodeContext.containing(selection, in: text)
+
+        guard isAvailable(style, context: context) else {
+            return MarkdownEditResult(text: text, selection: selection)
+        }
+
+        // Inline code is the one command still answering inside a code span,
+        // and what it means there is "take this off". The paths below already
+        // do that for a selection that names the span's contents; this covers
+        // the two they cannot see — a bare caret between the backticks, and a
+        // selection that crosses one of the backtick runs — which would
+        // otherwise wrap a second span around part of the first.
+        if case .inlineCodeSpan(let span) = context,
+            let removal = removingCodeSpan(span, source: source, selection: selection)
+        {
+            return removal
+        }
+
         let selectedContent = source.substring(with: selection)
         let markers = markers(for: style, content: selectedContent)
         let openingLength = (markers.opening as NSString).length
@@ -556,12 +653,51 @@ public enum MarkdownFormatting {
         return range
     }
 
+    /// The spans of the one block a range sits in, with their **source**
+    /// ranges in document coordinates.
+    ///
+    /// The rendered range is deliberately not filled in. Turning a block's
+    /// rendered offsets into the document's would mean rendering everything
+    /// above it, which is the cost this exists to avoid, and a range quietly
+    /// left in block coordinates is the kind of thing that is right until
+    /// somebody uses it. `NSNotFound` says so out loud.
+    ///
+    /// Pressing Return used to render the whole document three times over —
+    /// once here, once to find where the break belongs, and once to work out
+    /// which markers to mend — so a long file grew slower to write in the
+    /// further down it you were. Emphasis is matched within a line and a span
+    /// never crosses a block, so every one of those questions is answered by
+    /// the block the caret is in, and the answers are identical.
+    public static func spansAroundBlock(
+        at location: Int,
+        in source: NSString
+    ) -> [MarkdownRenderSpan] {
+        let block = MarkdownBlockScanner.blockRange(
+            containing: location,
+            in: source
+        )
+        guard block.length > 0 else { return [] }
+        return MarkdownRenderer.render(source.substring(with: block)).spans
+            .map { span in
+                MarkdownRenderSpan(
+                    style: span.style,
+                    renderedRange: NSRange(location: NSNotFound, length: 0),
+                    sourceRange: NSRange(
+                        location: span.sourceRange.location + block.location,
+                        length: span.sourceRange.length
+                    ),
+                    includesMarkup: span.includesMarkup,
+                    isAtomic: span.isAtomic
+                )
+            }
+    }
+
     /// Whether a run this break would have to mend actually contains it.
     private static func isInsideMendableRun(
         _ range: NSRange,
         in source: NSString
     ) -> Bool {
-        MarkdownRenderer.render(source as String).spans.contains { span in
+        spansAroundBlock(at: range.location, in: source).contains { span in
             guard let style = span.style.mendableInlineStyle else { return false }
             let markers = writtenMarkers(of: span, style: style, in: source)
             let contentStart = span.sourceRange.location
@@ -619,7 +755,7 @@ public enum MarkdownFormatting {
         at location: Int
     ) -> Int {
         var location = location
-        let spans = MarkdownRenderer.render(source as String).spans
+        let spans = spansAroundBlock(at: location, in: source)
         for _ in 0..<4 {
             var moved = false
             for span in spans {
@@ -677,7 +813,10 @@ public enum MarkdownFormatting {
         guard isFlanked(range, in: source) else {
             return ("", "")
         }
-        let straddling = MarkdownRenderer.render(text).spans.filter { span in
+        let straddling = spansAroundBlock(
+            at: range.location,
+            in: source
+        ).filter { span in
             guard let style = span.style.mendableInlineStyle else { return false }
             let markers = writtenMarkers(of: span, style: style, in: source)
             let contentStart = span.sourceRange.location
@@ -733,6 +872,11 @@ public enum MarkdownFormatting {
     ) -> MarkdownEditResult {
         let source = text as NSString
         let selection = clamped(requestedSelection, to: source.length)
+
+        guard isLinkAvailable(in: text, selection: selection) else {
+            return MarkdownEditResult(text: text, selection: selection)
+        }
+
         let label = selection.length > 0
             ? source.substring(with: selection)
             : "link text"
@@ -1443,6 +1587,65 @@ public enum MarkdownFormatting {
         return String(
             repeating: "`",
             count: max(3, longestRun + 1)
+        )
+    }
+
+    /// Takes the backticks off the code span at `span`, for a selection the
+    /// ordinary unwrapping paths cannot recognise as naming it.
+    ///
+    /// Returns nil — leaving the ordinary paths to run — when the selection
+    /// does name the span's contents, so every selection that already toggled
+    /// a span off keeps doing it, and keeps landing where it used to.
+    private static func removingCodeSpan(
+        _ span: NSRange,
+        source: NSString,
+        selection: NSRange
+    ) -> MarkdownEditResult? {
+        var fenceLength = 0
+        while span.location + fenceLength < NSMaxRange(span),
+            source.character(at: span.location + fenceLength) == 0x60
+        {
+            fenceLength += 1
+        }
+        guard fenceLength > 0 else {
+            return nil
+        }
+        let contents = NSRange(
+            location: span.location + fenceLength,
+            length: max(0, span.length - fenceLength * 2)
+        )
+        let namesContents = selection.length > 0
+            && selection.location >= contents.location
+            && NSMaxRange(selection) <= NSMaxRange(contents)
+        guard !namesContents,
+            let unwrapped = unwrappedCodeSpan(source.substring(with: span))
+        else {
+            return nil
+        }
+
+        // How much came off the front: the backticks, and the padding space
+        // `unwrappedCodeSpan` strips when there is one on both sides.
+        let unwrappedLength = (unwrapped as NSString).length
+        let removedBefore = fenceLength
+            + (unwrappedLength == contents.length - 2 ? 1 : 0)
+        let contentStart = span.location
+        let contentEnd = contentStart + unwrappedLength
+
+        // The caret keeps its place in the code rather than jumping to an end
+        // of it, and a selection that crossed a backtick run is clamped to
+        // what is left of the code it was reaching for.
+        let location = min(
+            max(contentStart, selection.location - removedBefore),
+            contentEnd
+        )
+        let mutableText = NSMutableString(string: source)
+        mutableText.replaceCharacters(in: span, with: unwrapped)
+        return MarkdownEditResult(
+            text: mutableText as String,
+            selection: NSRange(
+                location: location,
+                length: min(selection.length, contentEnd - location)
+            )
         )
     }
 

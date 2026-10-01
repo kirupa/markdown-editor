@@ -42,6 +42,14 @@ export class MarkdownDocumentModel extends EventTarget {
     this.hasByteOrderMark = false;
     this.isDirty = false;
     this.selection = makeRange(0, 0);
+    /**
+     * What the last edit replaced, when the caller knew.
+     *
+     * Only ever a shortcut for the render model, which checks it against the
+     * text it already holds and measures the difference itself when it does
+     * not fit — so a stale one costs time, never correctness.
+     */
+    this.lastChange = null;
 
     this.undoStack = [];
     this.redoStack = [];
@@ -83,6 +91,7 @@ export class MarkdownDocumentModel extends EventTarget {
     const payload = await api.read(path);
     this.path = payload.path;
     this.name = payload.name;
+    this.lastChange = null;
     this.source = payload.text;
     this.savedSource = payload.text;
     this.hasByteOrderMark = payload.hasByteOrderMark;
@@ -100,6 +109,7 @@ export class MarkdownDocumentModel extends EventTarget {
   reset() {
     this.path = null;
     this.name = UNTITLED;
+    this.lastChange = null;
     this.source = NEW_DOCUMENT_SOURCE;
     this.savedSource = NEW_DOCUMENT_SOURCE;
     this.hasByteOrderMark = false;
@@ -146,11 +156,14 @@ export class MarkdownDocumentModel extends EventTarget {
    *
    * @param {string} source the complete new Markdown source
    * @param {import('./core/range.js').Range} selection where the caret lands
-   * @param {{ coalesce?: boolean }} [options] `coalesce` merges this into the
-   *   previous undo entry when they are close together in time, so a burst of
-   *   typing is one undo step rather than one per character (E-12).
+   * @param {{ coalesce?: boolean, change?: object }} [options] `coalesce`
+   *   merges this into the previous undo entry when they are close together in
+   *   time, so a burst of typing is one undo step rather than one per
+   *   character (E-12). `change` is what the caller replaced, when it knows —
+   *   a shortcut for the render model, which would otherwise have to measure
+   *   the difference itself.
    */
-  edit(source, selection, { coalesce = false } = {}) {
+  edit(source, selection, { coalesce = false, change = null } = {}) {
     if (source === this.source) {
       this.selection = selection;
       this.notify('selection');
@@ -170,6 +183,7 @@ export class MarkdownDocumentModel extends EventTarget {
     this.lastUndoPushAt = now;
     this.redoStack = [];
 
+    this.lastChange = change;
     this.source = source;
     this.selection = selection;
     this.isDirty = source !== this.savedSource;
@@ -181,6 +195,7 @@ export class MarkdownDocumentModel extends EventTarget {
     const entry = this.undoStack.pop();
     if (!entry) return false;
     this.redoStack.push({ source: this.source, selection: this.selection });
+    this.lastChange = null;
     this.source = entry.source;
     this.selection = entry.selection;
     this.isDirty = this.source !== this.savedSource;
@@ -194,6 +209,7 @@ export class MarkdownDocumentModel extends EventTarget {
     const entry = this.redoStack.pop();
     if (!entry) return false;
     this.undoStack.push({ source: this.source, selection: this.selection });
+    this.lastChange = null;
     this.source = entry.source;
     this.selection = entry.selection;
     this.isDirty = this.source !== this.savedSource;
@@ -235,6 +251,7 @@ export class MarkdownDocumentModel extends EventTarget {
       this.lastUndoPushAt = 0;
     }
 
+    this.lastChange = null;
     this.source = text;
     this.savedSource = text;
     this.hasByteOrderMark = hasByteOrderMark;

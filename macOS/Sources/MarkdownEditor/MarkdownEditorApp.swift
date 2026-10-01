@@ -10,6 +10,10 @@ struct MarkdownEditorApp: App {
     @AppStorage(EditorAppearanceMode.storageKey)
     private var appearanceModeRawValue =
         EditorAppearanceMode.systemDefault.rawValue
+    @AppStorage(EditorColorTheme.typefaceStorageKey)
+    private var typefaceRawValue = EditorTypeface.sans.rawValue
+    @AppStorage(EditorColorTheme.textScaleStorageKey)
+    private var textScale = 1.0
 
     var body: some Scene {
         DocumentGroup(newDocument: MarkdownDocument()) { configuration in
@@ -17,9 +21,21 @@ struct MarkdownEditorApp: App {
                 document: configuration.$document,
                 fileURL: configuration.fileURL,
                 themeColorRawValue: $themeColorRawValue,
-                appearanceModeRawValue: $appearanceModeRawValue
+                appearanceModeRawValue: $appearanceModeRawValue,
+                typefaceRawValue: $typefaceRawValue,
+                textScale: $textScale
             )
         }
+        // The window opens big enough to hold what it opens showing.
+        //
+        // Only used when there is nothing to restore: SwiftUI applies this to
+        // a genuinely new window and leaves a restored one at the size it was
+        // last left, which is the behaviour a reader who has resized a window
+        // expects and the reason this is not done by setting a frame.
+        .defaultSize(
+            width: Layout.defaultWindowWidth,
+            height: Layout.defaultWindowHeight
+        )
         .commands {
             MarkdownEditorCommands()
         }
