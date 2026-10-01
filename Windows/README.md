@@ -404,6 +404,42 @@ never the fault. Three separate "fixes" shipped on that evidence.
   still allowing full-screen ones, which reads as a broken app rather than an
   unavailable check.
 
+## Pressing and hovering a critique note
+
+The behaviour is specified in [`Contract/README.md`](../Contract/README.md)
+§ "Taking the reader to a criticised passage" and § "Hovering a note tints its
+passage". In short:
+
+- A press on a note **reveals its passage**. It never toggles the note off.
+- The passage is framed about **a third of the way down** the window.
+- A passage that is already comfortably visible **does not move**.
+- **Hovering** tints a passage that is already on screen, and never scrolls.
+- **Selection outranks hover.** The open note's passage also gets a solid
+  rule underneath it.
+
+The arithmetic and the state are already written. Port them; do not re-derive
+them.
+
+| Where | What |
+| --- | --- |
+| `EditorScrollGeometry.offset(toReveal:)`, `isComfortablyVisible(_:)` | Where to scroll, and whether to scroll at all. The recorded numbers are in `EditorScrollGeometryTests.swift`. |
+| `CritiqueHighlight` (`Shared/Sources/MarkdownEditorUI/`) | The press/hover state machine, the three washes per severity, and the rule. `CritiqueHighlightTests.swift` asserts their order and hue. |
+
+Two traps cost the Mac build real time:
+
+- **Lay out before you scroll.** A scroll offset is clamped to the height laid
+  out so far. After an edit, that is about a screenful. Measure as far as the
+  passage, then as far as the target viewport, and no further.
+- **Selectable text swallows the press.** If a note's words can be selected,
+  the text control takes the press and the card never sees it. Make a pressable
+  note's text non-selectable (on a WinUI `TextBlock`, leave
+  `IsTextSelectionEnabled` at its default, `False`). Then press the middle of a
+  note's words and confirm which element receives it.
+
+When the pointer moves straight from one note to the next, the new note's
+*entered* event can arrive before the old note's *exited* event. On *exited*,
+clear the hover only if the note being left still holds it.
+
 ## Validating the port
 
 ```powershell

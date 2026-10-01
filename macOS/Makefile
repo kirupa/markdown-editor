@@ -1,4 +1,4 @@
-.PHONY: app check-code-block-scroll check-critique check-editor-clicks check-formatting check-image-cursors check-image-handles check-image-layout check-scroll check-selection-shape check-session check-title-bar-fill clean icons install run test uninstall
+.PHONY: app check-code-block-scroll check-critique check-critique-reveal check-editor-clicks check-formatting check-image-cursors check-image-handles check-image-layout check-scroll check-selection-shape check-session check-title-bar-fill clean icons install run test uninstall
 
 app:
 	@./Scripts/build-app.sh
@@ -23,6 +23,9 @@ check-selection-shape:
 
 check-critique:
 	@./Scripts/run-critique-checks.sh
+
+check-critique-reveal:
+	@./Scripts/run-critique-reveal-checks.sh
 
 check-code-block-scroll:
 	@./Scripts/run-code-block-scroll-checks.sh
