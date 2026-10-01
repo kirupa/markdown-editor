@@ -509,6 +509,186 @@ white is `0.573`, not `0.5`. A naive sRGB blend is off by up to 46/255. Since
 `themes.css` holds the resolved values, a port that reads them avoids the
 problem; a port that reimplements the blending must reproduce this.
 
+### Selected text
+
+Selected text is drawn on a **tint**, not on the accent. The tint is the theme's
+accent laid thinly over the page, and the words keep their own colours, so body
+text, headings, links and code read the same selected as not. Rows, menus,
+radio buttons and anything else that is *selected* rather than *highlighted*
+keep the full accent and its black-or-white label (`--me-selection-background`,
+`--me-selection-text`). Those are different colours in every theme, so keep
+them apart.
+
+- **Read the tint from `themes.css`.** `--me-text-selection-background` is the
+  accent at an opacity solved per theme. `--me-inactive-text-selection-background`
+  is the quieter tint for a selection the editor is not acting on, because its
+  window is behind another or the focus is elsewhere. Both are `rgba()`,
+  generated from `EditorColorTheme.textSelectionBackgroundColor` and
+  `inactiveTextSelectionBackgroundColor`.
+- **The opacity is solved, not chosen.** It is the strongest opacity, at most
+  40%, at which the tint laid over the page stands no more than 1.4:1 from it
+  and code on a code block keeps 4.5:1. That leaves body text at 7.6:1 or
+  better, and it comes out between 14% (Black Light) and 40%. The inactive tint
+  is the page's own text colour, solved by the same rule at 1.3:1 and at most
+  25%. A port that re-solves must composite before it measures, because a
+  contrast ratio does not look at alpha.
+- **Keep it translucent.** It is laid over whatever is under it, so the
+  selected part of a code block or a critique mark still shows. A tint mixed in
+  advance is one colour everywhere. In Blue Dark that colour is all but the
+  web's low-severity critique shading, so a selection inside a marked passage
+  would disappear.
+
+In the rendered view, the selection is **one rounded bar per line, fitted to
+the words**, not a band across the full width of every line it crosses. The
+shape is one pure function, `SelectionHighlightSegment.line(...)` in
+`Shared/Sources/MarkdownEditorUI/SelectionHighlightGeometry.swift`.
+`Web/public/app/core/selection-geometry.js` ports it line for line and is
+tested against the same cases. Port it rather than drawing the shape by eye:
+
+- **A bar's hard ends stand exactly on the carets** either side of the
+  selection, with no padding, so a bar never reaches into a letter that is not
+  selected. A narrow run, a lone "i", is hugged rather than widened. A run less
+  than half a point wide is drawn `max(4, 0.3 × height)` wide so it shows: an
+  empty line inside a selection, or a selected line break.
+- **Where the selection carries on to the next line**, the bar runs past the
+  last word by the fade length, `clamp(0.75 × height, 10, 24)`, and fades out.
+  The next line's bar fades in from the same distance before its first word.
+  Only the selection's real start and end are hard. The fade eases: smoothstep,
+  sampled at quarters as 0, 0.156, 0.5, 0.844 and 1. A straight ramp shows a
+  crease where it meets the flat part of the bar.
+- **Corners are rounded by `min(0.22 × height, 6)`**, and never by more than
+  half the bar's width.
+- **A bar is its line's height less the spacing beneath it**, so a
+  paragraph's lines stay separate bars instead of merging into a slab. The web
+  cannot see line spacing, so it uses the line height less 2px, centred on the
+  glyphs.
+- **The space a line wraps at is not a chosen word.** It belongs to the line,
+  but the bar fades out from the last word rather than from after the space.
+
+Where a port draws the bars matters as much as their shape:
+
+- **Draw them under the text and over the backgrounds.** macOS draws them after
+  the code-block boxes and the critique marks, and before the glyphs. It stands
+  its toolkit's own selection band down rather than painting over it, because a
+  translucent tint over a square band leaves the square ends showing (I-252).
+- **If the bars can only go over the text**, as on the web, a translucent wash
+  dims the words. The web blends instead: `multiply` on a light page and
+  `screen` on a dark one, in colours solved so the page comes out exactly the
+  tint (`selectionPaint`). The letters keep their own colours, and a code block
+  or a critique mark is shaded by the same amount.
+- **The fades reach into the margin, where a toolkit's own redraw usually does
+  not.** Remember everywhere a bar was drawn since the selection last changed,
+  and invalidate all of it when the selection changes again. Otherwise faded
+  ends are left behind (I-254).
+- **The Markdown source view keeps the platform's standard selection.**
+
+Reference: the suites "Selection highlight shape"
+(`SelectionHighlightGeometryTests`) and "Editor color themes", which hold the
+contrast in all sixteen themes, plus `Web/public/tests/selection-geometry.test.js`.
+`make -C macOS check-selection-shape` reads a real rendered selection's pixels
+back. The macOS README has the rules as T-22 and T-24 and the traps as I-252 to
+I-255. The web's rows are WT-18 and WT-20.
+
+### Typefaces
+
+The document's face and the critique's hand are **two choices from one list**.
+Customize Theme ▸ Font and the critique's hand menu offer exactly the same
+faces, in the same groups, with each name set in its own face. The list is
+`EditorTypeface` in `Shared/Sources/MarkdownEditorUI/EditorTypeface.swift`, and
+the web's copy is `Web/public/app/ui/typefaces.js`. A port should keep one list
+too, because two copies drift the first time either one gains a face.
+
+The ids are **stored**, under `editorTypeface` for the page and
+`critiqueHandFont` for the notes, so they never change:
+
+| Id | Name | Group | Optical scale |
+| --- | --- | --- | --- |
+| `sans` | System Sans | first, and the default for both | 1.00 |
+| `architectsDaughter` | Architects Daughter | Bundled | 1.19 |
+| `caveat` | Caveat | Bundled | 1.28 |
+| `indieFlower` | Indie Flower | Bundled | 1.12 |
+| `patrickHand` | Patrick Hand | Bundled | 1.09 |
+| `shadowsIntoLight` | Shadows Into Light | Bundled | 0.84 |
+| `gloriaHallelujah` | Gloria Hallelujah | Bundled | 0.90 |
+| `kalam` | Kalam | Bundled | 0.97 |
+| `permanentMarker` | Permanent Marker | Bundled | 0.84 |
+| `bradleyHand` | Bradley Hand | From your computer | 1.03 |
+| `markerFelt` | Marker Felt | From your computer | 0.88 |
+| `noteworthy` | Noteworthy | From your computer | 0.94 |
+| `chalkboard` | Chalkboard | From your computer | 1.01 |
+| `qeDaveMergens` | QE Dave Mergens | From your computer | 1.36 |
+| `qeJulianDean` | QE Julian Dean | From your computer | 1.57 |
+
+- **Bundled faces ship with the app**, each beside its licence. Seven are under
+  the SIL Open Font License and Permanent Marker is under the Apache License
+  2.0. The files are in `macOS/Packaging/Fonts` and `Web/public/fonts`.
+- **Faces from your computer are offered only where they draw.** The Mac's menu
+  calls this group *From your Mac*. The four Apple faces will usually be
+  missing on Windows, and that is fine: an unavailable face is simply not
+  listed.
+- **QE Dave Mergens and QE Julian Dean are never shipped.** Their licence is
+  for personal use and forbids embedding them in software or passing them on.
+  They must not go in the app, its installer, the repository or the website. A
+  user who installs them gets them offered like any other face on the machine.
+- **Measure whether a face draws; do not ask.** On the web,
+  `document.fonts.check()` says yes to a family that does not exist. A picker
+  that offers a face and then silently draws another looks like the app
+  ignoring the choice. A XAML `FontFamily` falls back silently too, so look the
+  family up in the system font collection instead (DirectWrite's
+  `FindFamilyName`).
+- **The optical scale** is what a requested size is multiplied by so that every
+  face reads at the same size. It is measured from x-height, the system face's
+  over this one's, because the faces disagree about capitals far more than
+  about lowercase. The numbers were measured against the Mac's system face, and
+  the web uses them unchanged on every platform. A Windows port can do the same,
+  or re-measure against its own system face by the same rule. Either way, store
+  the id, never the scale.
+- **Body text and headings take the face; code stays monospaced.** Headings
+  keep their sizes. With System Sans the page is drawn exactly as it was before
+  there was a choice.
+- **Draw emphasis where a face has none.** Every hand ships in one weight and
+  upright. Asked for the bold of one, a toolkit hands back the same face, so
+  Bold appears to do nothing. Where a face lacks a bold or an italic, synthesise
+  one: the Mac strokes for bold and slants for italic, the web takes the
+  browser's synthesis, and DirectWrite has font simulations for both. Where a
+  face has a real one, use it. Caveat is a variable font with a real bold.
+  Never synthesise for the system face.
+- **A stored face that no longer resolves reads as System Sans**, which is what
+  the page would draw anyway.
+
+Reference: the "Editor typeface" suite (`EditorTypefaceTests`) and
+`Web/public/tests/typefaces.test.js`. The macOS README has the rules as T-16 to
+T-21, and the web's rows are WT-16 and WT-17.
+
+### Text size
+
+Beneath the Font chooser is a **Size** slider: **75% to 150%, in steps of 5%**,
+with the percentage beside it. It is the face's correction, because two hands
+at the same size can look a size apart. Like the colours, it is part of the
+Customize Theme draft: the preview follows it, Apply commits it and Cancel
+drops it. It is kept app-wide as `editorTextScale`, a number (1.25 for 125%).
+
+- **It scales everything the rendered text is set with**: the type, the space
+  between lines and paragraphs, and the indents of lists, quotes and code. So
+  150% is the same page drawn larger, not larger words in the old spacing.
+- **It does not scale** the column the text is set in, the pictures in it, or
+  the Markdown source view.
+- **At 100% the page is drawn with exactly the values it had** before the
+  slider existed.
+- **A stored value is clamped into range and rounded to a whole percent**, and
+  anything that is not a number reads as 100%. Rounding is what makes a
+  slider's 1.0000000000000002 the 100% it says it is.
+- **The popover must not change width as the size changes.** The web's first
+  version sized the popover to its preview, so a larger size or a wider face
+  widened it, and the slider with it, which moved the thumb out from under the
+  pointer mid-drag. The popover is now a fixed width. The preview wraps, and the
+  popover grows downward only, below the slider.
+
+Reference: `EditorColorTheme.textScale` and `clampedTextScale`, tested in the
+"Editor text size" suite (`EditorTextScaleTests`), and
+`Web/public/app/core/text-scale.js` with `Web/public/tests/text-scale.test.js`.
+The macOS README has the rule as T-23, and the web's row is WT-19.
+
 ### Keyboard shortcuts
 
 These are product, not platform courtesy, and a build should have them:
@@ -999,6 +1179,9 @@ purpose, and a new build should decide for itself:
 - Where the formatting toolbar sits, and whether it is a toolbar at all
 - Drag-and-drop and paste of images
 - The welcome window and recent documents
+- The title bar: what a double-click does, and where the document's path
+  commands live, follow each platform's own convention. `Windows/README.md`
+  says what that means on Windows.
 
 ## Properties, not just fixtures
 

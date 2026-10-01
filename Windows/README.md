@@ -116,6 +116,14 @@ suite that runs in a third of a second and one that needs a UI.
   matters is the one both existing builds hold to: **the Markdown source is the
   model.** A visual edit is mapped back into a source range and applied there.
   The rendered view is never the thing being edited.
+- **Re-style incrementally, and keep the reader's place when you cannot.** Every
+  build re-renders only the blocks an edit disturbs, so typing costs the same
+  however long the document is. The obvious first version re-styles the whole
+  pane on every keystroke and loses the scroll position doing it. A theme
+  change, a new document or a remote revision still replace a pane wholesale,
+  and the six rules that keep the reader's place then were each written from a
+  shipped bug. `Contract/README.md` §"Keeping the reader's place while
+  re-styling".
 - **Themes are already resolved for you.** Do not transcribe them from
   kirupa.com. `Web/public/css/themes.css` is generated from the Swift theme
   definitions and committed, so it is a flat list of hex values for all sixteen
@@ -152,6 +160,32 @@ suite that runs in a third of a second and one that needs a UI.
   than its bounding box. The landing screen is that icon and the word KONVO —
   no version number and no tagline. `Contract/README.md` §"The mark, and where
   it comes from" has the measurements.
+- **Double-clicking the title bar fills the screen, and the next double-click
+  puts the window back.** Windows already does this: it maximises to the work
+  area and restores. So the port's job is not to break it. The Mac had to build
+  both halves. SwiftUI's hosting view swallowed the drag (I-238), and the
+  Mac's double-click went to Zoom, which sizes the window to its content (W-28,
+  I-249). If the port draws its own title bar, keep a real caption region for
+  the system to drag, maximise and restore. Make any button placed in it
+  pass-through, so that pressing it neither drags the window nor maximises it.
+  "Size to fit", if the port has it, stays a separate command.
+- **The document's path is one gesture away.** On the Mac, ⌘-clicking or
+  right-clicking the title offers **Copy Path** and **Reveal in Finder** above
+  the folders (I-240 to I-242). Windows has no title menu like that, so put
+  **Copy path** and **Show in File Explorer** where a Windows user looks: the
+  File menu, and the context menu of the document's title or tab. Copy the path
+  as plain text. Open Explorer with the file *selected*
+  (`explorer.exe /select,"<path>"`), not merely its folder. An unsaved document
+  says *Not saved yet* instead of offering two commands that cannot work.
+- **Shade code blocks from the region being painted, in the layout's own
+  coordinates.** If the port draws code-block boxes itself, a repaint hands it a
+  region in the view's coordinates, while the text layout measures from its own
+  inset origin. Convert the region before looking for blocks, and reach a few
+  points past it for the box's padding. A full redraw hides the mistake; a
+  scroll does not, because it repaints only the strip it uncovers. On the Mac
+  the last two lines of a block went unshaded on scroll until something redrew
+  them whole (I-256). Test by scrolling a long code block into view, not by
+  drawing the whole pane.
 - **Firebase** has a .NET path, but it is not the same shape as the Apple or JS
   SDKs. `FirebaseAdmin` is server-side and must not ship in a desktop app —
   it holds credentials that trust the client completely. For a client app the
@@ -470,6 +504,51 @@ Two traps cost the Mac build real time:
 When the pointer moves straight from one note to the next, the new note's
 *entered* event can arrive before the old note's *exited* event. On *exited*,
 clear the hover only if the note being left still holds it.
+
+## Selected text, and the page's face and size
+
+The rules are in [`Contract/README.md`](../Contract/README.md) § "Selected
+text", § "Typefaces" and § "Text size". In short:
+
+- Selected text sits on a **pale tint of the accent** and keeps its own
+  colours. A selected row, menu item or radio button keeps the full accent.
+- In the rendered view a selection is **one rounded bar per line, fitted to
+  the words**. Its hard ends stand exactly on the carets, and it fades out past
+  a line's end and back in before the next line's start where the selection
+  carries on.
+- Customize Theme has a **Font** chooser offering the same faces as the
+  critique's hand menu, and a **Size** slider from 75% to 150% beneath it. Both
+  are part of the draft: previewed, committed by Apply, dropped by Cancel.
+- **Never ship QE Dave Mergens or QE Julian Dean.** Their licence forbids it.
+  Offer them only where the user has installed them.
+
+The values and the shape are already written. Port them; do not re-derive them.
+
+| Where | What |
+| --- | --- |
+| `Web/public/css/themes.css` | `--me-text-selection-background` and `--me-inactive-text-selection-background` for all sixteen themes, already solved. |
+| `SelectionHighlightSegment` (`Shared/Sources/MarkdownEditorUI/SelectionHighlightGeometry.swift`) | One line's bar: its extent, corner radius, fades and gradient stops. "Selection highlight shape" holds it, and `Web/public/app/core/selection-geometry.js` is a line-for-line port with the measuring half added. |
+| `EditorTypeface` (`Shared/Sources/MarkdownEditorUI/EditorTypeface.swift`) | The fifteen faces, their stored ids, groups and optical scales. The bundled files and their licences are in `macOS/Packaging/Fonts`. |
+| `EditorColorTheme.clampedTextScale` | The range, the 5% step and the clamping of a stored `editorTextScale`. |
+
+Four traps cost the other builds real time:
+
+- **Stand the control's own selection down; do not paint over it.** A
+  translucent tint over a square band leaves the band's square ends showing.
+  `RichEditBox` paints its own selection, so hide it and draw the bars yourself:
+  under the text where you can, which in XAML means a layer behind an editor
+  whose own background is transparent. Where the bars can only go over the
+  text, blend them as the web does (`selectionPaint`), or the words are dimmed.
+- **The fades reach into the margin, past where the toolkit redraws.**
+  Remember where bars were drawn and invalidate all of it when the selection
+  changes, or faded ends are left behind. On the Mac this was checked over 68
+  selection changes in two themes (I-254).
+- **A font family that falls back silently looks like a choice ignored.** Offer
+  a face only once the system font collection says it exists. Constructing a
+  `FontFamily` will not fail for a missing one.
+- **Nothing the preview shows may widen the popover.** On the web, a larger
+  size or a wider face widened it, and the slider moved out from under the
+  pointer mid-drag. Fix its width, and let the preview wrap and grow downward.
 
 ## Validating the port
 
