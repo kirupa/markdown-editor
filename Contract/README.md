@@ -794,6 +794,152 @@ asserted end to end by `macOS/Scripts/check-session.swift`. The web build
 reaches the same outcome from a different direction — it has no file to watch,
 so it re-reads the document whenever the tab comes back to the front.
 
+### The size a document window opens at
+
+A window that opens too small for what it is already showing is a window whose
+first use is being resized. Every build that shows the critique rail — the
+column of editorial comments docked against the document's trailing edge; see
+`macOS/README.md` §10a for the feature itself — will hit this, because the rail
+is **open from the moment a document is**. It is not a panel you summon, it is
+part of the document's furniture, and it says what it needs (an API key, a first
+run) rather than waiting to be discovered. A window sized to the writing alone
+therefore opens with the notes squeezing the column they dock to.
+
+The opening size is derived, not picked:
+
+```
+width  = document column width + comments rail width
+height = a screenful of prose
+```
+
+On the existing desktop build that is `700 + 356 = 1056` wide by `820` tall.
+Those two numbers are the layout's own constants — the rail keeps a fixed width
+rather than taking whatever room is spare, and the column has a default reading
+measure — so a port should read its own pair rather than copy `1056`, or the
+window and the layout will drift apart the first time either is tuned.
+
+Four rules go with it, and each was paid for:
+
+- **Use the same expression the "zoom to fit" affordance uses.** On macOS that
+  is the green button; on Windows it is the maximise/restore behaviour a window
+  chooses for itself. If opening and zooming are computed separately they
+  disagree, and zooming a freshly opened window visibly resizes it for no reason
+  the reader can see. One function, two callers.
+- **Do not count a floating sidebar.** The file explorer floats *over* the
+  document rather than taking part in the row, precisely so that opening it does
+  not move the text. Widening the window to make room for it undoes that from
+  the other side. Count only what is actually in the row.
+- **Clamp to the screen, and let the minimum win.** Cap the derived size to the
+  display's working area — `NSScreen.visibleFrame`, `MonitorInfo.rcWork`,
+  `window.screen.availWidth/Height` — less an allowance for the window's own
+  chrome, which on the macOS build measured 52pt of title bar and toolbar. Then
+  take the maximum with the window's own minimum size: on a display too small
+  for that minimum, a window that overflows beats one squeezed below the size
+  its content refuses to go under. This ordering is the same one the explorer
+  width uses.
+- **It is a default, not a rule.** It applies when nothing has been saved for
+  the window — a genuine first run. A restored window, or one the reader sized
+  by hand, keeps what it had. Do not re-apply it on every launch, and do not add
+  a mechanism that overrides state restoration to enforce it. On SwiftUI that is
+  `Scene.defaultSize`; the equivalents are WinUI's `AppWindow.Resize` guarded by
+  "no persisted frame", and on the web a size written only when the stored
+  layout is absent.
+
+One thing measured on the macOS build that will save a port an hour: SwiftUI's
+`defaultSize` is documented as the window's *content* size, but the number handed
+to it came back as the window's **frame** — 1056 × 820 outside, 1056 × 768 of
+content, the 52 being the title bar and toolbar. That is why the chrome
+allowance is subtracted from the screen's working area rather than added to the
+requested size: it is then correct under either reading. Settle this on your own
+platform the same way it was settled here — launch with the saved window state
+deleted and read the frame back — rather than from the layout code, which cannot
+tell you which of the two a framework meant.
+
+Reference: `Shared/Sources/MarkdownEditorUI/EditorPaneGeometry.swift`
+(`idealContentWidth`, `defaultWindowContentSize` — both pure, both tested in
+`EditorPaneGeometryTests`), wired up in
+`macOS/Sources/MarkdownEditor/MarkdownEditorApp.swift` with the constants in
+`Layout` at the foot of `MarkdownEditorView.swift`. The macOS README records the
+reasoning as I-243 and I-267 to I-268.
+
+### The narrowest a window may be, with the rail in it
+
+The rail keeps a fixed width beside the document, so it does not shrink with the
+window — a window dragged narrower clips it. Three rules keep it whole, and the
+first alone is not enough:
+
+- **The minimum width follows the rail.** While the rail is open the narrowest
+  the window may be is the column's own minimum plus the rail — `360 + 356 =
+  716` on the macOS build — and it falls back to the document's minimum (620)
+  when the rail is shut. Under a flat 620 the column took 608 points and the
+  rail got 12: it was dragged off the edge rather than closed, which reads as a
+  panel that vanishes when a window is resized. The opening size's clamp
+  (above) uses this same rail-open minimum, because that is what a new window
+  opens showing.
+- **Clamp the column against the room the rail leaves**, not against the
+  window. With the floor raised to 716 a 700-point column still "fitted the
+  window" and squeezed the rail to 16 points, because the column's clamp had
+  never been told the rail was there. Subtract the rail from the width first,
+  then clamp the column into what is left.
+- **Reserve nothing for a resize handle that is no longer in a margin.** The
+  column's width gripper normally hangs just outside the column, in the margin;
+  with the rail open there is no margin, so it is drawn inside the column's edge
+  instead — anywhere else it sits under the rail, which is drawn over it, and the
+  document cannot be resized at all. Keep reserving the margin's width for it
+  and a column that fits exactly loses those points: that is how a 1056-point
+  window came to hold a 688-point column instead of 700.
+
+Reference: `EditorPaneGeometry.minimumContentWidth(columnMinimum:documentMinimum:railWidth:railIsOpen:)`
+and `gripperOffset(gripperWidth:bleed:railIsOpen:)`, both tested in
+`EditorPaneGeometryTests`; the column clamp is `clampedWidth` in
+`macOS/Sources/MarkdownEditor/MarkdownEditorView.swift`. The macOS README
+records the reasoning as I-244 to I-246, and I-199 for where the gripper goes.
+
+### The mark, and where it comes from
+
+There is one application icon and every build shows it: the kirupa mark on a
+white plate. It is **generated**, not drawn by hand per platform —
+`macOS/Scripts/make-icons.swift` reads `macOS/Packaging/Logo.svg` and writes the
+Mac `.icns`, the iOS PNG and the web `icon.svg` in one pass, from one set of
+measurements. A port should add its output to that script rather than start a
+second copy of the artwork, which is the mistake this arrangement was built to
+undo: the web build carried a hand-written blue plate for months after the Mac
+icon had stopped being blue, and the landing screen carried a *third* mark that
+matched neither.
+
+Four things a port has to get right, each measured rather than assumed:
+
+- **Place the mark by its round body, not by its bounding box.** Size *and*
+  centre on it, as though any accent were not there. On this mark the leaves
+  stick out of the body at one corner and nothing balances them, so the full
+  ink box's centre sits at (0.489, 0.484) of the artwork against the body's
+  (0.540, 0.520) — about a twentieth of the icon, and plainly visible as a
+  lean. The body is found as ink that is dark *and* near-neutral; brightness
+  alone catches the `#008000` leaves, which are darker than the `#333333` ring.
+  Measured, that outline bounds the whole body: the ring and the orange inside
+  it are concentric to within a one-pixel antialiased fringe, so there is no
+  third measurement to reconcile.
+- **Do not "optically" correct for a broken outline.** This mark's ring is open
+  — the leaves cross it, leaving a 40° gap — so its dark pixels weigh to the
+  lower right, and it is tempting to shift the mark until that weight is
+  centred. Two versions of that idea were built and both looked worse than what
+  they fixed: the full correction crowds the accent into the plate's corner and
+  opens an empty quarter opposite, and the gentler one still lifts the mark off
+  centre. The gap is where the accent sits, not an error. Centre the body and
+  let the accent overhang.
+- **Size to the platform's own plate.** 0.66 of the plate where the platform
+  gives the icon an inset plate of its own (macOS), 0.51 of the square where it
+  rounds the corners off the artwork instead (iOS). The same fraction in both
+  places puts the mark against the visible edge on one of them.
+- **Show the same file on the landing screen.** macOS reads
+  `NSImage.applicationIconName`; the web points an `<img>` at the same
+  `icon.svg` it links as a favicon. Neither redraws the mark, so the Dock or
+  tab, the file manager and the landing screen cannot disagree.
+
+The artwork stays vector. The generator renders ten sizes from 16 to 1024
+pixels, and a vector redrawn at each of them is sharp where one bitmap resampled
+ten times is not.
+
 ### What is deliberately per-platform
 
 Not everything is a requirement. These differ between the existing builds on

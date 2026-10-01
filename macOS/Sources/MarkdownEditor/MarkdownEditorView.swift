@@ -179,7 +179,7 @@ struct MarkdownEditorView: View {
                 railWidth: Layout.railWidth,
                 railIsOpen: critique.isPresented
             ),
-            minHeight: 520
+            minHeight: Layout.minimumWindowHeight
         )
         .background {
             // The desk the page lies on: a flat tone with a faint grid over
@@ -770,7 +770,11 @@ enum Layout {
     // the window to be usable. The window only has to fit a document.
     static let minimumWindowWidth = defaultDocumentWidth
 
-    /// The size a document window opens at when there is nothing to restore.
+    /// The shortest a document window may be made.
+    static let minimumWindowHeight: CGFloat = 520
+
+    /// The width a document window opens at when there is nothing to restore,
+    /// before the screen has had its say (`defaultWindowContentSize`).
     ///
     /// The width is the same arithmetic the green button uses, asked with the
     /// rail open — because the rail *is* open on a new window, and a window
@@ -790,10 +794,69 @@ enum Layout {
 
     /// Tall enough to read in, short enough to fit a laptop.
     ///
-    /// A 13-inch Air's visible frame is about 930 points once the menu bar and
-    /// the Dock are out of it; this plus the window's own chrome comes to 852,
-    /// which leaves room rather than filling the screen. On a larger display
-    /// it reads as a tall writing window instead of a panoramic one, which is
-    /// the right shape for a column of prose beside a column of notes.
+    /// Picked rather than derived, because there is no height that "fits" a
+    /// Markdown document — it is as long as it is. Measured, SwiftUI gives
+    /// this to the whole window, title bar and toolbar included, and a 13-inch
+    /// Air's visible frame is about 930 points once the menu bar and the Dock
+    /// are out of it, so it leaves room rather than filling the screen. On a
+    /// larger display it reads as a tall writing window instead of a panoramic
+    /// one, which is the right shape for a column of prose beside a column of
+    /// notes.
     static let defaultWindowHeight: CGFloat = 820
+
+    /// The title bar and toolbar drawn above the content — 52pt, measured on
+    /// the running app.
+    ///
+    /// Taken off the screen's `visibleFrame` before capping the opening size.
+    /// SwiftUI is not specific about whether the size a scene is given is the
+    /// window's or its content's — measured, it is the window's — so the cap
+    /// allows for the chrome either way and the window fits on the screen
+    /// under both readings.
+    static let windowChromeHeight: CGFloat = 52
+
+    /// The size a document window opens at on a first run.
+    ///
+    /// `defaultWindowWidth` × `defaultWindowHeight`, capped to the screen it
+    /// lands on, so a default worked out from constants never opens a window
+    /// wider or taller than the desk. The cap never goes below the narrowest
+    /// the window may be with the rail open, which is how a new window opens:
+    /// asking for less would only be overruled by the window's own minimum.
+    static var defaultWindowContentSize: CGSize {
+        EditorPaneGeometry.defaultWindowContentSize(
+            ideal: CGSize(
+                width: defaultWindowWidth,
+                height: defaultWindowHeight
+            ),
+            minimum: CGSize(
+                width: EditorPaneGeometry.minimumContentWidth(
+                    columnMinimum: minimumPreviewWidth,
+                    documentMinimum: minimumWindowWidth,
+                    railWidth: railWidth,
+                    railIsOpen: true
+                ),
+                height: minimumWindowHeight
+            ),
+            available: availableContentSize
+        )
+    }
+
+    /// What the screen leaves for a window, once its own chrome is allowed for.
+    ///
+    /// Unbounded when there is no screen to ask — a headless run has no desk to
+    /// overflow, and clamping to zero there would open every window at its
+    /// minimum.
+    private static var availableContentSize: CGSize {
+        guard let visibleFrame = (NSScreen.main ?? NSScreen.screens.first)?
+            .visibleFrame
+        else {
+            return CGSize(
+                width: CGFloat.greatestFiniteMagnitude,
+                height: CGFloat.greatestFiniteMagnitude
+            )
+        }
+        return CGSize(
+            width: visibleFrame.width,
+            height: visibleFrame.height - windowChromeHeight
+        )
+    }
 }

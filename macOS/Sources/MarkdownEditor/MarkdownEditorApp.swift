@@ -26,16 +26,15 @@ struct MarkdownEditorApp: App {
                 textScale: $textScale
             )
         }
-        // The window opens big enough to hold what it opens showing.
+        // The window opens big enough to hold what it opens showing: the
+        // writing column and the comments rail beside it, capped to the
+        // screen it lands on.
         //
         // Only used when there is nothing to restore: SwiftUI applies this to
         // a genuinely new window and leaves a restored one at the size it was
         // last left, which is the behaviour a reader who has resized a window
         // expects and the reason this is not done by setting a frame.
-        .defaultSize(
-            width: Layout.defaultWindowWidth,
-            height: Layout.defaultWindowHeight
-        )
+        .defaultSize(Layout.defaultWindowContentSize)
         .commands {
             MarkdownEditorCommands()
         }

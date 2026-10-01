@@ -121,6 +121,29 @@ suite that runs in a third of a second and one that needs a UI.
   definitions and committed, so it is a flat list of hex values for all sixteen
   palettes — including the blended ones, which are genuinely hard to reproduce
   (see `Contract/README.md`).
+- **The window has to open wide enough for the comments.** The critique rail is
+  open from the moment a document is, so the window's opening size is the
+  document column plus the rail — on the macOS build 700 + 356 = 1056 wide by
+  820 tall — clamped to the monitor's work area and applied only when no frame
+  has been persisted for that window. Derive it from your own two layout
+  constants rather than copying 1056, and compute it in the same place as your
+  "size to fit" behaviour so the two cannot disagree. `Contract/README.md`
+  §"The size a document window opens at" has the full rule and the traps.
+- **The rail must survive a narrow window.** It keeps a fixed width, so the
+  window's minimum width is the column's minimum *plus* the rail while the rail
+  is open (360 + 356 = 716 on the macOS build) and the plain document minimum
+  when it is shut; the column is clamped into the width the rail leaves, not
+  the window's; and the column's resize handle moves inside the column's edge
+  with the rail open, reserving no margin. Miss any one and the rail is squeezed
+  or clipped when the window is dragged narrow. `Contract/README.md` §"The
+  narrowest a window may be, with the rail in it".
+- **The icon is generated, and the landing screen shows it.** Add an `.ico`
+  output to `macOS/Scripts/make-icons.swift` rather than drawing the kirupa mark
+  again: it already writes the Mac `.icns`, the iOS PNG and the web `icon.svg`
+  from `macOS/Packaging/Logo.svg`, placing the mark by its round body rather
+  than its bounding box. The landing screen is that icon and the word KONVO —
+  no version number and no tagline. `Contract/README.md` §"The mark, and where
+  it comes from" has the measurements.
 - **Firebase** has a .NET path, but it is not the same shape as the Apple or JS
   SDKs. `FirebaseAdmin` is server-side and must not ship in a desktop app —
   it holds credentials that trust the client completely. For a client app the

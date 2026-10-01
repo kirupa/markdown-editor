@@ -40,7 +40,7 @@ check-scroll:
 	@swift Scripts/check-scroll.swift
 
 icons:
-	@swift Scripts/make-icons.swift Packaging
+	@swift Scripts/make-icons.swift Packaging ../iOS/Resources/Assets.xcassets/AppIcon.appiconset ../Web/public
 
 install: app
 	@./Scripts/install-app.sh
