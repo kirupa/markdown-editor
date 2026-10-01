@@ -49,6 +49,11 @@ $asset = static fn (string $path): string => $assetBase === '' ? $path : "$asset
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="<?= htmlspecialchars($asset('css/themes.css'), ENT_QUOTES) ?>">
 <link rel="stylesheet" href="<?= htmlspecialchars($asset('css/app.css'), ENT_QUOTES) ?>">
+<!-- The critique's typefaces. Outside the versioned asset tree on purpose: a
+     stylesheet inside it resolves url() from wherever the deploy put it, which
+     is a different depth from the repository layout, so the font paths would be
+     right in one and a 404 in the other. See hands.css. -->
+<link rel="stylesheet" href="hands.css?v=<?= htmlspecialchars($assetBase === '' ? '0' : $assetBase, ENT_QUOTES) ?>">
 </head>
 <body>
 <?php if ($startupError !== null): ?>
@@ -117,25 +122,33 @@ $asset = static fn (string $path): string => $assetBase === '' ? $path : "$asset
                   title="Discard the unsaved edits here and show the newest version">Show Newest</button>
         </span>
       </div>
+      <!-- One view. The Markdown and Side-by-Side panes are gone, following the
+           Mac: a rendered view that is genuinely editable makes a second pane
+           showing the same document a second place to look rather than a second
+           thing to see. -->
       <div class="me-editor__panes" id="editorPanes">
         <div class="me-pane me-pane--rich" id="richPane">
           <div class="me-surface" id="richSurface" role="textbox"
-               aria-multiline="true" aria-label="Rendered Markdown" spellcheck="true"></div>
-        </div>
-        <div class="me-divider me-divider--pane" id="paneDivider" role="separator"
-             aria-orientation="vertical" aria-label="Preview width" tabindex="0"></div>
-        <div class="me-pane me-pane--source" id="sourcePane">
-          <div class="me-surface me-surface--source" id="sourceSurface" role="textbox"
-               aria-multiline="true" aria-label="Markdown source" spellcheck="false"></div>
+               aria-multiline="true" aria-label="Document" spellcheck="true"></div>
         </div>
       </div>
     </main>
+
+    <!-- WA-*: the critique rail. Docked against the document rather than
+         floating beside it, because the notes are *about* the text they sit
+         next to. `hidden` from the start: an empty rail on a first visit is a
+         column of nothing taking a third of the window. -->
+    <aside class="me-critique" id="critiqueRail" aria-label="Critique" hidden></aside>
   </div>
 
   <div class="me-statusbar" id="statusbar">
     <span id="statusDocument">No document</span>
     <span class="me-statusbar__spacer"></span>
-    <span class="me-statusbar__storage" id="storageIndicator"></span>
+    <!-- Hidden from the start: with one place documents can go there is
+         nothing for this to say, and it is only unhidden when the cloud
+         is switched back on. An element the code only ever *unsets*
+         hidden on has to be written hidden (WY-23). -->
+    <span class="me-statusbar__storage" id="storageIndicator" hidden></span>
     <span id="statusSaved"></span>
   </div>
 

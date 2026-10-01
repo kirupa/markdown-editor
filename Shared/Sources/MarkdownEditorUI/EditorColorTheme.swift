@@ -147,10 +147,71 @@ public struct KirupaPalette {
 public struct EditorColorTheme: Equatable, Hashable {
     public var color: EditorThemeColor
     public var mode: EditorAppearanceMode
+    /// The face the document is set in — Customize Theme ▸ Font.
+    ///
+    /// Part of the theme rather than beside it because it changes how every
+    /// character is drawn, exactly as a palette does, and the editors already
+    /// re-style the whole document when — and only when — the theme changes.
+    public var typeface: EditorTypeface
 
-    public init(color: EditorThemeColor, mode: EditorAppearanceMode) {
+    /// Where the document's face is remembered. Beside the colour and the
+    /// background, not inside the critique's key: the two choices are made
+    /// from the same list and are still two choices.
+    public static let typefaceStorageKey = "editorTypeface"
+
+    /// How large the document is drawn — Customize Theme ▸ Size — as a
+    /// multiple of the type scale.
+    ///
+    /// There because faces set at the same size are not the same size to the
+    /// eye: a hand that reads small can be brought up and one that shouts
+    /// brought down. It scales everything the text is set with — the type,
+    /// the space between lines and paragraphs, and the indents of lists,
+    /// quotes and code — so a page at 150% is the same page drawn larger
+    /// rather than larger words crammed into the old spacing. The column the
+    /// text is set in, and the pictures in it, stay the size they were.
+    ///
+    /// Always within `textScaleRange`, in whole percent.
+    public var textScale: CGFloat {
+        didSet { textScale = Self.clampedTextScale(textScale) }
+    }
+
+    /// Where the text size is remembered, beside the face it corrects.
+    public static let textScaleStorageKey = "editorTextScale"
+
+    /// Three quarters of the type scale to half as large again.
+    public static let textScaleRange: ClosedRange<CGFloat> = 0.75...1.5
+
+    /// `scale` brought into `textScaleRange` and rounded to a whole percent,
+    /// so that a slider's 1.0000000000000002 is the 100% it says it is and a
+    /// theme that has been round-tripped through storage compares equal to
+    /// the one that was stored. Anything that is not a number reads as 100%.
+    public static func clampedTextScale(_ scale: CGFloat) -> CGFloat {
+        guard scale.isFinite else {
+            return 1
+        }
+        let clamped = min(
+            max(scale, textScaleRange.lowerBound),
+            textScaleRange.upperBound
+        )
+        return (clamped * 100).rounded() / 100
+    }
+
+    public init(
+        color: EditorThemeColor,
+        mode: EditorAppearanceMode,
+        typeface: EditorTypeface = .sans,
+        textScale: CGFloat = 1
+    ) {
         self.color = color
         self.mode = mode
+        self.typeface = typeface
+        self.textScale = Self.clampedTextScale(textScale)
+    }
+
+    /// `length`, a size or a space in the type scale, at this theme's text
+    /// size.
+    public func scaled(_ length: CGFloat) -> CGFloat {
+        length * textScale
     }
 
     public static var systemDefault: Self {
@@ -221,6 +282,8 @@ public struct EditorColorTheme: Equatable, Hashable {
         palette.primary
     }
 
+    /// The fill for a selected row or a pressed control. Selected *text* uses
+    /// `textSelectionBackgroundColor` instead.
     public var selectionBackgroundColor: PlatformColor {
         palette.primary
     }
@@ -232,6 +295,90 @@ public struct EditorColorTheme: Equatable, Hashable {
             >= selectionBackgroundColor.contrastRatio(with: white)
             ? black
             : white
+    }
+
+    /// The tint behind selected text.
+    ///
+    /// Not the row fill above. Under a run of words the full accent was a
+    /// slab of dark blue, and the words had to be forced to black or white to
+    /// show on it at all. This is the accent laid thinly over the page, and it
+    /// carries no text colour: selected words keep their own, so body text,
+    /// headings, links and code read the same selected as not.
+    ///
+    /// Translucent rather than mixed in advance, because a selection lands on
+    /// more than the page. A pre-mixed tint is one colour wherever it lands,
+    /// and in Blue Dark that colour is all but the web's low-severity critique
+    /// shading, so a selection inside a marked passage would disappear. A
+    /// tint shades whatever is under it, so the selected part of a marked
+    /// passage or a code block always shows.
+    ///
+    /// Composite it over what it is drawn on before measuring it:
+    /// `contrastRatio(with:)` does not look at alpha.
+    public var textSelectionBackgroundColor: PlatformColor {
+        palette.primary.withAlphaComponent(textSelectionOpacity)
+    }
+
+    /// How strongly the accent is laid down under selected text.
+    ///
+    /// Solved for each theme rather than fixed, because the eight accents are
+    /// nothing like the same weight: at one opacity black is a heavy grey and
+    /// a sky blue is barely there. Each is as strong as it takes to stand
+    /// 1.4:1 from the page, which is what leaves body text at 7.6:1 or better
+    /// on it, and weaker wherever that would take code on a code block below
+    /// 4.5:1. Never above 40%, past which a dull accent stops being a tint.
+    var textSelectionOpacity: CGFloat {
+        strongestTint(of: palette.primary, standingOff: 1.4, ceiling: 0.4)
+    }
+
+    /// The tint behind selected text while the editor is not the one being
+    /// typed into: its window is behind another, or the focus is elsewhere.
+    ///
+    /// The page's own text colour, laid thinly — the way macOS greys a
+    /// selection it is not acting on. The same shape as the active selection,
+    /// without the accent, so it is plain which editor the keys will go to
+    /// and the selection is still where it was left.
+    public var inactiveTextSelectionBackgroundColor: PlatformColor {
+        primaryTextColor.withAlphaComponent(inactiveTextSelectionOpacity)
+    }
+
+    /// As strong as it takes to stand 1.3:1 from the page, a little under the
+    /// active tint, and never above 25%.
+    var inactiveTextSelectionOpacity: CGFloat {
+        strongestTint(of: primaryTextColor, standingOff: 1.3, ceiling: 0.25)
+    }
+
+    /// The strongest opacity, up to `ceiling`, at which `colour` laid over
+    /// the page stands no more than `contrast` from it and leaves code on a
+    /// code block at 4.5:1.
+    private func strongestTint(
+        of colour: PlatformColor,
+        standingOff contrast: CGFloat,
+        ceiling: CGFloat
+    ) -> CGFloat {
+        let page = editorBackgroundColor
+        let codeBlock = codeBlockBackgroundColor
+        let text = primaryTextColor
+        func fits(_ opacity: CGFloat) -> Bool {
+            let tint = colour.withAlphaComponent(opacity)
+            return tint.composited(over: page).contrastRatio(with: page)
+                    <= contrast
+                && text.contrastRatio(with: tint.composited(over: codeBlock))
+                    >= 4.5
+        }
+        if fits(ceiling) { return ceiling }
+        // Both measures move one way as the tint strengthens, so the
+        // strongest opacity that fits can be found by halving.
+        var fitting: CGFloat = 0
+        var failing = ceiling
+        for _ in 0..<16 {
+            let middle = (fitting + failing) / 2
+            if fits(middle) {
+                fitting = middle
+            } else {
+                failing = middle
+            }
+        }
+        return fitting
     }
 
     public var inlineCodeBackgroundColor: PlatformColor {
@@ -498,6 +645,22 @@ extension PlatformColor {
 
     public func blended(with other: PlatformColor, fraction: CGFloat) -> PlatformColor {
         mixed(withFraction: fraction, of: other) ?? self
+    }
+
+    /// This colour painted over an opaque `background`: source-over in sRGB,
+    /// which is what a browser does with an `rgba()` fill.
+    public func composited(over background: PlatformColor) -> PlatformColor {
+        guard let top = sRGBComponents, let bottom = background.sRGBComponents
+        else { return self }
+        func channel(_ over: CGFloat, _ under: CGFloat) -> CGFloat {
+            over * top.alpha + under * (1 - top.alpha)
+        }
+        return PlatformColor.sRGB(
+            red: channel(top.red, bottom.red),
+            green: channel(top.green, bottom.green),
+            blue: channel(top.blue, bottom.blue),
+            alpha: 1
+        )
     }
 
     public func contrastRatio(with other: PlatformColor) -> CGFloat {

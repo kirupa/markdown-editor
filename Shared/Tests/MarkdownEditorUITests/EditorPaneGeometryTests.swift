@@ -1,3 +1,4 @@
+import Foundation
 import CoreGraphics
 import Testing
 
@@ -434,10 +435,10 @@ struct EditorPaneGeometryTests {
         ]
     }
 
-    @Test("Double-clicking empty title bar zooms")
+    @Test("Double-clicking empty title bar fills the screen")
     func emptyTitleBarZooms() {
         #expect(
-            EditorPaneGeometry.titleBarClickZooms(
+            EditorPaneGeometry.titleBarClaimsClick(
                 at: CGPoint(x: 440, y: 674),
                 titleBar: titleBar,
                 controls: titleBarControls
@@ -445,7 +446,7 @@ struct EditorPaneGeometryTests {
         )
     }
 
-    @Test("Double-clicking a toolbar button does not zoom")
+    @Test("Double-clicking a toolbar button does not fill the screen")
     func aControlDoesNotZoom() {
         // The theme button. This is the case the first implementation got
         // wrong: it hit-tested, SwiftUI answered with the one hosting view it
@@ -453,7 +454,7 @@ struct EditorPaneGeometryTests {
         // the popover the button had just opened.
         for control in titleBarControls {
             #expect(
-                !EditorPaneGeometry.titleBarClickZooms(
+                !EditorPaneGeometry.titleBarClaimsClick(
                     at: CGPoint(x: control.midX, y: control.midY),
                     titleBar: titleBar,
                     controls: titleBarControls
@@ -463,13 +464,13 @@ struct EditorPaneGeometryTests {
         }
     }
 
-    @Test("The document's title is not a control, so it zooms")
+    @Test("The document's title is not a control, so double-clicking it fills the screen")
     func theTitleZooms() {
         // Between the traffic lights and the explorer button is where the
-        // filename is drawn, and double-clicking a window's title zooms it in
-        // every other Mac application.
+        // filename is drawn, and double-clicking a window's title acts on the
+        // window in every other Mac application.
         #expect(
-            EditorPaneGeometry.titleBarClickZooms(
+            EditorPaneGeometry.titleBarClaimsClick(
                 at: CGPoint(x: 200, y: 674),
                 titleBar: titleBar,
                 controls: titleBarControls
@@ -480,7 +481,7 @@ struct EditorPaneGeometryTests {
     @Test("A click below the title bar is not a title bar click")
     func theDocumentDoesNotZoom() {
         #expect(
-            !EditorPaneGeometry.titleBarClickZooms(
+            !EditorPaneGeometry.titleBarClaimsClick(
                 at: CGPoint(x: 440, y: 300),
                 titleBar: titleBar,
                 controls: titleBarControls
@@ -534,5 +535,87 @@ struct EditorPaneGeometryTests {
             )
             #expect(inset + pageWidth == inset + width)
         }
+    }
+}
+
+@Suite("The title bar's path menu")
+struct FolderChainTests {
+    @Test("The folders are innermost first, and the root is not among them")
+    func theChainRunsUpwardsAndStopsShortOfTheRoot() {
+        let chain = EditorPaneGeometry.folderChain(
+            from: URL(fileURLWithPath: "/Users/me/Notes/Trip.md")
+        )
+        #expect(chain.map(\.lastPathComponent) == ["Notes", "me", "Users"])
+        // "Macintosh HD" under every document is a row nobody has needed.
+        #expect(!chain.contains { $0.path == "/" })
+    }
+
+    @Test("A file at the root has no folders above it")
+    func aFileAtTheRootHasAnEmptyChain() {
+        #expect(EditorPaneGeometry.folderChain(
+            from: URL(fileURLWithPath: "/Trip.md")
+        ).isEmpty)
+    }
+
+    @Test("A pathological path cannot build a menu taller than the screen")
+    func theChainIsCapped() {
+        let deep = URL(fileURLWithPath: "/" + Array(repeating: "d", count: 40)
+            .joined(separator: "/") + "/Trip.md")
+        #expect(EditorPaneGeometry.folderChain(from: deep).count == 12)
+        #expect(EditorPaneGeometry.folderChain(from: deep, limit: 3).count == 3)
+    }
+
+    @Test("A path that stops shortening ends the walk rather than looping")
+    func aRelativePathTerminates() {
+        // `deletingLastPathComponent` on a relative URL bottoms out at "." and
+        // then stops changing. Without the guard this is an infinite loop that
+        // only a relative path reaches — so it is checked rather than reasoned
+        // about.
+        let chain = EditorPaneGeometry.folderChain(from: URL(fileURLWithPath: "Trip.md"))
+        #expect(chain.count < 12, "the walk must terminate: \(chain.map(\.path))")
+    }
+}
+
+@Suite("The narrowest useful window")
+struct MinimumContentWidthTests {
+    @Test("With the comments open the floor makes room for them")
+    func theRailIsCountedIntoTheMinimum() {
+        // The rail is a fixed width docked to the document, so it does not
+        // shrink with the window — it is clipped by it. Measured at the old
+        // 620-point floor: the document took 608 and the rail got 12, which is
+        // to say it vanished.
+        #expect(
+            EditorPaneGeometry.minimumContentWidth(
+                columnMinimum: 360, documentMinimum: 620,
+                railWidth: 356, railIsOpen: true
+            ) == 716
+        )
+    }
+
+    @Test("With the comments shut the document keeps its own floor")
+    func closingTheRailLowersTheFloorAgain() {
+        // Otherwise shutting the rail would leave the window unable to shrink
+        // back to the size it could manage before it was ever opened.
+        #expect(
+            EditorPaneGeometry.minimumContentWidth(
+                columnMinimum: 360, documentMinimum: 620,
+                railWidth: 356, railIsOpen: false
+            ) == 620
+        )
+    }
+
+    @Test("The floor is never above the size the window opens at")
+    func theMinimumFitsInsideTheDefault() {
+        // A minimum wider than the default would mean a window that cannot be
+        // opened at its own declared size — the two are computed apart, so
+        // this is the check that keeps them honest about each other.
+        let ideal = EditorPaneGeometry.idealContentWidth(
+            columnWidth: 700, railWidth: 356, railIsOpen: true
+        )
+        let floor = EditorPaneGeometry.minimumContentWidth(
+            columnMinimum: 360, documentMinimum: 620,
+            railWidth: 356, railIsOpen: true
+        )
+        #expect(floor <= ideal, "floor \(floor) must fit inside default \(ideal)")
     }
 }

@@ -6,6 +6,21 @@
 
 const layer = () => document.getElementById('alertLayer');
 
+/**
+ * Builds a dialog on the alert layer and resolves with whatever it closes with.
+ *
+ * Exported so a feature with a panel of its own -- the critique's provider,
+ * model and key -- can use the same layer, the same Escape handling and the
+ * same focus rules as every other dialog here, rather than growing a second
+ * kind of modal that behaves almost the same.
+ */
+export function presentDialog(build) {
+  return present(build);
+}
+
+/** A heading, a paragraph and a button, so a caller can build its own dialog. */
+export const dialogParts = { heading, paragraph, button };
+
 function present(build) {
   return new Promise((resolve) => {
     const host = layer();
@@ -78,6 +93,28 @@ export function showError(error) {
 
     alert.append(heading('Markdown Editor'), paragraph(message, 'me-alert__message'));
     if (recovery) alert.append(paragraph(recovery, 'me-alert__recovery'));
+    alert.append(buttons);
+  });
+}
+
+/**
+ * States something that is not a failure.
+ *
+ * `showError` puts "Markdown Editor" at the top and treats its second string
+ * as a recovery suggestion, which is exactly wrong for a panel reporting what
+ * is configured -- it would read as though the configuration were the problem.
+ */
+export function showMessage({ title, lines = [] }) {
+  return present((alert, close) => {
+    const buttons = document.createElement('div');
+    buttons.className = 'me-alert__buttons';
+    buttons.append(button('OK', 'me-button--default', () => close(null)));
+
+    alert.append(heading(title));
+    for (const [index, line] of lines.entries()) {
+      if (line === '') continue;
+      alert.append(paragraph(line, index === 0 ? 'me-alert__message' : 'me-alert__recovery'));
+    }
     alert.append(buttons);
   });
 }

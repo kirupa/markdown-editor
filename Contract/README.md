@@ -15,8 +15,8 @@ So this is not more prose. It is the compiled Swift, dumped as data:
 
 | File | What it pins down | Cases |
 | --- | --- | --- |
-| `formatting.jsonl` | Every formatting command, at every interesting selection, in every corpus document | 8,180 |
-| `render-model.json` | What the reading view shows, and where each part of it came from in the source | 13 documents, every span |
+| `formatting.jsonl` | Every formatting command, at every interesting selection, in every corpus document | 9,471 |
+| `render-model.json` | What the reading view shows, and where each part of it came from in the source | 14 documents, every span |
 | `paths.json` | Workspace-path arithmetic: naming, descendancy, subtree rewriting, collision numbering | 123 |
 
 Regenerate them after changing `MarkdownEditorCore` or `CloudPath`:
@@ -58,7 +58,7 @@ One JSON object per line. The first line is the header, which carries the
 corpus; every line after it is a case.
 
 ```
-{"version":1,"about":"…","offsets":"UTF-16 code units","caseCount":8180,"documents":[{"id":"mixed","text":"# Trip notes\n…"}]}
+{"version":1,"about":"…","offsets":"UTF-16 code units","caseCount":9471,"documents":[{"id":"mixed","text":"# Trip notes\n…"}]}
 {"argument":"bold","command":"toggleInline","document":"mixed","replace":[0,0],"selection":[2,4],"selectionAfter":[4,4],"with":"**"}
 ```
 
@@ -105,6 +105,72 @@ in this editor: inside a list it continues the list, and on an empty list item i
 ends it. A port that treats Return as plain text insertion passes everything
 else and gets lists wrong.
 
+### Inside code, the inline commands do nothing
+
+Markdown is inert inside code. `**bold**` typed into a fenced block or between
+a code span's backticks is not emphasis — it is four asterisks and a word, and
+every conforming renderer, this one included, shows it that way. So
+`toggleInline` and `insertLink` **must return the document and the selection
+unchanged** when the selection is code. There is no third option: the command
+cannot do what it was asked, and the only thing it can otherwise produce is
+literal punctuation in the writer's code. A port that skips this reproduces the
+bug this rule was written for — the caret in a fence, bold pressed, and
+`**bold text**` saved into the file.
+
+Code, for this purpose, is:
+
+| | Where it starts | Where it ends |
+| --- | --- | --- |
+| **A fenced code block** | the first character of its opening fence line | the end of its closing fence line, or the end of the file if it is never closed |
+| **An inline code span** | *after* its opening backtick run | the end of its closing backtick run |
+
+The asymmetry at the start is deliberate and load-bearing. A caret at the first
+character of a fence line is inside the block, because anything written there
+displaces the fence. A caret at the first backtick of a code span is in front of
+it, and what is written there lands in the prose, correctly.
+
+Two selections are **not** code and must still format:
+
+- one that **contains a whole code span**, with prose either side —
+  `**Call \`reload()\` now**` is valid Markdown and useful;
+- anything in a **block quote**. A quote is prose. Bold in a quote is ordinary
+  Markdown, the renderer hides its markers there as it does anywhere else, and a
+  port that refuses in a quote has over-applied this rule.
+
+A selection that overlaps a code region **without containing it** is refused,
+because it would put one marker inside the code and its partner outside.
+
+Inline code itself stays available inside a code span, because that is how a
+span is taken off again — and there it *removes* the span rather than adding
+one, including from a bare caret between the backticks.
+
+**Four-space indented code is not code here.** This editor's render model does
+not implement indented code blocks: an indented line is an ordinary paragraph,
+and emphasis typed on one is drawn as emphasis. Refusing there would stop a
+command that visibly works. A port that *does* implement indented code should
+make the two agree — the rule is that the commands refuse in exactly the places
+the reading view draws as code, and nowhere else.
+
+Derive the answer from the render model rather than from a scanner of its own;
+that is what keeps the two from disagreeing. `MarkdownCodeContext.swift` and
+`Web/public/app/core/code-context.js` are the two existing implementations, and
+the refusals are in `formatting.jsonl` like any other case — an unchanged
+document is recorded as an empty edit.
+
+**Read two blocks, not the document.** The toolbar asks this on every caret
+move, so every build answers it from the blocks the selection's two ends fall
+in, and the answer is exactly the one a walk of the whole document gives. The
+code a caret is in contains the caret. The code a selection is in overlaps it
+without lying inside it, and a region that does that must hold the selection's
+first character or its last. A fence is one block and a code span never leaves
+its line, so the blocks those two characters fall in hold every candidate. Ask
+fences before code spans, across both blocks, in document order; a fence found
+at the start is already the answer. `MarkdownCodeContext.containing(_:spansAround:)`
+and `codeContextInModel` are the shape to copy, and both suites check the
+two-block reading against a walk of every span — every caret, and every
+selection between code edges and line boundaries, in the corpus and in a set of
+fence-heavy documents.
+
 ## Reading the render fixture
 
 `render-model.json` holds, for each corpus document, the text the reading view
@@ -127,6 +193,28 @@ an image, or a horizontal rule.
 Some of the contract is not a pure function and cannot be dumped as cases. Those
 parts are listed here with the file that defines them, so nothing has to be
 reverse-engineered from behaviour.
+
+### A withdrawn command has to look withdrawn
+
+The fixture can say that `toggleInline` returns the document unchanged inside
+code. It cannot say what the toolbar does about it, and a control that silently
+does nothing when clicked is worse than the bug it is refusing to cause: the
+writer presses it twice, then concludes the editor is broken.
+
+So every build **greys the control out** while the selection is in code, rather
+than hiding it. Hiding teaches nothing, and a toolbar that changes shape as the
+caret moves is its own problem. The same goes for the menu item behind the
+keyboard shortcut, on platforms that have one.
+
+Ask the shared availability predicate rather than re-deriving the rule in the
+interface — `MarkdownFormatting.isAvailable(_:context:)` and
+`isLinkAvailable(context:)`, or their JavaScript twins in `formatting.js` — so
+the button and the command can never disagree about what will happen.
+
+Ask it from a render model the pane **already has**, not from a fresh parse. The
+answer is needed on every caret move, and parsing an 80 KB document takes about
+37 ms against 0.8 ms to scan the spans of one already parsed. Both native builds
+and the web build pass the model they are holding.
 
 ### The Firestore data model
 
@@ -440,13 +528,27 @@ using whatever that platform's convention is.
 
 ### Keeping the reader's place while re-styling
 
-Every build re-styles by replacing the whole text of a pane, and every build
-has lost the reader's scroll position doing it. This is the one rule here that
-was written from a bug rather than from a design, so it is worth reading before
-a port repeats it.
+Replacing the whole text of a pane loses the reader's scroll position, and
+every build has lost it that way at least once. Until rendering became
+incremental this was the price of every keystroke everywhere: macOS, iOS and
+the web build all re-styled by throwing the pane's contents away and building
+them again, per character. None of them does that for typing any more. Each
+re-renders only the blocks an edit disturbs — one on the Swift builds, and in
+the browser the dirty blocks plus one either side, since a neighbour can
+change where a block ends — and the count stays the same however long the
+document is. But all three still replace a pane wholesale for the things that
+genuinely change every character on screen: a palette or theme change, a
+change of column width, opening a different document, or a revision arriving
+from elsewhere.
+
+So this section is not history. It governs those paths in every build today,
+and it governs the *first* version of any new one, which will re-style the
+whole pane on every keystroke because that is the obvious thing to write. These
+rules were written from bugs rather than from a design, which is why they are
+worth reading before a port rediscovers them.
 
 The failure looks like the document jumping far down the page and snapping back
-on a keystroke. Four rules prevent it, and each corresponds to a defect that
+on a keystroke. Six rules prevent it, and each corresponds to a defect that
 actually shipped:
 
 1. **Restore an absolute offset, not a fraction of the travel.** A fraction is
@@ -472,18 +574,19 @@ actually shipped:
    straddling the edge of the viewport counts as off screen — testing for
    intersection rather than containment leaves it permanently half-hidden.
 
-5. **Publish a selection change only when the writer caused it.** Both panes
-   replace their whole text storage to re-style, on every keystroke, and the
-   toolkit moves the selection part-way through that before the intended one is
-   put back. AppKit announces that intermediate value through the same delegate
-   callback it uses for a real caret move, and it is not near the caret: 19,681
-   characters away in the case that was measured. Publishing it made the other
-   pane reveal a caret the writer had not moved, so a split editor lurched down
-   the document and back on every character typed. Suppress selection
-   notifications while re-styling and publish the settled selection afterwards.
-   UIKit does the same thing on `attributedText` assignment — the iOS build
-   guards it — so a port should assume its toolkit does too until it has
-   checked.
+5. **Publish a selection change only when the writer caused it.** Replacing a
+   pane's whole text storage makes the toolkit move the selection part-way
+   through, before the intended one is put back. AppKit announces that
+   intermediate value through the same delegate callback it uses for a real
+   caret move, and it is not near the caret: 19,681 characters away in the case
+   that was measured. Publishing it made the other pane reveal a caret the
+   writer had not moved, so a split editor lurched down the document and back
+   on every character typed — which is what this cost when a keystroke still
+   replaced the storage. Typing no longer does, but opening a document and
+   changing the palette still do, so suppress selection notifications while
+   re-styling and publish the settled selection afterwards. UIKit does the same
+   thing on `attributedText` assignment — the iOS build guards it — so a port
+   should assume its toolkit does too until it has checked.
 
 6. **Catch a pane up when it joins the split, not on every update.** Aligning
    one pane to the other applies a normalized *fraction*, and the two panes
@@ -518,6 +621,129 @@ state to test from is a pane that has *not* been measured yet. On UIKit the
 shape of the problem is different again — assigning `attributedText` resets
 `contentOffset` outright — so a port should establish what its own toolkit does
 rather than assume this one transfers.
+
+### Taking the reader to a criticised passage
+
+Every build shades the passage each critique note is about, and every build
+lets you press the note. What the press then does is the part worth writing
+down, because the obvious spellings of it are all wrong in ways that read to
+the person holding the mouse as the feature being broken.
+
+**A press on a note is a reveal, never a toggle.** Pressing a note that is
+already open must take the reader back to its passage. The toggle is the
+tempting version — it is one line, and it gives you a way to turn the mark off
+— and it is exactly wrong: somebody pressing a note a second time is doing so
+*because the first press did not appear to do anything*, and what they get is
+the mark going out. The macOS build shipped the toggle and it was reported as
+"I have to click several times".
+
+**Frame the passage; do not merely expose it.** Every toolkit has a
+"scroll this into view" call, and every one of them does the *smallest* scroll
+that makes the rectangle visible. A passage below the fold therefore lands hard
+against the bottom edge of the window, half under the scrollbar, with nothing
+after it to read — which is not what somebody who pressed a comment asked for.
+Put it about a third of the way down instead, and let the clamp handle the rest:
+a passage near the top of the document stays where it is, one near the end stops
+at the document's last screenful, and a document shorter than the window does
+not move. A passage taller than the window is the only case that is not a
+clamp — start it at its first line, because a reader sent to a long quotation
+wants to begin at its beginning.
+
+**Do not move a passage the reader is already looking at.** Clicking a shaded
+passage in the *text* raises its note, and that runs through the same reveal.
+Moving the page under the pointer that just landed on it is the rudest thing
+the feature can do. "Visible" is the wrong test, though — a passage sitting in
+the last few points of the window is visible and is precisely what the reveal
+exists to fix. Require a margin of air above and below before doing nothing is
+the better answer.
+
+**Measure before you scroll.** This is the one that only bites on long
+documents, and it is the same trap as the previous section: a scroll offset is
+clamped to the height the document has been *laid out to*, not to its real
+height. Since re-styling throws layout away and every build rebuilds no more
+than a screenful afterwards — measuring a long document per keystroke is felt
+as typing lag — a pane the reader has just typed into has measured about a
+window's worth. Asking it to scroll 280,000 points down lands at 400. Lay out
+as far as the passage before asking where it is, and as far as the *target
+viewport* before scrolling there. Only that far: laying out the whole document
+on every press costs about fifty times as much and buys nothing.
+
+The arithmetic is shared and testable —
+`EditorScrollGeometry.offset(toReveal:)` and `isComfortablyVisible(_:)`, with
+the recorded numbers in `EditorScrollGeometryTests.swift`. The parts that are
+not pure are asserted against real views by
+`macOS/Scripts/check-critique-reveal.swift`.
+
+A trap that has nothing to do with scrolling and cost more than all of the
+above: **selectable text swallows the press.** On macOS, SwiftUI's
+`.textSelection(.enabled)` installs an AppKit view over the words, and that view
+takes the click before any gesture on the card is reached — `hitTest` in the
+middle of a note returns it rather than the hosting view. Since the words are
+most of a note's area, the card answered a press on its margin and ignored one
+on itself. Whatever the platform's equivalent is (a `<span>` with
+`user-select`, a read-only text control), a port must check which element
+actually receives the press on the note's text, and not assume that a handler
+on the container sees it.
+
+### Hovering a note tints its passage
+
+A rail of notes beside a column of prose has a pointing problem: the note names
+a passage, and on a long document the passage it names is often not the one
+beside it. Pressing to find out is a poor way to ask a question, because
+pressing also moves the page.
+
+So the pointer answers it. **When the pointer rests on a note, the passage that
+note is about changes colour where it is already on screen.** Three rules make
+it work rather than annoy:
+
+- **It never scrolls.** A hover is a question, not an instruction. If the
+  passage is off screen, nothing happens — a page that moves when the pointer
+  passes over a list is unusable.
+- **Selection outranks hover.** A reader whose pointer is resting on the note
+  they have already opened is looking at one thing, not two, and dropping the
+  passage back to the weaker wash while the pointer sits over its card reads as
+  the selection being lost.
+- **The hover wash sits between the other two** — the resting mark's own
+  colour, at an alpha halfway to the selected one. Keeping the hue means the
+  hover reads as *more of the mark already there* rather than as a different
+  kind of mark. Landing halfway is what keeps the three legible as an order: a
+  hover a shade off resting cannot be seen, and one a shade off selected makes
+  the press that follows look like it did nothing.
+
+**A wash cannot carry the press on its own, so the open note's passage is also
+ruled.** This is the part that reads as a nicety and is not. The three alphas
+are an order, and an order is only readable when you can see two of them at
+once — but a press replaces one wash with another in a place the reader is
+usually not looking, and **when the passage was already on screen there is no
+scroll to tell them anything happened either.** A difference of a few
+hundredths of an alpha, under text, is a difference somebody reasonably reports
+as the press having done nothing. So the open passage gets a solid rule under
+it, in the severity's own tint — the colour its note is bordered in, so the
+note and the passage read as one object.
+
+Two things a port will be tempted to do instead, both worse. Making the
+selected wash much louder puts the noise on top of the words the author is
+trying to read; a rule is loud without being in the way, because it is not on
+top of anything. And giving the hover a rule too collapses the distinction the
+previous rule just bought: the reader asks a question by pointing and answers
+it by pressing, and the two answers have to look different.
+
+Hover state is **not** document state. It is not saved, it does not enter the
+undo stack, and it does not mark the document as changed — it is where the
+pointer is, which stops being true the moment it moves.
+
+One implementation trap, and it is the same on every toolkit that reports hover
+as two separate events: moving the pointer from one note straight to the next
+delivers the *arrival* on the new note before the *departure* from the old one
+often enough to matter. Clearing unconditionally on departure turns the new
+highlight straight back off, which on screen is a flicker rather than a move.
+Clear only when the note being left is still the one holding the pointer.
+
+The state machine, the three washes and the rule are shared and testable:
+`Shared/Sources/MarkdownEditorUI/CritiqueHighlight.swift`, with
+`CritiqueHighlightTests.swift` asserting the ordering, the hue, that nine
+distinct washes come out of three severities in three states, and that the rule
+belongs to the open state alone.
 
 ### Noticing that the file changed underneath the editor
 
@@ -634,7 +860,40 @@ Reference: `Shared/Sources/MarkdownEditorUI/EditorPaneGeometry.swift`
 `EditorPaneGeometryTests`), wired up in
 `macOS/Sources/MarkdownEditor/MarkdownEditorApp.swift` with the constants in
 `Layout` at the foot of `MarkdownEditorView.swift`. The macOS README records the
-reasoning as I-225 to I-228.
+reasoning as I-243 and I-267 to I-268.
+
+### The narrowest a window may be, with the rail in it
+
+The rail keeps a fixed width beside the document, so it does not shrink with the
+window — a window dragged narrower clips it. Three rules keep it whole, and the
+first alone is not enough:
+
+- **The minimum width follows the rail.** While the rail is open the narrowest
+  the window may be is the column's own minimum plus the rail — `360 + 356 =
+  716` on the macOS build — and it falls back to the document's minimum (620)
+  when the rail is shut. Under a flat 620 the column took 608 points and the
+  rail got 12: it was dragged off the edge rather than closed, which reads as a
+  panel that vanishes when a window is resized. The opening size's clamp
+  (above) uses this same rail-open minimum, because that is what a new window
+  opens showing.
+- **Clamp the column against the room the rail leaves**, not against the
+  window. With the floor raised to 716 a 700-point column still "fitted the
+  window" and squeezed the rail to 16 points, because the column's clamp had
+  never been told the rail was there. Subtract the rail from the width first,
+  then clamp the column into what is left.
+- **Reserve nothing for a resize handle that is no longer in a margin.** The
+  column's width gripper normally hangs just outside the column, in the margin;
+  with the rail open there is no margin, so it is drawn inside the column's edge
+  instead — anywhere else it sits under the rail, which is drawn over it, and the
+  document cannot be resized at all. Keep reserving the margin's width for it
+  and a column that fits exactly loses those points: that is how a 1056-point
+  window came to hold a 688-point column instead of 700.
+
+Reference: `EditorPaneGeometry.minimumContentWidth(columnMinimum:documentMinimum:railWidth:railIsOpen:)`
+and `gripperOffset(gripperWidth:bleed:railIsOpen:)`, both tested in
+`EditorPaneGeometryTests`; the column clamp is `clampedWidth` in
+`macOS/Sources/MarkdownEditor/MarkdownEditorView.swift`. The macOS README
+records the reasoning as I-244 to I-246, and I-199 for where the gripper goes.
 
 ### The mark, and where it comes from
 
@@ -648,7 +907,7 @@ undo: the web build carried a hand-written blue plate for months after the Mac
 icon had stopped being blue, and the landing screen carried a *third* mark that
 matched neither.
 
-Three things a port has to get right, each measured rather than assumed:
+Four things a port has to get right, each measured rather than assumed:
 
 - **Place the mark by its round body, not by its bounding box.** Size *and*
   centre on it, as though any accent were not there. On this mark the leaves

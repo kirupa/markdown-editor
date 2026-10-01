@@ -21,14 +21,15 @@ extension EditorColorTheme {
         textView.backgroundColor = editorBackgroundColor
         textView.textColor = primaryTextColor
         textView.insertionPointColor = primaryTextColor
+        // A tint and nothing else: selected words keep their own colours.
         let selection: [NSAttributedString.Key: Any] = [
-            .backgroundColor: selectionBackgroundColor,
-            .foregroundColor: selectionTextColor
+            .backgroundColor: textSelectionBackgroundColor
         ]
         // The rendered view hides the band while a picture is selected, so it
         // owns the decision; setting it here directly would undo that.
         if let rich = textView as? RichMarkdownTextView {
             rich.baseSelectedTextAttributes = selection
+            rich.inactiveSelectionColor = inactiveTextSelectionBackgroundColor
         } else {
             textView.selectedTextAttributes = selection
         }

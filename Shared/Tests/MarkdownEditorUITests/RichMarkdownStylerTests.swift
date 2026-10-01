@@ -404,3 +404,112 @@ struct RichMarkdownStylerTests {
         #expect(unbounded == asked)
     }
 }
+
+@Suite("An empty line inside a block")
+struct EmptyBlockLineStyling {
+    private let theme = EditorColorTheme(color: .blue, mode: .light)
+
+    /// The indent a line would actually be drawn at.
+    ///
+    /// Past the end of the text there is nothing to ask, so this asks what the
+    /// caret would type with instead — which is the whole question for the
+    /// last line of a document.
+    private func indent(
+        of markdown: String,
+        atRendered location: Int
+    ) -> CGFloat? {
+        let model = MarkdownRenderer.render(markdown)
+        let styled = RichMarkdownStyler.attributedString(
+            for: model, documentURL: nil, colorTheme: theme, page: nil
+        )
+        guard location < styled.length else {
+            let typing = RichMarkdownStyler.typingAttributes(
+                for: model, at: location, colorTheme: theme, page: nil
+            )
+            return (typing?[.paragraphStyle] as? NSParagraphStyle)?
+                .firstLineHeadIndent
+        }
+        let style = styled.attribute(
+            .paragraphStyle, at: location, effectiveRange: nil
+        ) as? NSParagraphStyle
+        return style?.firstLineHeadIndent
+    }
+
+    @Test("A quote continued onto a new line is still indented")
+    func aContinuedQuoteKeepsItsIndent() {
+        // What pressing Enter at the end of a quote produces. The source has
+        // said `> ` all along; it was the drawing that gave up, because the
+        // new line has no characters and an attribute over a zero-length range
+        // does nothing at all. The reader saw the quote end.
+        let indented = indent(
+            of: "> A quoted line\n> \n\nPlain paragraph here.\n",
+            atRendered: 14
+        )
+        #expect(indented == 20, "the continued line must stay in the quote")
+    }
+
+    @Test("The lines after the quote are not dragged in with it")
+    func theFollowingParagraphIsUntouched() {
+        // The empty line is styled through its own newline, which in TextKit
+        // terminates the paragraph it ends. Reaching backwards instead would
+        // have indented whatever came before.
+        let source = "> A quoted line\n> \n\nPlain paragraph here.\n"
+        #expect(indent(of: source, atRendered: 15) == 0)
+        #expect(indent(of: source, atRendered: 20) == 0)
+    }
+
+    @Test("A quote written under a plain sentence leaves the sentence alone")
+    func aQuoteBelowProseDoesNotIndentTheProse() {
+        // The case that rules out extending an empty span backwards: the
+        // newline before it belongs to the line above, and styling that would
+        // indent a paragraph nobody quoted.
+        #expect(indent(of: "normal\n> ", atRendered: 0) == 0)
+    }
+
+    @Test("A quote continued at the very end of the document is indented too")
+    func theLastLineIsIndentedThroughTypingAttributes() {
+        // The one line no attribute can reach: it has no newline to carry one.
+        // TextKit would otherwise type with the character before the caret,
+        // which belongs to the line above — and which, for a quote, is not
+        // styled as one either, because a quote's span stops short of it.
+        #expect(indent(of: "> hello\n> ", atRendered: 6) == 20)
+    }
+
+    @Test("A line that can speak for itself is left to the text view")
+    func typingAttributesAreOfferedOnlyWhereTheyAreNeeded() {
+        // Returning something everywhere would freeze the text view at
+        // whatever was last computed, which is a different bug wearing the
+        // same clothes.
+        let model = MarkdownRenderer.render("> hello\n> world")
+        #expect(
+            RichMarkdownStyler.typingAttributes(
+                for: model, at: 2, colorTheme: theme, page: nil
+            ) == nil
+        )
+        let plain = MarkdownRenderer.render("just prose")
+        #expect(
+            RichMarkdownStyler.typingAttributes(
+                for: plain, at: 10, colorTheme: theme, page: nil
+            ) == nil
+        )
+    }
+
+    @Test("A continued list item was never affected, and still is not")
+    func aContinuedListItemKeepsItsIndent() {
+        // Why this fault was invisible in lists for so long: a continued item
+        // draws its bullet, so the new line has a character to carry the
+        // style and never went through the empty-span path at all. A quote has
+        // no marker to draw, so it had nothing.
+        #expect(indent(of: "- one\n- ", atRendered: 6) == 5)
+
+        // And a genuinely blank line between two items is left alone on
+        // purpose: it belongs to neither item, so there is nothing to indent
+        // it to. Checked so that a later change cannot quietly start
+        // indenting it.
+        let model = MarkdownRenderer.render("- one\n\n- two")
+        #expect(
+            !model.spans.contains { $0.renderedRange.location == 6 },
+            "a blank line between items is part of no item"
+        )
+    }
+}

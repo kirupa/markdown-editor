@@ -15,6 +15,7 @@
 		A10000000000000000000105 /* MarkdownSourceTextEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000005 /* MarkdownSourceTextEditor.swift */; };
 		A10000000000000000000106 /* MarkdownRichTextEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000006 /* MarkdownRichTextEditor.swift */; };
 		A10000000000000000000107 /* ThemePickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000007 /* ThemePickerSheet.swift */; };
+		A10000000000000000000108 /* MarkdownImageOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000008 /* MarkdownImageOverlayView.swift */; };
 		A10000000000000000000110 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000010 /* Assets.xcassets */; };
 		A10000000000000000000120 /* MarkdownEditorCore in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000020 /* MarkdownEditorCore */; };
 		A10000000000000000000121 /* MarkdownEditorUI in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000021 /* MarkdownEditorUI */; };
@@ -29,6 +30,7 @@
 		A10000000000000000000005 /* MarkdownSourceTextEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownSourceTextEditor.swift; sourceTree = "<group>"; };
 		A10000000000000000000006 /* MarkdownRichTextEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownRichTextEditor.swift; sourceTree = "<group>"; };
 		A10000000000000000000007 /* ThemePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemePickerSheet.swift; sourceTree = "<group>"; };
+		A10000000000000000000008 /* MarkdownImageOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownImageOverlayView.swift; sourceTree = "<group>"; };
 		A10000000000000000000010 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A10000000000000000000011 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A10000000000000000000030 /* Markdown Editor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Markdown Editor.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -66,6 +68,7 @@
 				A10000000000000000000002 /* EditorController.swift */,
 				A10000000000000000000004 /* MarkdownFormattingBar.swift */,
 				A10000000000000000000044 /* ImageSizeSheet.swift */,
+				A10000000000000000000008 /* MarkdownImageOverlayView.swift */,
 				A10000000000000000000006 /* MarkdownRichTextEditor.swift */,
 				A10000000000000000000005 /* MarkdownSourceTextEditor.swift */,
 				A10000000000000000000007 /* ThemePickerSheet.swift */,
@@ -172,6 +175,7 @@
 				A10000000000000000000101 /* MarkdownEditorIOSApp.swift in Sources */,
 				A10000000000000000000104 /* MarkdownFormattingBar.swift in Sources */,
 				A10000000000000000000144 /* ImageSizeSheet.swift in Sources */,
+				A10000000000000000000108 /* MarkdownImageOverlayView.swift in Sources */,
 				A10000000000000000000106 /* MarkdownRichTextEditor.swift in Sources */,
 				A10000000000000000000105 /* MarkdownSourceTextEditor.swift in Sources */,
 				A10000000000000000000107 /* ThemePickerSheet.swift in Sources */,

@@ -10,7 +10,6 @@
 import { suite, test, expect, expectEqual } from './harness.js';
 import { renderMarkdown } from '../app/core/render-model.js';
 import { renderInto } from '../app/ui/renderer.js';
-import { renderSourceInto } from '../app/ui/source-renderer.js';
 import {
   readPlainText,
   offsetForPosition,
@@ -128,61 +127,6 @@ suite('Rendered DOM', () => {
   });
 });
 
-suite('Source DOM', () => {
-  test('reproduces the source exactly', () => {
-    const element = host();
-    for (const markdown of DOCUMENTS) {
-      renderSourceInto(element, markdown, renderMarkdown(markdown));
-      expectEqual(
-        readPlainText(element),
-        markdown,
-        `source DOM text differs for ${JSON.stringify(markdown)}`
-      );
-    }
-    element.remove();
-  });
-
-  test('round-trips every offset through the DOM', () => {
-    const element = host();
-    for (const markdown of DOCUMENTS) {
-      renderSourceInto(element, markdown, renderMarkdown(markdown));
-      for (let offset = 0; offset <= markdown.length; offset += 1) {
-        const position = positionForOffset(element, offset);
-        expectEqual(
-          offsetForPosition(element, position.node, position.offset),
-          offset,
-          `offset ${offset} did not survive for ${JSON.stringify(markdown)}`
-        );
-      }
-    }
-    element.remove();
-  });
-
-  test('sizes headings and fenced code but styles nothing else', () => {
-    const element = host();
-    renderSourceInto(
-      element,
-      '## Title\n\n> quote\n\n```swift\ncode\n```\n',
-      renderMarkdown('## Title\n\n> quote\n\n```swift\ncode\n```\n')
-    );
-    expectEqual(element.querySelectorAll('.me-src-h2').length, 1);
-    // The fence markers count as code too, matching MarkdownSourceStyler.
-    expectEqual(element.querySelectorAll('.me-src-code').length, 3);
-    expectEqual(element.querySelectorAll('[class*="me-src-quote"]').length, 0);
-    element.remove();
-  });
-});
-
-/**
- * Where a first-time visitor's documents go (WR-1).
- *
- * `rememberedMode()` reads `window.localStorage`, so it is only testable where
- * there is a real one — under node the key is unreadable and every assertion
- * about it passes trivially. It is tested here because the distinction it
- * draws carries the whole fallback rule: collapse "has not chosen" onto
- * "chose the server" and the editor stops asking, and quietly starts everyone
- * in a workspace anyone reaching the page can edit.
- */
 suite('Remembered storage mode', () => {
   const KEY = 'markdown-editor.storageMode';
   const withStored = (value, body) => {

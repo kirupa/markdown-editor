@@ -17,7 +17,7 @@ public enum MarkdownInlineStyle: CaseIterable {
     case strikethrough
     case inlineCode
 
-    fileprivate var markers: (opening: String, closing: String) {
+    internal var markers: (opening: String, closing: String) {
         switch self {
         case .bold:
             ("**", "**")
@@ -40,6 +40,85 @@ public enum MarkdownListStyle {
 }
 
 public enum MarkdownFormatting {
+    /// Whether `style` can do anything at `selection`, and so whether the
+    /// control that runs it should be offered at all.
+    ///
+    /// Inside code the answer is no, because Markdown is inert there: the
+    /// command could only write literal punctuation into the writer's code.
+    /// The one exception is inline code itself while the selection is inside a
+    /// code span — that is how a span is taken off again, and a rule that
+    /// refused it would make a code span impossible to undo from the caret.
+    public static func isAvailable(
+        _ style: MarkdownInlineStyle,
+        in text: String,
+        selection: NSRange
+    ) -> Bool {
+        isAvailable(
+            style,
+            context: MarkdownCodeContext.containing(
+                clamped(selection, to: (text as NSString).length),
+                in: text
+            )
+        )
+    }
+
+    /// The same question asked of an already rendered model, for a caller —
+    /// a toolbar, a menu — that has one and should not parse the document
+    /// again to draw a button.
+    public static func isAvailable(
+        _ style: MarkdownInlineStyle,
+        in model: MarkdownRenderModel,
+        sourceSelection selection: NSRange
+    ) -> Bool {
+        isAvailable(
+            style,
+            context: MarkdownCodeContext.containing(selection, in: model)
+        )
+    }
+
+    public static func isAvailable(
+        _ style: MarkdownInlineStyle,
+        context: MarkdownCodeContext
+    ) -> Bool {
+        switch context {
+        case .prose:
+            true
+        case .codeBlock:
+            false
+        case .inlineCodeSpan:
+            style == .inlineCode
+        }
+    }
+
+    /// Whether a link can be written at `selection`. `[text](url)` inside code
+    /// is six characters of punctuation and no link.
+    public static func isLinkAvailable(
+        in text: String,
+        selection: NSRange
+    ) -> Bool {
+        isLinkAvailable(
+            context: MarkdownCodeContext.containing(
+                clamped(selection, to: (text as NSString).length),
+                in: text
+            )
+        )
+    }
+
+    public static func isLinkAvailable(
+        in model: MarkdownRenderModel,
+        sourceSelection selection: NSRange
+    ) -> Bool {
+        isLinkAvailable(
+            context: MarkdownCodeContext.containing(selection, in: model)
+        )
+    }
+
+    public static func isLinkAvailable(
+        context: MarkdownCodeContext
+    ) -> Bool {
+        context == .prose
+    }
+
     public static func toggleInline(
         _ style: MarkdownInlineStyle,
         in text: String,
@@ -47,6 +126,24 @@ public enum MarkdownFormatting {
     ) -> MarkdownEditResult {
         let source = text as NSString
         let selection = clamped(requestedSelection, to: source.length)
+        let context = MarkdownCodeContext.containing(selection, in: text)
+
+        guard isAvailable(style, context: context) else {
+            return MarkdownEditResult(text: text, selection: selection)
+        }
+
+        // Inline code is the one command still answering inside a code span,
+        // and what it means there is "take this off". The paths below already
+        // do that for a selection that names the span's contents; this covers
+        // the two they cannot see — a bare caret between the backticks, and a
+        // selection that crosses one of the backtick runs — which would
+        // otherwise wrap a second span around part of the first.
+        if case .inlineCodeSpan(let span) = context,
+            let removal = removingCodeSpan(span, source: source, selection: selection)
+        {
+            return removal
+        }
+
         let selectedContent = source.substring(with: selection)
         let markers = markers(for: style, content: selectedContent)
         let openingLength = (markers.opening as NSString).length
@@ -431,14 +528,28 @@ public enum MarkdownFormatting {
         selection requestedSelection: NSRange
     ) -> MarkdownEditResult {
         let source = text as NSString
-        let selection = clamped(requestedSelection, to: source.length)
+        let requested = clamped(requestedSelection, to: source.length)
+        // Emphasis is matched within a line, so a break in the middle of a
+        // bold word leaves `**` unpaired on both sides of it and the reader is
+        // shown the asterisks instead of bold text. The markers are closed
+        // before the break and opened again after it, which keeps both halves
+        // bold and keeps the syntax off the screen — see `inlineMending`.
+        let selection = requested.length == 0
+            ? absorbingSpace(
+                at: breakLocation(in: source, at: requested.location),
+                in: source
+            )
+            : requested
+        let mend = inlineMending(in: text, at: selection)
+
         guard selection.length == 0 else {
+            let replacement = mend.closing + "\n" + mend.opening
             return replacing(
                 text,
                 range: selection,
-                with: "\n",
+                with: replacement,
                 selection: NSRange(
-                    location: selection.location + 1,
+                    location: selection.location + (replacement as NSString).length,
                     length: 0
                 )
             )
@@ -461,12 +572,14 @@ public enum MarkdownFormatting {
             selection.location
                 >= contentRange.location + continuation.markerRange.length
         else {
+            let replacement = mend.closing + "\n" + mend.opening
             return replacing(
                 text,
                 range: selection,
-                with: "\n",
+                with: replacement,
                 selection: NSRange(
-                    location: selection.location + 1,
+                    location: selection.location
+                        + (replacement as NSString).length,
                     length: 0
                 )
             )
@@ -491,7 +604,7 @@ public enum MarkdownFormatting {
             )
         }
 
-        let replacement = "\n\(continuation.nextPrefix)"
+        let replacement = mend.closing + "\n" + continuation.nextPrefix + mend.opening
         return replacing(
             text,
             range: selection,
@@ -504,6 +617,254 @@ public enum MarkdownFormatting {
         )
     }
 
+    /// The range a line break should replace, swallowing a space where one
+    /// would otherwise strand the markers.
+    ///
+    /// Breaking at the space in `**bold and italic**` cannot close the run
+    /// where the caret is: emphasis will not close after a space, so
+    /// `**bold **` is four asterisks rather than bold text. The space goes
+    /// into the break instead, giving `**bold**` and `**and italic**`.
+    ///
+    /// Losing it costs nothing. A single trailing space at the end of a line
+    /// is invisible in Markdown — two would be a hard break, one is nothing —
+    /// and the reader put a line ending there, which is what a line ending
+    /// looks like. Outside emphasis the space is kept, because there the break
+    /// is harmless and the text is not ours to tidy.
+    private static func absorbingSpace(
+        at location: Int,
+        in source: NSString
+    ) -> NSRange {
+        var range = NSRange(location: location, length: 0)
+        guard isInsideMendableRun(range, in: source) else {
+            return range
+        }
+        let spaces = CharacterSet(charactersIn: " \t")
+        func isSpace(_ offset: Int) -> Bool {
+            guard offset >= 0, offset < source.length else { return false }
+            return source.substring(with: NSRange(location: offset, length: 1))
+                .rangeOfCharacter(from: spaces) != nil
+        }
+        while range.location > 0, isSpace(range.location - 1) {
+            range = NSRange(location: range.location - 1, length: range.length + 1)
+        }
+        while isSpace(NSMaxRange(range)) {
+            range = NSRange(location: range.location, length: range.length + 1)
+        }
+        return range
+    }
+
+    /// The spans of the one block a range sits in, with their **source**
+    /// ranges in document coordinates.
+    ///
+    /// The rendered range is deliberately not filled in. Turning a block's
+    /// rendered offsets into the document's would mean rendering everything
+    /// above it, which is the cost this exists to avoid, and a range quietly
+    /// left in block coordinates is the kind of thing that is right until
+    /// somebody uses it. `NSNotFound` says so out loud.
+    ///
+    /// Pressing Return used to render the whole document three times over —
+    /// once here, once to find where the break belongs, and once to work out
+    /// which markers to mend — so a long file grew slower to write in the
+    /// further down it you were. Emphasis is matched within a line and a span
+    /// never crosses a block, so every one of those questions is answered by
+    /// the block the caret is in, and the answers are identical.
+    public static func spansAroundBlock(
+        at location: Int,
+        in source: NSString
+    ) -> [MarkdownRenderSpan] {
+        let block = MarkdownBlockScanner.blockRange(
+            containing: location,
+            in: source
+        )
+        guard block.length > 0 else { return [] }
+        return MarkdownRenderer.render(source.substring(with: block)).spans
+            .map { span in
+                MarkdownRenderSpan(
+                    style: span.style,
+                    renderedRange: NSRange(location: NSNotFound, length: 0),
+                    sourceRange: NSRange(
+                        location: span.sourceRange.location + block.location,
+                        length: span.sourceRange.length
+                    ),
+                    includesMarkup: span.includesMarkup,
+                    isAtomic: span.isAtomic
+                )
+            }
+    }
+
+    /// Whether a run this break would have to mend actually contains it.
+    private static func isInsideMendableRun(
+        _ range: NSRange,
+        in source: NSString
+    ) -> Bool {
+        spansAroundBlock(at: range.location, in: source).contains { span in
+            guard let style = span.style.mendableInlineStyle else { return false }
+            let markers = writtenMarkers(of: span, style: style, in: source)
+            let contentStart = span.sourceRange.location
+                + (markers.opening as NSString).length
+            let contentEnd = NSMaxRange(span.sourceRange)
+                - (markers.closing as NSString).length
+            return range.location > contentStart && NSMaxRange(range) < contentEnd
+        }
+    }
+
+    /// The markers a span was actually written with.
+    ///
+    /// Not the ones the toolbar would write. `_italic_` and `*italic*` are the
+    /// same style, and reopening one with the other crosses the pair and puts
+    /// both on screen. The characters come from the document; only the
+    /// *length* comes from the style, which is what keeps `***both***` apart —
+    /// the bold run and the italic run cover the very same ten characters
+    /// there, and reading a marker as "the leading run of asterisks" would
+    /// give each of them all three.
+    private static func writtenMarkers(
+        of span: MarkdownRenderSpan,
+        style: MarkdownInlineStyle,
+        in source: NSString
+    ) -> (opening: String, closing: String) {
+        let defaults = style.markers
+        let opening = (defaults.opening as NSString).length
+        let closing = (defaults.closing as NSString).length
+        let range = span.sourceRange
+        guard range.length >= opening + closing else {
+            return defaults
+        }
+        return (
+            source.substring(with: NSRange(location: range.location, length: opening)),
+            source.substring(
+                with: NSRange(location: NSMaxRange(range) - closing, length: closing)
+            )
+        )
+    }
+
+    /// Where a line break should actually go, given where the caret is.
+    ///
+    /// Normally the caret's own offset. The exception is an emphasis run's
+    /// edge: the caret drawn immediately before a bold word sits *inside* the
+    /// `**`, between the marker and the first letter, because that is the only
+    /// source offset the rendered position maps to. Breaking there would leave
+    /// `a **` above and `bold** word` below — two unpaired markers, and the
+    /// asterisks on screen.
+    ///
+    /// Breaking outside the marker instead gives `a ` and `**bold** word`,
+    /// which is what the reader was pointing at. Applied repeatedly because
+    /// emphasis nests, and stepping out of one run can land on the edge of
+    /// another.
+    private static func breakLocation(
+        in source: NSString,
+        at location: Int
+    ) -> Int {
+        var location = location
+        let spans = spansAroundBlock(at: location, in: source)
+        for _ in 0..<4 {
+            var moved = false
+            for span in spans {
+                guard let style = span.style.mendableInlineStyle else { continue }
+                let range = span.sourceRange
+                let markers = writtenMarkers(of: span, style: style, in: source)
+                let contentStart = range.location
+                    + (markers.opening as NSString).length
+                let contentEnd = NSMaxRange(range)
+                    - (markers.closing as NSString).length
+                guard contentStart <= contentEnd else { continue }
+                if location == contentStart, location != range.location {
+                    location = range.location
+                    moved = true
+                } else if location == contentEnd, location != NSMaxRange(range) {
+                    location = NSMaxRange(range)
+                    moved = true
+                }
+            }
+            if !moved { break }
+        }
+        return location
+    }
+
+    /// The markers to close before a line break and open again after it.
+    ///
+    /// A bold run is `**` … `**` on one line. Break the line in the middle and
+    /// neither half has its pair, so both are read as literal asterisks and the
+    /// document shows its own syntax — the one thing the rendered view exists
+    /// to prevent. Closing at the break and reopening after it keeps both
+    /// halves bold and the markers hidden.
+    ///
+    /// Only runs that strictly contain the break are mended: one that merely
+    /// touches it is not being split, and closing it would produce `****`,
+    /// which is an empty emphasis and four literal asterisks on screen.
+    ///
+    /// Nothing is mended against whitespace either. Emphasis will not close
+    /// after a space or open before one — `**bold and **` is not bold, it is
+    /// four asterisks — so a break at a space is left exactly as it was rather
+    /// than "fixed" into something that renders worse. That is the one case
+    /// this does not rescue, and it is no worse for trying.
+    ///
+    /// Nesting is closed innermost-first and reopened outermost-first, the way
+    /// the markers were written, so the pairs come back nested rather than
+    /// crossed.
+    ///
+    /// Links and images are deliberately left alone. Splitting one would mean
+    /// inventing a second copy of its destination, which is a decision about
+    /// the content rather than about its formatting.
+    private static func inlineMending(
+        in text: String,
+        at range: NSRange
+    ) -> (closing: String, opening: String) {
+        let source = text as NSString
+        guard isFlanked(range, in: source) else {
+            return ("", "")
+        }
+        let straddling = spansAroundBlock(
+            at: range.location,
+            in: source
+        ).filter { span in
+            guard let style = span.style.mendableInlineStyle else { return false }
+            let markers = writtenMarkers(of: span, style: style, in: source)
+            let contentStart = span.sourceRange.location
+                + (markers.opening as NSString).length
+            let contentEnd = NSMaxRange(span.sourceRange)
+                - (markers.closing as NSString).length
+            return range.location > contentStart && NSMaxRange(range) < contentEnd
+        }
+        guard !straddling.isEmpty else {
+            return ("", "")
+        }
+
+        let outermostFirst = straddling.sorted {
+            $0.sourceRange.length > $1.sourceRange.length
+        }
+        let closing = outermostFirst.reversed().compactMap { span in
+            span.style.mendableInlineStyle.map {
+                writtenMarkers(of: span, style: $0, in: source).closing
+            }
+        }.joined()
+        let opening = outermostFirst.compactMap { span in
+            span.style.mendableInlineStyle.map {
+                writtenMarkers(of: span, style: $0, in: source).opening
+            }
+        }.joined()
+        return (closing, opening)
+    }
+
+    /// Whether emphasis closed and reopened here would actually parse.
+    ///
+    /// CommonMark will not let a run close after whitespace or open before it,
+    /// which is the rule that makes `a ** b **` ordinary text. Mending across a
+    /// space would therefore write markers that show rather than hide.
+    private static func isFlanked(_ range: NSRange, in source: NSString) -> Bool {
+        guard range.location > 0, NSMaxRange(range) < source.length else {
+            return false
+        }
+        let before = source.substring(
+            with: NSRange(location: range.location - 1, length: 1)
+        )
+        let after = source.substring(
+            with: NSRange(location: NSMaxRange(range), length: 1)
+        )
+        let blank = CharacterSet.whitespacesAndNewlines
+        return before.rangeOfCharacter(from: blank) == nil
+            && after.rangeOfCharacter(from: blank) == nil
+    }
+
     public static func insertLink(
         destination: String,
         in text: String,
@@ -511,6 +872,11 @@ public enum MarkdownFormatting {
     ) -> MarkdownEditResult {
         let source = text as NSString
         let selection = clamped(requestedSelection, to: source.length)
+
+        guard isLinkAvailable(in: text, selection: selection) else {
+            return MarkdownEditResult(text: text, selection: selection)
+        }
+
         let label = selection.length > 0
             ? source.substring(with: selection)
             : "link text"
@@ -1224,6 +1590,65 @@ public enum MarkdownFormatting {
         )
     }
 
+    /// Takes the backticks off the code span at `span`, for a selection the
+    /// ordinary unwrapping paths cannot recognise as naming it.
+    ///
+    /// Returns nil — leaving the ordinary paths to run — when the selection
+    /// does name the span's contents, so every selection that already toggled
+    /// a span off keeps doing it, and keeps landing where it used to.
+    private static func removingCodeSpan(
+        _ span: NSRange,
+        source: NSString,
+        selection: NSRange
+    ) -> MarkdownEditResult? {
+        var fenceLength = 0
+        while span.location + fenceLength < NSMaxRange(span),
+            source.character(at: span.location + fenceLength) == 0x60
+        {
+            fenceLength += 1
+        }
+        guard fenceLength > 0 else {
+            return nil
+        }
+        let contents = NSRange(
+            location: span.location + fenceLength,
+            length: max(0, span.length - fenceLength * 2)
+        )
+        let namesContents = selection.length > 0
+            && selection.location >= contents.location
+            && NSMaxRange(selection) <= NSMaxRange(contents)
+        guard !namesContents,
+            let unwrapped = unwrappedCodeSpan(source.substring(with: span))
+        else {
+            return nil
+        }
+
+        // How much came off the front: the backticks, and the padding space
+        // `unwrappedCodeSpan` strips when there is one on both sides.
+        let unwrappedLength = (unwrapped as NSString).length
+        let removedBefore = fenceLength
+            + (unwrappedLength == contents.length - 2 ? 1 : 0)
+        let contentStart = span.location
+        let contentEnd = contentStart + unwrappedLength
+
+        // The caret keeps its place in the code rather than jumping to an end
+        // of it, and a selection that crossed a backtick run is clamped to
+        // what is left of the code it was reaching for.
+        let location = min(
+            max(contentStart, selection.location - removedBefore),
+            contentEnd
+        )
+        let mutableText = NSMutableString(string: source)
+        mutableText.replaceCharacters(in: span, with: unwrapped)
+        return MarkdownEditResult(
+            text: mutableText as String,
+            selection: NSRange(
+                location: location,
+                length: min(selection.length, contentEnd - location)
+            )
+        )
+    }
+
     private static func unwrappedCodeSpan(_ text: String) -> String? {
         let source = text as NSString
         var openingLength = 0
@@ -1601,4 +2026,24 @@ private struct SourceEdit {
 private struct SourceLine {
     let content: String
     let contentRange: NSRange
+}
+
+private extension MarkdownRenderStyle {
+    /// The command that writes this style, when a line break has to close and
+    /// reopen it.
+    ///
+    /// Emphasis, code and underline only. A link or an image is not mended,
+    /// because splitting one would mean inventing a second copy of its
+    /// destination — a decision about the content rather than about its
+    /// formatting.
+    var mendableInlineStyle: MarkdownInlineStyle? {
+        switch self {
+        case .bold: .bold
+        case .italic: .italic
+        case .underline: .underline
+        case .strikethrough: .strikethrough
+        case .inlineCode: .inlineCode
+        default: nil
+        }
+    }
 }

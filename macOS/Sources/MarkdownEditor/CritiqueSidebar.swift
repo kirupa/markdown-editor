@@ -44,143 +44,17 @@ enum CritiqueInk {
     }
 }
 
-/// The three hands the critique can be written in.
+/// The hands the critique can be written in.
 ///
-/// A choice rather than a decision, because this one is taste: a marker, a
-/// drafting hand and a pen are three different tones of voice for the same
-/// comment, and which one reads as "somebody wrote on my draft" rather than
-/// "a machine generated this" is not something to settle on somebody's behalf.
-///
-/// All three are bundled and OFL or Apache licensed, so the choice never
-/// depends on what happens to be installed.
-enum CritiqueHand: String, CaseIterable, Identifiable {
-    /// The system face. Not a hand at all, and the default.
-    ///
-    /// The handwriting says "somebody wrote on your draft", which is the right
-    /// tone and the wrong trade at length: a rail full of marker is slower to
-    /// read than the draft it is about. The faces are still here for anyone
-    /// who wants them.
-    case sans
+/// The catalog is shared — Customize Theme ▸ Font offers the document exactly
+/// the same faces — so it lives in `EditorTypeface`. What is the critique's own
+/// is only which one it is currently written in.
+typealias CritiqueHand = EditorTypeface
 
-    // Bundled, under the SIL Open Font License. Shipped rather than assumed
-    // because macOS carries none of them, and a picker offering a face that
-    // is not there is worse than not offering it.
-    case architectsDaughter
-    case caveat
-    case indieFlower
-    case patrickHand
-    case shadowsIntoLight
-    case gloriaHallelujah
-    case kalam
-    case permanentMarker
-
-    // Already on the machine. Free to offer, and genuinely good — but macOS
-    // makes some faces optional downloads and any face can be switched off in
-    // Font Book, so these are filtered by what actually resolves. See
-    // `available`.
-    case bradleyHand
-    case markerFelt
-    case noteworthy
-    case chalkboard
-
+extension EditorTypeface {
+    /// The critique's choice. Not the document's, which is
+    /// `EditorColorTheme.typefaceStorageKey`: one list, two choices.
     static let storageKey = "critiqueHandFont"
-
-    var id: Self { self }
-
-    var title: String {
-        switch self {
-        case .sans: return "System Sans"
-        case .architectsDaughter: return "Architects Daughter"
-        case .caveat: return "Caveat"
-        case .indieFlower: return "Indie Flower"
-        case .patrickHand: return "Patrick Hand"
-        case .shadowsIntoLight: return "Shadows Into Light"
-        case .gloriaHallelujah: return "Gloria Hallelujah"
-        case .kalam: return "Kalam"
-        case .permanentMarker: return "Permanent Marker"
-        case .bradleyHand: return "Bradley Hand"
-        case .markerFelt: return "Marker Felt"
-        case .noteworthy: return "Noteworthy"
-        case .chalkboard: return "Chalkboard"
-        }
-    }
-
-    /// Empty for the system face, which is asked for by weight rather than by
-    /// name — there is no one PostScript name for it across macOS versions.
-    var fontName: String {
-        switch self {
-        case .sans: return ""
-        case .architectsDaughter: return "ArchitectsDaughter-Regular"
-        case .caveat: return "Caveat-Regular"
-        case .indieFlower: return "IndieFlower-Regular"
-        case .patrickHand: return "PatrickHand-Regular"
-        case .shadowsIntoLight: return "ShadowsIntoLight"
-        case .gloriaHallelujah: return "GloriaHallelujah"
-        case .kalam: return "Kalam-Regular"
-        case .permanentMarker: return "PermanentMarker-Regular"
-        case .bradleyHand: return "BradleyHandITCTT-Bold"
-        case .markerFelt: return "MarkerFelt-Thin"
-        case .noteworthy: return "Noteworthy-Light"
-        case .chalkboard: return "ChalkboardSE-Light"
-        }
-    }
-
-    /// What to multiply a requested point size by so every face lands at the
-    /// same *read* size. See `CritiqueTypography.opticalScale`.
-    ///
-    /// Measured, not guessed, and measured from **x-height** — the ratio of the
-    /// system face's x-height to this one's. Almost every word in the rail is
-    /// lowercase, and these faces disagree about capitals far more than about
-    /// lowercase: Gloria Hallelujah's cap height is 0.88 against Bradley Hand's
-    /// 0.54, while their x-heights are 0.57 and 0.49. Matching capitals would
-    /// set the text people actually read as much as a third too small.
-    var opticalScale: CGFloat {
-        switch self {
-        case .sans: return 1.0
-        case .architectsDaughter: return 1.19
-        case .caveat: return 1.28
-        case .indieFlower: return 1.12
-        case .patrickHand: return 1.09
-        case .shadowsIntoLight: return 0.84
-        case .gloriaHallelujah: return 0.90
-        case .kalam: return 0.97
-        case .permanentMarker: return 0.84
-        case .bradleyHand: return 1.03
-        case .markerFelt: return 0.88
-        case .noteworthy: return 0.94
-        case .chalkboard: return 1.01
-        }
-    }
-
-    /// Whether this face can actually be drawn on this machine.
-    ///
-    /// The bundled ones always can. The system ones usually can and sometimes
-    /// cannot: macOS makes several faces optional downloads, and any face at
-    /// all can be switched off in Font Book — which the fallback chain in
-    /// `CritiqueTypography` has always allowed for. A picker is where that
-    /// matters most, because choosing an entry that silently draws something
-    /// else looks like the app ignoring you.
-    var isAvailable: Bool {
-        guard self != .sans else { return true }
-        return NSFont(name: fontName, size: 12) != nil
-    }
-
-    /// The faces to offer, in the order they should be offered.
-    static var available: [CritiqueHand] { allCases.filter(\.isAvailable) }
-
-    /// Whether this face is one the app ships, as opposed to one it found.
-    ///
-    /// Only used to group the picker: a list of thirteen faces is a wall, and
-    /// "these came with the app / these came with your Mac" is the one division
-    /// a reader can act on.
-    var isBundled: Bool {
-        switch self {
-        case .sans, .bradleyHand, .markerFelt, .noteworthy, .chalkboard:
-            return false
-        default:
-            return true
-        }
-    }
 
     /// Read straight from defaults rather than held in a view.
     ///
@@ -482,31 +356,14 @@ struct CritiqueSidebar: View {
     /// what anybody is actually looking for — "the one before I rewrote the
     /// opening" — and carrying their score, so the list reads as a record of
     /// whether the draft is getting better.
-    /// Pick the hand the comments are written in.
-    ///
-    /// Each name is set in its own face, because the names mean nothing —
-    /// nobody knows what "Caveat" looks like, and a list of three words in the
-    /// same font asks you to guess and then look. Showing them is the whole
-    /// answer to the question the menu is asking.
+    /// Pick the hand the comments are written in — from the same list, shown
+    /// the same way, as Customize Theme ▸ Font. See `TypefaceMenuItems`.
     private var handMenu: some View {
         Menu {
-            // Grouped, because a flat list of thirteen faces is a wall. The
-            // system face first and alone: it is not a hand, and it is the
-            // default and the most legible at length.
-            handChoice(.sans)
-            Divider()
-            Section("Bundled") {
-                ForEach(CritiqueHand.available.filter { $0.isBundled }) { candidate in
-                    handChoice(candidate)
-                }
-            }
-            let system = CritiqueHand.available.filter {
-                !$0.isBundled && $0 != .sans
-            }
-            if !system.isEmpty {
-                Section("From your Mac") {
-                    ForEach(system) { candidate in handChoice(candidate) }
-                }
+            TypefaceMenuItems(
+                selected: CritiqueHand(rawValue: hand) ?? .initial
+            ) { candidate in
+                hand = candidate.rawValue
             }
         } label: {
             Image(systemName: "textformat")
@@ -516,23 +373,6 @@ struct CritiqueSidebar: View {
         .fixedSize()
         .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
         .help("The hand the comments are written in")
-    }
-
-    /// One face in the menu, set in itself.
-    private func handChoice(_ candidate: CritiqueHand) -> some View {
-        Button {
-            hand = candidate.rawValue
-        } label: {
-            HStack {
-                Text(candidate.title)
-                    .font(CritiqueTypography.named(
-                        candidate, size: CritiqueTypography.bodySize
-                    ))
-                if candidate.rawValue == hand {
-                    Image(systemName: "checkmark")
-                }
-            }
-        }
     }
 
     private var revisionMenu: some View {
@@ -816,10 +656,13 @@ struct CritiqueSidebar: View {
                             item: item,
                             colorTheme: colorTheme,
                             isSelected: critique.selectedFindingID == item.id,
-                            onTap: {
-                                guard item.isOutstanding else { return }
-                                critique.selectedFindingID =
-                                    critique.selectedFindingID == item.id ? nil : item.id
+                            onTap: { critique.press(item) },
+                            onHoverChange: { hovering in
+                                if hovering {
+                                    critique.hover(item.id)
+                                } else {
+                                    critique.endHover(item.id)
+                                }
                             },
                             onResolve: { resolution in
                                 withAnimation(.easeOut(duration: 0.2)) {
@@ -1227,13 +1070,32 @@ private struct StickyNote<Content: View>: View {
     var isSelected: Bool = false
     var selectionColour: Color = .clear
     var dimmed: Bool = false
+    /// What pressing this note does, if it is a note you can press.
+    var onPress: (() -> Void)?
+    /// Told when the pointer arrives over this note and when it leaves.
+    var onHoverChange: ((Bool) -> Void)?
     @ViewBuilder let content: Content
 
     @State private var isHovered = false
 
+    /// Whether the words on this note can be selected with the pointer.
+    ///
+    /// Not on a note you can press, and this is not a preference — it is the
+    /// reason pressing a note used not to work. `.textSelection(.enabled)`
+    /// puts an `AppKitTextInteractionView` over the text, and that view takes
+    /// the click: `hitTest` at the middle of a note returns it rather than the
+    /// hosting view, so the press never reaches SwiftUI's gesture at all.
+    /// Since the words are most of a note's area, what a reader saw was a card
+    /// that answered a click on its margin and ignored a click on itself —
+    /// reported, accurately, as having to click several times.
+    ///
+    /// Notes with nothing to press keep selectable text: the summary, the
+    /// repeated patterns and the keep list are prose somebody may well want to
+    /// copy, and nothing is competing for the click there.
+    private var allowsTextSelection: Bool { onPress == nil }
+
     var body: some View {
-        content
-            .textSelection(.enabled)
+        selectableContent
             .padding(10)
             .padding(.top, tag == nil ? 2 : 8)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1280,12 +1142,47 @@ private struct StickyNote<Content: View>: View {
                 value: isHovered
             )
             .zIndex(isHovered ? 1 : 0)
-            .onHover { isHovered = $0 }
+            .onHover { hovering in
+                isHovered = hovering
+                onHoverChange?(hovering)
+            }
             // Room for the corners to turn and grow into. Without it a rotated
             // note is clipped by the scroll view and the effect reads as a
             // rendering fault rather than as a note pinned at an angle.
             .padding(.horizontal, 16)
             .padding(.vertical, 4)
+            // The press lives here rather than around the whole thing outside,
+            // so it is applied to the same view the hover is and cannot be
+            // separated from the selectable-text decision above it.
+            .contentShape(Rectangle())
+            .modifier(PressAction(action: onPress))
+    }
+
+    @ViewBuilder
+    private var selectableContent: some View {
+        if allowsTextSelection {
+            content.textSelection(.enabled)
+        } else {
+            content.textSelection(.disabled)
+        }
+    }
+}
+
+/// A tap gesture, or nothing at all.
+///
+/// `onTapGesture` cannot be applied conditionally without the two branches
+/// being different types, and a note with no action must not claim the click:
+/// a gesture with an empty body still swallows it, which would take the
+/// pointer's press away from anything underneath.
+private struct PressAction: ViewModifier {
+    let action: (() -> Void)?
+
+    func body(content: Content) -> some View {
+        if let action {
+            content.onTapGesture(perform: action)
+        } else {
+            content
+        }
     }
 }
 
@@ -1343,9 +1240,9 @@ struct CritiqueCard: View {
     let colorTheme: EditorColorTheme
     let isSelected: Bool
     let onTap: () -> Void
+    /// Told when the pointer arrives over this note and when it leaves.
+    let onHoverChange: (Bool) -> Void
     let onResolve: (CritiqueResolution?) -> Void
-
-    @State private var isHovered = false
 
     private var finding: CritiqueFinding { item.finding }
     private var isAnswered: Bool { !item.isOutstanding }
@@ -1490,7 +1387,12 @@ struct CritiqueCard: View {
             tag: AnyView(severityTag),
             isSelected: isSelected,
             selectionColour: finding.severity.tint,
-            dimmed: isAnswered
+            dimmed: isAnswered,
+            // An answered note has nothing to take you to, so it keeps its
+            // selectable text: there is no press competing for the click, and
+            // it is still prose somebody may want to copy out.
+            onPress: isAnswered ? nil : onTap,
+            onHoverChange: onHoverChange
         ) {
             VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top, spacing: 6) {
@@ -1576,7 +1478,6 @@ struct CritiqueCard: View {
         }
         }
         .contentShape(Rectangle())
-        .onTapGesture(perform: onTap)
         .animation(.easeOut(duration: 0.14), value: isSelected)
     }
 }

@@ -10,6 +10,10 @@ struct MarkdownEditorApp: App {
     @AppStorage(EditorAppearanceMode.storageKey)
     private var appearanceModeRawValue =
         EditorAppearanceMode.systemDefault.rawValue
+    @AppStorage(EditorColorTheme.typefaceStorageKey)
+    private var typefaceRawValue = EditorTypeface.sans.rawValue
+    @AppStorage(EditorColorTheme.textScaleStorageKey)
+    private var textScale = 1.0
 
     var body: some Scene {
         DocumentGroup(newDocument: MarkdownDocument()) { configuration in
@@ -17,14 +21,19 @@ struct MarkdownEditorApp: App {
                 document: configuration.$document,
                 fileURL: configuration.fileURL,
                 themeColorRawValue: $themeColorRawValue,
-                appearanceModeRawValue: $appearanceModeRawValue
+                appearanceModeRawValue: $appearanceModeRawValue,
+                typefaceRawValue: $typefaceRawValue,
+                textScale: $textScale
             )
         }
-        // What a window opens at on a first run: wide enough for the writing
-        // column *and* the comments rail beside it, because the rail is there
-        // from the moment the document is. Anything saved for a window — a
-        // restored session, a size set by hand — still wins over this; it is
-        // the default, not a rule.
+        // The window opens big enough to hold what it opens showing: the
+        // writing column and the comments rail beside it, capped to the
+        // screen it lands on.
+        //
+        // Only used when there is nothing to restore: SwiftUI applies this to
+        // a genuinely new window and leaves a restored one at the size it was
+        // last left, which is the behaviour a reader who has resized a window
+        // expects and the reason this is not done by setting a frame.
         .defaultSize(Layout.defaultWindowContentSize)
         .commands {
             MarkdownEditorCommands()

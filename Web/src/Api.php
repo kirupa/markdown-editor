@@ -114,6 +114,16 @@ final class Api
                 $this->requiredString($_POST, 'path'),
                 $this->requiredUpload($files)
             ),
+            // The critique's three actions. The key never leaves the server,
+            // so unlike every other action here these do work on the browser's
+            // behalf rather than merely reading and writing what it asked for.
+            'critiqueConfig' => Critique::describe(),
+            'critique' => $this->requirePost($isPost) ?? Critique::fromRequest($body)->run(
+                (string) ($body['text'] ?? ''),
+                isset($body['focus']) && is_string($body['focus']) ? $body['focus'] : null
+            ),
+            'critiqueTest' => $this->requirePost($isPost)
+                ?? Critique::fromRequest($body)->test(),
             default => throw new WorkspaceError(
                 'Unknown request: ' . $action,
                 'This build of the editor does not support that action.',

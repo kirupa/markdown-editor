@@ -53,12 +53,19 @@ public enum CritiqueProvider: String, CaseIterable, Identifiable, Sendable {
     /// reasoning tier, which costs many times more for work that is not much
     /// better at this. So the small model is the default in each family and
     /// the larger one is there for anyone who disagrees.
+    ///
+    /// The Gemini pair are the two verified against a live account. The 1.5
+    /// series listed here before had been **retired**, and the API says so as
+    /// `is not found for API version v1beta` — which reads like a mistyped
+    /// name rather than a model that no longer exists. A model list is a set
+    /// of claims about somebody else's service and goes stale on their
+    /// schedule, not ours.
     public var models: [String] {
         switch self {
         case .openAI: return ["gpt-4o-mini", "gpt-4o"]
         case .anthropic:
             return ["claude-3-5-haiku-latest", "claude-3-5-sonnet-latest"]
-        case .gemini: return ["gemini-1.5-flash", "gemini-1.5-pro"]
+        case .gemini: return ["gemini-2.5-flash", "gemini-3.6-flash"]
         case .copilotCLI: return []
         }
     }

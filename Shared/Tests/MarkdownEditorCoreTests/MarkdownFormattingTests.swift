@@ -646,3 +646,163 @@ struct MarkdownFormattingTests {
         )
     }
 }
+
+@Suite("Breaking a line inside emphasis")
+struct EmphasisMending {
+    /// What the rendered view would show after breaking `markdown` where the
+    /// reader's caret is drawn at `renderedCaret`.
+    private func shown(_ markdown: String, renderedCaret: Int) -> String {
+        let model = MarkdownRenderer.render(markdown)
+        let caret = model.sourceRange(
+            for: NSRange(location: renderedCaret, length: 0)
+        ).location
+        let broken = MarkdownFormatting.insertNewline(
+            in: markdown, selection: NSRange(location: caret, length: 0)
+        )
+        return MarkdownRenderer.render(broken.text).text
+    }
+
+    private func source(_ markdown: String, renderedCaret: Int) -> String {
+        let model = MarkdownRenderer.render(markdown)
+        let caret = model.sourceRange(
+            for: NSRange(location: renderedCaret, length: 0)
+        ).location
+        return MarkdownFormatting.insertNewline(
+            in: markdown, selection: NSRange(location: caret, length: 0)
+        ).text
+    }
+
+    @Test("Breaking a bold word keeps both halves bold and the markers hidden")
+    func breakingABoldWordDoesNotShowItsMarkers() {
+        // The reported fault: emphasis is matched within a line, so a break in
+        // the middle left `**` unpaired on both sides and the reader saw the
+        // asterisks in what is supposed to be a rendered view.
+        #expect(source("a **bold** word", renderedCaret: 4) == "a **bo**\n**ld** word")
+        #expect(shown("a **bold** word", renderedCaret: 4) == "a bo\nld word")
+    }
+
+    @Test("Every position inside the word is safe, not just the middle")
+    func breakingAnywhereInsideTheWordIsClean() {
+        for caret in 2...6 {
+            let rendered = shown("a **bold** word", renderedCaret: caret)
+            #expect(
+                !rendered.contains("*"),
+                "breaking at \(caret) showed markers: \(rendered)"
+            )
+        }
+    }
+
+    @Test("The markers written in the document are the ones reopened")
+    func theDocumentsOwnMarkersAreReused() {
+        // `_italic_` and `*italic*` are the same style. Reopening one with the
+        // other crosses the pair and puts both on screen.
+        #expect(source("a _italic_ word", renderedCaret: 4) == "a _it_\n_alic_ word")
+        #expect(!shown("a _italic_ word", renderedCaret: 4).contains("_"))
+    }
+
+    @Test("Nested emphasis closes innermost first and reopens outermost first")
+    func nestingComesBackNestedRatherThanCrossed() {
+        // Bold and italic cover the very same characters in `***both***`, so a
+        // marker read as "the leading run of asterisks" would give each of them
+        // all three and reopen with six.
+        #expect(source("a ***both*** word", renderedCaret: 4) == "a ***bo***\n***th*** word")
+        #expect(shown("a ***both*** word", renderedCaret: 4) == "a bo\nth word")
+    }
+
+    @Test("Code and strikethrough are mended too")
+    func theOtherInlineRunsAreMendedAsWell() {
+        #expect(shown("a `code` word", renderedCaret: 4) == "a co\nde word")
+        #expect(shown("a ~~gone~~ word", renderedCaret: 4) == "a go\nne word")
+    }
+
+    @Test("A break at the edge of a run goes outside its markers")
+    func breakingAtTheEdgeStepsOutOfTheRun() {
+        // The caret drawn before a bold word sits *inside* the `**`, because
+        // that is the only source offset the rendered position maps to.
+        // Breaking there would leave `a **` above and `bold** word` below.
+        #expect(source("a **bold** word", renderedCaret: 2) == "a \n**bold** word")
+        #expect(source("a **bold** word", renderedCaret: 6) == "a **bold**\n word")
+    }
+
+    @Test("A break at a space inside emphasis takes the space with it")
+    func aSpaceInsideEmphasisIsAbsorbedByTheBreak() {
+        // Emphasis will not close after a space — `**bold **` is four asterisks
+        // — so the space goes into the line ending instead. A single trailing
+        // space is invisible in Markdown; two would be a hard break.
+        #expect(source("**bold and italic**", renderedCaret: 4) == "**bold**\n**and italic**")
+        #expect(shown("**bold and italic**", renderedCaret: 4) == "bold\nand italic")
+    }
+
+    @Test("Ordinary text keeps its spaces")
+    func aBreakOutsideEmphasisIsUntouched() {
+        // The space is only absorbed to rescue markers. Outside emphasis the
+        // break is harmless and the text is not ours to tidy.
+        #expect(source("just plain words", renderedCaret: 4) == "just\n plain words")
+        #expect(source("just plain words", renderedCaret: 6) == "just p\nlain words")
+    }
+
+    @Test("A quote's marker and its emphasis are both carried over")
+    func aBoldWordInsideAQuoteKeepsBoth() {
+        #expect(source("> a **bold** word", renderedCaret: 4) == "> a **bo**\n> **ld** word")
+        #expect(shown("> a **bold** word", renderedCaret: 4) == "a bo\nld word")
+    }
+
+    @Test("A link is left alone rather than duplicated")
+    func linksAreNotMended() {
+        // Splitting one would mean inventing a second copy of its destination,
+        // which is a decision about the content rather than its formatting.
+        let broken = source("a [label](http://x.test) word", renderedCaret: 3)
+        #expect(!broken.contains("http://x.test\n") || !broken.contains("](http://x.test)("))
+    }
+
+    /// Pressing Return inside a fenced block must not run the list rules over
+    /// the code in it.
+    ///
+    /// The mending helpers read the spans of the block the caret is in rather
+    /// than of the whole document, which is only equivalent if the block is
+    /// found the same way the parser finds it. A fence indented with a
+    /// no-break space is the case where that came apart: the scanner saw
+    /// prose, so it offered the emphasis spans of a line that is really code,
+    /// and Return wrote asterisks into the code block.
+    @Test("Block-scoped spans agree with the whole document")
+    func blockScopedSpansMatchTheDocument() {
+        let documents = [
+            "```\nA **bold** line\n```\nafter\n",
+            "\u{00A0}```\nA **bold** line\n```\nafter\n",
+            "  ~~~\n1. one\n~~~\n",
+            "A **bold** line\n\n> a *quoted* line\n",
+            "```\n- item"
+        ]
+        for text in documents {
+            let source = text as NSString
+            let whole = MarkdownRenderer.render(text).spans
+            for offset in 0...source.length {
+                let scoped = MarkdownFormatting.spansAroundBlock(
+                    at: offset,
+                    in: source
+                )
+                // Half-open, because the offset one past a span's end
+                // belongs to whatever comes next — including, at the end of a
+                // line, the next block. That is what the callers here mean by
+                // "the span the caret is in".
+                let containing = whole.filter { span in
+                    offset >= span.sourceRange.location
+                        && offset < NSMaxRange(span.sourceRange)
+                }
+                for span in containing {
+                    #expect(
+                        scoped.contains {
+                            $0.style == span.style
+                                && $0.sourceRange == span.sourceRange
+                        },
+                        """
+                        \(text.debugDescription) at \(offset): the document \
+                        has \(span.style) over \(span.sourceRange) and the \
+                        block does not
+                        """
+                    )
+                }
+            }
+        }
+    }
+}

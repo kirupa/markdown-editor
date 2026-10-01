@@ -29,6 +29,10 @@
   --me-quote-inset: 20px;
 
   --me-sidebar-width: 240px;
+  /* The measure the document is set at. Named "preview" from when there were
+     two panes and this was the width of one of them; kept because it is
+     written into every reader's localStorage and into the image-bleed
+     arithmetic that the stylesheet tests check. */
   --me-preview-width: 700px;
   /* The page is wider than the column the text is set in. This is how much
      wider it may be, on each side, and a picture is the only thing allowed to
@@ -46,6 +50,19 @@
   --me-ui-font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --me-text-font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --me-mono-font: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  /* The face the document is set in, and what to multiply its sizes by so it
+     reads at the size the numbers above promise (T-16). theme.js sets both
+     from Customize Theme; code keeps --me-mono-font whatever the face. */
+  --me-page-font: var(--me-text-font);
+  --me-page-scale: 1;
+
+  /* How large the document is drawn, from Customize Theme ▸ Size (T-23):
+     0.75 to 1.5, set by theme.js. It multiplies everything the text is set
+     with — type, the gaps between paragraphs, the indents of lists, quotes
+     and code — so 150% is the same page drawn larger. The column and the
+     pictures in it keep their size. */
+  --me-text-scale: 1;
 }
 
 * { box-sizing: border-box; }
@@ -64,9 +81,17 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* A tint and no text colour, so selected words keep their own. */
 ::selection {
-  background: var(--me-selection-background);
-  color: var(--me-selection-text);
+  background: var(--me-text-selection-background);
+}
+
+/* T-24: in the document the editor draws the selection itself — rounded, and
+   fading where it runs on across lines — so the browser's square one is
+   switched off there, but only while selection-highlight.js is drawing. */
+.me-surface[data-draws-selection]::selection,
+.me-surface[data-draws-selection] ::selection {
+  background: transparent;
 }
 
 /* ---------------------------------------------------------------- app shell */
@@ -297,46 +322,6 @@ body {
 .me-tool svg .me-fill { fill: currentColor; stroke: none; }
 .me-tool--wide { width: auto; padding: 0 9px; gap: 5px; }
 
-/* Segmented control for the three editor views (E-1, E-4). */
-.me-segmented {
-  display: inline-flex;
-  padding: 2px;
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--me-primary-text) 6%, transparent);
-}
-
-.me-segmented__option {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 24px;
-  font: inherit;
-  color: inherit;
-  background: none;
-  border: 0;
-  padding: 0;
-  border-radius: 5px;
-  cursor: default;
-}
-
-.me-segmented__option svg {
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.me-segmented__option svg .me-fill { fill: currentColor; stroke: none; }
-
-.me-segmented__option[aria-pressed="true"] {
-  background: var(--me-page-background);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.10);
-}
-
 /* ------------------------------------------------------------------- sidebar */
 
 .me-sidebar {
@@ -566,21 +551,13 @@ body {
 
 .me-pane[hidden] { display: none; }
 
-/* In Split the preview takes a draggable fixed width and the source pane
-   absorbs the remainder (X-16). In single-pane modes the visible one fills
-   everything. */
-.me-editor[data-mode="split"] .me-pane--rich {
-  flex: 0 0 var(--me-preview-width);
-  width: var(--me-preview-width);
-}
+/* There is one pane, and it fills the editor. */
+.me-pane--rich { flex: 1; }
 
-.me-editor[data-mode="split"] .me-pane--source { flex: 1; }
-.me-editor[data-mode="rich"] .me-pane--rich,
-.me-editor[data-mode="source"] .me-pane--source { flex: 1; }
-
-/* Rich Text on its own centers the document at the same measure the preview
-   uses in Split, so switching modes does not reflow the text (E-14). */
-.me-editor[data-mode="rich"] .me-pane--rich .me-surface {
+/* The document is centred at a fixed measure rather than set to the width of
+   the window, because a line of text that runs the width of a monitor is a
+   line nobody can find their way back to the start of. */
+.me-pane--rich .me-surface {
   width: 100%;
   /* Whatever room is left over each side of the column, up to the maximum —
      the same rule as EditorPaneGeometry.imageBleed, and it collapses to
@@ -611,8 +588,8 @@ body {
   min-height: 100%;
   padding: 20px var(--me-surface-padding);      /* Y-7 */
   outline: none;
-  font-family: var(--me-text-font);
-  font-size: var(--me-body-size);
+  font-family: var(--me-page-font);
+  font-size: calc(var(--me-body-size) * var(--me-page-scale) * var(--me-text-scale));
   line-height: var(--me-line-height);
   color: var(--me-primary-text);
   caret-color: var(--me-primary-text);
@@ -621,15 +598,10 @@ body {
   tab-size: 4;
 }
 
-.me-surface--source {
-  padding: 16px 18px;       /* Y-7 */
-  font-family: var(--me-mono-font);
-}
-
 /* ------------------------------------------------------- rendered block styles */
 
 .me-block { margin: 0; }
-.me-block + .me-block { margin-top: var(--me-paragraph-gap); }
+.me-block + .me-block { margin-top: calc(var(--me-paragraph-gap) * var(--me-text-scale)); }
 
 .me-h1, .me-h2, .me-h3, .me-h4, .me-h5, .me-h6 {
   font-weight: 700;
@@ -637,35 +609,35 @@ body {
   margin: 0;
 }
 
-.me-block.me-h1, .me-block.me-h2 { margin-top: var(--me-heading-gap-large); }
+.me-block.me-h1, .me-block.me-h2 { margin-top: calc(var(--me-heading-gap-large) * var(--me-text-scale)); }
 .me-block.me-h3, .me-block.me-h4,
-.me-block.me-h5, .me-block.me-h6 { margin-top: var(--me-heading-gap-small); }
+.me-block.me-h5, .me-block.me-h6 { margin-top: calc(var(--me-heading-gap-small) * var(--me-text-scale)); }
 .me-h1 + .me-block, .me-h2 + .me-block,
 .me-h3 + .me-block, .me-h4 + .me-block,
-.me-h5 + .me-block, .me-h6 + .me-block { margin-top: var(--me-heading-gap-below); }
+.me-h5 + .me-block, .me-h6 + .me-block { margin-top: calc(var(--me-heading-gap-below) * var(--me-text-scale)); }
 
-.me-h1 { font-size: var(--me-h1-size); }
-.me-h2 { font-size: var(--me-h2-size); }
-.me-h3 { font-size: var(--me-h3-size); }
-.me-h4 { font-size: var(--me-h4-size); }
-.me-h5 { font-size: var(--me-h5-size); }
-.me-h6 { font-size: var(--me-h6-size); }
+.me-h1 { font-size: calc(var(--me-h1-size) * var(--me-page-scale) * var(--me-text-scale)); }
+.me-h2 { font-size: calc(var(--me-h2-size) * var(--me-page-scale) * var(--me-text-scale)); }
+.me-h3 { font-size: calc(var(--me-h3-size) * var(--me-page-scale) * var(--me-text-scale)); }
+.me-h4 { font-size: calc(var(--me-h4-size) * var(--me-page-scale) * var(--me-text-scale)); }
+.me-h5 { font-size: calc(var(--me-h5-size) * var(--me-page-scale) * var(--me-text-scale)); }
+.me-h6 { font-size: calc(var(--me-h6-size) * var(--me-page-scale) * var(--me-text-scale)); }
 
 /* Y-3: a hanging indent so wrapped lines align under the text, not the bullet. */
 .me-list {
-  padding-left: var(--me-list-indent);
-  text-indent: calc(-1 * var(--me-list-indent) + 5px);
+  padding-left: calc(var(--me-list-indent) * var(--me-text-scale));
+  text-indent: calc((-1 * var(--me-list-indent) + 5px) * var(--me-text-scale));
 }
 
 .me-quote {
-  padding-left: var(--me-quote-inset);
-  padding-right: 8px;                          /* Y-4 */
+  padding-left: calc(var(--me-quote-inset) * var(--me-text-scale));
+  padding-right: calc(8px * var(--me-text-scale));   /* Y-4 */
   border-left: 3px solid color-mix(in srgb, var(--me-primary-text) 28%, transparent);
 }
 
 .me-rule {
   text-align: center;
-  margin: 8px 0;                               /* Y-6 */
+  margin: calc(8px * var(--me-text-scale)) 0;         /* Y-6 */
   color: var(--me-secondary-text);
 }
 
@@ -673,9 +645,9 @@ body {
    the opening line flush with every following line. */
 .me-code-block {
   font-family: var(--me-mono-font);
-  font-size: var(--me-code-size);
+  font-size: calc(var(--me-code-size) * var(--me-text-scale));
   background: var(--me-code-block-background);
-  padding: 2px 12px;
+  padding: calc(2px * var(--me-text-scale)) calc(12px * var(--me-text-scale));
   margin: 0;
 }
 
@@ -683,8 +655,12 @@ body {
    breaks into stripes (Y-5). */
 .me-block.me-code-block + .me-block.me-code-block { margin-top: 0; }
 
-.me-code-block--first { padding-top: 9px; border-radius: 7px 7px 0 0; margin-top: var(--me-paragraph-gap); }
-.me-code-block--last { padding-bottom: 9px; border-radius: 0 0 7px 7px; }
+.me-code-block--first {
+  padding-top: calc(9px * var(--me-text-scale));
+  border-radius: 7px 7px 0 0;
+  margin-top: calc(var(--me-paragraph-gap) * var(--me-text-scale));
+}
+.me-code-block--last { padding-bottom: calc(9px * var(--me-text-scale)); border-radius: 0 0 7px 7px; }
 .me-code-block--first.me-code-block--last { border-radius: 7px; }
 
 .me-bold { font-weight: 700; }
@@ -694,7 +670,7 @@ body {
 
 .me-code {
   font-family: var(--me-mono-font);
-  font-size: var(--me-code-size);
+  font-size: calc(var(--me-code-size) * var(--me-text-scale));
   background: var(--me-inline-code-background);
   border-radius: 4px;
   padding: 1px 4px;
@@ -802,6 +778,38 @@ body {
 [data-moving-image] .me-block,
 [data-moving-image] .me-image { cursor: grabbing; }
 
+/* T-24: the selection's bars (selection-highlight.js).
+
+   The layer follows the surface inside the scrolling pane, so the bars scroll
+   with the words for free; it takes no room and no clicks. The clip covers
+   exactly the surface, so a fade reaching past the pane's edge cannot make the
+   pane scroll sideways. Neither may start a stacking context — no z-index,
+   opacity, transform or isolation — because each bar blends with the text
+   beneath it, and that only works if the text is in the same group. */
+.me-selection-layer {
+  position: relative;
+  flex: none;
+  height: 0;
+  pointer-events: none;
+  user-select: none;
+}
+
+.me-selection-layer__clip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  overflow: hidden;
+}
+
+/* Over the words, blended so they keep their colours: multiply on a light
+   page, screen on a dark one. The colour and the fades are set per bar. */
+.me-selection-bar {
+  position: absolute;
+  mix-blend-mode: multiply;
+}
+
+.me-selection-layer[data-blend="screen"] .me-selection-bar { mix-blend-mode: screen; }
+
 /* The rule marking where the picture would land.
 
    Drawn across the whole column rather than as a caret between two characters,
@@ -872,7 +880,7 @@ body {
 
 .me-image--broken {
   font-family: var(--me-mono-font);
-  font-size: var(--me-code-size);
+  font-size: calc(var(--me-code-size) * var(--me-text-scale));
   color: var(--me-secondary-text);
   background: var(--me-inline-code-background);
   border-radius: 4px;
@@ -1159,6 +1167,12 @@ body {
   box-shadow: 0 14px 40px rgb(0 0 0 / 0.3);
 }
 
+/* WT-19: Customize Theme is one width whatever it previews. Were it to fit its
+   preview, a larger size or a wider face would widen it — and the size slider
+   with it, moving the thumb out from under the pointer as it is dragged. The
+   preview wraps instead; the popover grows downward only, below the slider. */
+.me-popover--theme { width: 316px; max-width: calc(100vw - 16px); }
+
 .me-popover__title { font-weight: 700; margin: 0 0 12px; }
 .me-popover__label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--me-secondary-text); margin: 0 0 7px; }
 .me-popover__section { margin-bottom: 14px; }
@@ -1216,9 +1230,33 @@ body {
   color: var(--preview-text);
 }
 
-.me-preview__title { font-weight: 700; font-size: 15px; }
-.me-preview__body { font-size: 12px; opacity: 0.85; margin-top: 3px; }
-.me-preview__accent { display: inline-block; margin-top: 8px; padding: 2px 8px; border-radius: 5px; background: var(--preview-accent); color: var(--preview-accent-text); font-size: 11px; }
+.me-preview__title { font-family: var(--preview-font); font-weight: 700; font-size: calc(15px * var(--preview-scale, 1) * var(--preview-text-scale, 1)); overflow-wrap: anywhere; }
+.me-preview__body { font-family: var(--preview-font); font-size: calc(12px * var(--preview-scale, 1) * var(--preview-text-scale, 1)); opacity: 0.85; margin-top: 3px; overflow-wrap: anywhere; }
+.me-preview__accent { display: inline-block; margin-top: 8px; padding: 2px 8px; border-radius: 5px; background: var(--preview-accent); font-size: 11px; }
+
+.me-font-select {
+  width: 100%;
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+  padding: 6px 8px;
+  border-radius: 7px;
+  border: 1px solid var(--me-separator);
+  background: var(--me-page-background);
+}
+
+/* T-23: the size slider, a small A and a large A either side of it. */
+.me-size-header { display: flex; align-items: baseline; justify-content: space-between; }
+.me-size-value {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--me-secondary-text);
+}
+.me-size-row { display: flex; align-items: center; gap: 8px; }
+.me-size-slider { flex: 1; min-width: 0; margin: 0; accent-color: var(--me-accent); }
+.me-size-glyph { color: var(--me-secondary-text); line-height: 1; }
+.me-size-glyph--small { font-size: 10px; }
+.me-size-glyph--large { font-size: 16px; }
 
 .me-popover__buttons { display: flex; justify-content: flex-end; gap: 8px; }
 .me-popover__buttons .me-button { text-align: center; }
@@ -1342,7 +1380,7 @@ body {
   padding-bottom: calc(28px + env(safe-area-inset-bottom));
 }
 
-.me-app[data-layout="mobile"] .me-editor[data-mode] .me-pane { flex: 1; }
+.me-app[data-layout="mobile"] .me-pane { flex: 1; }
 .me-app[data-layout="mobile"] .me-editor .me-pane--rich .me-surface {
   max-width: none;
   margin: 0;
@@ -1518,7 +1556,15 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-.me-format__button:active { background: color-mix(in srgb, var(--me-accent) 22%, transparent); }
+.me-format__button:active:not(:disabled) {
+  background: color-mix(in srgb, var(--me-accent) 22%, transparent);
+}
+
+/* Off where the command could not work: inside a fenced block or a code span,
+   where Markdown is literal and bold could only write two asterisks into
+   somebody's code. Greyed rather than hidden, so the bar does not change shape
+   as the caret moves. Matches `.me-tool:disabled` on the desktop toolbar. */
+.me-format__button:disabled { opacity: 0.35; }
 
 .me-format__button[aria-pressed="true"] {
   background: var(--me-selection-background);
@@ -1634,3 +1680,550 @@ body {
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
+
+/* ---------------------------------------------------------------------------
+   AI assisted critique (WA-*)
+
+   A rail of comments down the right-hand side, mirroring the macOS build's.
+   Modelled on the one place this interaction is already familiar: a comment
+   thread beside a document. A card per finding, the open one raised and
+   tinted, the passage it describes shaded in the text, and a click on either
+   side moving the other.
+   --------------------------------------------------------------------------- */
+
+
+:root {
+  --me-critique-hand: var(--me-ui-font);
+  --me-critique-hand-scale: 1;
+
+  /* The colours the critique writes in. Its own rather than the theme's: the
+     theme's text colours are chosen against the theme's page, and almost
+     nothing here is on the page. The notes are on pale paper in a light theme
+     and deep paper in a dark one. */
+  --me-note-ink: #1f1c1c;
+  --me-note-quiet: #57524f;
+
+  --me-note-high-paper: #ffd9d7;
+  --me-note-medium-paper: #fff5c2;
+  --me-note-low-paper: #d9edff;
+
+  /* The same hue carried to a legible lightness. `tint` is a fill, chosen to
+     look right as a solid block; set as text on a wash of itself it is barely
+     there, so the words get this one instead. */
+  --me-note-high-ink: #9e1a1a;
+  --me-note-medium-ink: #854505;
+  --me-note-low-ink: #21529a;
+
+  --me-note-high-tint: #d93d3d;
+  --me-note-medium-tint: #e69919;
+  --me-note-low-tint: #5c8ccc;
+
+  --me-note-works: #217f4a;
+}
+
+[data-appearance="dark"] {
+  --me-note-ink: #f2f2f0;
+  --me-note-quiet: #c7c5c2;
+
+  --me-note-high-paper: #4d2628;
+  --me-note-medium-paper: #47391a;
+  --me-note-low-paper: #23354f;
+
+  --me-note-high-ink: #ff9995;
+  --me-note-medium-ink: #ffc24d;
+  --me-note-low-ink: #9ed1ff;
+
+  --me-note-works: #6bd18f;
+}
+
+/* Docked against the document, not floating beside it.
+
+   A gutter here would leave the rail unattached to anything: the notes are
+   *about* the text they sit next to, and a gap plus a rule read as a divider
+   between two panes rather than as a margin on one document. The cards have
+   their own inset, so they still do not touch the edge.
+
+   A fixed width, so the rail does not eat whatever the window has spare --
+   a comment column that grows with the window stops looking like margin
+   notes somewhere around the second screenful. */
+.me-critique {
+  flex: 0 0 340px;
+  width: 340px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid var(--me-separator);
+  background: var(--me-canvas-background);
+  font-family: var(--me-ui-font);
+  color: var(--me-primary-text);
+}
+
+.me-critique[hidden] { display: none; }
+
+.me-critique__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--me-separator);
+}
+
+.me-critique__mark { display: flex; color: var(--me-accent); }
+.me-critique__mark svg { width: 16px; height: 16px; }
+
+/* Small and bold, rather than large and regular. A heading earns its place by
+   weight and by the space around it; making it big *as well* means the
+   signpost competes with the thing it is pointing at. */
+.me-critique__title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.me-critique__spacer { flex: 1; }
+
+.me-critique__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--me-note-quiet);
+  cursor: pointer;
+}
+
+.me-critique__icon svg { width: 15px; height: 15px; }
+.me-critique__icon:hover { background: color-mix(in srgb, var(--me-primary-text) 10%, transparent); }
+
+.me-critique__text-button {
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--me-note-quiet);
+  cursor: pointer;
+}
+
+.me-critique__hand-menu { display: flex; align-items: center; gap: 3px; color: var(--me-note-quiet); }
+.me-critique__hand-glyph { display: flex; }
+.me-critique__hand-glyph svg { width: 14px; height: 14px; }
+
+.me-critique__hand-select {
+  max-width: 96px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--me-note-quiet);
+  cursor: pointer;
+}
+
+.me-critique__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 0 32px;
+}
+
+/* --- The states the rail can be in ---------------------------------------- */
+
+.me-critique__state {
+  padding: 18px 16px;
+  text-align: left;
+}
+
+.me-critique__state-note {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--me-primary-text);
+}
+
+.me-critique__state-detail {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--me-secondary-text);
+}
+
+.me-critique__state--failed .me-critique__state-note { color: var(--me-note-high-ink); }
+
+.me-critique__button {
+  padding: 5px 12px;
+  border: 1px solid var(--me-separator);
+  border-radius: 6px;
+  background: var(--me-page-background);
+  font: inherit;
+  font-size: 13px;
+  color: var(--me-primary-text);
+  cursor: pointer;
+}
+
+.me-critique__button:hover { border-color: var(--me-accent); color: var(--me-accent); }
+
+.me-critique__spinner {
+  width: 18px;
+  height: 18px;
+  margin-bottom: 10px;
+  border: 2px solid var(--me-separator);
+  border-top-color: var(--me-accent);
+  border-radius: 50%;
+  animation: me-critique-spin 0.8s linear infinite;
+}
+
+@keyframes me-critique-spin { to { transform: rotate(360deg); } }
+
+/* --- The score ------------------------------------------------------------ */
+
+.me-critique__score {
+  margin: 0 12px 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--me-score-tint);
+  background:
+    linear-gradient(color-mix(in srgb, var(--me-score-tint) 12%, transparent),
+                    color-mix(in srgb, var(--me-score-tint) 12%, transparent)),
+    var(--me-page-background);
+  box-shadow: 2px 2px 0 var(--me-separator);
+}
+
+.me-critique__score--low { --me-score-tint: var(--me-note-low-tint); --me-score-ink: var(--me-note-low-ink); }
+.me-critique__score--medium { --me-score-tint: var(--me-note-medium-tint); --me-score-ink: var(--me-note-medium-ink); }
+.me-critique__score--high { --me-score-tint: var(--me-note-high-tint); --me-score-ink: var(--me-note-high-ink); }
+
+.me-critique__score-top {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.me-critique__score-number {
+  font-size: 42px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--me-score-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.me-critique__score-outof { font-size: 16px; font-weight: 600; color: var(--me-score-ink); }
+
+.me-critique__score-verdict {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+}
+
+.me-critique__score-caption {
+  font-size: 11px;
+  letter-spacing: 0.6px;
+  color: var(--me-note-quiet);
+}
+
+.me-critique__score-word { font-size: 13px; color: var(--me-primary-text); }
+
+/* Stepped, not smooth: the bar reads in whole blocks, the way a health meter
+   does, rather than as a continuous measurement it cannot honestly claim to
+   be. */
+.me-critique__bar {
+  display: flex;
+  gap: 2px;
+  height: 7px;
+  margin-top: 9px;
+}
+
+.me-critique__bar-block { flex: 1; background: color-mix(in srgb, var(--me-secondary-text) 16%, transparent); }
+.me-critique__bar-block.is-filled { background: var(--me-score-tint); }
+
+.me-critique__score-answered {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--me-note-quiet);
+}
+
+/* --- The stale notice ----------------------------------------------------- */
+
+.me-critique__stale {
+  margin: 0 12px 14px;
+  padding: 10px;
+  border: 1px solid var(--me-separator);
+  background: color-mix(in srgb, var(--me-note-quiet) 10%, transparent);
+}
+
+.me-critique__stale-text {
+  margin: 0 0 9px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--me-note-quiet);
+}
+
+/* --- A note on the pad ---------------------------------------------------- */
+
+/* The tilt and the nudge are what make a stack of these read as paper rather
+   than as a list of rows. Stable per note, so answering one does not reshuffle
+   the pad. */
+.me-critique__note {
+  position: relative;
+  margin: 0 12px 16px;
+  margin-left: calc(12px + var(--me-note-nudge, 0px));
+  padding: 14px 12px 10px;
+  background: var(--me-note-paper, var(--me-page-background));
+  box-shadow: 2px 2px 0 var(--me-separator);
+  transform: rotate(var(--me-note-angle, 0deg));
+  cursor: default;
+  transition: transform 0.14s ease-out, box-shadow 0.14s ease-out;
+}
+
+.me-critique__note--high { --me-note-paper: var(--me-note-high-paper); --me-note-tint: var(--me-note-high-tint); --me-note-severity-ink: var(--me-note-high-ink); }
+.me-critique__note--medium { --me-note-paper: var(--me-note-medium-paper); --me-note-tint: var(--me-note-medium-tint); --me-note-severity-ink: var(--me-note-medium-ink); }
+.me-critique__note--low { --me-note-paper: var(--me-note-low-paper); --me-note-tint: var(--me-note-low-tint); --me-note-severity-ink: var(--me-note-low-ink); }
+
+/* Straightened and faded once it has been dealt with, which reads as "this one
+   has been handled" without needing a word for it. */
+.me-critique__note.is-answered {
+  --me-note-paper: var(--me-page-background);
+  opacity: 0.62;
+}
+
+.me-critique__note.is-selected {
+  box-shadow: 0 0 0 2px var(--me-note-tint, var(--me-accent)), 3px 3px 0 var(--me-separator);
+  transform: rotate(0deg) translateX(-2px);
+}
+
+/* The summary is the only white note, because it is not a finding -- it is the
+   reader's impression of the whole draft. Colour on this one would file it
+   alongside the problems, which is exactly what it is not. */
+.me-critique__note--summary { --me-note-paper: var(--me-page-background); }
+
+.me-critique__note-body { display: flex; flex-direction: column; gap: 6px; }
+
+/* Sits over the note's top edge, the way a tag does. */
+.me-critique__tag {
+  position: absolute;
+  top: -9px;
+  left: 10px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  color: #ffffff;
+  /* The deep member of the hue, not the bright one: white on bright amber
+     measures 2.35:1, which is a colour with a word hidden in it. */
+  background: var(--me-note-severity-ink);
+  box-shadow: 2px 2px 0 var(--me-separator);
+}
+
+.me-critique__tag--answered {
+  color: var(--me-note-ink);
+  background: color-mix(in srgb, var(--me-note-quiet) 22%, transparent);
+}
+
+.me-critique__note-head { display: flex; align-items: flex-start; gap: 6px; }
+
+/* Larger than the body it introduces, and in the reviewer's hand rather than
+   the app's: it is part of what they wrote on the note, not a label the app
+   has stuck on top of it. Inside a card there is no surrounding space to give
+   a heading weight, so it has to come from size. */
+.me-critique__note-category {
+  margin: 0;
+  flex: 1;
+  font-family: var(--me-critique-hand);
+  font-size: calc(17px * var(--me-critique-hand-scale));
+  font-weight: 400;
+  line-height: 1.25;
+  color: var(--me-note-ink);
+}
+
+.me-critique__flag {
+  padding: 1px 5px;
+  font-size: 11px;
+  color: var(--me-note-quiet);
+  background: color-mix(in srgb, var(--me-note-quiet) 18%, transparent);
+}
+
+/* The author's own sentence quoted back at them, so it has to be recognisable
+   as theirs. Deliberately not the hand. */
+.me-critique__quote {
+  margin: 0;
+  padding-left: 7px;
+  border-left: 2px solid color-mix(in srgb, var(--me-note-tint) 55%, transparent);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--me-note-quiet);
+}
+
+/* The criticism itself. The smallest of the three, because it is the only one
+   there is a lot of. */
+.me-critique__why {
+  margin: 0;
+  font-family: var(--me-critique-hand);
+  font-size: calc(13px * var(--me-critique-hand-scale));
+  line-height: 1.45;
+  color: var(--me-note-ink);
+}
+
+.me-critique__advice { display: flex; flex-direction: column; gap: 2px; padding-top: 2px; }
+
+/* A sub-heading within the note, so between the two. */
+.me-critique__advice-label {
+  font-family: var(--me-critique-hand);
+  font-size: calc(15px * var(--me-critique-hand-scale));
+  letter-spacing: 0.4px;
+  color: var(--me-note-quiet);
+}
+
+.me-critique__advice-text {
+  margin: 0;
+  font-family: var(--me-critique-hand);
+  font-size: calc(13px * var(--me-critique-hand-scale));
+  line-height: 1.45;
+  color: var(--me-note-ink);
+}
+
+.me-critique__note-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 3px;
+}
+
+.me-critique__location { font-size: 11px; color: var(--me-note-quiet); }
+
+/* Deep enough to carry white, on any of the four papers. A tinted glyph on
+   tinted paper is the version that does not work: a green tick on a pale
+   yellow note is two washes of the same lightness. */
+.me-critique__stamp { width: 20px; height: 20px; color: #ffffff; border-radius: 0; }
+.me-critique__stamp svg { width: 12px; height: 12px; }
+.me-critique__stamp--done { background: #17752f; }
+.me-critique__stamp--dismiss { background: #cc2621; }
+.me-critique__stamp:hover { filter: brightness(1.15); background: var(--me-stamp-hover, inherit); }
+.me-critique__stamp--done:hover { background: #17752f; }
+.me-critique__stamp--dismiss:hover { background: #cc2621; }
+
+/* --- The summary note ----------------------------------------------------- */
+
+/* Entirely in the app's own face rather than the hand: it is a summary *of*
+   the handwritten notes rather than one of them. */
+.me-critique__job {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--me-note-quiet);
+}
+
+.me-critique__summary-section { display: flex; flex-direction: column; gap: 3px; }
+
+.me-critique__section-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--me-primary-text);
+}
+
+.me-critique__summary-section--works .me-critique__section-title { color: var(--me-note-works); }
+.me-critique__summary-section--problems .me-critique__section-title { color: var(--me-note-high-ink); }
+
+.me-critique__summary-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; }
+
+.me-critique__summary-list li {
+  display: flex;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--me-note-ink);
+}
+
+.me-critique__summary-mark { flex: 0 0 auto; color: var(--me-note-quiet); }
+.me-critique__summary-section--works .me-critique__summary-mark { color: var(--me-note-works); }
+.me-critique__summary-section--problems .me-critique__summary-mark { color: var(--me-note-high-ink); }
+
+.me-critique__counts { display: flex; flex-wrap: wrap; gap: 10px; padding-top: 1px; }
+
+.me-critique__count { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--me-note-quiet); }
+.me-critique__count-swatch { width: 6px; height: 6px; }
+.me-critique__count--high .me-critique__count-swatch { background: var(--me-note-high-tint); }
+.me-critique__count--medium .me-critique__count-swatch { background: var(--me-note-medium-tint); }
+.me-critique__count--low .me-critique__count-swatch { background: var(--me-note-low-tint); }
+
+.me-critique__answered-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px 6px;
+}
+
+.me-critique__rule { flex: 1; height: 1px; background: color-mix(in srgb, var(--me-separator) 70%, transparent); }
+
+/* --- The shading in the document ------------------------------------------ */
+
+/* Painted with the Custom Highlight API rather than by wrapping the passage in
+   an element. The surfaces are contenteditable, and inserting a <mark> into
+   one moves every offset after it, corrupts the mapping the editor reads
+   selections through, and lands in the undo stack as though the author had
+   typed it. A highlight paints over the text without touching the tree.
+
+   Where the API is missing the cards still work and say so; nothing silently
+   half-happens. */
+::highlight(me-critique-high) { background-color: rgba(217, 61, 61, 0.26); }
+::highlight(me-critique-medium) { background-color: rgba(230, 153, 25, 0.30); }
+::highlight(me-critique-low) { background-color: rgba(92, 140, 204, 0.26); }
+::highlight(me-critique-selected-high) { background-color: rgba(217, 61, 61, 0.48); }
+::highlight(me-critique-selected-medium) { background-color: rgba(230, 153, 25, 0.55); }
+::highlight(me-critique-selected-low) { background-color: rgba(92, 140, 204, 0.48); }
+
+/* The rail is a desktop affordance. On the mobile layout there is no room
+   beside the document for a column of comments, so it becomes the whole view
+   when it is open rather than a sliver of one. */
+.me-app[data-layout="mobile"] .me-critique {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  width: auto;
+  flex: 1;
+  border-left: 0;
+}
+
+/* The critique's settings panel: provider, model, and the reader's own key.
+   Wider than an alert because it is a form rather than a sentence. */
+.me-alert--settings { max-width: 460px; text-align: left; }
+
+.me-settings__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0;
+}
+
+.me-settings__label {
+  flex: 0 0 78px;
+  font-size: 13px;
+  color: var(--me-secondary-text);
+}
+
+.me-settings__control {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--me-separator);
+  border-radius: 6px;
+  background: var(--me-page-background);
+  font: inherit;
+  font-size: 13px;
+  color: var(--me-primary-text);
+}
+
+.me-settings__status {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--me-secondary-text);
+}
+
+/* Green for a key that is there, red for one that is not. Not colour alone —
+   the sentence says which either way, so this only speeds up a glance. */
+.me-settings__status[data-state="ok"] { color: var(--me-note-works); }
+.me-settings__status[data-state="missing"] { color: var(--me-note-high-ink); }

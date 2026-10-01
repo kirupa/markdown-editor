@@ -1,17 +1,24 @@
 // Application wiring.
 //
-// Everything user-visible is assembled here: the two editing surfaces, the
-// mode switch, the command table shared by the toolbar and menus, image
-// import, the dividers, and scroll/selection synchronization.
+// Everything user-visible is assembled here: the editing surface, the command
+// table shared by the toolbar and menus, image import, the explorer divider,
+// and the critique rail.
+//
+// There is one view. The Markdown and Side-by-Side panes are gone, following
+// the Mac (macOS PRD I-142): a rendered view that is genuinely editable makes
+// a second pane showing the same document a second place to look rather than a
+// second thing to see, and the raw source is still one keystroke away in any
+// text editor.
 
 import { api, ApiError } from './api.js';
 import {
   restoreStorage, storageMode, isCloud, currentAccount, useCloud, signOutAndUseLocal,
+  cloudIsAvailable,
 } from './storage.js';
 import { MarkdownDocumentModel } from './document.js';
 import { startLiveUpdates } from './live.js';
 import { makeRange, maxRange } from './core/range.js';
-import { renderMarkdown } from './core/render-model.js';
+import { MarkdownRenderModel } from './core/render-model.js';
 import {
   InlineStyle,
   ListStyle,
@@ -25,9 +32,11 @@ import {
   toggleList,
   toggleQuote,
   wrapCodeBlock,
+  isInlineStyleAvailable,
+  isLinkAvailable,
 } from './core/formatting.js';
+import { codeContextInModel } from './core/code-context.js';
 import { renderInto } from './ui/renderer.js';
-import { renderSourceInto } from './ui/source-renderer.js';
 import { EditorSurface } from './ui/editor-surface.js';
 import { positionForOffset } from './dom-text.js';
 import { Explorer } from './ui/explorer.js';
@@ -36,6 +45,7 @@ import { buildMenus } from './ui/menus.js';
 import { WelcomeScreen, recentDocuments, savedDocuments } from './ui/welcome.js';
 import { buildMobileUI } from './ui/mobile.js';
 import { ImageSelection } from './ui/image-selection.js';
+import { SelectionHighlight } from './ui/selection-highlight.js';
 import {
   chooseImageSource,
   confirmAction,
@@ -44,11 +54,14 @@ import {
   showPrompt,
 } from './ui/dialogs.js';
 import { theme, openThemePopover } from './ui/theme.js';
+import { CritiqueRail } from './ui/critique.js';
+import {
+  clearCritiqueHighlights,
+  paintCritiqueHighlights,
+} from './ui/critique-highlights.js';
 
-const MODE_KEY = 'markdown-editor.mode';
 const SIDEBAR_KEY = 'markdown-editor.sidebarVisible';
 const SIDEBAR_WIDTH_KEY = 'markdown-editor.sidebarWidth';
-const PREVIEW_WIDTH_KEY = 'markdown-editor.previewWidth';
 const LAYOUT_KEY = 'markdown-editor.layout';
 
 /** Below this the desktop toolbar cannot lay out without wrapping (WB-3). */
@@ -59,18 +72,20 @@ const element = (id) => document.getElementById(id);
 theme.apply();
 
 const model = new MarkdownDocumentModel();
-let renderModel = renderMarkdown('');
-let renderModelSource = '';
 
-/** Rebuilds the render model only when the source it was built from changed. */
+/**
+ * The one render model, kept up to date rather than rebuilt.
+ *
+ * It holds a reference to the source it describes — the same string the
+ * document holds, not a copy — so asking it for the model of a source it is
+ * already on costs a comparison, and asking it for the model of a source one
+ * character away costs one line.
+ */
+const renderModel = new MarkdownRenderModel();
+
 function modelFor(source) {
-  if (renderModelSource !== source) {
-    renderModel = renderMarkdown(source);
-    renderModelSource = source;
-  }
-  return renderModel;
+  return renderModel.update(source, model.lastChange);
 }
-let mode = localStorage.getItem(MODE_KEY) ?? 'split';
 /**
  * WT-13: the explorer starts closed. A first visit opens on the document alone;
  * the nav is one click away and, once opened, is remembered. Only an explicit
@@ -89,8 +104,6 @@ let mobileLayout =
     ? window.matchMedia(`(max-width: ${MOBILE_MAX_WIDTH}px), (pointer: coarse)`).matches
     : storedLayout === 'mobile';
 
-/** Set when entering mobile forced a mode change, so leaving can undo it. */
-let modeBeforeMobile = null;
 /** The drawer is transient, unlike the desktop sidebar preference. */
 let drawerOpen = false;
 let config = { workspaceName: 'Workspace', imageExtensions: [] };
@@ -105,18 +118,15 @@ const richProjection = {
   textFor: (source) => modelFor(source).text,
   toSource: (source, range) => modelFor(source).sourceRange(range),
   toSurface: (source, range) => modelFor(source).renderedRange(range),
-};
-
-/** The raw pane shows the source itself, so every mapping is the identity. */
-const sourceProjection = {
-  render: (source) => renderSourceInto(element('sourceSurface'), source, modelFor(source)),
-  textFor: (source) => source,
-  toSource: (_source, range) => range,
-  toSurface: (_source, range) => range,
+  // Block-level access, so an edit can be read from the blocks it touched
+  // instead of from the whole surface.
+  layoutFor: (source) => modelFor(source),
 };
 
 const richSurface = new EditorSurface(element('richSurface'), richProjection, model);
-const sourceSurface = new EditorSurface(element('sourceSurface'), sourceProjection, model);
+
+// T-24: the selection is drawn by the editor, rounded and fading across lines.
+const selectionHighlight = new SelectionHighlight(element('richSurface'));
 
 const explorer = new Explorer({
   tree: element('explorerTree'),
@@ -210,7 +220,6 @@ function showNewestVersion() {
   if (!revision) return;
   model.applyRemote(revision);
   richSurface.renderedSource = null;
-  sourceSurface.renderedSource = null;
   refreshSurfaces({ force: true });
   updateStatus();
   flashStatus('Showing the newest version');
@@ -227,17 +236,28 @@ function restartLiveUpdates() {
     onDocumentChanged: () => {
       hideExternalNotice();
       richSurface.renderedSource = null;
-      sourceSurface.renderedSource = null;
       refreshSurfaces({ force: true });
       updateStatus();
     },
   });
 }
 
-/** Says which storage is in use, so it is never a guess (WR-5). */
+/**
+ * Says which storage is in use, so it is never a guess (WR-5).
+ *
+ * Hidden while there is only one. The indicator exists to answer "where is
+ * this going", and a badge that has said the same thing on every document
+ * anybody has ever opened stops being read long before it becomes wrong.
+ */
 function updateStorageIndicator() {
   const indicator = document.getElementById('storageIndicator');
   if (!indicator) return;
+  if (!cloudIsAvailable()) {
+    indicator.hidden = true;
+    indicator.textContent = '';
+    return;
+  }
+  indicator.hidden = false;
   const account = currentAccount();
   indicator.textContent = isCloud()
     ? `Cloud · ${account?.email || account?.name || 'signed in'}`
@@ -248,21 +268,16 @@ function updateStorageIndicator() {
     : 'Documents are stored in the workspace folder on the server hosting this page.';
 }
 
-// In Split, a command applies to whichever pane the user was last editing.
-// Tracking that explicitly means a control that steals focus on click cannot
-// silently redirect the command to the other pane (F-10).
-let lastFocused = richSurface;
-for (const surface of [richSurface, sourceSurface]) {
-  surface.element.addEventListener('focus', () => {
-    lastFocused = surface;
-  });
-}
-
-/** The surface a formatting command should act on. */
+/**
+ * The surface a command acts on.
+ *
+ * There is only one. Kept as a function rather than inlined because every
+ * command reads it, and a single view is a layout decision rather than a
+ * promise -- naming the seam costs nothing and is what made removing the
+ * second pane a small change.
+ */
 function activeSurface() {
-  if (mode === 'source') return sourceSurface;
-  if (mode === 'rich') return richSurface;
-  return lastFocused;
+  return richSurface;
 }
 
 function currentSelection() {
@@ -327,7 +342,9 @@ const commands = {
   },
 
   inline(name) {
-    applyResult(toggleInline(InlineStyle[name], model.source, currentSelection()));
+    applyResult(
+      toggleInline(InlineStyle[name], model.source, currentSelection(), modelFor(model.source))
+    );
   },
   heading(level) {
     applyResult(applyHeading(level, model.source, currentSelection()));
@@ -352,7 +369,9 @@ const commands = {
       confirmLabel: 'Insert',
     });
     if (destination === null) return;
-    applyResult(insertLink(destination, model.source, currentSelection()));
+    applyResult(
+      insertLink(destination, model.source, currentSelection(), modelFor(model.source))
+    );
   },
   image: () => addImage(),
   undo: () => model.undo(),
@@ -376,12 +395,6 @@ const commands = {
   newFolder: () => explorer.newFolder(),
   newDocumentFile: () => explorer.newDocument(),
   showWelcome: () => welcome.show({ dismissable: true }),
-  setMode(next) {
-    // An explicit choice replaces the mode mobile borrowed, so leaving the
-    // layout must not resurrect Side by Side over it.
-    modeBeforeMobile = null;
-    setMode(next);
-  },
   toggleSidebar() {
     if (mobileLayout) {
       drawerOpen = !drawerOpen;
@@ -390,7 +403,20 @@ const commands = {
     }
     applySidebarVisibility();
   },
-  setMobileLayout: (enabled) => setMobileLayout(enabled),
+  /**
+   * WA-1: read the draft and write notes on it.
+   *
+   * Opening the rail and running are the same command deliberately. A rail
+   * that opens empty and waits for a second press is two steps for one
+   * intention, and the empty state already explains itself for anyone who
+   * opens it another way.
+   */
+  critique() {
+    critique.run();
+  },
+  toggleCritique() {
+    critique.toggle();
+  },  setMobileLayout: (enabled) => setMobileLayout(enabled),
   toggleMobileLayout: () => setMobileLayout(!mobileLayout),
   setSavedForLater(wanted) {
     if (!model.path) return;
@@ -406,14 +432,38 @@ const commands = {
   },
 };
 
+// ── AI assisted critique (WA-*) ──────────────────────────────────────────────
+
+/**
+ * The rail of comments, and the shading it points at.
+ *
+ * The document is read from the model rather than handed in, so the rail is
+ * always looking at the same text the surfaces are — including after a reload
+ * from the server, which is a change the author did not make and which still
+ * has to move the marks.
+ *
+ * Constructed here, above the toolbar and the menu bar, because both of them
+ * *describe* it: the View menu reads `critique.isVisible` while it is being
+ * built, not when it is opened, so a rail declared further down is a rail that
+ * does not exist yet and the whole module fails to evaluate.
+ */
+const critique = new CritiqueRail({
+  root: element('critiqueRail'),
+  text: () => model.source,
+  documentPath: () => model.path ?? null,
+  onHighlightsChanged: () => repaintCritique(),
+  onReveal: (range) => revealSourceRange(range),
+});
+
 const toolbar = buildToolbar(element('toolbar'), commands);
 buildMenus(element('menubar'), commands, {
   canUndo: () => model.canUndo,
   canRedo: () => model.canRedo,
-  mode: () => mode,
   sidebarVisible: () => sidebarVisible,
+  critiqueVisible: () => critique.isVisible,
   mobileLayout: () => mobileLayout,
   isCloud: () => isCloud(),
+  cloudAvailable: () => cloudIsAvailable(),
 });
 
 const mobileUI = buildMobileUI({
@@ -423,7 +473,6 @@ const mobileUI = buildMobileUI({
   commands,
   state: {
     canUndo: () => model.canUndo,
-    mode: () => mode,
     documentName: () => model.displayName,
     documentPath: () => model.path,
     isDirty: () => model.isDirty,
@@ -451,7 +500,7 @@ function refreshActiveStyles() {
   let quote = false;
   let heading = 0;
 
-  for (const span of rendered.spans) {
+  for (const span of rendered.spansAtSourceOffset(selection.location)) {
     const start = span.sourceRange.location;
     const end = start + span.sourceRange.length;
     if (selection.location < start || selection.location > end) continue;
@@ -473,11 +522,21 @@ function refreshActiveStyles() {
   }
   toolbar.setActiveStyles({ inline, list, quote, heading });
   mobileUI.setActiveStyles({ inline, list, quote, heading });
+
+  // What can work here, from the same model: inside a fence or a code span
+  // Markdown is literal, so the inline commands refuse and their buttons say
+  // so rather than clicking through to nothing.
+  const context = codeContextInModel(selection, rendered);
+  const available = new Set(
+    Object.values(InlineStyle).filter((style) => isInlineStyleAvailable(style, context))
+  );
+  const availability = { inline: available, link: isLinkAvailable(context) };
+  toolbar.setAvailability(availability);
+  mobileUI.setAvailability(availability);
 }
 
 function refreshSurfaces(options = {}) {
   richSurface.sync(model.source, model.selection, options);
-  sourceSurface.sync(model.source, model.selection, options);
   // A sync replaces every element in the rendered pane, so a selected image
   // has to be found again or the size panel would close on its own first
   // keystroke.
@@ -485,6 +544,9 @@ function refreshSurfaces(options = {}) {
   // so it needs the model the pane was just built from.
   imageSelection.setModel(modelFor(model.source));
   imageSelection.restore();
+  // A re-render can move every word, including under a selection that did
+  // not itself change.
+  selectionHighlight.refresh();
 }
 
 // ── Selecting an image to resize (WI-17) ─────────────────────────────────────
@@ -522,7 +584,7 @@ element('richSurface').addEventListener('pointerdown', (event) => {
 
 // Any edit elsewhere means the panel is describing an image the caret has
 // left, so it stops applying.
-for (const surface of [richSurface, sourceSurface]) {
+for (const surface of [richSurface]) {
   surface.element.addEventListener('keydown', () => imageSelection.clear());
 }
 
@@ -540,19 +602,33 @@ model.addEventListener('change', () => {
   refreshSurfaces();
   refreshActiveStyles();
   updateStatus();
+  // The marks move onto the new text before anything is redrawn, so a
+  // highlight never spends a frame pointing at where its sentence used to be.
+  critique.noteCurrentText(model.source);
+  repaintCritique();
 });
 model.addEventListener('selection', refreshActiveStyles);
 
-// E-16: moving the caret in one pane moves it in the other, so Side by Side
-// always shows the same place twice.
-function mirrorSelection(source) {
-  refreshActiveStyles();
-  if (mode !== 'split') return;
-  const other = source === richSurface ? sourceSurface : richSurface;
-  const range = other.projection.toSurface(model.source, model.selection);
-  const node = other.element;
-  // Only scroll — stealing the DOM selection would steal focus with it.
-  const position = positionForOffset(node, range.location);
+function repaintCritique() {
+  paintCritiqueHighlights({
+    highlights: critique.highlights,
+    selectedID: critique.selectedID,
+    surfaces: [
+      {
+        root: element('richSurface'),
+        map: (range) => richProjection.toSurface(model.source, range),
+        layout: modelFor(model.source),
+      },
+    ],
+  });
+}
+
+/** Brings a finding's passage into view without stealing the caret. */
+function revealSourceRange(range) {
+  const surface = activeSurface();
+  const mapped = surface.projection.toSurface(model.source, range);
+  const node = surface.element;
+  const position = positionForOffset(node, mapped.location);
   if (!position) return;
   const probe = document.createRange();
   probe.setStart(position.node, position.offset);
@@ -564,15 +640,25 @@ function mirrorSelection(source) {
   }
 }
 
-richSurface.onSelectionChange = () => mirrorSelection(richSurface);
-sourceSurface.onSelectionChange = () => mirrorSelection(sourceSurface);
+function noteSelectionMoved(surface) {
+  refreshActiveStyles();
+  // A click in the *text* opens the card for the passage under it, which is
+  // the other half of the two-way link: without it the rail can point into the
+  // document but the document cannot point back.
+  const caret = surface.currentSourceSelection();
+  if (caret) critique.selectAtOffset(caret.location);
+}
+
+richSurface.onSelectionChange = () => noteSelectionMoved(richSurface);
 model.addEventListener('open', () => {
   // A held revision belongs to the document it came from, and this is a
   // different one now.
   hideExternalNotice();
   richSurface.renderedSource = null;
-  sourceSurface.renderedSource = null;
   refreshSurfaces({ force: true });
+  // So is a critique. Keeping one across an open would leave notes about a
+  // document nobody is looking at, anchored to offsets in a different text.
+  critique.documentChanged();
 });
 model.addEventListener('autosaved', () => flashStatus('Autosaved'));
 model.addEventListener('saved', () => flashStatus('Saved'));
@@ -605,19 +691,6 @@ function flashStatus(message) {
   updateStatus();
 }
 
-function setMode(next) {
-  // Side by Side needs two readable columns, which a phone does not have.
-  if (mobileLayout && next === 'split') next = 'rich';
-  mode = next;
-  localStorage.setItem(MODE_KEY, next);
-  element('editor').dataset.mode = next;
-  element('richPane').hidden = next === 'source';
-  element('sourcePane').hidden = next === 'rich';
-  element('paneDivider').hidden = next !== 'split';
-  toolbar.setMode(next);
-  refreshSurfaces({ force: true });
-}
-
 function applySidebarVisibility() {
   // In mobile the sidebar is a transient drawer, so its state must not be
   // written over the desktop preference.
@@ -646,17 +719,7 @@ function setMobileLayout(enabled) {
   element('app').dataset.layout = enabled ? 'mobile' : 'desktop';
   mobileUI.setEnabled(enabled);
 
-  if (enabled) {
-    drawerOpen = false;
-    if (mode === 'split') {
-      modeBeforeMobile = mode;
-      setMode('rich');
-    }
-  } else if (modeBeforeMobile) {
-    const restored = modeBeforeMobile;
-    modeBeforeMobile = null;
-    setMode(restored);
-  }
+  if (enabled) drawerOpen = false;
 
   applySidebarVisibility();
   mobileUI.refresh();
@@ -687,7 +750,7 @@ async function newDocument() {
   if (!(await guardUnsaved())) return;
   model.reset();
   welcome.hide();
-  setMode(mode);
+  refreshSurfaces({ force: true });
   richSurface.focus();
   updateStatus();
 }
@@ -828,9 +891,8 @@ async function importImages(files) {
 }
 
 richSurface.onPasteFiles = importImages;
-sourceSurface.onPasteFiles = importImages;
 
-for (const surface of [element('richSurface'), element('sourceSurface')]) {
+for (const surface of [element('richSurface')]) {
   surface.addEventListener('dragover', (event) => {
     if (!event.dataTransfer?.types.includes('Files')) return;
     event.preventDefault();
@@ -925,36 +987,6 @@ installDivider(element('sidebarDivider'), (clientX) => {
   localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width));
 });
 
-// L-9: the preview keeps a usable measure no matter how far the gripper drags.
-installDivider(element('paneDivider'), (clientX) => {
-  const editor = element('editor').getBoundingClientRect();
-  const width = Math.round(
-    Math.min(Math.max(320, editor.width - 260), Math.max(320, clientX - editor.left))
-  );
-  document.documentElement.style.setProperty('--me-preview-width', `${width}px`);
-  localStorage.setItem(PREVIEW_WIDTH_KEY, String(width));
-});
-
-// ------------------------------------------------------------ scroll sync
-
-let syncingScroll = false;
-function linkScroll(from, to) {
-  from.addEventListener('scroll', () => {
-    if (mode !== 'split' || syncingScroll) return;
-    syncingScroll = true;
-    const range = from.scrollHeight - from.clientHeight;
-    const fraction = range > 0 ? from.scrollTop / range : 0;
-    const targetRange = to.scrollHeight - to.clientHeight;
-    to.scrollTop = fraction * Math.max(0, targetRange);
-    // Releasing on the next frame keeps the mirrored scroll from echoing back.
-    requestAnimationFrame(() => {
-      syncingScroll = false;
-    });
-  });
-}
-linkScroll(element('richPane'), element('sourcePane'));
-linkScroll(element('sourcePane'), element('richPane'));
-
 // ---------------------------------------------------------------- startup
 
 window.addEventListener('beforeunload', (event) => {
@@ -1021,12 +1053,6 @@ async function start() {
   if (storedWidth) {
     document.documentElement.style.setProperty('--me-sidebar-width', `${storedWidth}px`);
   }
-  const storedPreview = localStorage.getItem(PREVIEW_WIDTH_KEY);
-  if (storedPreview) {
-    document.documentElement.style.setProperty('--me-preview-width', `${storedPreview}px`);
-  }
-
-  setMode(mode);
   setMobileLayout(mobileLayout);
   element('app').hidden = false;
 
@@ -1045,8 +1071,14 @@ async function start() {
     showError(error);
   }
 
-  if (storage.reason === 'signed-out') {
-    showError(new ApiError(
+  // Asked for once at launch rather than when somebody presses the button:
+  // what the server is set up with decides what the rail may offer, and
+  // finding that out after the press means a button that looked available and
+  // was not. Deliberately not awaited -- a slow answer must not hold up the
+  // editor, and the rail redraws when it arrives.
+  critique.loadConfig();
+
+  if (storage.reason === 'signed-out') {    showError(new ApiError(
       'You were signed out of your cloud workspace.',
       'Reconnect your Google account from the welcome screen to reach those documents.'
     ));
@@ -1069,6 +1101,11 @@ async function start() {
   // they would otherwise land in silently is a workspace anyone reaching this
   // page can edit. Turning the preference off says "don't show me this again",
   // which is not the same as "decide for me".
+  //
+  // With one place documents can go there is nothing to choose, so
+  // `restoreStorage` reports the choice as made and the preference is obeyed
+  // as written. The warning is still on the welcome screen for anyone who
+  // opens it.
   const requested = new URLSearchParams(window.location.search).get('path');
   if (requested) {
     await openDocument(requested);

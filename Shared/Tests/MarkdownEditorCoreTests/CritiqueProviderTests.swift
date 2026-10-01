@@ -16,7 +16,7 @@ struct CritiqueProviderTests {
     func defaultsToTheCheapModel() {
         #expect(CritiqueProvider.openAI.defaultModel == "gpt-4o-mini")
         #expect(CritiqueProvider.anthropic.defaultModel == "claude-3-5-haiku-latest")
-        #expect(CritiqueProvider.gemini.defaultModel == "gemini-1.5-flash")
+        #expect(CritiqueProvider.gemini.defaultModel == "gemini-2.5-flash")
     }
 
     /// Each provider wants the key in a different place, and getting it wrong
@@ -40,9 +40,9 @@ struct CritiqueProviderTests {
     @Test("Gemini names the model in the URL, the others in the body")
     func endpoints() {
         #expect(
-            CritiqueProvider.gemini.endpoint(model: "gemini-1.5-flash")
+            CritiqueProvider.gemini.endpoint(model: "gemini-2.5-flash")
                 .absoluteString
-                .hasSuffix("models/gemini-1.5-flash:generateContent")
+                .hasSuffix("models/gemini-2.5-flash:generateContent")
         )
         #expect(
             CritiqueProvider.openAI.endpoint(model: "anything").absoluteString

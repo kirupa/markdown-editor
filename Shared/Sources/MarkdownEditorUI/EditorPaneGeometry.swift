@@ -1,3 +1,4 @@
+import Foundation
 import CoreGraphics
 
 /// The widths of the two things a document window can resize: the file
@@ -83,8 +84,9 @@ public enum EditorPaneGeometry {
 
     /// The width the window wants in order to show everything it has to show.
     ///
-    /// What the green button and a double-click on the title bar should zoom
-    /// to. The point of zooming is "make this big enough", and with the
+    /// What Zoom goes to — the green button's, and Window ▸ Zoom. A
+    /// double-click on the title bar fills the screen instead (`TitleBarFill`).
+    /// The point of zooming is "make this big enough", and with the
     /// comments open the thing being read is the writing *and* the notes
     /// beside it — a window sized to the writing alone clips the rail or, once
     /// the layout centres the pair, leaves it hanging off the edge.
@@ -135,7 +137,56 @@ public enum EditorPaneGeometry {
         )
     }
 
-    /// Whether a double-click at `point` should zoom the window.
+    /// The narrowest the window may be dragged, given what it is showing.
+    ///
+    /// The rail is a fixed width docked to the document, so it does not shrink
+    /// with the window — it is clipped by it. Measured at the old minimum of
+    /// 620 with the rail open: the document took 608 points and the rail got
+    /// 12, which is to say it disappeared, having been dragged off the edge
+    /// rather than closed. A panel that vanishes when a window is resized
+    /// reads as a bug whichever way it was meant.
+    ///
+    /// So the floor rises with the rail and falls again when it is shut. The
+    /// column keeps its own minimum either way, which is the point: the
+    /// narrowest useful window is a readable measure plus whatever is docked
+    /// beside it, not an arbitrary number that happens to be bigger.
+    public static func minimumContentWidth(
+        columnMinimum: CGFloat,
+        documentMinimum: CGFloat,
+        railWidth: CGFloat,
+        railIsOpen: Bool
+    ) -> CGFloat {
+        guard railIsOpen else { return documentMinimum }
+        return columnMinimum + railWidth
+    }
+
+    /// The folders containing `url`, innermost first, up to the volume root.
+    ///
+    /// What a title bar's path menu is made of. Pure, and here rather than in
+    /// the window, because the two ways it goes wrong are both arithmetic: a
+    /// loop that never reaches the root, and a path deep enough to build a menu
+    /// taller than the screen.
+    ///
+    /// The root itself is not included — "Macintosh HD" under every document is
+    /// a row nobody has ever needed — and the chain stops at `limit` folders,
+    /// because a path can be pathological and a menu that runs off the screen
+    /// is not a menu.
+    public static func folderChain(from url: URL, limit: Int = 12) -> [URL] {
+        var chain: [URL] = []
+        var folder = url.deletingLastPathComponent()
+        while folder.path != "/", chain.count < limit {
+            chain.append(folder)
+            let parent = folder.deletingLastPathComponent()
+            // A URL that no longer shortens has reached its own root, which is
+            // not always "/" — a relative path runs out at ".".
+            guard parent != folder else { break }
+            folder = parent
+        }
+        return chain
+    }
+
+    /// Whether a click at `point` belongs to the title bar itself rather than
+    /// to a control sitting in it.
     ///
     /// Pure, and separated from the window for one reason: the decision cannot
     /// be made by hit-testing. SwiftUI draws the whole title bar through a
@@ -148,8 +199,13 @@ public enum EditorPaneGeometry {
     ///
     /// `controls` are the toolbar's items and the traffic lights. The document
     /// title is deliberately not among them: it is not a control, and
-    /// double-clicking it zooms in every other Mac application.
-    public static func titleBarClickZooms(
+    /// double-clicking it acts on the window in every other Mac application.
+    ///
+    /// Three behaviours ask this now — fill the screen on a double-click, move
+    /// the window on a drag, and the title menu on a right-click — because they
+    /// are the same question. A point that belongs to a button belongs to none
+    /// of them.
+    public static func titleBarClaimsClick(
         at point: CGPoint,
         titleBar: CGRect,
         controls: [CGRect]

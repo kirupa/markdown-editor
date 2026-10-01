@@ -245,10 +245,10 @@ suite('stylesheet conformance', () => {
     // margins exist to avoid.
     const surface = rules.find((rule) =>
       rule.selectors.some(
-        (s) => s.includes('[data-mode="rich"]') && s.includes('.me-surface')
+        (s) => s.includes('.me-pane--rich') && s.includes('.me-surface')
       )
     );
-    expect(surface !== undefined, 'the Rich Text surface rule is missing');
+    expect(surface !== undefined, 'the document surface rule is missing');
 
     const maxWidth = surface.declarations.get('max-width') ?? '';
     expect(
@@ -270,7 +270,7 @@ suite('stylesheet conformance', () => {
     // would push the text off the side rather than merely fail to indulge it.
     const surface = rules.find((rule) =>
       rule.selectors.some(
-        (s) => s.includes('[data-mode="rich"]') && s.includes('.me-surface')
+        (s) => s.includes('.me-pane--rich') && s.includes('.me-surface')
       )
     );
     const bleed = surface?.declarations.get('--me-image-bleed') ?? '';

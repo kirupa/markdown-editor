@@ -34,6 +34,8 @@
   --me-accent: #0798ff;
   --me-selection-background: #0798ff;
   --me-selection-text: #000000;
+  --me-text-selection-background: rgba(7, 152, 255, 0.304);
+  --me-inactive-text-selection-background: rgba(55, 61, 66, 0.151);
   --me-inline-code-background: rgba(0, 0, 0, 0.07);
   --me-code-block-background: #eaf7ff;
 }
@@ -49,6 +51,8 @@
   --me-accent: #0798ff;
   --me-selection-background: #0798ff;
   --me-selection-text: #000000;
+  --me-text-selection-background: rgba(7, 152, 255, 0.304);
+  --me-inactive-text-selection-background: rgba(55, 61, 66, 0.151);
   --me-inline-code-background: rgba(0, 0, 0, 0.07);
   --me-code-block-background: #eaf7ff;
 }
@@ -64,6 +68,8 @@
   --me-accent: #686305;
   --me-selection-background: #686305;
   --me-selection-text: #ffffff;
+  --me-text-selection-background: rgba(104, 99, 5, 0.23);
+  --me-inactive-text-selection-background: rgba(55, 61, 66, 0.151);
   --me-inline-code-background: rgba(0, 0, 0, 0.07);
   --me-code-block-background: #fff5c5;
 }
@@ -79,6 +85,8 @@
   --me-accent: #ff0767;
   --me-selection-background: #ff0767;
   --me-selection-text: #000000;
+  --me-text-selection-background: rgba(255, 7, 103, 0.204);
+  --me-inactive-text-selection-background: rgba(55, 61, 66, 0.151);
   --me-inline-code-background: rgba(0, 0, 0, 0.07);
   --me-code-block-background: #ffdae8;
 }
@@ -94,6 +102,8 @@
   --me-accent: #428989;
   --me-selection-background: #428989;
   --me-selection-text: #000000;
+  --me-text-selection-background: rgba(66, 137, 137, 0.281);
+  --me-inactive-text-selection-background: rgba(55, 61, 66, 0.151);
   --me-inline-code-background: rgba(0, 0, 0, 0.07);
   --me-code-block-background: #a4f8a8;
 }
@@ -109,6 +119,8 @@
   --me-accent: #6b16a6;
   --me-selection-background: #6b16a6;
   --me-selection-text: #ffffff;
+  --me-text-selection-background: rgba(107, 22, 166, 0.183);
+  --me-inactive-text-selection-background: rgba(40, 5, 64, 0.123);
   --me-inline-code-background: rgba(0, 0, 0, 0.07);
   --me-code-block-background: #edd4ff;
 }
@@ -124,6 +136,8 @@
   --me-accent: #7e2553;
   --me-selection-background: #7e2553;
   --me-selection-text: #ffffff;
+  --me-text-selection-background: rgba(126, 37, 83, 0.191);
+  --me-inactive-text-selection-background: rgba(55, 61, 66, 0.151);
   --me-inline-code-background: rgba(0, 0, 0, 0.07);
   --me-code-block-background: #ffe4d3;
 }
@@ -139,6 +153,8 @@
   --me-accent: #000000;
   --me-selection-background: #000000;
   --me-selection-text: #ffffff;
+  --me-text-selection-background: rgba(0, 0, 0, 0.142);
+  --me-inactive-text-selection-background: rgba(55, 61, 66, 0.151);
   --me-inline-code-background: rgba(0, 0, 0, 0.07);
   --me-code-block-background: #c1c1c1;
 }
@@ -154,6 +170,8 @@
   --me-accent: #99242c;
   --me-selection-background: #99242c;
   --me-selection-text: #ffffff;
+  --me-text-selection-background: rgba(153, 36, 44, 0.144);
+  --me-inactive-text-selection-background: rgba(55, 61, 66, 0.133);
   --me-inline-code-background: rgba(0, 0, 0, 0.07);
   --me-code-block-background: #d8abae;
 }
@@ -169,6 +187,8 @@
   --me-accent: #518ac1;
   --me-selection-background: #518ac1;
   --me-selection-text: #000000;
+  --me-text-selection-background: rgba(81, 138, 193, 0.291);
+  --me-inactive-text-selection-background: rgba(245, 249, 254, 0.088);
   --me-inline-code-background: rgba(255, 255, 255, 0.12);
   --me-code-block-background: #1e2226;
 }
@@ -184,6 +204,8 @@
   --me-accent: #776600;
   --me-selection-background: #776600;
   --me-selection-text: #ffffff;
+  --me-text-selection-background: rgba(119, 102, 0, 0.4);
+  --me-inactive-text-selection-background: rgba(245, 249, 254, 0.088);
   --me-inline-code-background: rgba(255, 255, 255, 0.12);
   --me-code-block-background: #211d08;
 }
@@ -199,6 +221,8 @@
   --me-accent: #ca4fb2;
   --me-selection-background: #ca4fb2;
   --me-selection-text: #000000;
+  --me-text-selection-background: rgba(202, 79, 178, 0.261);
+  --me-inactive-text-selection-background: rgba(245, 249, 254, 0.112);
   --me-inline-code-background: rgba(255, 255, 255, 0.12);
   --me-code-block-background: #210321;
 }
@@ -214,6 +238,8 @@
   --me-accent: #2daa72;
   --me-selection-background: #2daa72;
   --me-selection-text: #000000;
+  --me-text-selection-background: rgba(45, 170, 114, 0.209);
+  --me-inactive-text-selection-background: rgba(245, 249, 254, 0.096);
   --me-inline-code-background: rgba(255, 255, 255, 0.12);
   --me-code-block-background: #05150d;
 }
@@ -229,6 +255,8 @@
   --me-accent: #972fc6;
   --me-selection-background: #972fc6;
   --me-selection-text: #ffffff;
+  --me-text-selection-background: rgba(151, 47, 198, 0.357);
+  --me-inactive-text-selection-background: rgba(245, 249, 254, 0.102);
   --me-inline-code-background: rgba(255, 255, 255, 0.12);
   --me-code-block-background: #09040c;
 }
@@ -244,6 +272,8 @@
   --me-accent: #29adff;
   --me-selection-background: #29adff;
   --me-selection-text: #000000;
+  --me-text-selection-background: rgba(41, 173, 255, 0.198);
+  --me-inactive-text-selection-background: rgba(245, 249, 254, 0.095);
   --me-inline-code-background: rgba(255, 255, 255, 0.12);
   --me-code-block-background: #2e1f2a;
 }
@@ -259,6 +289,8 @@
   --me-accent: #009aff;
   --me-selection-background: #009aff;
   --me-selection-text: #000000;
+  --me-text-selection-background: rgba(0, 154, 255, 0.228);
+  --me-inactive-text-selection-background: rgba(245, 249, 254, 0.089);
   --me-inline-code-background: rgba(255, 255, 255, 0.12);
   --me-code-block-background: #282828;
 }
@@ -274,6 +306,8 @@
   --me-accent: #a56554;
   --me-selection-background: #a56554;
   --me-selection-text: #000000;
+  --me-text-selection-background: rgba(165, 101, 84, 0.287);
+  --me-inactive-text-selection-background: rgba(245, 249, 254, 0.092);
   --me-inline-code-background: rgba(255, 255, 255, 0.12);
   --me-code-block-background: #1b100d;
 }

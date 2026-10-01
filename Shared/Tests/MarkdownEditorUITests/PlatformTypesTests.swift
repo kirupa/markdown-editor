@@ -248,6 +248,7 @@ struct PlatformTypesTests {
                         ("selection", theme.selectionBackgroundColor),
                         ("selectionText", theme.selectionTextColor),
                         ("separator", theme.separatorColor),
+                        ("textSelection", theme.textSelectionBackgroundColor),
                         ("sidebar", theme.sidebarBackgroundColor),
                     ] {
                         result["\(key)/\(name)"] = value.sRGBComponents
@@ -262,7 +263,7 @@ struct PlatformTypesTests {
         let portable = resolve()
         PlatformColorBlending.usesPortableBlending = false
 
-        #expect(appKit.count == 176)
+        #expect(appKit.count == 192)
         #expect(appKit.count == portable.count)
         var worst = 0
         for (key, reference) in appKit {
@@ -304,10 +305,11 @@ struct PlatformTypesTests {
         }
         return max(
             abs(byte(lhs.red) - byte(rhs.red)),
-            max(
-                abs(byte(lhs.green) - byte(rhs.green)),
-                abs(byte(lhs.blue) - byte(rhs.blue))
-            )
+            abs(byte(lhs.green) - byte(rhs.green)),
+            abs(byte(lhs.blue) - byte(rhs.blue)),
+            // The selection tint's opacity is solved against blended
+            // colours, so it could move while its colour did not.
+            abs(byte(lhs.alpha) - byte(rhs.alpha))
         )
     }
     #endif
