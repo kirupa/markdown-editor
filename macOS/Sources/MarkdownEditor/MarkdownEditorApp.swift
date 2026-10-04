@@ -36,6 +36,10 @@ struct MarkdownEditorApp: App {
         // expects and the reason this is not done by setting a frame.
         .defaultSize(Layout.defaultWindowContentSize)
         .commands {
+            // Edit ▸ Find, Spelling and Grammar, Substitutions and the rest.
+            // Leaving it out left ⌘F and ⌘G with no menu item to send them
+            // and no way at all to switch on spell checking.
+            TextEditingCommands()
             MarkdownEditorCommands()
         }
 

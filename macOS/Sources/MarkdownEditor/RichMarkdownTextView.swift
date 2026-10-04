@@ -890,12 +890,19 @@ final class RichMarkdownTextView: NSTextView {
     /// The glyph nearest a point is not necessarily under it — past the end of
     /// a line the nearest glyph is the last one on that line — so the point has
     /// to be inside the glyph's own rect before its attributes mean anything.
+    ///
+    /// Runs on every pointer move, so it must not ask how many glyphs the
+    /// document has: `numberOfGlyphs` generates glyphs for the *whole* text to
+    /// answer, and on a 23,000-word draft that one question was 278 of the
+    /// samples in a profile of typing — against 393 for inserting the text
+    /// itself. `isValidGlyphIndex` only has to generate as far as the glyph
+    /// under the pointer, which laying out the visible page already did.
     private func hasLink(at point: NSPoint) -> Bool {
         guard
             let layoutManager,
             let textContainer,
             let textStorage,
-            layoutManager.numberOfGlyphs > 0
+            textStorage.length > 0
         else { return false }
 
         let origin = textContainerOrigin
@@ -906,7 +913,7 @@ final class RichMarkdownTextView: NSTextView {
             in: textContainer,
             fractionOfDistanceThroughGlyph: &fraction
         )
-        guard glyph < layoutManager.numberOfGlyphs else { return false }
+        guard layoutManager.isValidGlyphIndex(glyph) else { return false }
         let glyphRect = layoutManager
             .boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: textContainer)
             .offsetBy(dx: origin.x, dy: origin.y)
@@ -1862,6 +1869,76 @@ final class RichMarkdownTextView: NSTextView {
         }
 
         NSSound.beep()
+    }
+
+    // MARK: - Spelling
+
+    /// Where the writer's answer to Edit ▸ Spelling and Grammar is kept.
+    ///
+    /// On by default. A typo is the cheapest thing a draft can get wrong and
+    /// the most expensive thing to have a critique find: the same "todays"
+    /// that a red underline catches for free, as it is typed, cost a note in
+    /// a half-minute request when this was off and the menu that would have
+    /// turned it on did not exist.
+    static let continuousSpellCheckingKey = "continuousSpellChecking"
+    /// Off by default. Grammar checking reads Markdown's own shape — a
+    /// heading with no full stop, a list of fragments — as mistakes, and a
+    /// draft covered in underlines it does not deserve teaches the writer to
+    /// ignore the ones that matter.
+    static let grammarCheckingKey = "grammarChecking"
+
+    /// Take up whatever the writer last chose, in a pane that is just opening.
+    func adoptSpellingPreferences(_ defaults: UserDefaults = .standard) {
+        isContinuousSpellCheckingEnabled =
+            defaults.object(forKey: Self.continuousSpellCheckingKey) as? Bool
+            ?? true
+        isGrammarCheckingEnabled = defaults.bool(forKey: Self.grammarCheckingKey)
+    }
+
+    // Remembered from the menu rather than from a setting of its own: the
+    // menu is where a Mac writer looks for this, and a choice made there that
+    // the next window forgot would read as the app ignoring it.
+    override func toggleContinuousSpellChecking(_ sender: Any?) {
+        super.toggleContinuousSpellChecking(sender)
+        UserDefaults.standard.set(
+            isContinuousSpellCheckingEnabled,
+            forKey: Self.continuousSpellCheckingKey
+        )
+    }
+
+    override func toggleGrammarChecking(_ sender: Any?) {
+        super.toggleGrammarChecking(sender)
+        UserDefaults.standard.set(
+            isGrammarCheckingEnabled,
+            forKey: Self.grammarCheckingKey
+        )
+    }
+
+    /// Whether a checked range is code, which is not prose and is never
+    /// misspelt: `numberOfGlyphs` underlined in red is noise that trains the
+    /// writer to stop looking at the underlines.
+    ///
+    /// Read from the face rather than from the Markdown, because this is what
+    /// the pane draws: the styler sets inline code and fenced blocks alike in
+    /// the system's monospaced face, and nothing else is.
+    static func isCode(_ range: NSRange, in storage: NSAttributedString) -> Bool {
+        guard range.location < storage.length else { return false }
+        if storage.attribute(
+            .markdownCodeBlockBackground,
+            at: range.location,
+            effectiveRange: nil
+        ) != nil {
+            return true
+        }
+        guard let font = storage.attribute(
+            .font,
+            at: range.location,
+            effectiveRange: nil
+        ) as? NSFont else {
+            return false
+        }
+        return font.isFixedPitch
+            || font.fontDescriptor.symbolicTraits.contains(.monoSpace)
     }
 
     private func finishComposition() {

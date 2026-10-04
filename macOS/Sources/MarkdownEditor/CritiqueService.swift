@@ -72,7 +72,8 @@ final class CritiqueService {
                     """
             case .notConfigured:
                 return """
-                    Choose a provider and enter an API key in Settings, then                     ask for a critique again.
+                    Choose a provider and enter an API key in Settings, then \
+                    ask for a critique again.
                     """
             case .providerUnreachable(let detail):
                 return "The request did not complete. \(detail)"
@@ -80,15 +81,18 @@ final class CritiqueService {
                 switch status {
                 case 401, 403:
                     return """
-                        Check the API key in Settings. This is what a wrong or                         revoked key looks like.
+                        Check the API key in Settings. This is what a wrong or \
+                        revoked key looks like.
                         """
                 case 429:
                     return """
-                        The provider is rate limiting or the account is out of                         credit. Wait a moment, or check the billing on it.
+                        The provider is rate limiting or the account is out of \
+                        credit. Wait a moment, or check the billing on it.
                         """
                 case 404:
                     return """
-                        The model was not found. Pick another one in Settings —                         not every account has access to every model. \(message)
+                        The model was not found. Pick another one in Settings — \
+                        not every account has access to every model. \(message)
                         """
                 default:
                     return message

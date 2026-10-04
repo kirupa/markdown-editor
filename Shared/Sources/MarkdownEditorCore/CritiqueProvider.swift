@@ -23,11 +23,13 @@ public enum CritiqueProvider: String, CaseIterable, Identifiable, Sendable {
         case .openAI: return "OpenAI"
         case .anthropic: return "Anthropic"
         case .gemini: return "Google Gemini"
-        // Named for what it is to the reader — a model already on their Mac
-        // that costs them nothing — rather than for the tool underneath. The
-        // tool is plumbing, and the KONVO critique pass is sent with every
-        // request now, so which pipe carries it is not something the reader
-        // has to reason about.
+        // Named for what it is to the reader — nothing to set up — rather than
+        // for the tool underneath, which is plumbing (I-222). It used to be
+        // described as a model already on the Mac that costs nothing; neither
+        // half was true. The draft goes to the service behind the GitHub
+        // sign-in and counts against that account's plan, and Settings now
+        // says so under the picker, where a reader deciding where their
+        // writing goes will look.
         case .copilotCLI: return "Built in · no API key"
         }
     }

@@ -350,8 +350,9 @@ the 30 runtime checks in `check-session.swift` that held it.
 
 | ID | Requirement |
 | --- | --- |
-| E-20 | Both editors enable the standard macOS find panel with incremental searching, so `⌘F`, `⌘G`, and `⇧⌘G` behave as expected. |
+| E-20 | The editor uses the standard macOS **find bar** with incremental searching, so `⌘F`, `⌘G`, `⇧⌘G` and `⌥⌘F` (Find and Replace) behave as expected. The app installs SwiftUI's `TextEditingCommands()`, because a `DocumentGroup` app without it has no Find, Spelling and Grammar or Substitutions menu at all — and with no menu item to carry `⌘F` there is nothing to send `performFindPanelAction:`, so turning the find bar on in the text view was not enough on its own. Measured: before this, `⌘F` did nothing. |
 | E-21 | Both editors support the full standard AppKit text system: multi-level undo, spell checking, text substitutions, input methods, emoji picker, Services, and all standard navigation and selection keybindings. |
+| E-21a | **Spelling is checked while typing, by default.** A misspelling is the cheapest problem a draft has and the critique is the most expensive way to find one: in testing, a 30-second critique spent two of its notes on "todays" and "noticable". Edit ▸ Spelling and Grammar ▸ Check Spelling While Typing (and Check Grammar With Spelling, off by default) are remembered across launches. Code — inline spans and fenced blocks — is not spell-checked: identifiers are not words, and a page of red under `useEffect` teaches a writer to ignore the underline. Automatic correction stays off, because it would rewrite the Markdown source behind the writer's back. |
 
 ---
 
@@ -1057,7 +1058,8 @@ else is either quiet or absent until it is asked for.
 `⌘N` New, `⌘O` Open, `⌘S` Save, `⇧⌘S` Save As / Duplicate, `⌘W` Close,
 `⌘Z` / `⇧⌘Z` Undo and Redo, `⌘X` / `⌘C` / `⌘V` Cut, Copy, Paste,
 `⌘A` Select All, `⌘F` / `⌘G` / `⇧⌘G` Find, Find Next, Find Previous,
-plus all standard text navigation and selection.
+`⌥⌘F` Find and Replace, `⌘:` / `⌘;` Show Spelling and Grammar and Check
+Document Now, plus all standard text navigation and selection.
 
 ### 14.3 Menu commands without shortcuts
 
@@ -1768,7 +1770,7 @@ Known gaps, recorded deliberately so they are not mistaken for bugs:
 | Pasting image data from the clipboard | Not wired to the import path. |
 | Syntax highlighting inside fenced code blocks | The language identifier is parsed and retained but not colorized. |
 | Export to HTML or PDF | Out of scope. |
-| Custom Find and Replace UI | Out of scope. The standard macOS find panel with incremental search is enabled instead. |
+| Custom Find and Replace UI | Out of scope. The standard macOS find bar with incremental search is enabled instead. |
 | Resizing a picture by an edge or by keyboard | Only the four corners resize, and only by dragging. There is no side handle (which would not preserve the aspect ratio) and no keyboard equivalent; **Insert ▸ Image Size…** (`⇧⌥⌘I`) covers the exact-numbers case. |
 | Selecting more than one picture | Selection is one attachment character, so pictures cannot be multi-selected or resized together. |
 | Pointer shapes verified on every run | `make check-image-layout` asserts what `pointerCursor` answers at each place that matters, *and* drives the real `mouseMoved` entry point to read the cursor AppKit ends up holding — including at points outside the view, which is where the I-beam was leaking from. Whether AppKit then *shows* that shape on a screen is a separate question, and one this app has got wrong repeatedly while in-process checks passed — see I-57 and I-176. `MDE_ALLOW_SCREEN_CONTROL=1 ./Scripts/run-image-cursor-checks.sh` settles it against real screen pixels, 19 of 19 including the toolbar, but it drives the real mouse and needs an unlocked screen, so it is opt-in and not part of any suite. |

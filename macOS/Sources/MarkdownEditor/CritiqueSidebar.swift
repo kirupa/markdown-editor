@@ -372,7 +372,7 @@ struct CritiqueSidebar: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
-        .help("The hand the comments are written in")
+        .help("The hand the notes are written in")
     }
 
     private var revisionMenu: some View {
