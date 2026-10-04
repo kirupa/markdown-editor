@@ -965,18 +965,18 @@ is closed unless it is asked for.
 
 | ID | Requirement |
 | --- | --- |
-| T-6 | The toolbar palette button opens a **Customize Theme** popover, modeled on the site's dialog: a Color row, a Background toggle, a live preview, and **Apply** and **Cancel** buttons. |
-| T-7 | The popover holds **draft state**. Selections change the in-popover preview only; the document and app are unchanged until Apply is pressed. |
-| T-8 | Cancel, `Escape`, or dismissing the popover discards the draft. |
+| T-6 | The toolbar palette button opens a **Customize Theme** popover, modeled on the site's dialog: a Color row, a Background toggle, the Font chooser and Size slider, and **Cancel** and **Done** buttons. |
+| T-7 | Every choice in the popover is applied **as it is made**, so the open documents are the preview. It used to hold a draft until Apply and show it in a three-line sample box, which asked the writer to judge a face or a size from placeholder text with the real page beside it, unchanged; the sample box is gone. |
+| T-8 | **Cancel** or `Escape` puts back the theme the popover opened with. **Done**, `Return`, or clicking away keeps what is on the page. |
 | T-9 | Swatches use the exact fill and border colors from the site's `#themeChooser` rules, drawn as rounded squares with a 3-point border. The active swatch is scaled slightly and glows. |
-| T-10 | **Markdown ▸ Theme Color** and **Markdown ▸ Background** apply the same choices immediately from the menu bar, without the Apply step. |
+| T-10 | **View ▸ Theme Color** and **View ▸ Background** apply the same choices from the menu bar. They sat in the Markdown menu, between the critique and Bold, which is a menu about what the document says rather than how it looks. |
 | T-16 | The popover has a **Font** chooser for the face the document is set in. It offers **exactly the faces the critique's hand menu offers** — System Sans, then the eight bundled hands, then the faces found on the Mac that resolve on this machine ([T-21](#122-customize-theme-popover)) — grouped the same way and with each name set in its own face. It is one list, not two copies: the catalog moved from the Mac target into the shared `EditorTypeface`, and both menus draw it through one `TypefaceMenuItems` view, so they cannot come to disagree. |
 | T-17 | The document's face and the critique's hand are **two choices from one list**, stored under separate keys (`editorTypeface` and `critiqueHandFont`). Choosing a face for the page does not change the notes, and the reverse. The stored names are the critique's existing ones, so moving the catalog lost nobody's choice — a test holds them. |
 | T-18 | The face sets body text and headings; headings keep their sizes and every face is set at its measured optical size, as the notes are. Code stays monospaced. With **System Sans** — the default — the page is drawn with exactly the calls it was drawn with before the chooser existed; a test holds that too. |
 | T-19 | Every hand ships in one weight and upright, and AppKit answers "the bold of Patrick Hand" with Patrick Hand, so ⌘B would have appeared to do nothing. Where a face has no bold or italic of its own the emphasis is **drawn** — a filled stroke for bold, a slant for italic — and where it has one it is **used**: Noteworthy, Chalkboard and Marker Felt have real bolds, and the bundled Caveat is a variable font with a real bold, which turned up when a test assumed it had none. Never for the system face. |
-| T-20 | A stored face that no longer resolves — switched off in Font Book, or an optional download removed — reads as System Sans, which is what the page would draw anyway. The preview in the popover follows the draft face before Apply, like the colours. |
+| T-20 | A stored face that no longer resolves — switched off in Font Book, or an optional download removed — reads as System Sans, which is what the page would draw anyway. The page takes a face as soon as it is chosen, like the colours ([T-7](#122-customize-theme-popover)). |
 | T-21 | Two faces are offered **only where somebody has installed them, and never shipped**: QE Dave Mergens and QE Julian Dean, from Quantum Enterprises' Font Vault. Their licence is for personal use and says the fonts may not be embedded in software or made accessible to anyone else without written permission, so unlike the eight bundled hands they cannot go in the app, the repository or the website. Installed, they appear under From your Mac in both menus and are set at their measured optical scales (1.36 and 1.57, from x-height, the same as every other face); not installed, they are simply not listed, like a system face that has been switched off. |
-| T-23 | Beneath the Font chooser, a **Size** slider sets how large the document is drawn: **75% to 150%, in steps of 5%**, with the percentage beside it and a small and a large "A" at its ends. It sits under the face because it is the face's correction — two hands set at the same size can look a size apart. It is part of the draft like everything else in the popover: the preview follows it, Apply commits it, Cancel drops it, and it is kept app-wide as `editorTextScale` (`EditorColorTheme.textScale`). It scales everything the rendered text is set with — type, the space between lines and paragraphs, and the indents of lists, quotes and code — so 150% is the same page drawn larger rather than larger words in the old spacing. The column the text is set in, the pictures in it, and the Markdown source view keep their size. At 100% the page is drawn with exactly the values it had before the slider existed, and a stored value out of range, or not a number, is brought back into range; tests hold both. |
+| T-23 | Beneath the Font chooser, a **Size** slider sets how large the document is drawn: **75% to 150%, in steps of 5%**, with the percentage beside it and a small and a large "A" at its ends. It sits under the face because it is the face's correction — two hands set at the same size can look a size apart. Like everything else in the popover it applies as it moves and Cancel puts it back, and it is kept app-wide as `editorTextScale` (`EditorColorTheme.textScale`). **View ▸ Make Text Bigger** (`⌘+`, and `⌘=` without the Shift that "+" needs on most layouts) and **Make Text Smaller** (`⌘−`) step it through 75%, 80%, then every tenth to 150%, and **Actual Size** (`⌘0`) returns it to 100%. They step through stops rather than adding ten percent, so a size set on the slider's finer steps comes back to a round number on the first press; at either end the command greys out (`EditorColorTheme.steppedTextScale`). It scales everything the rendered text is set with — type, the space between lines and paragraphs, and the indents of lists, quotes and code — so 150% is the same page drawn larger rather than larger words in the old spacing. The column the text is set in, the pictures in it, and the Markdown source view keep their size. At 100% the page is drawn with exactly the values it had before the slider existed, and a stored value out of range, or not a number, is brought back into range; tests hold both. |
 
 ### 12.3 Coverage and contrast
 
@@ -1046,12 +1046,22 @@ else is either quiet or absent until it is asked for.
 | `⌘B` | Bold |
 | `⌘I` | Italic |
 | `⌘U` | Underline |
+| `⌘1` – `⌘6` | Heading 1 – 6 |
+| `⌥⌘0` | Paragraph (no heading) |
+| `⌘'` | Quote |
 | `⌘K` | Insert Link… |
 | `⌘⌥I` | Insert Image… |
-| `⌘⌥M` | Cycle Editor View |
+| `⇧⌘⌥I` | Image Size… |
 | `⌃⌘C` | AI Assisted Critique |
+| `⌘+` (or `⌘=`) / `⌘−` | Make Text Bigger / Make Text Smaller |
+| `⌘0` | Actual Size |
 | `⌘⌥O` | Open Folder… |
+| `⇧⌘R` | Reload from Disk |
 | `⌃⌘S` | Show / Hide File Explorer |
+
+The heading keys are the ones Bear, Ulysses and iA Writer have taught writers.
+Paragraph takes `⌥⌘0` because `⌘0` is Actual Size, as it is in every Mac app
+that zooms.
 
 ### 14.2 Provided by macOS
 
@@ -1063,10 +1073,11 @@ Document Now, plus all standard text navigation and selection.
 
 ### 14.3 Menu commands without shortcuts
 
-**Markdown menu:** Editor View, Theme Color, Background, Strikethrough,
-Code ▸ Inline Code (Single Line), Code ▸ Fenced Code Block (Multi-Line),
-Heading ▸ Paragraph and Heading 1–6, Bulleted List, Numbered List, Task List,
-Quote, Horizontal Rule.
+**View menu:** Theme Color, Background.
+
+**Markdown menu:** Strikethrough, Code ▸ Inline Code (Single Line),
+Code ▸ Fenced Code Block (Multi-Line), Bulleted List, Numbered List, Task List,
+Horizontal Rule.
 
 **Window menu:** Welcome to KONVO.
 
@@ -1675,6 +1686,8 @@ trailing edge is the bug I-269 describes, not a finished job.
 
 | Change | Summary |
 | --- | --- |
+| Keys for the page, and a theme you see on the page | Headings have keys at last — `⌘1` to `⌘6`, `⌥⌘0` for a paragraph — and Quote is `⌘'`. **View** now holds **Make Text Bigger** (`⌘+`, and `⌘=`, which AppKit would not match to a `⌘+` item on its own), **Make Text Smaller** (`⌘−`) and **Actual Size** (`⌘0`), stepping through fixed stops so a slider-set 105% comes back to a round number, and Theme Color and Background moved there from the Markdown menu. Customize Theme applies each choice as it is made, so the page is the preview; Cancel and Escape put back what it opened with, and the three-line sample box is gone. See [T-6 to T-10, T-23](#122-customize-theme-popover) and [§14](#14-keyboard-shortcut-reference). |
+| Find, and spelling as you type | ⌘F did nothing: the find panel was switched on but no menu item sent it. **Edit** now has Find (in the find bar), Spelling and Grammar, and Substitutions, and spelling is checked as you type — skipping code — with the choice remembered. A critique had been spending its notes on "todays" and "noticable". Moving the pointer over a 23,000-word draft no longer lays out every glyph in it to ask whether a link is underneath. Settings says that a Built-in critique goes to the GitHub account the Mac is signed in with and counts against its plan, where it used to say a model "already available on this Mac" with nothing billed. See [E-20, E-21a](#65-standard-text-behaviors). |
 | A window that makes room for its comments | A window that finds itself too narrow for the writing *and* the critique rail now widens to hold them: once when it is first seen, which matters for a window restored at a narrower width, and again whenever the rail opens on a window already on screen — say one narrowed while the comments were shut. It grows at the trailing edge, where the rail is, never past the screen and never smaller than it was, and closing the rail leaves the width alone. New windows already opened at the right size, and the rail was already kept whole at any width by the column giving way; this gives the column back its room. `make check-window` opens a real document window and measures all of it. See [I-269 to I-272](#10a-ai-assisted-critique) and [§16.9](#169-checking-the-window-holds-its-rail). |
 | The kirupa mark | The application icon is the kirupa logo on white, in the Dock, in Finder, on the landing screen and on the iOS build — drawn from `Packaging/Logo.svg` and placed by its round body, as though the leaves were not there, so the orange sits dead centre and the leaves hang off one corner. See [P-7 to P-13](#3-platform-and-technical-requirements). |
 | Just KONVO | The landing screen shows the app's own logo and its name, and nothing else — the generic document symbol and the version line under it are gone. See [W-29 and W-30](#4-welcome-window). |

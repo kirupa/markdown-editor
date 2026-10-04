@@ -3,12 +3,20 @@ import SwiftUI
 
 /// A popover modeled on the "Customize Theme" dialog at kirupa.com: a color
 /// row, a light/dark background toggle, the face the document is set in and
-/// how large it is drawn, and explicit Apply/Cancel buttons.
+/// how large it is drawn.
+///
+/// Every choice is applied as it is made, so the document behind the popover
+/// is the preview. It used to hold a draft until Apply and show it in a small
+/// sample box, which meant judging a face or a size from three lines of
+/// placeholder text with the real page a few centimetres away, unchanged.
+/// Cancel and Escape put back the theme the popover opened with; Done, or
+/// clicking away, keeps what is on the page.
 struct ThemePickerPopover: View {
     @Binding var colorTheme: EditorColorTheme
     @Binding var isPresented: Bool
 
-    @State private var draft: EditorColorTheme
+    /// The theme as it was when the popover opened, for Cancel.
+    @State private var original: EditorColorTheme
 
     init(
         colorTheme: Binding<EditorColorTheme>,
@@ -16,7 +24,7 @@ struct ThemePickerPopover: View {
     ) {
         _colorTheme = colorTheme
         _isPresented = isPresented
-        _draft = State(initialValue: colorTheme.wrappedValue)
+        _original = State(initialValue: colorTheme.wrappedValue)
     }
 
     private let columns = Array(
@@ -49,7 +57,7 @@ struct ThemePickerPopover: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
 
-                Picker("Background", selection: $draft.mode) {
+                Picker("Background", selection: $colorTheme.mode) {
                     ForEach(EditorAppearanceMode.allCases) { mode in
                         Label(mode.title, systemImage: mode.systemImage)
                             .tag(mode)
@@ -71,20 +79,19 @@ struct ThemePickerPopover: View {
                 textSizeSlider
             }
 
-            preview
-
             Divider()
 
             HStack {
                 Button("Cancel") {
+                    colorTheme = original
                     isPresented = false
                 }
                 .keyboardShortcut(.cancelAction)
+                .help("Put back the theme you started with")
 
                 Spacer()
 
-                Button("Apply") {
-                    colorTheme = draft
+                Button("Done") {
                     isPresented = false
                 }
                 .keyboardShortcut(.defaultAction)
@@ -93,18 +100,18 @@ struct ThemePickerPopover: View {
         .padding(16)
         .frame(width: 304)
         .background(Color(nsColor: .windowBackgroundColor))
-        .onAppear { draft = colorTheme }
+        .onAppear { original = colorTheme }
     }
 
     /// The face the document is set in, chosen from exactly the faces the
     /// critique's hand menu offers, shown the same way.
     private var fontMenu: some View {
         Menu {
-            TypefaceMenuItems(selected: draft.typeface) { candidate in
-                draft.typeface = candidate
+            TypefaceMenuItems(selected: colorTheme.typeface) { candidate in
+                colorTheme.typeface = candidate
             }
         } label: {
-            Text(draft.typeface.title)
+            Text(colorTheme.typeface.title)
         }
         .accessibilityLabel("Font")
         .help("The face the document is set in")
@@ -125,7 +132,7 @@ struct ThemePickerPopover: View {
                     .foregroundStyle(.secondary)
             }
             Slider(
-                value: $draft.textScale,
+                value: $colorTheme.textScale,
                 in: EditorColorTheme.textScaleRange,
                 step: 0.05
             ) {
@@ -147,17 +154,17 @@ struct ThemePickerPopover: View {
     }
 
     private var textScalePercent: String {
-        "\(Int((draft.textScale * 100).rounded()))%"
+        "\(Int((colorTheme.textScale * 100).rounded()))%"
     }
 
     private func swatch(for themeColor: EditorThemeColor) -> some View {
         // Fill and border come straight from `#themeChooser #theme_<color>`
         // in kirupa.css so the swatches read exactly like the website's.
-        let isSelected = draft.color == themeColor
+        let isSelected = colorTheme.color == themeColor
         let glow = Color(nsColor: themeColor.swatchBorderColor)
 
         return Button {
-            draft.color = themeColor
+            colorTheme.color = themeColor
         } label: {
             RoundedRectangle(cornerRadius: 5, style: .continuous)
                 .fill(Color(nsColor: themeColor.swatchFillColor))
@@ -180,47 +187,5 @@ struct ThemePickerPopover: View {
         .help(themeColor.title)
         .accessibilityLabel("\(themeColor.title) theme")
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
-    }
-
-    private var preview: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(verbatim: "Heading")
-                .font(
-                    Font(
-                        draft.typeface.font(
-                            ofSize: draft.scaled(15),
-                            weight: .bold
-                        )
-                    )
-                )
-                .foregroundColor(Color(nsColor: draft.primaryTextColor))
-            Text(verbatim: "Body paragraph text")
-                .font(Font(draft.typeface.font(ofSize: draft.scaled(12))))
-                .foregroundColor(Color(nsColor: draft.primaryTextColor))
-            Text(verbatim: "let code = true")
-                .font(.system(size: draft.scaled(11), design: .monospaced))
-                .foregroundColor(Color(nsColor: draft.primaryTextColor))
-                .padding(.horizontal, 5)
-                .padding(.vertical, 3)
-                .background(Color(nsColor: draft.codeBlockBackgroundColor))
-                .clipShape(
-                    RoundedRectangle(cornerRadius: 4, style: .continuous)
-                )
-            Text(verbatim: "secondary label")
-                .font(.system(size: 11))
-                .foregroundColor(Color(nsColor: draft.secondaryTextColor))
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-        .background(Color(nsColor: draft.editorBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .strokeBorder(
-                    Color(nsColor: draft.separatorColor),
-                    lineWidth: 1
-                )
-        }
-        .accessibilityLabel("Preview of \(draft.title)")
     }
 }

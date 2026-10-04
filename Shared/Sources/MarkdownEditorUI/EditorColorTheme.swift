@@ -181,6 +181,32 @@ public struct EditorColorTheme: Equatable, Hashable {
     /// Three quarters of the type scale to half as large again.
     public static let textScaleRange: ClosedRange<CGFloat> = 0.75...1.5
 
+    /// Where View ▸ Make Text Bigger and Make Text Smaller stop: every tenth
+    /// from 80% to 150%, plus the slider's 75% floor so the smallest size is
+    /// reachable from the keyboard too.
+    ///
+    /// Stops rather than "plus ten percent", so a size set on the slider's
+    /// finer 5% steps comes back to a round number on the first press instead
+    /// of staying off the grid for good — and so 100% is always a stop.
+    public static let textScaleStops: [CGFloat] = [
+        0.75, 0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.4, 1.5
+    ]
+
+    /// The next stop above `scale`, or below it when `larger` is false, or
+    /// `scale` itself (clamped) when there is none in that direction.
+    public static func steppedTextScale(
+        from scale: CGFloat,
+        larger: Bool
+    ) -> CGFloat {
+        let current = clampedTextScale(scale)
+        // Half a percent of slack, so a stored 0.9 that reads back as
+        // 0.8999999 is on the stop rather than just under it.
+        let next = larger
+            ? textScaleStops.first { $0 > current + 0.005 }
+            : textScaleStops.last { $0 < current - 0.005 }
+        return next ?? current
+    }
+
     /// `scale` brought into `textScaleRange` and rounded to a whole percent,
     /// so that a slider's 1.0000000000000002 is the 100% it says it is and a
     /// theme that has been round-tripped through storage compares equal to

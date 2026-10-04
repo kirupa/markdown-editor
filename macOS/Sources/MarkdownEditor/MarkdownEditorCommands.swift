@@ -40,6 +40,22 @@ struct MarkdownEditorCommands: Commands {
         session.map { !$0.isAvailable(style) } ?? false
     }
 
+    private func canStepTextScale(larger: Bool) -> Bool {
+        guard let current = colorThemeSelection?.wrappedValue.textScale else {
+            return false
+        }
+        return EditorColorTheme.steppedTextScale(from: current, larger: larger)
+            != current
+    }
+
+    private func stepTextScale(larger: Bool) {
+        guard let selection = colorThemeSelection else { return }
+        selection.wrappedValue.textScale = EditorColorTheme.steppedTextScale(
+            from: selection.wrappedValue.textScale,
+            larger: larger
+        )
+    }
+
     var body: some Commands {
         CommandGroup(after: .appInfo) {
             Divider()
@@ -72,19 +88,25 @@ struct MarkdownEditorCommands: Commands {
             .disabled(session == nil)
 
             Divider()
-        }
 
-        CommandGroup(before: .windowList) {
-            Button("Welcome to KONVO") {
-                WelcomeWindowController.shared.show()
+            // How the page looks lives in View, where a Mac writer looks for
+            // it. Theme Color and Background used to sit in the Markdown menu
+            // between the critique and Bold, which is a menu about what the
+            // document *says*.
+            Button("Make Text Bigger") { stepTextScale(larger: true) }
+                .keyboardShortcut("+")
+                .disabled(!canStepTextScale(larger: true))
+            Button("Make Text Smaller") { stepTextScale(larger: false) }
+                .keyboardShortcut("-")
+                .disabled(!canStepTextScale(larger: false))
+            Button("Actual Size") {
+                colorThemeSelection?.wrappedValue.textScale = 1
             }
-            Divider()
-        }
-
-        CommandMenu("Markdown") {
-            Button("AI Assisted Critique") { runCritique?() }
-                .keyboardShortcut("c", modifiers: [.control, .command])
-                .disabled(runCritique == nil)
+            .keyboardShortcut("0")
+            .disabled(
+                colorThemeSelection == nil
+                    || colorThemeSelection?.wrappedValue.textScale == 1
+            )
 
             Divider()
 
@@ -120,6 +142,21 @@ struct MarkdownEditorCommands: Commands {
             }
 
             Divider()
+        }
+
+        CommandGroup(before: .windowList) {
+            Button("Welcome to KONVO") {
+                WelcomeWindowController.shared.show()
+            }
+            Divider()
+        }
+
+        CommandMenu("Markdown") {
+            Button("AI Assisted Critique") { runCritique?() }
+                .keyboardShortcut("c", modifiers: [.control, .command])
+                .disabled(runCritique == nil)
+
+            Divider()
 
             Button("Bold") {
                 session?.toggleInline(.bold)
@@ -151,17 +188,25 @@ struct MarkdownEditorCommands: Commands {
                 }
             }
 
+            // ⌘1 to ⌘6 for the levels and ⌥⌘0 for a paragraph: the
+            // shortcuts Bear, Ulysses and iA Writer have taught writers, and
+            // the menu had none at all. ⌘0 itself is View ▸ Actual Size.
             Menu("Heading") {
                 Button("Paragraph") {
                     session?.applyHeading(level: 0)
                 }
+                .keyboardShortcut("0", modifiers: [.command, .option])
                 Divider()
                 ForEach(1...6, id: \.self) { level in
                     Button("Heading \(level)") {
                         session?.applyHeading(level: level)
                     }
+                    .keyboardShortcut(
+                        KeyEquivalent(Character(String(level)))
+                    )
                 }
             }
+            .disabled(session == nil)
 
             Divider()
 
@@ -177,6 +222,7 @@ struct MarkdownEditorCommands: Commands {
             Button("Quote") {
                 session?.toggleQuote()
             }
+            .keyboardShortcut("'")
             Button("Horizontal Rule") {
                 session?.insertHorizontalRule()
             }

@@ -24,6 +24,8 @@ final class MarkdownEditorAppDelegate: NSObject, NSApplicationDelegate {
     private var restorationTimeout: DispatchWorkItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        TextSizeKeyAlias.install()
+
         guard WelcomeWindowPreferences.showsAtLaunch,
             !WelcomeWindowController.shared.isVisible,
             isLaunchingEmpty

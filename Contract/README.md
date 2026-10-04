@@ -664,9 +664,11 @@ T-21, and the web's rows are WT-16 and WT-17.
 
 Beneath the Font chooser is a **Size** slider: **75% to 150%, in steps of 5%**,
 with the percentage beside it. It is the face's correction, because two hands
-at the same size can look a size apart. Like the colours, it is part of the
-Customize Theme draft: the preview follows it, Apply commits it and Cancel
-drops it. It is kept app-wide as `editorTextScale`, a number (1.25 for 125%).
+at the same size can look a size apart. It is chosen in Customize Theme with
+the colours, and Cancel puts back the size the popover opened with. (The Mac
+applies each choice as it is made, so the page is the preview; the web still
+previews a draft and commits it on Apply.) It is kept app-wide as
+`editorTextScale`, a number (1.25 for 125%).
 
 - **It scales everything the rendered text is set with**: the type, the space
   between lines and paragraphs, and the indents of lists, quotes and code. So
@@ -678,14 +680,19 @@ drops it. It is kept app-wide as `editorTextScale`, a number (1.25 for 125%).
 - **A stored value is clamped into range and rounded to a whole percent**, and
   anything that is not a number reads as 100%. Rounding is what makes a
   slider's 1.0000000000000002 the 100% it says it is.
+- **Make Text Bigger and Make Text Smaller step through stops**: 0.75, 0.8,
+  then every tenth to 1.5 (`EditorColorTheme.textScaleStops`). A size between
+  stops moves to the next stop in that direction, so a size set on the
+  slider's 5% steps comes back to a round number on the first press, and at
+  either end the command does nothing.
 - **The popover must not change width as the size changes.** The web's first
   version sized the popover to its preview, so a larger size or a wider face
   widened it, and the slider with it, which moved the thumb out from under the
   pointer mid-drag. The popover is now a fixed width. The preview wraps, and the
   popover grows downward only, below the slider.
 
-Reference: `EditorColorTheme.textScale` and `clampedTextScale`, tested in the
-"Editor text size" suite (`EditorTextScaleTests`), and
+Reference: `EditorColorTheme.textScale`, `clampedTextScale` and
+`steppedTextScale`, tested in the "Editor text size" suite (`EditorTextScaleTests`), and
 `Web/public/app/core/text-scale.js` with `Web/public/tests/text-scale.test.js`.
 The macOS README has the rule as T-23, and the web's row is WT-19.
 
@@ -702,9 +709,16 @@ These are product, not platform courtesy, and a build should have them:
 | `Ctrl/⌘ Alt/⌥ I` | Insert image |
 | `Ctrl/⌘ Alt/⌥ M` | Cycle editor view |
 | `Ctrl/⌘ Alt/⌥ O` | Open folder |
+| `Ctrl/⌘ 1` – `6` | Heading 1 – 6 |
+| `Ctrl/⌘ Alt/⌥ 0` | Paragraph (no heading) |
+| `Ctrl/⌘ '` | Quote |
+| `Ctrl/⌘ +` / `−` / `0` | Make text bigger / smaller / actual size, where the platform does not already take them for zoom |
 
 Plus the platform's own document shortcuts — New, Open, Save, Save As, Close —
 using whatever that platform's convention is.
+
+The heading, quote and text-size keys arrived on the Mac first (§14.1 of the
+macOS README); the web and Windows builds do not have them yet.
 
 ### Keeping the reader's place while re-styling
 

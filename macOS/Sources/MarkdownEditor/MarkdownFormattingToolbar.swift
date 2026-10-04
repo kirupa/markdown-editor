@@ -48,7 +48,7 @@ struct MarkdownFormattingToolbar: ToolbarContent {
             } label: {
                 Label("Customize Theme", systemImage: "paintpalette")
             }
-            .help("Choose a kirupa.com color and a light or dark background")
+            .help("The page's color, background, font and text size")
             .popover(
                 isPresented: $isThemePickerPresented,
                 arrowEdge: .bottom
