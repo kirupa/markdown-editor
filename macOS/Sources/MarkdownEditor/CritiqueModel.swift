@@ -57,7 +57,16 @@ final class CritiqueModel: ObservableObject {
     /// offset that no longer means what it meant.
     @Published private(set) var criticisedText: String?
 
-    private let service = CritiqueService()
+    private let service: any CritiqueAsking
+    /// Which run is the live one. A run whose number is not this one when it
+    /// finishes was stopped, and lands nowhere.
+    ///
+    /// Stop used to kill the process and leave the task waiting on it, which
+    /// then reported the kill as a failure — so stopping a re-run replaced the
+    /// critique on screen with "The critique was stopped." An API request was
+    /// worse: nothing cancelled it, and its report arrived after Stop as
+    /// though nothing had been pressed.
+    private var runNumber = 0
     private var resolutions = CritiqueResolutions()
     @Published private(set) var history = CritiqueHistory()
     /// Which revision is on screen. Nil means the newest.
@@ -100,6 +109,13 @@ final class CritiqueModel: ObservableObject {
         return CritiqueAnchoring.anchor(report.findings, in: currentText)
             .filter(\.isAnchored)
             .count
+    }
+
+    /// Nil is the real service. Not a default argument of `CritiqueService()`:
+    /// the check harness compiles these sources in the Swift 5 language mode,
+    /// which will not call a main-actor initializer from a default argument.
+    init(service: (any CritiqueAsking)? = nil) {
+        self.service = service ?? CritiqueService()
     }
 
     /// Opens the history for a document without running anything.
@@ -186,17 +202,28 @@ final class CritiqueModel: ObservableObject {
     var anchoredCount: Int { items.filter(\.isAnchored).count }
     var outstanding: [Item] { items.filter(\.isOutstanding) }
     var resolvedCount: Int { items.count - outstanding.count }
+    var dismissedCount: Int { items.filter { $0.resolution == .dismissed }.count }
+    /// The problems the summary names, which count against the score.
+    var listedProblems: Int { report?.whatDoesNotWork.count ?? 0 }
 
-    /// How good the draft looks, counting only what is still outstanding.
-    ///
-    /// Answering everything returns it to 100 — the point of the two actions
-    /// is that the author has said what they meant to say, and the score
-    /// should agree with them rather than keep score against them.
+    /// How good the draft looks: what is outstanding, what was dismissed, and
+    /// what the summary still lists. See `CritiqueScore` for why only Done
+    /// clears a note.
     var score: Int {
-        CritiqueScore.score(for: outstanding.map(\.finding))
+        CritiqueScore.score(
+            for: items.filter { CritiqueScore.counts($0.resolution) }.map(\.finding),
+            listedProblems: listedProblems
+        )
     }
 
-    var verdict: String { CritiqueScore.verdict(score) }
+    /// Whether the score is the critic's own rather than the author's: a
+    /// critique of the text exactly as it stands, with nothing marked Done by
+    /// hand since. Only then is a hundred "Ready".
+    var isConfirmed: Bool {
+        resolvedCount == 0 && !isStale(against: currentText)
+    }
+
+    var verdict: String { CritiqueScore.verdict(score, isConfirmed: isConfirmed) }
 
     func setResolution(_ resolution: CritiqueResolution?, for id: UUID) {
         guard let index = items.firstIndex(where: { $0.id == id }) else { return }
@@ -324,10 +351,19 @@ final class CritiqueModel: ObservableObject {
         // the same string the passage was measured in.
         noteCurrentText(text)
         currentText = text
-        isRunning = true
         isDismissed = false
+        // Answered here, before anything spins: the service would refuse it
+        // too, but only after the rail had flashed "Starting" for a request
+        // that was never going to be made.
+        if let words = CritiqueRequest.shortfall(in: text) {
+            fail(with: .draftTooShort(words: words))
+            return
+        }
+        isRunning = true
         failure = nil
         progress = CritiqueProgress(stage: .starting)
+        runNumber += 1
+        let thisRun = runNumber
 
         let focus: String?
         let kept: [Item]
@@ -350,12 +386,18 @@ final class CritiqueModel: ObservableObject {
                     document: text,
                     focus: focus
                 ) { update in
-                    Task { @MainActor [weak self] in self?.progress = update }
+                    Task { @MainActor [weak self] in
+                        guard let self, self.runNumber == thisRun else { return }
+                        self.progress = update
+                    }
                 }
+                guard self.runNumber == thisRun else { return }
                 self.apply(report, for: text, keeping: kept)
             } catch let error as CritiqueService.Failure {
+                guard self.runNumber == thisRun else { return }
                 self.fail(with: error)
             } catch {
+                guard self.runNumber == thisRun else { return }
                 self.fail(
                     with: .cliFailed(status: -1, message: error.localizedDescription)
                 )
@@ -363,7 +405,10 @@ final class CritiqueModel: ObservableObject {
         }
     }
 
+    /// Stops the run in progress and keeps whatever was on screen before it.
     func cancel() {
+        guard isRunning else { return }
+        runNumber += 1
         service.cancel()
         isRunning = false
         progress = nil
@@ -378,7 +423,13 @@ final class CritiqueModel: ObservableObject {
     }
 
     /// Applies a report without going through the CLI. For checks only.
+    ///
+    /// The text becomes the draft as it stands, as it does when `run` is
+    /// given it: a report is only ever applied to the text it was asked about,
+    /// and a check that left "now" empty saw every critique as out of date.
     func applyForChecking(_ report: CritiqueReport, for text: String) {
+        noteCurrentText(text)
+        currentText = text
         apply(report, for: text)
     }
 
@@ -493,12 +544,22 @@ final class CritiqueModel: ObservableObject {
             .map(\.element)
     }
 
+    /// Says what went wrong, and keeps the critique that was already there.
+    ///
+    /// A failed re-run used to clear the rail. Every note the author had not
+    /// got to yet, and every answer they had given, disappeared behind an
+    /// error about a request — for a draft that had not changed. The rail
+    /// shows the failure above the notes instead, and only fills the panel
+    /// with it when there is nothing else to show.
     private func fail(with failure: CritiqueService.Failure) {
         self.failure = failure
         isRunning = false
         progress = nil
-        report = nil
-        items = []
+    }
+
+    /// Puts away a failure the author has read.
+    func clearFailure() {
+        failure = nil
     }
 }
 

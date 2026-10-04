@@ -23,6 +23,23 @@ public enum CritiqueRequest {
     static let changedFence = "<<<CHANGED PASSAGE"
     static let changedClosingFence = "CHANGED PASSAGE>>>"
 
+    /// The fewest words of prose worth asking about.
+    ///
+    /// Below this there is nothing for a critique to say that the author does
+    /// not already know, and the request costs the same as one for a whole
+    /// essay. A new document — `# ` — used to go through, and came back a
+    /// hundred out of a hundred, "Ready". Thirty is a short paragraph: enough
+    /// to have a voice, a claim and a reader in mind.
+    public static let minimumProseWords = 30
+
+    /// How many words of prose `document` has when that is too few to send,
+    /// or nil when it is enough. Counted by `MarkdownProse`, so a heading
+    /// marker, a code sample or a link's address is not mistaken for writing.
+    public static func shortfall(in document: String) -> Int? {
+        let words = MarkdownProse.wordCount(document)
+        return words < minimumProseWords ? words : nil
+    }
+
     /// The prompt that runs the konvo critique pass and asks for a shape the
     /// app can actually use.
     ///
@@ -125,7 +142,7 @@ public enum CritiqueRequest {
           "jobRead": "one sentence naming the apparent reader, purpose and container",
           "overall": "one or two sentences: strongest working choice, largest quality risk",
           "whatWorks": ["two or three things the draft already does well and should survive a revision"],
-          "whatDoesNotWork": ["two or three things holding it back, in the round rather than passage by passage"],
+          "whatDoesNotWork": ["up to three things holding it back, in the round rather than passage by passage"],
           "findings": [
             {
               "severity": "high" | "medium" | "low",
@@ -161,7 +178,9 @@ public enum CritiqueRequest {
         the findings again. The first names real choices worth keeping; the \
         second names the shape of the problem. Both are about the piece as a \
         whole. If the draft genuinely has nothing working yet, return an empty \
-        array rather than inventing praise.
+        array rather than inventing praise. If nothing is holding it back, \
+        return an empty "whatDoesNotWork": every entry in it counts against \
+        the draft's score, so do not fill it to make up a number.
 
         \(openingFence)
         \(document)

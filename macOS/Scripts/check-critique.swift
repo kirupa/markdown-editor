@@ -731,6 +731,7 @@ struct CheckCritique {
         checkHighlightsAndClicking()
         checkTheHistory()
         checkTheRailRenders()
+        await checkStopAndFailureKeepTheCritique()
 
         // The live half costs credits and half a minute. Everything above is
         // free, so it runs either way.
@@ -901,6 +902,207 @@ struct CheckCritique {
     }
 }
 
+/// Stands in for the service, so a run can be held open, stopped and failed
+/// without a request.
+///
+/// `cancel()` deliberately does nothing. That is how an API request behaved:
+/// nothing stopped it, so its answer arrived after Stop. The model has to
+/// ignore that answer itself rather than rely on the service to prevent it.
+@MainActor
+final class HeldCritique: CritiqueAsking {
+    private var waiting: CheckedContinuation<CritiqueReport, Error>?
+    private(set) var asked = 0
+    var isWaiting: Bool { waiting != nil }
+
+    func critique(
+        document: String,
+        focus: String?,
+        onProgress: @escaping (CritiqueProgress) -> Void
+    ) async throws -> CritiqueReport {
+        asked += 1
+        return try await withCheckedThrowingContinuation { waiting = $0 }
+    }
+
+    func cancel() {}
+
+    func answer(_ report: CritiqueReport) {
+        waiting?.resume(returning: report)
+        waiting = nil
+    }
+
+    func refuse(_ failure: CritiqueService.Failure) {
+        waiting?.resume(throwing: failure)
+        waiting = nil
+    }
+}
+
+/// Lets the run's task get as far as it can, so what is checked next is
+/// where it settled rather than where it happened to be.
+@MainActor
+func settle(until condition: () -> Bool = { false }) async {
+    for _ in 0..<50 {
+        if condition() { return }
+        try? await Task.sleep(nanoseconds: 5_000_000)
+    }
+}
+
+/// What a re-run that does not finish does to the critique already there.
+///
+/// Each of these used to clear the rail: Stop replaced the notes with "The
+/// critique was stopped.", a timeout replaced them with the timeout, and an
+/// empty draft spun "Starting" before being refused. None of them changed the
+/// draft, so none of them should change what the rail says about it.
+@MainActor
+func checkStopAndFailureKeepTheCritique() async {
+    print("")
+    print("Keeping the critique through Stop, a failure and a short draft")
+
+    let held = HeldCritique()
+    let model = CritiqueModel(service: held)
+    let draft = String(
+        repeating: "This paragraph says enough to be worth reading closely. ",
+        count: 6
+    )
+    model.applyForChecking(
+        CritiqueReport(
+            jobRead: "A note.", overall: "Fine.",
+            findings: [
+                CritiqueFinding(
+                    severity: .medium, category: "Clarity",
+                    location: "paragraph 1",
+                    quote: "This paragraph says enough", why: "Vague."
+                )
+            ]
+        ),
+        for: draft
+    )
+    let note = model.items.first!.id
+    model.setResolution(.completed, for: note)
+    let rail = CritiqueSidebar(
+        critique: model, colorTheme: EditorColorTheme(color: .blue, mode: .light),
+        isStale: false, onRerun: {}, onRerunChanges: {}
+    )
+
+    model.run(on: draft, documentURL: nil)
+    await settle { held.isWaiting }
+    check(
+        "a re-run waiting on its answer shows as running",
+        model.isRunning && held.isWaiting,
+        "running \(model.isRunning), asked \(held.asked)"
+    )
+    model.cancel()
+    check(
+        "Stop puts the critique back, not a message about stopping",
+        !model.isRunning && model.failure == nil && model.items.count == 1,
+        "running \(model.isRunning), failure \(String(describing: model.failure)), "
+            + "\(model.items.count) notes"
+    )
+    held.answer(CritiqueReport(jobRead: "Late.", overall: "", findings: []))
+    await settle()
+    check(
+        "and the answer that arrives after Stop lands nowhere",
+        model.report?.jobRead == "A note." && model.items.count == 1,
+        "the rail now shows \"\(model.report?.jobRead ?? "nothing")\""
+    )
+    check(
+        "the answer given before Stop is still there",
+        model.items.first?.resolution == .completed,
+        "it is \(String(describing: model.items.first?.resolution))"
+    )
+
+    model.run(on: draft, documentURL: nil)
+    await settle { held.isWaiting }
+    held.refuse(.providerUnreachable("The request timed out."))
+    await settle { !model.isRunning }
+    check(
+        "a re-run that fails keeps the notes and the answers",
+        model.failure != nil && model.items.count == 1
+            && model.items.first?.resolution == .completed,
+        "failure \(String(describing: model.failure)), \(model.items.count) notes"
+    )
+    check(
+        "and shows the failure above them rather than instead of them",
+        rail.state == .findings,
+        "it shows \(rail.state)"
+    )
+    // Drawn as well as decided: a banner the state allows but the layout
+    // drops would pass the check above while the author saw nothing at all.
+    let storedHand = UserDefaults.standard.string(forKey: CritiqueHand.storageKey)
+    UserDefaults.standard.set(CritiqueHand.sans.rawValue, forKey: CritiqueHand.storageKey)
+    let host = NSHostingView(rootView: rail)
+    host.frame = NSRect(x: 0, y: 0, width: 340, height: 900)
+    let window = NSWindow(
+        contentRect: host.frame, styleMask: [.borderless],
+        backing: .buffered, defer: false
+    )
+    window.contentView = host
+    window.orderBack(nil)
+    host.layoutSubtreeIfNeeded()
+    RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+    host.layoutSubtreeIfNeeded()
+    let drawn = readable(recognisedText(in: host).joined(separator: " "))
+    if let path = ProcessInfo.processInfo.environment["MDE_FAILURE_PNG"],
+       let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+        host.cacheDisplay(in: host.bounds, to: rep)
+        try? rep.representation(using: .png, properties: [:])?
+            .write(to: URL(fileURLWithPath: path))
+        print("  wrote \(path)")
+    }
+    window.orderOut(nil)
+    if let storedHand {
+        UserDefaults.standard.set(storedHand, forKey: CritiqueHand.storageKey)
+    } else {
+        UserDefaults.standard.removeObject(forKey: CritiqueHand.storageKey)
+    }
+    let message = model.failure?.errorDescription ?? ""
+    check(
+        "the rail draws the failure",
+        !message.isEmpty && drawn.contains(readable(message)),
+        "\"\(message)\" is not legible on the rail"
+    )
+    check(
+        "and the notes it did not replace",
+        drawn.contains(readable("The notes below are from the last critique")),
+        "the banner's explanation is not legible"
+    )
+    model.clearFailure()
+    check("the failure can be put away", model.failure == nil, "it is still there")
+
+    let askedBefore = held.asked
+    model.run(on: "Too short to read yet.", documentURL: nil)
+    check(
+        "a draft under thirty words is refused before anything spins",
+        !model.isRunning && model.progress == nil,
+        "running \(model.isRunning)"
+    )
+    await settle()
+    check(
+        "and nothing is sent",
+        held.asked == askedBefore,
+        "\(held.asked - askedBefore) requests made"
+    )
+    check(
+        "it says how much there is, so the author knows how far off it is",
+        model.failure == .draftTooShort(words: 5),
+        "it says \(String(describing: model.failure))"
+    )
+    check(
+        "and offers to run it, not to try again",
+        model.failure?.retryTitle == "Run critique",
+        "the button says \(model.failure?.retryTitle ?? "nothing")"
+    )
+    let empty = CritiqueModel(service: held)
+    empty.run(on: "Too short.", documentURL: nil)
+    check(
+        "with nothing to keep, the failure takes the panel",
+        CritiqueSidebar(
+            critique: empty, colorTheme: EditorColorTheme(color: .blue, mode: .light),
+            isStale: false, onRerun: {}, onRerunChanges: {}
+        ).state == .failed,
+        "it shows something else"
+    )
+}
+
 /// Renders the rail for real.
 ///
 /// Everything else here checks the model behind the rail. This checks the rail
@@ -956,7 +1158,7 @@ func checkTheRailRenders() {
     let outstandingBefore = model.outstanding.count
     let scoreBefore = model.score
     let answered = model.items.first { $0.finding.severity == .low }
-    model.setResolution(.dismissed, for: answered!.id)
+    model.setResolution(.completed, for: answered!.id)
 
     check(
         "answering one takes it out of the outstanding count",
@@ -964,9 +1166,27 @@ func checkTheRailRenders() {
         "\(model.outstanding.count) of \(outstandingBefore)"
     )
     check(
-        "the score goes up when something is answered",
+        "the score goes up when a note is marked Done",
         model.score > scoreBefore,
         "\(scoreBefore) -> \(model.score)"
+    )
+    // Dismissing is a decision not to act, and the draft is no better for it.
+    // A score that rose for it let "Dismiss all" print "Ready" over a draft
+    // nobody had touched.
+    model.setResolution(.dismissed, for: answered!.id)
+    check(
+        "but not when it is dismissed",
+        model.score == scoreBefore,
+        "\(scoreBefore) -> \(model.score)"
+    )
+    let caption = CritiqueSidebar(
+        critique: model, colorTheme: EditorColorTheme(color: .blue, mode: .light),
+        isStale: false, onRerun: {}, onRerunChanges: {}
+    ).scoreCaption
+    check(
+        "and the rail says why the dismissed note still counts",
+        caption?.contains("Dismissed notes still count") == true,
+        "it says \(caption ?? "nothing")"
     )
     check(
         "an answered finding stops shading its passage",
@@ -978,18 +1198,59 @@ func checkTheRailRenders() {
         model.items.last?.id == answered!.id,
         "it is at position \(model.items.firstIndex { $0.id == answered!.id } ?? -1)"
     )
+    // A hundred reached by ticking boxes is the author's word, not the
+    // critic's, so it says so until a fresh critique agrees.
+    let allDone = CritiqueModel()
+    allDone.applyForChecking(
+        CritiqueReport(jobRead: "", overall: "", findings: model.items.map(\.finding)),
+        for: source
+    )
+    for item in allDone.items { allDone.setResolution(.completed, for: item.id) }
     check(
-        "answering everything returns the score to a hundred",
-        {
-            let all = CritiqueModel()
-            all.applyForChecking(
-                CritiqueReport(jobRead: "", overall: "", findings: model.items.map(\.finding)),
-                for: source
-            )
-            for item in all.items { all.setResolution(.completed, for: item.id) }
-            return all.score == 100
-        }(),
-        "it did not reach 100"
+        "marking every note Done reaches a hundred",
+        allDone.score == 100,
+        "it reached \(allDone.score)"
+    )
+    check(
+        "but says it looks ready, not that it is",
+        allDone.verdict == "Looks ready" && !allDone.isConfirmed,
+        "it says \"\(allDone.verdict)\""
+    )
+    let fresh = CritiqueModel()
+    fresh.applyForChecking(CritiqueReport(jobRead: "", overall: "", findings: []), for: source)
+    check(
+        "a fresh critique with nothing to say is the one that says Ready",
+        fresh.score == 100 && fresh.verdict == "Ready",
+        "\(fresh.score), \"\(fresh.verdict)\""
+    )
+    let dismissedAll = CritiqueModel()
+    dismissedAll.applyForChecking(
+        CritiqueReport(jobRead: "", overall: "", findings: model.items.map(\.finding)),
+        for: source
+    )
+    let untouched = dismissedAll.score
+    for item in dismissedAll.items { dismissedAll.setResolution(.dismissed, for: item.id) }
+    check(
+        "dismissing every note leaves the score where it was",
+        dismissedAll.score == untouched,
+        "\(untouched) -> \(dismissedAll.score)"
+    )
+    // The summary's problems are the critic's verdict too. Every note Done
+    // while it still lists two is not a finished draft.
+    let listed = CritiqueModel()
+    listed.applyForChecking(
+        CritiqueReport(
+            jobRead: "", overall: "",
+            whatDoesNotWork: ["No example.", "The ending trails off."],
+            findings: model.items.map(\.finding)
+        ),
+        for: source
+    )
+    for item in listed.items { listed.setResolution(.completed, for: item.id) }
+    check(
+        "problems the summary still lists keep it under a hundred",
+        listed.score < 100,
+        "it reached \(listed.score)"
     )
     // And taking the answer back restores it.
     model.setResolution(nil, for: answered!.id)

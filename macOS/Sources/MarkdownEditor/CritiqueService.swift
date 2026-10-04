@@ -12,11 +12,27 @@ import MarkdownEditorCore
 /// What it costs is a dependency the app cannot install. Every way that can
 /// fail is therefore a named case below, because "nothing happened" is the one
 /// outcome a person cannot act on.
+/// What the rail needs from whoever answers a critique.
+///
+/// The service, in the app. The checks stand in for it so they can press Stop
+/// on a run that is still waiting, and fail one on purpose, without spending a
+/// request to get either.
 @MainActor
-final class CritiqueService {
+protocol CritiqueAsking: AnyObject {
+    func critique(
+        document: String,
+        focus: String?,
+        onProgress: @escaping (CritiqueProgress) -> Void
+    ) async throws -> CritiqueReport
+    func cancel()
+}
+
+@MainActor
+final class CritiqueService: CritiqueAsking {
     enum Failure: LocalizedError, Equatable {
         case cliNotFound
-        case documentIsEmpty
+        /// Fewer words of prose than `CritiqueRequest.minimumProseWords`.
+        case draftTooShort(words: Int)
         case cancelled
         case cliFailed(status: Int32, message: String)
         case unreadableReply(String)
@@ -28,8 +44,8 @@ final class CritiqueService {
             switch self {
             case .cliNotFound:
                 return "No critique provider is set up."
-            case .documentIsEmpty:
-                return "There is nothing to critique yet."
+            case .draftTooShort:
+                return "Not enough here to critique yet."
             case .cancelled:
                 return "The critique was stopped."
             case .cliFailed:
@@ -47,6 +63,13 @@ final class CritiqueService {
             }
         }
 
+        /// What the button beside the message says. A draft that was too
+        /// short is not retried — it is critiqued, once there is more of it.
+        var retryTitle: String {
+            if case .draftTooShort = self { return "Run critique" }
+            return "Try Again"
+        }
+
         var recoverySuggestion: String? {
             switch self {
             case .cliNotFound:
@@ -57,8 +80,13 @@ final class CritiqueService {
                     Open Settings, choose a provider and enter an API key, \
                     then ask for a critique again.
                     """
-            case .documentIsEmpty:
-                return "Write a paragraph or two, then ask for a critique."
+            case .draftTooShort(let words):
+                let counted = words == 1 ? "1 word" : "\(words) words"
+                return """
+                    Write a paragraph or two first. A critique needs at least \
+                    \(CritiqueRequest.minimumProseWords) words of prose, and \
+                    this draft has \(counted). Nothing was sent.
+                    """
             case .cancelled:
                 return nil
             case .cliFailed(_, let message):
@@ -157,8 +185,11 @@ final class CritiqueService {
         focus: String? = nil,
         onProgress: @escaping (CritiqueProgress) -> Void = { _ in }
     ) async throws -> CritiqueReport {
-        let trimmed = document.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { throw Failure.documentIsEmpty }
+        // The model checks this first so that nothing spins; this is the
+        // backstop for anything that calls the service directly.
+        if let words = CritiqueRequest.shortfall(in: document) {
+            throw Failure.draftTooShort(words: words)
+        }
 
         // The skill travels with the request, so the critique is KONVO's
         // whichever model answers it.

@@ -426,10 +426,12 @@ struct CritiqueSidebar: View {
         case nothingYet
     }
 
+    /// A failure only takes the panel when there are no notes to keep on
+    /// screen; with a critique already there it is a banner above them.
     var state: State {
         if critique.isRunning { return .running }
-        if critique.failure != nil { return .failed }
         if critique.report != nil { return .findings }
+        if critique.failure != nil { return .failed }
         if !isConfigured { return .needsSetUp }
         return .nothingYet
     }
@@ -438,10 +440,10 @@ struct CritiqueSidebar: View {
     private var content: some View {
         if critique.isRunning {
             running
-        } else if let failure = critique.failure {
-            self.failure(failure)
         } else if let report = critique.report {
             findings(in: report)
+        } else if let failure = critique.failure {
+            self.failure(failure)
         } else if !isConfigured {
             // Before anything else, including "no critique yet": there is no
             // point offering to run something that cannot run.
@@ -579,7 +581,7 @@ struct CritiqueSidebar: View {
                     .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                     .textSelection(.enabled)
             }
-            Button("Try Again") { onRerun() }
+            Button(failure.retryTitle) { onRerun() }
                 .padding(.top, 4)
             Spacer()
         }
@@ -637,6 +639,7 @@ struct CritiqueSidebar: View {
         ScrollViewReader { scroller in
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
+                    if let failure = critique.failure { failureBanner(failure) }
                     scoreBanner
                     if isStale { staleNotice }
                     summary(report)
@@ -721,12 +724,69 @@ struct CritiqueSidebar: View {
         }
     }
 
+    /// What went wrong with the last request, above the notes it did not
+    /// replace.
+    ///
+    /// The notes stay because they are still the last thing the critic said
+    /// about this draft: a request that failed has not changed the draft, and
+    /// clearing the rail made a timeout cost every answer given so far.
+    private func failureBanner(_ failure: CritiqueService.Failure) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Label(
+                    failure.errorDescription ?? "Something went wrong.",
+                    systemImage: "exclamationmark.triangle"
+                )
+                .font(CritiqueTypography.chrome(17, weight: .semibold))
+                .foregroundStyle(colorTheme.primaryText)
+                .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                Button {
+                    critique.clearFailure()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
+                .help("Hide this message")
+                .accessibilityLabel("Hide this message")
+            }
+            if let suggestion = failure.recoverySuggestion {
+                Text(suggestion)
+                    .font(CritiqueTypography.chrome(15))
+                    .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
+            Text("The notes below are from the last critique that finished.")
+                .font(CritiqueTypography.chrome(CritiqueTypography.captionSize))
+                .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
+                .fixedSize(horizontal: false, vertical: true)
+            // The same default as the menu item: the changed paragraphs when
+            // there are some, so retrying a narrowed run stays narrowed.
+            Button(failure.retryTitle) { onRerunChanges() }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            ZStack {
+                Rectangle().fill(CritiqueSeverity.high.tint.opacity(0.10))
+                Rectangle().strokeBorder(
+                    CritiqueSeverity.high.tint, lineWidth: PixelStyle.border
+                )
+            }
+        )
+        .padding(.horizontal, 12)
+    }
+
     /// How good the draft looks, out of a hundred.
     ///
-    /// Counts only what is outstanding, so answering everything returns it to
-    /// 100. That is the point of the two actions: the author has said what
-    /// they meant to say, and the score should agree with them rather than
-    /// keep score against them.
+    /// Done takes a note off; Dismiss does not, and the problems the summary
+    /// lists count too — see `CritiqueScore`. A hundred reached by answering
+    /// rather than by a fresh critique says "Looks ready" and offers the
+    /// critique that would confirm it, because "Ready" is a claim about the
+    /// draft and only the critic can make it.
     private var scoreBanner: some View {
         let score = critique.score
         let tint = scoreTint(score)
@@ -779,14 +839,16 @@ struct CritiqueSidebar: View {
             }
             .frame(height: 7)
 
-            if critique.resolvedCount > 0 {
-                Text(
-                    critique.outstanding.isEmpty
-                        ? "Everything answered."
-                        : "\(critique.resolvedCount) of \(critique.items.count) answered."
-                )
-                .font(CritiqueTypography.chrome(CritiqueTypography.captionSize))
-                .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
+            if let caption = scoreCaption {
+                Text(caption)
+                    .font(CritiqueTypography.chrome(CritiqueTypography.captionSize))
+                    .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            // Offered here only when the draft is unchanged: when it has
+            // changed, the notice below already offers both ways to re-read.
+            if score == 100, !critique.isConfirmed, !isStale {
+                Button("Critique again") { onRerun() }
             }
         }
         .padding(.horizontal, 14)
@@ -813,6 +875,36 @@ struct CritiqueSidebar: View {
         )
         .padding(.horizontal, 12)
         .animation(.easeOut(duration: 0.3), value: score)
+    }
+
+    /// Why the number is what it is, when that is not obvious from the notes.
+    ///
+    /// Each line answers a question the old banner left open. "Everything
+    /// answered" beside a perfect score was the rail agreeing with itself; a
+    /// score that does not move when a note is dismissed needs to say that it
+    /// was not meant to.
+    var scoreCaption: String? {
+        let answered = critique.resolvedCount
+        if critique.score == 100 {
+            guard !critique.isConfirmed else { return nil }
+            return answered > 0
+                ? "Every note answered. Critique again to confirm it is ready."
+                : "The draft has changed since. Critique again to confirm it is ready."
+        }
+        var stillCounting: [String] = []
+        if critique.dismissedCount > 0 { stillCounting.append("dismissed notes") }
+        if critique.outstanding.isEmpty, critique.listedProblems > 0 {
+            stillCounting.append("the problems in the summary")
+        }
+        var sentences: [String] = []
+        if answered > 0 {
+            sentences.append("\(answered) of \(critique.items.count) answered.")
+        }
+        if !stillCounting.isEmpty {
+            let list = stillCounting.joined(separator: " and ")
+            sentences.append(list.prefix(1).uppercased() + list.dropFirst() + " still count.")
+        }
+        return sentences.isEmpty ? nil : sentences.joined(separator: " ")
     }
 
     private func scoreTintSeverity(_ score: Int) -> CritiqueSeverity {
@@ -933,14 +1025,21 @@ struct CritiqueSidebar: View {
                 if !report.whatWorks.isEmpty {
                     noteSection("WHAT WORKS", report.whatWorks, mark: "+", tint: worksTint)
                 }
-                let problems = report.whatDoesNotWork.isEmpty
-                    ? (report.overall.isEmpty ? [] : [report.overall])
-                    : report.whatDoesNotWork
-                if !problems.isEmpty {
+                // With nothing listed, the overall read stands on its own.
+                // It used to be filed under WHAT DOESN'T WORK with a red dash,
+                // which turned "A focused draft, ready to publish." into a
+                // problem — and an empty list is now what the critic is told
+                // to return when nothing holds the draft back.
+                if !report.whatDoesNotWork.isEmpty {
                     noteSection(
-                        "WHAT DOESN'T WORK", problems, mark: "–",
+                        "WHAT DOESN'T WORK", report.whatDoesNotWork, mark: "–",
                         tint: CritiqueSeverity.high.ink(on: colorTheme.mode)
                     )
+                } else if !report.overall.isEmpty {
+                    Text(report.overall)
+                        .font(CritiqueTypography.chrome(16))
+                        .foregroundStyle(colorTheme.primaryText)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 if !critique.severityCounts.isEmpty {

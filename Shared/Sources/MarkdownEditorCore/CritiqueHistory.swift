@@ -30,8 +30,14 @@ public struct CritiqueRevision: Equatable, Sendable, Codable, Identifiable {
         self.documentText = documentText
     }
 
-    /// The score this critique arrived with, before anything was answered.
-    public var score: Int { CritiqueScore.score(for: report.findings) }
+    /// The score this critique arrived with, before anything was answered —
+    /// its notes and the problems its summary listed, as the rail counts them.
+    public var score: Int {
+        CritiqueScore.score(
+            for: report.findings,
+            listedProblems: report.whatDoesNotWork.count
+        )
+    }
 
     /// Whether the draft has moved on since this was written.
     public func isStale(against text: String) -> Bool { documentText != text }
