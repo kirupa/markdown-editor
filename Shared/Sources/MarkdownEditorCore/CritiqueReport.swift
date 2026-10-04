@@ -129,6 +129,14 @@ public struct CritiqueFinding: Equatable, Identifiable, Sendable, Codable {
     /// What needs to change, when the revision needs judgement only the author
     /// has.
     public let direction: String?
+    /// The quote as it should read, when the fix is a straight swap.
+    ///
+    /// `fix` is prose — `Change "noticable" to "noticeable".` — written for
+    /// a person to carry out, and carrying it out was retyping it by hand.
+    /// This is the same correction as text the app can put in the quote's
+    /// place. Nil when the fix needs the author, and never the quote itself:
+    /// a replacement that changes nothing is not offered.
+    public let replacement: String?
 
     public init(
         id: UUID = UUID(),
@@ -139,7 +147,8 @@ public struct CritiqueFinding: Equatable, Identifiable, Sendable, Codable {
         quote: String,
         why: String,
         fix: String? = nil,
-        direction: String? = nil
+        direction: String? = nil,
+        replacement: String? = nil
     ) {
         self.id = id
         self.severity = severity
@@ -150,6 +159,30 @@ public struct CritiqueFinding: Equatable, Identifiable, Sendable, Codable {
         self.why = why
         self.fix = fix
         self.direction = direction
+        let trimmed = replacement?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.replacement = trimmed?.isEmpty == false && replacement != quote
+            ? replacement
+            : nil
+    }
+
+    /// The same note about a different quote.
+    ///
+    /// The replacement is dropped unless it is still the quote it was written
+    /// for: it was a rewrite of particular words, and pasting it over other
+    /// words would put the critic's sentence where it never meant one to go.
+    public func requoted(_ quote: String, location: String) -> CritiqueFinding {
+        CritiqueFinding(
+            id: id,
+            severity: severity,
+            category: category,
+            needsVerification: needsVerification,
+            location: location,
+            quote: quote,
+            why: why,
+            fix: fix,
+            direction: direction,
+            replacement: quote == self.quote ? replacement : nil
+        )
     }
 
     /// What to show under "Why" — the advice, whichever form it came in.
@@ -377,7 +410,8 @@ public enum CritiqueReportDecoder {
             quote: quote,
             why: why,
             fix: string(object["fix"]),
-            direction: string(object["direction"])
+            direction: string(object["direction"]),
+            replacement: string(object["replacement"])
         )
     }
 

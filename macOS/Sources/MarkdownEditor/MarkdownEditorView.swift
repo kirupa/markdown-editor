@@ -558,6 +558,14 @@ struct ResizableRichTextPreview: View {
                         },
                         onRerunChanges: {
                             critique.request(on: text, documentURL: documentURL)
+                        },
+                        replaceText: { swap in
+                            session.replaceSourceText(
+                                in: swap.range,
+                                expecting: swap.expected,
+                                with: swap.replacement,
+                                actionName: swap.name
+                            )
                         }
                     )
                     // A fixed width, docked against the document.

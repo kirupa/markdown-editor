@@ -161,17 +161,7 @@ public enum CritiqueCarry {
         guard chosen != original.quote || place != original.location else {
             return original
         }
-        return CritiqueFinding(
-            id: original.id,
-            severity: original.severity,
-            category: original.category,
-            needsVerification: original.needsVerification,
-            location: place,
-            quote: chosen,
-            why: original.why,
-            fix: original.fix,
-            direction: original.direction
-        )
+        return original.requoted(chosen, location: place)
     }
 
     private static func anchors(

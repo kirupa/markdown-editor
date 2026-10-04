@@ -215,6 +215,7 @@ public enum CritiqueRequest {
               "quote": "the smallest passage that proves the point",
               "why": "the reader consequence",
               "fix": "a local correction, when the answer is unambiguous, else \\"\\"",
+              "replacement": "the quote rewritten as it should read, when the fix is a straight swap, else \\"\\"",
               "direction": "what needs to change when it needs the author's judgement, else \\"\\""
             }
           ],
@@ -228,6 +229,13 @@ public enum CritiqueRequest {
         can be found again by exact string search. Do not correct, shorten with \
         an ellipsis, or re-punctuate it. Quote the smallest passage that proves \
         the point — a phrase or a sentence, not a paragraph.
+        - "replacement" is pasted over "quote" exactly as you write it, so it is \
+        the WHOLE quote as it should read — every word that should stay, in the \
+        draft's own punctuation and Markdown — never just the changed word. Give \
+        one only when "fix" is a straight swap: a spelling, a word, a tightened \
+        phrase. To cut words, quote them with a few words either side and give \
+        the passage without them. Leave it "" when the fix needs the author: a \
+        restructure, a missing example, a claim to check.
         - Give every finding a "location" naming the paragraph number, counting \
         blank-line separated blocks from the top of the draft, so a quote that \
         appears twice can be told apart.

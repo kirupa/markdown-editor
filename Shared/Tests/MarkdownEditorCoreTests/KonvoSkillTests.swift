@@ -145,6 +145,18 @@ struct KonvoSkillTests {
         #expect(prompt.contains("Critique the draft"))
     }
 
+    @Test("Either way, a straight swap is asked for as the words to put in", arguments: [
+        nil, "## Critique\n\nDo it this way.",
+    ])
+    func promptAsksForTheReplacement(_ skill: String?) {
+        let prompt = CritiqueRequest.prompt(forDocument: "A draft.", skill: skill)
+        #expect(prompt.contains(#""replacement":"#))
+        // The whole quote, not the changed word: it is pasted over the quote
+        // exactly as written, and "its" pasted over "each one has it own
+        // tradeoffs" is a sentence destroyed.
+        #expect(prompt.contains("the WHOLE quote as it should read"))
+    }
+
     @Test("A narrowed request carries the skill too")
     func focusedPromptCarriesTheSkill() {
         let prompt = CritiqueRequest.prompt(

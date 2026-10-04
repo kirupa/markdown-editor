@@ -197,6 +197,33 @@ struct CritiqueCarryTests {
         #expect(outcome.finding == finding)
     }
 
+    @Test("A suggestion stays with the words it was written for")
+    func suggestionFollowsItsQuote() {
+        let finding = CritiqueFinding(
+            severity: .low, category: "Clarity and precision",
+            location: "paragraph 3", quote: "it is genuinely hard",
+            why: "An intensifier doing no work.", replacement: "it is hard"
+        )
+        let sameWords = CritiqueCarry.resolve(
+            .init(finding: finding, resolution: nil),
+            verdict: .stillApplies(quote: finding.quote, location: "paragraph 4"),
+            in: draft
+        )
+        #expect(sameWords.finding.location == "paragraph 4")
+        #expect(sameWords.finding.replacement == "it is hard")
+
+        // Pasted over other words, it would put the critic's sentence where
+        // it never meant one to go.
+        let otherWords = CritiqueCarry.resolve(
+            .init(finding: finding, resolution: nil),
+            verdict: .stillApplies(quote: "The tradeoff is staleness", location: "paragraph 3"),
+            in: draft
+        )
+        #expect(otherWords.finding.quote == "The tradeoff is staleness")
+        #expect(otherWords.finding.replacement == nil)
+        #expect(otherWords.finding.id == finding.id)
+    }
+
     // MARK: - Repeats
 
     @Test("The same passage under the same heading is a repeat")

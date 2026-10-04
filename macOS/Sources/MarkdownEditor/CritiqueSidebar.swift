@@ -261,6 +261,14 @@ struct CritiqueSidebar: View {
     /// that silently does nothing, and a default of "re-read everything" is
     /// the expensive thing this exists to avoid.
     let onRerunChanges: () -> Void
+    /// Changes the draft on a note's behalf — its suggestion put in, or the
+    /// passage's own words put back — and returns the draft as it then reads,
+    /// or nil when the words there were not the ones expected.
+    ///
+    /// Optional, and the buttons are not drawn without it rather than drawn
+    /// doing nothing: a rail with no document behind it has nothing to put a
+    /// suggestion into.
+    var replaceText: ((CritiqueModel.Swap) -> String?)? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -676,6 +684,20 @@ struct CritiqueSidebar: View {
                             onResolve: { resolution in
                                 withAnimation(.easeOut(duration: 0.2)) {
                                     critique.setResolution(resolution, for: item.id)
+                                }
+                            },
+                            onApply: replaceText.map { replace in
+                                {
+                                    if !critique.applySuggestion(for: item.id, using: replace) {
+                                        NSSound.beep()
+                                    }
+                                }
+                            },
+                            onRevert: replaceText.map { replace in
+                                {
+                                    if !critique.revertSuggestion(for: item.id, using: replace) {
+                                        NSSound.beep()
+                                    }
                                 }
                             }
                         )
@@ -1356,22 +1378,7 @@ private struct ActionStamp: View {
                 .font(.system(size: 10, weight: .black))
                 .foregroundStyle(.white)
                 .frame(width: 20, height: 18)
-                .background(
-                    ZStack {
-                        Rectangle()
-                            .fill(PixelStyle.shadow(theme))
-                            .offset(x: 2, y: 2)
-                        Rectangle().fill(fill)
-                        // A hairline of the paper's own darkness, so the block
-                        // still has an edge where its colour is close to the
-                        // note it sits on.
-                        Rectangle()
-                            .strokeBorder(
-                                Color.black.opacity(0.25),
-                                lineWidth: PixelStyle.border
-                            )
-                    }
-                )
+                .modifier(StampFace(fill: fill, theme: theme))
                 .scaleEffect(isHovered ? 1.14 : 1)
                 .animation(
                     .spring(response: 0.10, dampingFraction: 0.52),
@@ -1381,6 +1388,68 @@ private struct ActionStamp: View {
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
         .help(help)
+    }
+}
+
+/// The same block with a word on it, for the one action that changes the
+/// draft rather than the note.
+///
+/// Not the system's push button. That one takes its colours from the window's
+/// appearance rather than from the paper under it, and drawn where the two
+/// disagree it was white lettering on a white bezel on pale yellow: an Apply
+/// you could not read. It was also the only rounded thing on a note.
+private struct WordStamp: View {
+    let word: String
+    let fill: Color
+    let theme: EditorColorTheme
+    let help: String
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Text(word)
+                .font(CritiqueTypography.chrome(12, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 9)
+                .frame(height: 20)
+                .modifier(StampFace(fill: fill, theme: theme))
+                .scaleEffect(isHovered ? 1.06 : 1)
+                .animation(
+                    .spring(response: 0.10, dampingFraction: 0.52),
+                    value: isHovered
+                )
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .help(help)
+        .accessibilityHint(help)
+    }
+}
+
+/// A stamp's block: its colour, a hard drop, and a hairline edge.
+private struct StampFace: ViewModifier {
+    let fill: Color
+    let theme: EditorColorTheme
+
+    func body(content: Content) -> some View {
+        content.background(
+            ZStack {
+                Rectangle()
+                    .fill(PixelStyle.shadow(theme))
+                    .offset(x: 2, y: 2)
+                Rectangle().fill(fill)
+                // A hairline of the paper's own darkness, so the block
+                // still has an edge where its colour is close to the
+                // note it sits on.
+                Rectangle()
+                    .strokeBorder(
+                        Color.black.opacity(0.25),
+                        lineWidth: PixelStyle.border
+                    )
+            }
+        )
     }
 }
 
@@ -1396,6 +1465,11 @@ struct CritiqueCard: View {
     /// Told when the pointer arrives over this note and when it leaves.
     let onHoverChange: (Bool) -> Void
     let onResolve: (CritiqueResolution?) -> Void
+    /// Puts the note's suggestion in place of its passage. Nil where there is
+    /// no draft to change, and then no Apply button is drawn.
+    var onApply: (() -> Void)? = nil
+    /// Puts the passage's own words back in place of an applied suggestion.
+    var onRevert: (() -> Void)? = nil
 
     private var finding: CritiqueFinding { item.finding }
     private var isAnswered: Bool { !item.isOutstanding }
@@ -1466,6 +1540,11 @@ struct CritiqueCard: View {
             EmptyView()
         } else if item.resolution != nil {
             putBack(help: "Put this note back.")
+        } else if item.isApplied, let onRevert {
+            // Not "my change did not fix this": the change was the critic's,
+            // and the thing somebody reading it in place wants is their own
+            // words back.
+            putBack(help: "Put the original words back.", action: onRevert)
         } else if item.isEdited {
             // Only where the passage is still there to be about. Putting back
             // a note whose sentence was deleted would put back a note about
@@ -1490,9 +1569,47 @@ struct CritiqueCard: View {
         }
     }
 
-    private func putBack(help: String) -> some View {
+    /// The critic's rewrite of the passage, and the button that makes it.
+    ///
+    /// Shown in full, never cut to a line or two the way an unfound quote is:
+    /// these are words about to go into the draft, and a preview that hides
+    /// the end of them is an Apply nobody can check.
+    private func suggested(_ suggestion: String, apply: @escaping () -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("SUGGESTED")
+                .font(CritiqueTypography.hand(CritiqueTypography.noteLabelSize))
+                .tracking(0.4)
+                .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
+            // The author's face, not the critic's hand: once applied, these
+            // are the author's words in the author's document.
+            Text(suggestion)
+                .font(CritiqueTypography.chrome(CritiqueTypography.noteBodySize))
+                .foregroundStyle(CritiqueInk.body(on: colorTheme.mode))
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.leading, 7)
+                .overlay(alignment: .leading) {
+                    Rectangle()
+                        .fill(CritiqueCard.doneGreen.opacity(0.7))
+                        .frame(width: 2)
+                }
+            // A word, not a glyph. The ✓ and ✗ say something about the note;
+            // this changes the draft, and a glyph that rewrites a paragraph
+            // is not one anybody should have to hover to identify.
+            WordStamp(
+                word: "Apply",
+                fill: CritiqueCard.doneGreen,
+                theme: colorTheme,
+                help: "Put this in place of the passage. ⌘Z takes it back.",
+                action: apply
+            )
+            .padding(.top, 2)
+        }
+        .padding(.top, 2)
+    }
+
+    private func putBack(help: String, action: (() -> Void)? = nil) -> some View {
         Button {
-            onResolve(nil)
+            if let action { action() } else { onResolve(nil) }
         } label: {
             Image(systemName: "arrow.uturn.backward")
         }
@@ -1626,11 +1743,25 @@ struct CritiqueCard: View {
                 .padding(.top, 2)
             }
 
+            if let suggestion = item.suggestion, let onApply {
+                suggested(suggestion, apply: onApply)
+            }
+
             HStack(spacing: 6) {
                 if item.isFixed {
                     Label("A later critique found this fixed.", systemImage: "checkmark.seal")
                         .font(CritiqueTypography.chrome(14))
                         .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
+                } else if item.isApplied {
+                    // The same caution as an edit: the critic wrote the
+                    // suggestion against the paragraph as it was, and has not
+                    // read it in place.
+                    Label(
+                        "Changed to the suggestion. The next critique checks it.",
+                        systemImage: "text.badge.checkmark"
+                    )
+                    .font(CritiqueTypography.chrome(14))
+                    .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                 } else if item.isEdited {
                     // Not "fixed": a rewrite can as easily keep the problem or
                     // make a new one, and only a critique can tell which.

@@ -34,11 +34,31 @@ final class CritiqueModel: ObservableObject {
         /// problem or make a new one. An edited note stops counting and waits
         /// for the next critique to say which.
         var isEdited = false
+        /// The rewrite is the critic's own: the passage reads exactly as its
+        /// suggestion does, applied from the note or typed to match it.
+        ///
+        /// Still an edit, and still waiting on a critique. The critic wrote
+        /// the suggestion against the paragraph as it was, and has not read
+        /// it in place; only the next critique can say it worked.
+        var isApplied = false
         /// A later critique was shown this note and found the problem gone.
         var isFixed = false
 
         var id: UUID { finding.id }
         var isAnchored: Bool { range != nil }
+        /// The critic's rewrite, when it can be put in place of the passage
+        /// as the draft now reads.
+        ///
+        /// Only while the passage is still the very words the critic quoted.
+        /// A quote found by allowing for retyping — straight quotes for curly
+        /// ones, a space for a line break — would put the critic's typing in
+        /// place of the author's along with the fix, and an Apply that changes
+        /// more than it showed is one nobody trusts twice.
+        var suggestion: String? {
+            guard isOutstanding, isAnchored, anchoredText == finding.quote
+            else { return nil }
+            return finding.replacement
+        }
         /// Still asking the author for something.
         var isOutstanding: Bool { resolution == nil && !isEdited && !isFixed }
         /// Whether it still counts against the score. See `CritiqueScore`.
@@ -53,7 +73,7 @@ final class CritiqueModel: ObservableObject {
         var standing: Standing? {
             if isFixed { return .fixed }
             if resolution == .completed { return .done }
-            if isEdited { return .edited }
+            if isEdited { return isApplied ? .applied : .edited }
             if resolution == .dismissed { return .dismissed }
             return nil
         }
@@ -61,16 +81,33 @@ final class CritiqueModel: ObservableObject {
 
     /// What the tag on a note that is no longer outstanding says.
     enum Standing: Equatable {
-        case fixed, done, edited, dismissed
+        case fixed, done, edited, applied, dismissed
 
         var label: String {
             switch self {
             case .fixed: return "Fixed"
             case .done: return "Done"
             case .edited: return "Edited"
+            case .applied: return "Applied"
             case .dismissed: return "Dismissed"
             }
         }
+    }
+
+    /// A change the rail makes to the draft on a note's behalf: the critic's
+    /// suggestion put in place of its passage, or the passage's own words put
+    /// back in place of the suggestion.
+    struct Swap: Equatable {
+        /// Where, in the draft as the model last saw it.
+        let range: NSRange
+        /// What has to be there for the swap to be made. Checked again by
+        /// whatever makes it, against the text it is about to change: words
+        /// that have moved on since are not replaced on the strength of a
+        /// range measured before they did.
+        let expected: String
+        let replacement: String
+        /// What Undo calls it.
+        let name: String
     }
 
     /// Which notes a run is shown, and which it leaves alone.
@@ -285,7 +322,12 @@ final class CritiqueModel: ObservableObject {
         var moved = items.map { Self.follow($0, through: edit, in: text) }
         // A second pass, so a note looking for its words again steers clear of
         // where every other note has already settled.
-        for index in moved.indices where moved[index].isEdited {
+        //
+        // Not for a passage that now reads as the critic suggested. Its old
+        // words are often still inside the new ones — "good" in "good
+        // enough" — and finding them there would put the note straight back
+        // on the words it had just been applied to.
+        for index in moved.indices where moved[index].isEdited && !moved[index].isApplied {
             let others = moved.indices.filter { $0 != index }.compactMap { moved[$0].range }
             if let found = Self.refind(moved[index], after: edit, in: text, avoiding: others) {
                 moved[index].range = found
@@ -312,11 +354,53 @@ final class CritiqueModel: ObservableObject {
         // after a criticised one is not rewriting it.
         let touched = edit.location < range.location + range.length
             && edit.removedEnd > range.location
-        guard touched else { return item }
+        // Beside the passage, not in it — unless what arrived beside it makes
+        // the passage read as the critic suggested. A suggestion that keeps
+        // the quoted words and adds to them, "good" to "good enough", is
+        // exactly that: a Redo of an Apply that was undone, or the suggestion
+        // typed in by hand a letter at a time, lands entirely outside the
+        // passage. Left alone, the note would go on offering to apply itself
+        // to a draft that already has, and Apply would make "good enough
+        // enough".
+        guard touched else {
+            guard !item.isEdited, let moved,
+                  let suggested = item.finding.replacement
+            else { return item }
+            let reach = (suggested as NSString).length
+            let isNear = edit.location + edit.inserted >= moved.location - reach
+                && edit.location <= moved.location + moved.length + reach
+            if isNear, let applied = appliedSuggestion(of: item.finding, quotedAt: moved, in: text) {
+                item.range = applied
+                item.isEdited = true
+                item.isApplied = true
+            }
+            return item
+        }
         if let words = item.anchoredText, let moved {
-            item.isEdited = passage(moved, in: text) != words
+            // An applied suggestion taken back — Undo, or its new words
+            // deleted by hand — leaves the passage's own words at its start
+            // again, shorter or longer by exactly the swap. Checked before
+            // the passage is read, because the edit that does it is often
+            // worked out as starting a character late: "good enough for" back
+            // to "good for" is found as "enough " removed rather than
+            // " enough", so the passage keeps its space and reads "good ",
+            // and nothing near the edit is "good" to find again.
+            let back = NSRange(location: range.location, length: (words as NSString).length)
+            if item.isApplied,
+               edit.location >= range.location,
+               edit.delta == back.length - range.length,
+               passage(back, in: text) == words {
+                item.range = back
+                item.isEdited = false
+                item.isApplied = false
+                return item
+            }
+            let reads = passage(moved, in: text)
+            item.isEdited = reads != words
+            item.isApplied = item.isEdited && reads == item.finding.replacement
         } else {
             item.isEdited = true
+            item.isApplied = false
         }
         return item
     }
@@ -441,6 +525,7 @@ final class CritiqueModel: ObservableObject {
            let words = Self.passage(range, in: currentText) {
             item.anchoredText = words
             item.isEdited = false
+            item.isApplied = false
         }
         items[index] = item
         resolutions.set(resolution, for: item.finding)
@@ -461,6 +546,94 @@ final class CritiqueModel: ObservableObject {
         // longer holds.
         if showsUnchangedNotice { showsUnchangedNotice = false }
         reorder()
+    }
+
+    /// Puts the critic's suggestion in place of a note's passage.
+    ///
+    /// `replace` makes the change — the draft belongs to the editor, not to
+    /// the critique — and returns the draft as it then reads, or nil when it
+    /// found other words at the range and changed nothing. Returns whether
+    /// the note now stands applied.
+    ///
+    /// The note is not moved down the rail. It stays where the author pressed
+    /// it, tagged Applied, with the way back on it: a suggestion is read once
+    /// it is in its paragraph, and that is the moment somebody wants to take
+    /// it back.
+    @discardableResult
+    func applySuggestion(for id: UUID, using replace: (Swap) -> String?) -> Bool {
+        guard let index = items.firstIndex(where: { $0.id == id }),
+              let suggested = items[index].suggestion,
+              let range = items[index].range
+        else { return false }
+        let finding = items[index].finding
+        // The draft already reads as the suggestion: typed in by hand where
+        // nothing noticed, or a critique that suggested what was there. Said
+        // rather than done again — applying it would repeat its words.
+        if let inPlace = Self.appliedSuggestion(of: finding, quotedAt: range, in: currentText) {
+            items[index].range = inPlace
+            items[index].isEdited = true
+            items[index].isApplied = true
+            if showsUnchangedNotice { showsUnchangedNotice = false }
+            return true
+        }
+        guard Self.passage(range, in: currentText) == finding.quote,
+              let text = replace(Swap(
+                range: range,
+                expected: finding.quote,
+                replacement: suggested,
+                name: "Apply Suggestion"
+              ))
+        else { return false }
+        noteSwapped(at: range, to: suggested, for: id, giving: text)
+        return true
+    }
+
+    /// Puts a note's own words back in place of the suggestion applied to it.
+    ///
+    /// The same as ⌘Z when the Apply was the last thing done, and still there
+    /// when it was not: undo walks back through everything typed since, and
+    /// this takes back only the one passage.
+    @discardableResult
+    func revertSuggestion(for id: UUID, using replace: (Swap) -> String?) -> Bool {
+        guard let item = item(withID: id),
+              item.isApplied,
+              item.resolution == nil,
+              let range = item.range,
+              let words = item.anchoredText,
+              let suggested = item.finding.replacement,
+              Self.passage(range, in: currentText) == suggested,
+              let text = replace(Swap(
+                range: range,
+                expected: suggested,
+                replacement: words,
+                name: "Revert Suggestion"
+              ))
+        else { return false }
+        noteSwapped(at: range, to: words, for: id, giving: text)
+        return true
+    }
+
+    /// The draft changed because the rail changed it, at a range it knows.
+    ///
+    /// Told rather than left to `noteCurrentText` to work out. That derives
+    /// the edit from the two texts by their common prefix and suffix, which
+    /// is a guess about *where* the words changed — and a suggestion that
+    /// starts or ends with the words already beside the passage moves the
+    /// guess outside it, where an edit is typing beside a note rather than
+    /// rewriting it.
+    private func noteSwapped(
+        at range: NSRange,
+        to words: String,
+        for id: UUID,
+        giving text: String
+    ) {
+        noteCurrentText(text)
+        guard let index = items.firstIndex(where: { $0.id == id }) else { return }
+        var item = items[index]
+        item.range = NSRange(location: range.location, length: (words as NSString).length)
+        item.isEdited = words != item.anchoredText
+        item.isApplied = item.isEdited && words == item.finding.replacement
+        if item != items[index] { items[index] = item }
     }
 
     /// How many findings there are at each severity, worst first.
@@ -777,17 +950,66 @@ final class CritiqueModel: ObservableObject {
             : CritiqueAnchoring.anchor(findings, in: then)
         return findings.indices.map { index in
             let finding = findings[index]
-            let range = nowAnchors[index].range
             let written = thenAnchors[index].range.flatMap { Self.passage($0, in: then) }
+            var range = nowAnchors[index].range
+            var isApplied = false
+            if then != now, written != nil,
+               let applied = Self.appliedSuggestion(of: finding, quotedAt: range, in: now) {
+                range = applied
+                isApplied = true
+            }
             let reads = range.flatMap { Self.passage($0, in: now) }
+            let isEdited = written != nil && reads != written
             return Item(
                 finding: finding,
                 range: range,
                 resolution: resolutions.resolution(for: finding),
                 anchoredText: written ?? reads,
-                isEdited: written != nil && reads != written
+                isEdited: isEdited,
+                isApplied: isApplied && isEdited
             )
         }
+    }
+
+    /// Where a note's suggestion stands in the draft, when the draft has
+    /// taken it.
+    ///
+    /// Two ways it shows. A suggestion that keeps the quoted words — "good" to
+    /// "good enough" — still contains them, so the quote is found, inside the
+    /// suggestion; without this check a note brought back from the history
+    /// would offer to apply itself a second time and make "good enough
+    /// enough". A suggestion that replaced the words has taken the quote away,
+    /// and is looked for itself, the way any quote is.
+    private static func appliedSuggestion(
+        of finding: CritiqueFinding,
+        quotedAt quoted: NSRange?,
+        in text: String
+    ) -> NSRange? {
+        guard let suggested = finding.replacement else { return nil }
+        let suggestion = suggested as NSString
+        guard let quoted else {
+            let asApplied = finding.requoted(suggested, location: finding.location)
+            guard let found = CritiqueAnchoring.range(for: asApplied, in: text),
+                  passage(found, in: text) == suggested
+            else { return nil }
+            return found
+        }
+        var from = 0
+        while from < suggestion.length {
+            let inside = suggestion.range(
+                of: finding.quote,
+                options: .literal,
+                range: NSRange(location: from, length: suggestion.length - from)
+            )
+            guard inside.location != NSNotFound else { return nil }
+            let start = quoted.location - inside.location
+            if start >= 0 {
+                let whole = NSRange(location: start, length: suggestion.length)
+                if passage(whole, in: text) == suggested { return whole }
+            }
+            from = inside.location + 1
+        }
+        return nil
     }
 
     /// Puts a finished run on screen and into the document's history.

@@ -733,6 +733,7 @@ struct CheckCritique {
         checkTheRailRenders()
         await checkStopAndFailureKeepTheCritique()
         await checkRerunsCarryTheNotes()
+        checkApplyingASuggestion()
 
         // The live half costs credits and half a minute. Everything above is
         // free, so it runs either way.
@@ -3254,6 +3255,304 @@ func checkTheHistory() {
     check(
         "and a different document names a different one",
         once != CritiqueHistoryStore.digest("/Users/someone/Other.md")
+    )
+}
+
+/// A note whose fix is a straight swap makes it, and takes it back.
+///
+/// Every way this goes wrong is quiet. A suggestion applied twice reads as a
+/// typo the author made — "good enough enough" — and a note that cannot tell
+/// its own words came back goes on saying Applied about a sentence that is
+/// exactly as criticised. Both look like working features on screen.
+@MainActor
+func checkApplyingASuggestion() {
+    print("")
+    print("Applying a suggestion")
+
+    let draft = """
+        # Caching
+
+        Caching is good for most apps, and each one has it own tradeoffs.
+
+        The tradeoff is staleness, and it is “genuinely” hard.
+        """
+    let spelling = CritiqueFinding(
+        severity: .medium, category: "Grammar and mechanics", location: "paragraph 2",
+        quote: "each one has it own tradeoffs", why: "Possessive, not a contraction.",
+        fix: "Change \"it\" to \"its\".", replacement: "each one has its own tradeoffs"
+    )
+    let hedge = CritiqueFinding(
+        severity: .low, category: "Clarity and precision", location: "paragraph 2",
+        quote: "good", why: "Good how?", fix: "Say how good.", replacement: "good enough"
+    )
+    let claim = CritiqueFinding(
+        severity: .high, category: "Logic and credibility", location: "paragraph 3",
+        quote: "The tradeoff is staleness", why: "How stale?",
+        direction: "Say how stale, and for whom."
+    )
+    // Quoted with straight quotes where the draft has curly ones.
+    let retyped = CritiqueFinding(
+        severity: .low, category: "Voice and tone", location: "paragraph 3",
+        quote: "it is \"genuinely\" hard", why: "Scare quotes.",
+        fix: "Drop the word.", replacement: "it is hard"
+    )
+    let model = CritiqueModel()
+    model.attach(to: nil, text: draft)
+    model.applyForChecking(
+        CritiqueReport(jobRead: "", overall: "", findings: [spelling, hedge, claim, retyped]),
+        for: draft
+    )
+    func note(_ finding: CritiqueFinding) -> CritiqueModel.Item? {
+        model.item(withID: finding.id)
+    }
+    func state(_ finding: CritiqueFinding) -> String {
+        note(finding)?.standing?.label ?? "outstanding"
+    }
+
+    // The editor's half, as `MarkdownEditorSession.replaceSourceText` does it:
+    // the words at the range checked, replaced, and the draft handed back.
+    var text = draft
+    var made: [CritiqueModel.Swap] = []
+    func replace(_ swap: CritiqueModel.Swap) -> String? {
+        let source = text as NSString
+        guard NSMaxRange(swap.range) <= source.length,
+              source.substring(with: swap.range) == swap.expected
+        else { return nil }
+        made.append(swap)
+        text = source.replacingCharacters(in: swap.range, with: swap.replacement)
+        return text
+    }
+    /// A change that did not come from the rail — typing, ⌘Z, ⌘⇧Z — arriving
+    /// the way the view's `onChange` delivers every one.
+    func edit(_ next: String) {
+        text = next
+        model.noteCurrentText(next)
+    }
+    func words(_ finding: CritiqueFinding) -> String {
+        guard let range = note(finding)?.range,
+              NSMaxRange(range) <= (text as NSString).length
+        else { return "nothing" }
+        return (text as NSString).substring(with: range)
+    }
+
+    check(
+        "a straight swap is offered, and a fix that needs the author is not",
+        note(spelling)?.suggestion == "each one has its own tradeoffs"
+            && note(hedge)?.suggestion == "good enough"
+            && note(claim)?.suggestion == nil,
+        "spelling offers \(note(spelling)?.suggestion ?? "nothing"), "
+            + "the claim offers \(note(claim)?.suggestion ?? "nothing")"
+    )
+    check(
+        "nor is one for a quote found only by allowing for retyping",
+        note(retyped)?.isAnchored == true && note(retyped)?.suggestion == nil,
+        "anchored: \(note(retyped)?.isAnchored == true), "
+            + "offers \(note(retyped)?.suggestion ?? "nothing")"
+    )
+
+    let scoreBefore = model.score
+    let order = model.items.map(\.id)
+    check("Apply makes the change", model.applySuggestion(for: spelling.id, using: replace))
+    // What the view's `onChange` does next. The rail has already been told.
+    model.noteCurrentText(text)
+    check(
+        "the draft reads as the critic suggested",
+        text.contains("each one has its own tradeoffs") && !text.contains("has it own"),
+        text
+    )
+    check(
+        "as one change Undo can name",
+        made.count == 1 && made.last?.name == "Apply Suggestion",
+        made.map(\.name).joined(separator: ", ")
+    )
+    check(
+        "the note says Applied, and stops counting",
+        note(spelling)?.standing == .applied && note(spelling)?.counts == false
+            && model.score > scoreBefore,
+        "\(state(spelling)), score \(scoreBefore) then \(model.score)"
+    )
+    check(
+        "it stays where it was pressed, marking the new words",
+        model.items.map(\.id) == order && words(spelling) == "each one has its own tradeoffs",
+        "it marks \"\(words(spelling))\""
+    )
+    check(
+        "the other marks move with their words",
+        words(claim) == "The tradeoff is staleness" && words(hedge) == "good",
+        "the claim marks \"\(words(claim))\""
+    )
+    check("and an applied note offers no second Apply", note(spelling)?.suggestion == nil)
+
+    let applied = text
+    edit(draft)
+    check(
+        "Undo puts the note back as it was",
+        note(spelling)?.isOutstanding == true && note(spelling)?.suggestion != nil
+            && words(spelling) == "each one has it own tradeoffs" && model.score == scoreBefore,
+        "\(state(spelling)), marking \"\(words(spelling))\", score \(model.score)"
+    )
+    edit(applied)
+    check(
+        "and Redo applies it again",
+        note(spelling)?.standing == .applied && words(spelling) == "each one has its own tradeoffs",
+        "\(state(spelling)), marking \"\(words(spelling))\""
+    )
+
+    // A suggestion that keeps the quoted words and adds to them. The added
+    // words land beside the passage rather than in it, which every other
+    // edit takes as typing next to a note.
+    check("a suggestion that adds to the words applies", model.applySuggestion(for: hedge.id, using: replace))
+    check(
+        "and its mark takes the added words in",
+        note(hedge)?.standing == .applied && words(hedge) == "good enough",
+        "\(state(hedge)), marking \"\(words(hedge))\""
+    )
+    let addedTo = text
+    let takenBack = addedTo.replacingOccurrences(of: "good enough", with: "good")
+    edit(takenBack)
+    check(
+        "Undo brings it back, though the edit is worked out a character late",
+        note(hedge)?.isOutstanding == true && words(hedge) == "good",
+        "\(state(hedge)), marking \"\(words(hedge))\""
+    )
+    edit(addedTo)
+    check(
+        "and Redo applies it, though its words land beside the passage",
+        note(hedge)?.standing == .applied && words(hedge) == "good enough",
+        "\(state(hedge)), marking \"\(words(hedge))\""
+    )
+    check(
+        "after which there is nothing to apply twice",
+        note(hedge)?.suggestion == nil
+            && !model.applySuggestion(for: hedge.id, using: replace)
+            && !text.contains("enough enough"),
+        text
+    )
+
+    // Typed by hand, a letter at a time, the way somebody who read the note
+    // and did not see the button would.
+    edit(takenBack)
+    let after = (takenBack as NSString).range(of: "good").location + 4
+    var typed = takenBack as NSString
+    for (offset, letter) in " enough".enumerated() {
+        typed = typed.replacingCharacters(
+            in: NSRange(location: after + offset, length: 0), with: String(letter)
+        ) as NSString
+        edit(typed as String)
+    }
+    check(
+        "typing the suggestion in counts as applying it",
+        note(hedge)?.standing == .applied && words(hedge) == "good enough",
+        "\(state(hedge)), marking \"\(words(hedge))\""
+    )
+
+    // The way back that is not ⌘Z: undo walks back through everything typed
+    // since, and this takes back the one passage.
+    check("Revert puts the words back", model.revertSuggestion(for: spelling.id, using: replace))
+    check(
+        "the original words, as one change Undo can name",
+        text.contains("each one has it own tradeoffs") && made.last?.name == "Revert Suggestion",
+        text
+    )
+    check(
+        "and the note is outstanding again",
+        note(spelling)?.isOutstanding == true && words(spelling) == "each one has it own tradeoffs",
+        "\(state(spelling)), marking \"\(words(spelling))\""
+    )
+
+    // The draft moved on in the editor before the rail heard about it — a
+    // keystroke the view has not yet reported.
+    let unreported = text.replacingOccurrences(of: "each one has", with: "every one has")
+    text = unreported
+    let swapsBefore = made.count
+    check(
+        "Apply against words that have moved on changes nothing",
+        !model.applySuggestion(for: spelling.id, using: replace)
+            && text == unreported && made.count == swapsBefore,
+        text
+    )
+    edit(unreported)
+    edit(unreported.replacingOccurrences(of: "every one has", with: "each one has"))
+
+    // Opened again later: the saved critique is anchored afresh against a
+    // draft that took two of its suggestions, one of which no longer
+    // contains the words it was quoted on.
+    check("Apply again", model.applySuggestion(for: spelling.id, using: replace))
+    model.show(revision: nil)
+    check(
+        "a suggestion that replaced its words is found applied on reopening",
+        note(spelling)?.standing == .applied && words(spelling) == "each one has its own tradeoffs",
+        "\(state(spelling)), marking \"\(words(spelling))\""
+    )
+    check(
+        "and one that added to them is not offered a second time",
+        note(hedge)?.standing == .applied && words(hedge) == "good enough"
+            && note(hedge)?.suggestion == nil,
+        "\(state(hedge)), marking \"\(words(hedge))\""
+    )
+
+    // The critique of a draft that already reads as the suggestion — typed in
+    // where nothing was watching. Apply says so rather than adding it again.
+    let already = CritiqueModel()
+    let alreadyText = "Caching is good enough for most apps."
+    already.attach(to: nil, text: alreadyText)
+    already.applyForChecking(
+        CritiqueReport(jobRead: "", overall: "", findings: [hedge]),
+        for: alreadyText
+    )
+    text = alreadyText
+    let applying = already.applySuggestion(for: hedge.id, using: replace)
+    check(
+        "a suggestion already in place is marked, not made again",
+        applying && text == alreadyText
+            && already.item(withID: hedge.id)?.standing == .applied,
+        "\(text) — \(already.item(withID: hedge.id)?.standing?.label ?? "outstanding")"
+    )
+
+    // Drawn: the words it would put in, and the button that does it.
+    let shown = CritiqueModel()
+    shown.attach(to: nil, text: draft)
+    shown.applyForChecking(
+        CritiqueReport(jobRead: "", overall: "", findings: [spelling]),
+        for: draft
+    )
+    func drawn(replacing: Bool) -> String {
+        let host = NSHostingView(rootView: CritiqueSidebar(
+            critique: shown, colorTheme: EditorColorTheme(color: .blue, mode: .light),
+            isStale: false, onRerun: {}, onRerunChanges: {},
+            replaceText: replacing ? { _ in nil } : nil
+        ))
+        host.frame = NSRect(x: 0, y: 0, width: 356, height: 900)
+        let window = NSWindow(
+            contentRect: host.frame, styleMask: [.borderless],
+            backing: .buffered, defer: false
+        )
+        window.contentView = host
+        window.orderBack(nil)
+        host.layoutSubtreeIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+        host.layoutSubtreeIfNeeded()
+        defer { window.orderOut(nil) }
+        if replacing, let path = ProcessInfo.processInfo.environment["MDE_APPLY_PNG"],
+           let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+            host.cacheDisplay(in: host.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?
+                .write(to: URL(fileURLWithPath: path))
+            print("  wrote \(path)")
+        }
+        return readable(recognisedText(in: host).joined(separator: " "))
+    }
+    let withApply = drawn(replacing: true)
+    check(
+        "the card shows the suggestion and an Apply button",
+        withApply.contains("suggested")
+            && withApply.contains(readable("each one has its own tradeoffs"))
+            && withApply.contains("apply"),
+        withApply
+    )
+    check(
+        "and offers none where there is no draft to change",
+        !drawn(replacing: false).contains("suggested")
     )
 }
 
