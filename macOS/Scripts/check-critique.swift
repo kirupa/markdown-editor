@@ -732,6 +732,7 @@ struct CheckCritique {
         checkTheHistory()
         checkTheRailRenders()
         await checkStopAndFailureKeepTheCritique()
+        await checkRerunsCarryTheNotes()
 
         // The live half costs credits and half a minute. Everything above is
         // free, so it runs either way.
@@ -800,7 +801,7 @@ struct CheckCritique {
         var sawCommentary = false
         var peakFindings = 0
         do {
-            report = try await service.critique(document: draft) { update in
+            let answer = try await service.critique(document: draft) { update in
                 if stagesSeen.last != update.stage {
                     stagesSeen.append(update.stage)
                     print("    · \(update.stage.headline)")
@@ -808,6 +809,7 @@ struct CheckCritique {
                 if update.stage == .reading, update.detail != nil { sawCommentary = true }
                 peakFindings = max(peakFindings, update.findingsSoFar)
             }
+            report = answer.report
         } catch {
             print("  FAIL the critique did not complete — \(error.localizedDescription)")
             if let failure = error as? CritiqueService.Failure,
@@ -910,23 +912,30 @@ struct CheckCritique {
 /// ignore that answer itself rather than rely on the service to prevent it.
 @MainActor
 final class HeldCritique: CritiqueAsking {
-    private var waiting: CheckedContinuation<CritiqueReport, Error>?
+    private var waiting: CheckedContinuation<CritiqueAnswer, Error>?
     private(set) var asked = 0
+    /// The earlier notes the last request carried, as the critic saw them.
+    private(set) var lastPrevious: [CritiquePreviousNote] = []
+    /// The passage the last request was narrowed to, if it was.
+    private(set) var lastFocus: String?
     var isWaiting: Bool { waiting != nil }
 
     func critique(
         document: String,
         focus: String?,
+        previous: [CritiquePreviousNote],
         onProgress: @escaping (CritiqueProgress) -> Void
-    ) async throws -> CritiqueReport {
+    ) async throws -> CritiqueAnswer {
         asked += 1
+        lastPrevious = previous
+        lastFocus = focus
         return try await withCheckedThrowingContinuation { waiting = $0 }
     }
 
     func cancel() {}
 
-    func answer(_ report: CritiqueReport) {
-        waiting?.resume(returning: report)
+    func answer(_ report: CritiqueReport, verdicts: [String: CritiqueNoteVerdict] = [:]) {
+        waiting?.resume(returning: CritiqueAnswer(report: report, verdicts: verdicts))
         waiting = nil
     }
 
@@ -1101,6 +1110,398 @@ func checkStopAndFailureKeepTheCritique() async {
         ).state == .failed,
         "it shows something else"
     )
+}
+
+/// A re-run carries the notes on screen into the next critique.
+///
+/// What it replaced, measured on a 467-word post: one typo fixed, a re-run,
+/// and the paragraph's other notes came back reworded under new identities, a
+/// new nit landed on the sentence just fixed, the answered notes were gone and
+/// the score was back where it started. Each step here is one of those, run
+/// through the same `request`, `carryPlan` and `land` the window uses, with a
+/// held service standing in for the critic so its answer can be dictated.
+@MainActor
+func checkRerunsCarryTheNotes() async {
+    print("")
+    print("Re-runs that carry the notes")
+
+    let held = HeldCritique()
+    let model = CritiqueModel(service: held)
+    let draft = """
+        # Shipping Faster
+
+        Our deploys take forty minutes because every test runs on every change.
+
+        Most teams never measure where that time goes, so they guess.
+
+        Caching the dependency install alone saved us twelve minutes a build.
+
+        The rest came from splitting the suite by what each change could touch.
+        """
+    let first = [
+        CritiqueFinding(
+            severity: .high, category: "Logic and credibility",
+            location: "paragraph 1",
+            quote: "every test runs on every change", why: "Every test? Say which."
+        ),
+        CritiqueFinding(
+            severity: .medium, category: "Clarity and precision",
+            location: "paragraph 2",
+            quote: "so they guess", why: "Who guesses, and at what?"
+        ),
+        CritiqueFinding(
+            severity: .low, category: "Evidence",
+            location: "paragraph 3",
+            quote: "saved us twelve minutes a build", why: "Out of how many?"
+        ),
+        CritiqueFinding(
+            severity: .low, category: "Clarity and precision",
+            location: "paragraph 4",
+            quote: "splitting the suite", why: "Splitting it how?"
+        ),
+    ]
+    model.applyForChecking(
+        CritiqueReport(jobRead: "A post for developers.", overall: "Close.", findings: first),
+        for: draft
+    )
+    let (idA, idB, idC, idD) = (first[0].id, first[1].id, first[2].id, first[3].id)
+    func note(_ id: UUID) -> CritiqueModel.Item? { model.item(withID: id) }
+    func words(_ id: UUID, in text: String) -> String? {
+        guard let range = note(id)?.range,
+              NSMaxRange(range) <= (text as NSString).length
+        else { return nil }
+        return (text as NSString).substring(with: range)
+    }
+    check(
+        "every note is anchored to begin with",
+        model.items.count == 4 && model.stillApplyingCount == 4,
+        "\(model.items.count) notes, \(model.stillApplyingCount) still applying"
+    )
+
+    // Typing in a passage is the author acting on its note. It used to keep
+    // counting until they found the card and pressed Done.
+    let scoreBefore = model.score
+    let reworded = draft.replacingOccurrences(of: "so they guess", with: "so they mostly guess")
+    model.noteCurrentText(reworded)
+    check(
+        "typing inside a noted passage marks the note edited",
+        note(idB)?.isEdited == true && !model.outstanding.contains { $0.id == idB },
+        "edited \(String(describing: note(idB)?.isEdited))"
+    )
+    check(
+        "and it stops counting at once",
+        model.score > scoreBefore && model.stillApplyingCount == 3,
+        "score \(scoreBefore) -> \(model.score), "
+            + "\(model.stillApplyingCount) still applying"
+    )
+    check(
+        "an edited note gives up its shading",
+        !model.highlights.contains { $0.id == idB },
+        "its passage is still shaded"
+    )
+    // Except while it is the one the author is working on: the shading is
+    // what shows how far the passage still runs.
+    model.press(note(idB)!)
+    check(
+        "unless it is the note selected",
+        model.highlights.contains { $0.id == idB },
+        "selecting it did not shade it"
+    )
+    model.selectedFindingID = nil
+
+    model.noteCurrentText(draft)
+    check(
+        "taking the edit back makes it a note again",
+        note(idB)?.isEdited == false && model.score == scoreBefore,
+        "edited \(String(describing: note(idB)?.isEdited)), score \(model.score)"
+    )
+
+    // Undo after cutting the end off a passage puts the words back *beside*
+    // the shortened mark, which is outside it by the boundary rule — so
+    // following the edit alone would leave a note the author has taken
+    // straight back marked Edited.
+    let cut = draft.replacingOccurrences(
+        of: "every test runs on every change.", with: "every test runs."
+    )
+    model.noteCurrentText(cut)
+    check(
+        "cutting the end off a passage marks its note edited",
+        note(idA)?.isEdited == true,
+        "edited \(String(describing: note(idA)?.isEdited))"
+    )
+    model.noteCurrentText(draft)
+    check(
+        "and undoing the cut finds the whole passage again",
+        note(idA)?.isEdited == false
+            && words(idA, in: draft) == "every test runs on every change",
+        "edited \(String(describing: note(idA)?.isEdited)), "
+            + "marks \"\(words(idA, in: draft) ?? "nothing")\""
+    )
+
+    let beside = draft.replacingOccurrences(
+        of: "twelve minutes a build.", with: "twelve minutes a build, on average."
+    )
+    model.noteCurrentText(beside)
+    check(
+        "typing beside a passage leaves its note alone",
+        note(idC)?.isEdited == false && note(idC)?.isOutstanding == true
+            && words(idC, in: beside) == "saved us twelve minutes a build",
+        "edited \(String(describing: note(idC)?.isEdited)), "
+            + "marks \"\(words(idC, in: beside) ?? "nothing")\""
+    )
+    model.noteCurrentText(draft)
+
+    // Re-run on the draft the critique already describes, with nothing
+    // waiting on it: half a minute and a request for the same notes in other
+    // words. The rail says so instead.
+    let askedBefore = held.asked
+    model.request(on: draft, documentURL: nil)
+    await settle()
+    check(
+        "re-running an unchanged draft says so rather than asking again",
+        model.showsUnchangedNotice && !model.isRunning && held.asked == askedBefore,
+        "notice \(model.showsUnchangedNotice), running \(model.isRunning), "
+            + "\(held.asked - askedBefore) requests"
+    )
+
+    let storedHand = UserDefaults.standard.string(forKey: CritiqueHand.storageKey)
+    UserDefaults.standard.set(CritiqueHand.sans.rawValue, forKey: CritiqueHand.storageKey)
+    defer {
+        if let storedHand {
+            UserDefaults.standard.set(storedHand, forKey: CritiqueHand.storageKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: CritiqueHand.storageKey)
+        }
+    }
+    /// The rail as drawn, read back from its pixels.
+    func drawnRail(isStale: Bool) -> String {
+        let host = NSHostingView(rootView: CritiqueSidebar(
+            critique: model, colorTheme: EditorColorTheme(color: .blue, mode: .light),
+            isStale: isStale, onRerun: {}, onRerunChanges: {}
+        ))
+        host.frame = NSRect(x: 0, y: 0, width: 340, height: 2000)
+        let window = NSWindow(
+            contentRect: host.frame, styleMask: [.borderless],
+            backing: .buffered, defer: false
+        )
+        window.contentView = host
+        window.orderBack(nil)
+        host.layoutSubtreeIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+        host.layoutSubtreeIfNeeded()
+        defer { window.orderOut(nil) }
+        if let path = ProcessInfo.processInfo.environment["MDE_CARRY_PNG"],
+           let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+            host.cacheDisplay(in: host.bounds, to: rep)
+            let file = path.replacingOccurrences(
+                of: ".png", with: isStale ? "-after.png" : "-unchanged.png"
+            )
+            try? rep.representation(using: .png, properties: [:])?
+                .write(to: URL(fileURLWithPath: file))
+            print("  wrote \(file)")
+        }
+        return readable(recognisedText(in: host).joined(separator: " "))
+    }
+    check(
+        "and the rail draws that",
+        drawnRail(isStale: false)
+            .contains(readable("Nothing has changed since this critique")),
+        "the notice is not legible on the rail"
+    )
+
+    // Anything that waits on a critique is a reason to run one.
+    model.setResolution(.completed, for: idC)
+    check(
+        "marking a note Done puts the notice away",
+        !model.showsUnchangedNotice,
+        "it is still up"
+    )
+
+    let rewritten = draft.replacingOccurrences(of: "so they guess", with: "so they just guess")
+    model.noteCurrentText(rewritten)
+    model.request(on: rewritten, documentURL: nil)
+    await settle { held.isWaiting }
+    let sent = held.lastPrevious
+    check(
+        "a re-run of one changed paragraph asks about that paragraph's note",
+        model.isRunning && sent.contains { $0.quote == "so they guess" }
+            && (held.lastFocus ?? "").contains("so they just guess"),
+        "running \(model.isRunning), sent \(sent.map(\.quote)), "
+            + "focus \(held.lastFocus ?? "none")"
+    )
+    check(
+        "and about the note marked Done elsewhere, which is waiting on it",
+        sent.contains { $0.quote == "saved us twelve minutes a build" },
+        "sent \(sent.map(\.quote))"
+    )
+    check(
+        "but not about the paragraphs it was not asked to read",
+        !sent.contains { $0.quote == "every test runs on every change" }
+            && !sent.contains { $0.quote == "splitting the suite" },
+        "sent \(sent.map(\.quote))"
+    )
+    let keyB = sent.first { $0.quote == "so they guess" }?.key ?? "?"
+    let repeated = CritiqueFinding(
+        severity: .high, category: "Logic and credibility",
+        location: "paragraph 1",
+        quote: "because every test runs on every change",
+        why: "Is it really every test?"
+    )
+    let added = CritiqueFinding(
+        severity: .medium, category: "Structure and pacing",
+        location: "paragraph 2",
+        quote: "Most teams never measure where that time goes",
+        why: "Which teams? Say how you know."
+    )
+    held.answer(
+        CritiqueReport(
+            jobRead: "A post for developers.", overall: "Closer.",
+            findings: [repeated, added]
+        ),
+        verdicts: [keyB: .stillApplies(quote: "so they just guess", location: "paragraph 2")]
+    )
+    await settle { !model.isRunning }
+
+    check(
+        "a rewrite the critic says did not work comes back as the same note, open",
+        note(idB)?.isOutstanding == true && note(idB)?.finding.quote == "so they just guess"
+            && words(idB, in: rewritten) == "so they just guess",
+        "outstanding \(String(describing: note(idB)?.isOutstanding)), "
+            + "quotes \"\(note(idB)?.finding.quote ?? "nothing")\""
+    )
+    check(
+        "a note marked Done that the critic does not raise again is fixed",
+        note(idC)?.isFixed == true
+            && !(model.report?.findings.contains { $0.id == idC } ?? true),
+        "fixed \(String(describing: note(idC)?.isFixed))"
+    )
+    check(
+        "the notes it was not asked about are kept as they were",
+        note(idA)?.isOutstanding == true && note(idD)?.isOutstanding == true
+            && words(idA, in: rewritten) == "every test runs on every change",
+        "\(model.items.count) notes"
+    )
+    check(
+        "a carried note said again in other words is not added twice",
+        !model.items.contains { $0.finding.quote == repeated.quote },
+        "the reworded repeat is in the rail beside the note it repeats"
+    )
+    check(
+        "while something genuinely new is",
+        model.items.contains { $0.id == added.id && $0.isOutstanding },
+        "the new note is missing"
+    )
+    check(
+        "the rail says what the run changed",
+        model.lastChange == CritiqueCarry.Delta(fixed: 1, reopened: 1, new: 1)
+            && model.lastChange?.summary == "1 fixed · 1 reopened · 1 new since the last critique.",
+        "it says \(model.lastChange?.summary ?? "nothing")"
+    )
+    check(
+        "the saved critique keeps what was fixed, apart from what still stands",
+        model.history.latest?.fixed?.map(\.id) == [idC]
+            && model.report?.findings.count == 4,
+        "fixed \(model.history.latest?.fixed?.map(\.quote) ?? []), "
+            + "\(model.report?.findings.count ?? -1) standing"
+    )
+    check(
+        "and a critique of the draft as it stands, with nothing waiting, is the critic's word",
+        model.isConfirmed,
+        "it is not confirmed"
+    )
+
+    // The whole draft, with an open note found fixed and a dismissed one
+    // found still there.
+    model.setResolution(.dismissed, for: idD)
+    model.run(on: rewritten, documentURL: nil, scope: .whole)
+    await settle { held.isWaiting }
+    let wholeSent = held.lastPrevious
+    check(
+        "a whole re-run asks about every standing note",
+        wholeSent.count == 4 && held.lastFocus == nil,
+        "sent \(wholeSent.map(\.quote)), focus \(held.lastFocus ?? "none")"
+    )
+    check(
+        "but not again about the one already found fixed",
+        !wholeSent.contains { $0.quote == "saved us twelve minutes a build" },
+        "sent \(wholeSent.map(\.quote))"
+    )
+    let keyA = wholeSent.first { $0.quote == "every test runs on every change" }?.key ?? "?"
+    let keyD = wholeSent.first { $0.quote == "splitting the suite" }?.key ?? "?"
+    held.answer(
+        CritiqueReport(jobRead: "A post for developers.", overall: "Nearly.", findings: []),
+        verdicts: [keyA: .fixed, keyD: .stillApplies(quote: nil, location: nil)]
+    )
+    await settle { !model.isRunning }
+    check(
+        "an open note the critic finds fixed is marked fixed",
+        note(idA)?.isFixed == true,
+        "fixed \(String(describing: note(idA)?.isFixed))"
+    )
+    check(
+        "a dismissed note the critic still sees stays dismissed",
+        note(idD)?.resolution == .dismissed && note(idD)?.isFixed == false,
+        "it is \(String(describing: note(idD)?.resolution))"
+    )
+    check(
+        "and notes it said nothing about stay open",
+        note(idB)?.isOutstanding == true && note(added.id)?.isOutstanding == true,
+        "\(model.outstanding.count) outstanding"
+    )
+    check(
+        "a note found fixed is the last run's news, not every run's",
+        note(idC) == nil && model.lastChange == CritiqueCarry.Delta(fixed: 1, reopened: 0, new: 0),
+        "the earlier fixed note is still listed, change \(model.lastChange?.summary ?? "none")"
+    )
+
+    // Reopened later, the critique still says what its run fixed.
+    model.show(revision: model.history.revisions.last?.id)
+    model.show(revision: nil)
+    check(
+        "putting the newest critique back on screen keeps its fixed notes",
+        note(idA)?.isFixed == true && note(idD)?.resolution == .dismissed,
+        "fixed \(String(describing: note(idA)?.isFixed))"
+    )
+
+    // The gate again, after a run, and a note marked Done opening it.
+    let askedAfter = held.asked
+    model.request(on: rewritten, documentURL: nil)
+    check(
+        "re-running straight after a critique says nothing has changed",
+        model.showsUnchangedNotice && held.asked == askedAfter,
+        "notice \(model.showsUnchangedNotice), \(held.asked - askedAfter) requests"
+    )
+    model.setResolution(.completed, for: added.id)
+    model.request(on: rewritten, documentURL: nil)
+    await settle { held.isWaiting }
+    check(
+        "marking a note Done is enough to run it",
+        held.asked == askedAfter + 1 && model.isRunning,
+        "\(held.asked - askedAfter) requests"
+    )
+    held.answer(CritiqueReport(jobRead: "A post for developers.", overall: "Ready.", findings: []))
+    await settle { !model.isRunning }
+    check(
+        "and the critic agreeing fixes it",
+        note(added.id)?.isFixed == true,
+        "fixed \(String(describing: note(added.id)?.isFixed))"
+    )
+
+    // Drawn: an Edited card and a Fixed one each say what they are.
+    let again = rewritten.replacingOccurrences(of: "so they just guess", with: "so they simply guess")
+    model.noteCurrentText(again)
+    let drawn = drawnRail(isStale: true)
+    for phrase in [
+        "A later critique found this fixed.",
+        "Changed since. The next critique checks it.",
+        "1 fixed since the last critique.",
+    ] {
+        check(
+            "the rail draws \"\(phrase)\"",
+            drawn.contains(readable(phrase)),
+            "not legible on the rail"
+        )
+    }
 }
 
 /// Renders the rail for real.
@@ -2974,12 +3375,26 @@ func checkPartialCritiqueKeepsTheOtherNotes() {
     )
 
     // Rewriting the criticised sentence must supersede its note rather than
-    // leaving a criticism of text that is gone.
+    // leaving a criticism of text that is gone. In two steps: the rewrite
+    // stops the note counting at once, and the critique that reads the new
+    // sentence is what says the problem has gone.
     let rewritten = after.replacingOccurrences(
         of: "Studies show that caching improves performance by 90%.",
         with: "Caching cut our median response time from 400ms to 20ms."
     )
     model.noteCurrentText(rewritten)
+    let edited = model.items.first { $0.finding.quote == stale.quote }
+    check(
+        "rewriting a criticised sentence marks its note edited, not fixed",
+        edited?.isEdited == true && edited?.isFixed == false,
+        "edited \(String(describing: edited?.isEdited)), "
+            + "fixed \(String(describing: edited?.isFixed))"
+    )
+    check(
+        "and it stops counting against the score straight away",
+        !model.outstanding.contains { $0.finding.quote == stale.quote },
+        "the rewritten sentence's note is still outstanding"
+    )
     guard let secondChange = CritiqueChangeScope.changedParagraphs(
         from: after, to: rewritten
     ) else {
@@ -2993,14 +3408,27 @@ func checkPartialCritiqueKeepsTheOtherNotes() {
         for: rewritten,
         changed: secondChange
     )
+    // Shown the rewritten note and silent about it: the critic has read the
+    // new sentence and has nothing to say. That retires it — as Fixed, kept
+    // at the foot of the rail for this run so the author can see what the
+    // rewrite bought, and out of the report so it does not come back.
+    let retired = model.items.first { $0.finding.quote == stale.quote }
     check(
-        "rewriting a criticised sentence retires its note",
-        !model.items.contains { $0.finding.quote == stale.quote },
-        "the note about the deleted sentence is still in the rail"
+        "a critique that reads the rewrite and says nothing retires its note as fixed",
+        retired?.isFixed == true
+            && !(model.report?.findings.contains { $0.quote == stale.quote } ?? true)
+            && !model.outstanding.contains { $0.finding.quote == stale.quote },
+        "fixed \(String(describing: retired?.isFixed)), "
+            + "\(model.report?.findings.count ?? -1) findings in the report"
+    )
+    check(
+        "and the rail says so",
+        model.lastChange == CritiqueCarry.Delta(fixed: 1, reopened: 0, new: 0),
+        "the change reads \(String(describing: model.lastChange))"
     )
     check(
         "while the note about the untouched paragraph stays",
-        model.items.contains { $0.finding.quote == fresh.quote },
+        model.items.contains { $0.finding.quote == fresh.quote && $0.isOutstanding },
         "an unrelated note was dropped by a rewrite elsewhere"
     )
 }

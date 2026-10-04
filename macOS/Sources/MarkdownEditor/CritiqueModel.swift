@@ -20,10 +20,68 @@ final class CritiqueModel: ObservableObject {
         var range: NSRange?
         /// What the author has already decided about it, if anything.
         var resolution: CritiqueResolution?
+        /// The words the note was written about, exactly as the draft had
+        /// them. Nil when its quote was never found.
+        ///
+        /// What tells an edit from a slide. Typing above a passage moves its
+        /// range and leaves these words alone; typing *in* it changes them,
+        /// and only that is the author acting on the note.
+        var anchoredText: String? = nil
+        /// The author has rewritten the passage since the note was written.
+        ///
+        /// Deliberately not "fixed". That is a claim about the writing, and
+        /// only a critique can make it: a rewrite can as easily keep the
+        /// problem or make a new one. An edited note stops counting and waits
+        /// for the next critique to say which.
+        var isEdited = false
+        /// A later critique was shown this note and found the problem gone.
+        var isFixed = false
 
         var id: UUID { finding.id }
         var isAnchored: Bool { range != nil }
-        var isOutstanding: Bool { resolution == nil }
+        /// Still asking the author for something.
+        var isOutstanding: Bool { resolution == nil && !isEdited && !isFixed }
+        /// Whether it still counts against the score. See `CritiqueScore`.
+        var counts: Bool { !isEdited && !isFixed && CritiqueScore.counts(resolution) }
+        /// Cleared by the author — marked Done, or rewritten — and not yet
+        /// looked at by a critique. While any note is, a hundred is the
+        /// author's word rather than the critic's.
+        var awaitsCheck: Bool { !isFixed && (resolution == .completed || isEdited) }
+
+        /// What has become of it, strongest claim first: the critic's word
+        /// over the author's, and the author's decision over their edit.
+        var standing: Standing? {
+            if isFixed { return .fixed }
+            if resolution == .completed { return .done }
+            if isEdited { return .edited }
+            if resolution == .dismissed { return .dismissed }
+            return nil
+        }
+    }
+
+    /// What the tag on a note that is no longer outstanding says.
+    enum Standing: Equatable {
+        case fixed, done, edited, dismissed
+
+        var label: String {
+            switch self {
+            case .fixed: return "Fixed"
+            case .done: return "Done"
+            case .edited: return "Edited"
+            case .dismissed: return "Dismissed"
+            }
+        }
+    }
+
+    /// Which notes a run is shown, and which it leaves alone.
+    struct CarryPlan {
+        /// Shown to the critic, which says what became of each.
+        var asked: [Item] = []
+        /// Outside what a narrowed run was asked to read, kept as they are.
+        var kept: [Item] = []
+        /// Whether there was a critique to carry at all. A first run has
+        /// nothing to compare with, so nothing it finds is "new".
+        var isCarried = false
     }
 
     @Published private(set) var report: CritiqueReport?
@@ -56,6 +114,21 @@ final class CritiqueModel: ObservableObject {
     /// draft at a moment; once the words move, a highlight is pointing at an
     /// offset that no longer means what it meant.
     @Published private(set) var criticisedText: String?
+    /// What the run that just landed changed: how many notes it found fixed,
+    /// how many it reopened, and how many it raised for the first time.
+    ///
+    /// The sentence the score could not say. 45 becoming 52 says something
+    /// happened; "2 fixed · 1 new" says what. Only for the run that just
+    /// landed — an older critique brought back from the history is not
+    /// "since the last critique" of anything.
+    @Published private(set) var lastChange: CritiqueCarry.Delta?
+    /// Re-run was asked for a draft the critique on screen already describes,
+    /// with nothing waiting to be checked.
+    ///
+    /// Said rather than spent. The same draft read again costs half a minute
+    /// and a request, and comes back with the same notes in other words —
+    /// which reads as the critic changing its mind for no reason.
+    @Published private(set) var showsUnchangedNotice = false
 
     private let service: any CritiqueAsking
     /// Which run is the live one. A run whose number is not this one when it
@@ -94,21 +167,29 @@ final class CritiqueModel: ObservableObject {
     /// The revision being shown, when it is not the newest.
     var shownRevision: CritiqueRevision? { history.revision(withID: shownRevisionID) }
 
-    /// How many of the shown critique's notes still point at something in the
-    /// draft **as it is now**.
+    /// How many of the shown critique's notes still point at the words they
+    /// were written about, in the draft **as it is now**.
     ///
     /// The honest measure of an old critique's worth: not how long ago it was,
     /// but how much of the draft it described is still there.
     ///
-    /// Re-anchored rather than read off `items`, whose ranges were worked out
-    /// against the text as it stood when the critique was applied. Those are
-    /// exactly the numbers that stop being true the moment the draft moves,
-    /// which is the situation this is here to describe.
+    /// Read off the notes rather than worked out again. This used to
+    /// re-anchor every finding on every redraw of the rail — a search per note
+    /// per keystroke — because the ranges could not be trusted to mean the
+    /// same words. The notes now follow their passages through every edit and
+    /// know when the words under them change, which is the same answer.
     var stillApplyingCount: Int {
-        guard let report else { return 0 }
-        return CritiqueAnchoring.anchor(report.findings, in: currentText)
-            .filter(\.isAnchored)
-            .count
+        items.filter { !$0.isFixed && $0.isAnchored && !$0.isEdited }.count
+    }
+
+    /// Every note still standing: all of them but the ones found fixed.
+    var standingCount: Int { items.filter { !$0.isFixed }.count }
+
+    /// Notes nothing in the draft matches, and never did since they were
+    /// written. A passage the author deleted is an edit, not a failure to
+    /// match, and is not counted here.
+    var unmatchedCount: Int {
+        items.filter { !$0.isFixed && !$0.isEdited && !$0.isAnchored }.count
     }
 
     /// Nil is the real service. Not a default argument of `CritiqueService()`:
@@ -121,26 +202,41 @@ final class CritiqueModel: ObservableObject {
     /// Opens the history for a document without running anything.
     ///
     /// Called when a document is opened, so past critiques are there to read
-    /// rather than only after somebody runs a new one.
+    /// rather than only after somebody runs a new one. For the document that
+    /// is already open it is only the draft as it stands, and goes the way
+    /// every other edit does.
     func attach(to documentURL: URL?, text: String) {
-        currentText = text
-        guard self.documentURL != documentURL else { return }
+        guard self.documentURL != documentURL else {
+            // Through `noteCurrentText` rather than by assigning it. This used
+            // to set the text before the guard, so a run that attached first
+            // left `noteCurrentText` nothing to move.
+            noteCurrentText(text)
+            return
+        }
         self.documentURL = documentURL
+        currentText = text
         resolutions = CritiqueResolutionStore.load(for: documentURL)
         history = CritiqueHistoryStore.load(for: documentURL)
         report = nil
         items = []
         shownRevisionID = nil
+        criticisedText = nil
         failure = nil
         isDismissed = false
+        lastChange = nil
+        showsUnchangedNotice = false
+        selectedFindingID = nil
+        hoveredFindingID = nil
         // Opening a document with a saved critique shows it, rather than an
         // empty panel beside a history badge saying two exist. It is anchored
         // against the draft as it is now, so it is immediately honest about
         // how much of itself still applies.
-        if let latest = history.latest {
-            apply(latest.report, for: text, record: false)
-            criticisedText = latest.documentText
-        }
+        if let latest = history.latest { present(latest) }
+    }
+
+    /// Brings the rail back after it was closed, without running anything.
+    func reveal() {
+        isDismissed = false
     }
 
     /// Puts an earlier critique on screen, anchored against the draft as it is
@@ -151,25 +247,16 @@ final class CritiqueModel: ObservableObject {
     /// survive still highlight, and the ones whose sentences have been
     /// rewritten say so instead of pointing at whatever now sits at that
     /// offset.
-    /// Brings the rail back after it was closed, without running anything.
-    func reveal() {
-        isDismissed = false
-    }
-
     func show(revision id: UUID?) {
         guard let id, let revision = history.revision(withID: id) else {
             shownRevisionID = nil
-            if let latest = history.latest {
-                apply(latest.report, for: currentText, record: false)
-            }
+            if let latest = history.latest { present(latest) }
             return
         }
         shownRevisionID = id
-        apply(revision.report, for: currentText, record: false)
+        present(revision)
     }
 
-    /// Whether the document has been edited since the critique was written.
-    /// Told the draft as it stands, so anything measured against "now" is.
     /// The draft changed. Move the marks with the words they are about.
     ///
     /// Without this a critique is only correct at the instant it is anchored:
@@ -181,18 +268,129 @@ final class CritiqueModel: ObservableObject {
     /// The edit is derived from the two texts rather than observed from the
     /// text view, so a change from anywhere moves them: a revert from disk and
     /// another app's rewrite land here the same way typing does.
+    ///
+    /// It also notices when the words *under* a note change, which is the
+    /// author acting on it. That note stops counting at once — the rail used
+    /// to keep scoring a sentence that had already been rewritten until the
+    /// author found its card and pressed Done — and it is not moved, so the
+    /// advice stays where it was being read while the rewrite happens.
     func noteCurrentText(_ text: String) {
         let previous = currentText
-        defer { currentText = text }
-        guard !previous.isEmpty, previous != text else { return }
-        guard let edit = CritiqueAnchorTracking.edit(from: previous, to: text)
+        guard previous != text else { return }
+        currentText = text
+        if showsUnchangedNotice { showsUnchangedNotice = false }
+        guard !items.isEmpty,
+              let edit = CritiqueAnchorTracking.edit(from: previous, to: text)
         else { return }
-        for index in items.indices {
-            guard let range = items[index].range else { continue }
-            items[index].range = CritiqueAnchorTracking.adjust(range, for: edit)
+        var moved = items.map { Self.follow($0, through: edit, in: text) }
+        // A second pass, so a note looking for its words again steers clear of
+        // where every other note has already settled.
+        for index in moved.indices where moved[index].isEdited {
+            let others = moved.indices.filter { $0 != index }.compactMap { moved[$0].range }
+            if let found = Self.refind(moved[index], after: edit, in: text, avoiding: others) {
+                moved[index].range = found
+                moved[index].isEdited = false
+            }
         }
+        // Assigned once, and only when something moved: every assignment is a
+        // redraw of the rail, and this runs on every keystroke.
+        if moved != items { items = moved }
     }
 
+    /// One note carried through one edit.
+    private static func follow(
+        _ item: Item,
+        through edit: CritiqueAnchorTracking.Edit,
+        in text: String
+    ) -> Item {
+        guard !item.isFixed, let range = item.range else { return item }
+        var item = item
+        let moved = CritiqueAnchorTracking.adjust(range, for: edit)
+        item.range = moved
+        // Inside, by the same boundaries `adjust` uses: an insertion at either
+        // end of a passage is beside it, not in it, and typing a new sentence
+        // after a criticised one is not rewriting it.
+        let touched = edit.location < range.location + range.length
+            && edit.removedEnd > range.location
+        guard touched else { return item }
+        if let words = item.anchoredText, let moved {
+            item.isEdited = passage(moved, in: text) != words
+        } else {
+            item.isEdited = true
+        }
+        return item
+    }
+
+    /// Where a rewritten note's own words are again, when this edit is what
+    /// put them back.
+    ///
+    /// Undo is the case that matters. Deleting the end of a sentence shortens
+    /// its passage, and undoing it inserts the words *at the end* — beside the
+    /// passage, by the rule above, so they never rejoin it, and a note the
+    /// author has taken straight back would stay Edited. Looking for the
+    /// words around the edit finds them; requiring the match to include the
+    /// edit keeps an unrelated copy of the sentence nearby from claiming it.
+    private static func refind(
+        _ item: Item,
+        after edit: CritiqueAnchorTracking.Edit,
+        in text: String,
+        avoiding claimed: [NSRange]
+    ) -> NSRange? {
+        guard let words = item.anchoredText, !words.isEmpty else { return nil }
+        let length = (words as NSString).length
+        let editStart = edit.location
+        let editEnd = edit.location + edit.inserted
+        let lower: Int
+        let upper: Int
+        if let range = item.range {
+            guard editStart <= range.location + range.length, editEnd >= range.location
+            else { return nil }
+            lower = min(range.location, editStart) - length
+            upper = max(range.location + range.length, editEnd) + length
+        } else {
+            // A passage deleted outright can only come back whole.
+            guard edit.inserted >= length else { return nil }
+            lower = editStart - length
+            upper = editEnd + length
+        }
+        let source = text as NSString
+        let windowStart = max(0, lower)
+        let windowEnd = min(source.length, upper)
+        var from = windowStart
+        var fallback: NSRange?
+        while windowEnd - from >= length {
+            let found = source.range(
+                of: words,
+                options: .literal,
+                range: NSRange(location: from, length: windowEnd - from)
+            )
+            guard found.location != NSNotFound else { break }
+            let includesEdit = found.location <= editEnd && NSMaxRange(found) >= editStart
+            let isFree = !claimed.contains { NSIntersectionRange($0, found).length > 0 }
+            if includesEdit, isFree {
+                if let range = item.range, NSIntersectionRange(range, found).length > 0 {
+                    return found
+                }
+                if fallback == nil { fallback = found }
+            }
+            from = found.location + 1
+        }
+        return fallback
+    }
+
+    /// The words at `range`, without copying the whole draft to find them.
+    ///
+    /// Not `CritiqueChangeScope.passage`, which builds an array of every UTF-16
+    /// unit in the document first. That is fine once per run and not once per
+    /// keystroke.
+    private static func passage(_ range: NSRange, in text: String) -> String? {
+        if let bounds = Range(range, in: text) { return String(text[bounds]) }
+        let source = text as NSString
+        guard NSMaxRange(range) <= source.length else { return nil }
+        return source.substring(with: range)
+    }
+
+    /// Whether the document has been edited since the critique was written.
     func isStale(against text: String) -> Bool {
         if let shown = shownRevision { return shown.isStale(against: text) }
         guard let criticisedText else { return false }
@@ -201,34 +399,51 @@ final class CritiqueModel: ObservableObject {
 
     var anchoredCount: Int { items.filter(\.isAnchored).count }
     var outstanding: [Item] { items.filter(\.isOutstanding) }
-    var resolvedCount: Int { items.count - outstanding.count }
-    var dismissedCount: Int { items.filter { $0.resolution == .dismissed }.count }
+    /// Notes the author has dealt with — Done, dismissed or rewritten. A note
+    /// found fixed is the critic's doing rather than the author's, and is not
+    /// one of them.
+    var resolvedCount: Int { items.filter { !$0.isOutstanding && !$0.isFixed }.count }
+    var dismissedCount: Int {
+        items.filter { $0.resolution == .dismissed && $0.counts }.count
+    }
     /// The problems the summary names, which count against the score.
     var listedProblems: Int { report?.whatDoesNotWork.count ?? 0 }
 
     /// How good the draft looks: what is outstanding, what was dismissed, and
-    /// what the summary still lists. See `CritiqueScore` for why only Done
-    /// clears a note.
+    /// what the summary still lists. See `CritiqueScore` for why Done clears a
+    /// note and Dismiss does not; a rewritten note and a fixed one are cleared
+    /// too, because the passage the note was about is not there any more.
     var score: Int {
         CritiqueScore.score(
-            for: items.filter { CritiqueScore.counts($0.resolution) }.map(\.finding),
+            for: items.filter(\.counts).map(\.finding),
             listedProblems: listedProblems
         )
     }
 
     /// Whether the score is the critic's own rather than the author's: a
-    /// critique of the text exactly as it stands, with nothing marked Done by
-    /// hand since. Only then is a hundred "Ready".
+    /// critique of the text exactly as it stands, with nothing marked Done or
+    /// rewritten since. Only then is a hundred "Ready".
     var isConfirmed: Bool {
-        resolvedCount == 0 && !isStale(against: currentText)
+        !isStale(against: currentText) && !items.contains(where: \.awaitsCheck)
     }
 
     var verdict: String { CritiqueScore.verdict(score, isConfirmed: isConfirmed) }
 
     func setResolution(_ resolution: CritiqueResolution?, for id: UUID) {
-        guard let index = items.firstIndex(where: { $0.id == id }) else { return }
-        items[index].resolution = resolution
-        resolutions.set(resolution, for: items[index].finding)
+        guard let index = items.firstIndex(where: { $0.id == id }),
+              !items[index].isFixed
+        else { return }
+        var item = items[index]
+        item.resolution = resolution
+        // Putting a rewritten note back says the rewrite did not deal with
+        // it. From here on it is about the passage as it now reads.
+        if resolution == nil, item.isEdited, let range = item.range,
+           let words = Self.passage(range, in: currentText) {
+            item.anchoredText = words
+            item.isEdited = false
+        }
+        items[index] = item
+        resolutions.set(resolution, for: item.finding)
         CritiqueResolutionStore.save(resolutions, for: documentURL)
         // A resolved finding stops shading its passage: the whole point of
         // answering one is that it is no longer something to look at.
@@ -242,6 +457,9 @@ final class CritiqueModel: ObservableObject {
         if resolution != nil, hoveredFindingID == id {
             hoveredFindingID = nil
         }
+        // Something now waits on a critique, so "nothing has changed" no
+        // longer holds.
+        if showsUnchangedNotice { showsUnchangedNotice = false }
         reorder()
     }
 
@@ -267,8 +485,11 @@ final class CritiqueModel: ObservableObject {
     /// Here rather than in the view because it is a decision, and a decision
     /// in a view builder is a decision nothing can check. The one it used to
     /// make was a toggle — see `reveal(_:)` for why that was wrong.
+    ///
+    /// A rewritten note can still be pressed: it is the one the author is in
+    /// the middle of, and being taken back to its passage is the point.
     func press(_ item: Item) {
-        guard item.isOutstanding else { return }
+        guard item.resolution == nil, !item.isFixed else { return }
         reveal(item.id)
     }
 
@@ -309,9 +530,16 @@ final class CritiqueModel: ObservableObject {
 
     /// The highlight ranges, worst last so a high finding is drawn over a low
     /// one where two passages overlap.
+    ///
+    /// A rewritten note stops shading its passage like any answered one —
+    /// except while it is the note selected. That is the author mid-rewrite,
+    /// and the shading is what shows them how far the passage still runs.
     var highlights: [(id: UUID, range: NSRange, severity: CritiqueSeverity)] {
         items
-            .filter(\.isOutstanding)
+            .filter {
+                $0.isOutstanding
+                    || ($0.isEdited && $0.resolution == nil && $0.id == selectedFindingID)
+            }
             .compactMap { item in
                 item.range.map { (item.id, $0, item.finding.severity) }
             }
@@ -343,15 +571,60 @@ final class CritiqueModel: ObservableObject {
         return false
     }
 
-    func run(on text: String, documentURL: URL?, scope: CritiqueScope = .whole) {
+    /// Which notes a run of `scope` is shown.
+    ///
+    /// All of them for the whole draft. For the changed paragraphs, the notes
+    /// in them — and every note the author has cleared, wherever it is: a
+    /// note marked Done is waiting on exactly this, and a narrowed run that
+    /// left it out would leave it waiting. The rest are kept as they are.
+    func carryPlan(for scope: CritiqueScope) -> CarryPlan {
+        guard report != nil else { return CarryPlan() }
+        // Fixed notes were the last run's news. They are not carried again.
+        let standing = items.filter { !$0.isFixed }
+        guard case .changes(let changed) = scope else {
+            return CarryPlan(asked: standing, isCarried: true)
+        }
+        var plan = CarryPlan(isCarried: true)
+        let survives = CritiqueChangeScope.surviving(standing.map(\.range), changed: changed)
+        for (item, isOutside) in zip(standing, survives) {
+            if isOutside, !item.awaitsCheck {
+                plan.kept.append(item)
+            } else {
+                plan.asked.append(item)
+            }
+        }
+        return plan
+    }
+
+    /// What re-run, Critique ▸ Critique Document and ⌃⌘C do.
+    ///
+    /// Reads what changed, and declines to read again what did not. A
+    /// critique of the draft exactly as it stands, with nothing marked Done
+    /// or rewritten since, already says everything a second one would — and a
+    /// second one says it in other words, which reads as the critic changing
+    /// its mind. The rail says so instead and offers the run anyway.
+    func request(on text: String, documentURL: URL?) {
         guard !isRunning else { return }
         attach(to: documentURL, text: text)
+        if shownRevisionID != nil { show(revision: nil) }
+        if report != nil, failure == nil, !isStale(against: text),
+           !items.contains(where: \.awaitsCheck) {
+            isDismissed = false
+            showsUnchangedNotice = true
+            return
+        }
+        run(on: text, documentURL: documentURL, scope: defaultScope)
+    }
+
+    func run(on text: String, documentURL: URL?, scope: CritiqueScope = .whole) {
+        guard !isRunning else { return }
         // The notes are moved onto the new text *before* the scope is used, so
         // that the ranges being compared against the changed passage address
         // the same string the passage was measured in.
-        noteCurrentText(text)
-        currentText = text
+        attach(to: documentURL, text: text)
         isDismissed = false
+        lastChange = nil
+        if showsUnchangedNotice { showsUnchangedNotice = false }
         // Answered here, before anything spins: the service would refuse it
         // too, but only after the rail had flashed "Starting" for a request
         // that was never going to be made.
@@ -359,6 +632,10 @@ final class CritiqueModel: ObservableObject {
             fail(with: .draftTooShort(words: words))
             return
         }
+        // A run carries on from the newest critique, whichever is on screen.
+        // Carrying an older one forward would drop every note the newest one
+        // added since.
+        if shownRevisionID != nil { show(revision: nil) }
         isRunning = true
         failure = nil
         progress = CritiqueProgress(stage: .starting)
@@ -366,25 +643,21 @@ final class CritiqueModel: ObservableObject {
         let thisRun = runNumber
 
         let focus: String?
-        let kept: [Item]
-        switch scope {
-        case .whole:
-            focus = nil
-            kept = []
-        case .changes(let range):
+        if case .changes(let range) = scope {
             focus = CritiqueChangeScope.passage(range, in: text)
-            let survives = CritiqueChangeScope.surviving(
-                items.map(\.range), changed: range
-            )
-            kept = zip(items, survives).filter(\.1).map(\.0)
+        } else {
+            focus = nil
         }
+        let plan = carryPlan(for: scope)
+        let previous = CritiqueCarry.previousNotes(plan.asked.map(\.finding))
 
         Task { [weak self] in
             guard let self else { return }
             do {
-                let report = try await service.critique(
+                let answer = try await service.critique(
                     document: text,
-                    focus: focus
+                    focus: focus,
+                    previous: previous
                 ) { update in
                     Task { @MainActor [weak self] in
                         guard let self, self.runNumber == thisRun else { return }
@@ -392,7 +665,7 @@ final class CritiqueModel: ObservableObject {
                     }
                 }
                 guard self.runNumber == thisRun else { return }
-                self.apply(report, for: text, keeping: kept)
+                self.land(answer, for: text, plan: plan)
             } catch let error as CritiqueService.Failure {
                 guard self.runNumber == thisRun else { return }
                 self.fail(with: error)
@@ -420,6 +693,7 @@ final class CritiqueModel: ObservableObject {
         failure = nil
         selectedFindingID = nil
         hoveredFindingID = nil
+        if showsUnchangedNotice { showsUnchangedNotice = false }
     }
 
     /// Applies a report without going through the CLI. For checks only.
@@ -427,91 +701,207 @@ final class CritiqueModel: ObservableObject {
     /// The text becomes the draft as it stands, as it does when `run` is
     /// given it: a report is only ever applied to the text it was asked about,
     /// and a check that left "now" empty saw every critique as out of date.
+    /// Nothing is carried — this is a first critique, or a fresh one.
     func applyForChecking(_ report: CritiqueReport, for text: String) {
         noteCurrentText(text)
-        currentText = text
-        apply(report, for: text)
+        land(CritiqueAnswer(report: report), for: text, plan: CarryPlan())
     }
 
-    /// Applies a narrowed report the way a real partial run would, so the merge
+    /// Lands a re-run the way a real one would, so carrying notes through it
     /// can be checked without spending a request.
     ///
-    /// Deliberately goes through the same `keeping:` path as `run` rather than
-    /// reimplementing it — a check against a parallel copy of the merge would
-    /// pass while the real one lost notes.
+    /// Deliberately goes through the same `carryPlan` and `land` as `run`
+    /// rather than reimplementing them — a check against a parallel copy of
+    /// the merge would pass while the real one lost notes.
+    func applyRerunForChecking(
+        _ report: CritiqueReport,
+        for text: String,
+        scope: CritiqueScope = .whole,
+        verdicts: [String: CritiqueNoteVerdict] = [:]
+    ) {
+        noteCurrentText(text)
+        land(
+            CritiqueAnswer(report: report, verdicts: verdicts),
+            for: text,
+            plan: carryPlan(for: scope)
+        )
+    }
+
+    /// A narrowed re-run, for the checks written before notes were carried.
     func applyChangesForChecking(
         _ report: CritiqueReport,
         for text: String,
-        changed: NSRange
+        changed: NSRange,
+        verdicts: [String: CritiqueNoteVerdict] = [:]
     ) {
-        noteCurrentText(text)
-        currentText = text
-        let survives = CritiqueChangeScope.surviving(
-            items.map(\.range), changed: changed
-        )
-        let kept = zip(items, survives).filter(\.1).map(\.0)
-        apply(report, for: text, keeping: kept)
+        applyRerunForChecking(report, for: text, scope: .changes(changed), verdicts: verdicts)
     }
 
-    private func apply(
-        _ report: CritiqueReport,
-        for text: String,
-        record: Bool = true,
-        keeping kept: [Item] = []
-    ) {
-        let anchors = CritiqueAnchoring.anchor(report.findings, in: text)
-        let byID = Dictionary(
-            anchors.map { ($0.findingID, $0.range) },
-            uniquingKeysWith: { first, _ in first }
+    /// Puts a saved critique on screen against the draft as it is now.
+    ///
+    /// Each note is found twice — in the text it was written about and in the
+    /// text as it stands — and the two compared, so a note whose sentence was
+    /// rewritten while the document was closed opens as Edited rather than
+    /// as a complaint about words that are no longer there.
+    ///
+    /// Leaves a run in progress alone. This used to go through the same path
+    /// as a finished run, which set `isRunning` back to false: anything that
+    /// put a saved critique up mid-run made the rail look stopped while the
+    /// request carried on.
+    private func present(_ revision: CritiqueRevision) {
+        var shown = anchoredItems(
+            revision.report.findings,
+            then: revision.documentText,
+            now: currentText
         )
-        let fresh = report.findings.map {
-            Item(
-                finding: $0,
-                range: byID[$0.id] ?? nil,
-                resolution: resolutions.resolution(for: $0)
+        shown += (revision.fixed ?? []).map {
+            Item(finding: $0, range: nil, resolution: nil, isFixed: true)
+        }
+        report = revision.report
+        items = Self.ordered(shown)
+        criticisedText = revision.documentText
+        selectedFindingID = nil
+        hoveredFindingID = nil
+        lastChange = nil
+        if showsUnchangedNotice { showsUnchangedNotice = false }
+    }
+
+    private func anchoredItems(
+        _ findings: [CritiqueFinding],
+        then: String,
+        now: String
+    ) -> [Item] {
+        let nowAnchors = CritiqueAnchoring.anchor(findings, in: now)
+        let thenAnchors = then == now
+            ? nowAnchors
+            : CritiqueAnchoring.anchor(findings, in: then)
+        return findings.indices.map { index in
+            let finding = findings[index]
+            let range = nowAnchors[index].range
+            let written = thenAnchors[index].range.flatMap { Self.passage($0, in: then) }
+            let reads = range.flatMap { Self.passage($0, in: now) }
+            return Item(
+                finding: finding,
+                range: range,
+                resolution: resolutions.resolution(for: finding),
+                anchoredText: written ?? reads,
+                isEdited: written != nil && reads != written
             )
         }
-        // The report that goes into the history is the whole rail, not just
-        // what came back from this run.
-        //
-        // A narrowed run returns findings about one passage. Filing that as the
-        // revision would mean reopening the document later and seeing only
-        // those — the kept notes would be gone, having never been written down
-        // anywhere. So the stored report carries the merged set, and the
-        // summary fields come from this run, which was asked to describe the
-        // whole draft even when it only criticised part of it.
-        let merged = kept.isEmpty ? fresh : kept + fresh
-        let storedReport = kept.isEmpty
-            ? report
-            : report.replacingFindings(with: merged.map(\.finding))
+    }
 
-        // A finding the author has already answered arrives answered. Without
-        // this every re-run resurrects every dismissal, and the feature nags
-        // at somebody who told it not to.
-        if record {
-            resolutions.prune(keeping: storedReport.findings)
-            CritiqueResolutionStore.save(resolutions, for: documentURL)
-            history.add(CritiqueRevision(report: storedReport, documentText: text))
-            CritiqueHistoryStore.save(history, for: documentURL)
-            shownRevisionID = nil
+    /// Puts a finished run on screen and into the document's history.
+    ///
+    /// The notes the run was shown come back as themselves — same identity,
+    /// same wording, the author's answer intact — or, when the critic found
+    /// them fixed, move to the end marked Fixed. Its findings are added only
+    /// where they say something no carried note already says: a model asked
+    /// not to repeat a note mostly still does, and a note that comes back
+    /// reworded beside itself is the re-run starting over by another route.
+    private func land(_ answer: CritiqueAnswer, for text: String, plan: CarryPlan) {
+        // The run was about `text`. The author may have kept typing, and the
+        // notes are worked out against what the critic read before they are
+        // moved on to that.
+        let latest = currentText
+        currentText = text
+        // Answers given while the run was out are kept: a note marked Done
+        // half a minute ago is still Done.
+        let live = Dictionary(
+            items.map { ($0.id, $0.resolution) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        func current(_ item: Item) -> Item {
+            guard let resolution = live[item.id] else { return item }
+            var item = item
+            item.resolution = resolution
+            return item
         }
-        self.report = storedReport
-        // Ordered by where they are in the document, not by severity.
-        //
-        // The rail sits beside the text, and a rail beside the text that is
-        // ordered by something other than the text reads as a list that
-        // happens to be on the right. Reading down the comments should mean
-        // reading down the draft. Severity is not lost — it is the colour and
-        // the label on every card, and counted at the top — but it decides how
-        // a finding *looks*, not where it sits.
-        //
-        // A finding whose quote was not found has no position, so it goes last
-        // rather than to the top, which is where an unset offset would put it.
-        items = merged
-        reorder()
-        criticisedText = record
-            ? text
-            : (shownRevision?.documentText ?? criticisedText ?? text)
+
+        let kept = plan.kept.map(current)
+        var claimed = kept.compactMap(\.range)
+        var said = kept.map(\.finding)
+        var carried: [Item] = []
+        var fixed: [Item] = []
+        var reopened = 0
+        for (index, note) in plan.asked.map(current).enumerated() {
+            let outcome = CritiqueCarry.resolve(
+                CritiqueCarry.Note(
+                    finding: note.finding,
+                    resolution: note.resolution,
+                    isEdited: note.isEdited,
+                    passage: note.range.flatMap { Self.passage($0, in: text) }
+                ),
+                verdict: answer.verdicts[CritiqueCarry.key(at: index)],
+                in: text
+            )
+            if outcome.isFixed {
+                fixed.append(Item(finding: outcome.finding, range: nil, resolution: nil, isFixed: true))
+                continue
+            }
+            if outcome.change == .reopened { reopened += 1 }
+            // The answer is filed under the note's passage, so it moves when
+            // the quote does.
+            resolutions.set(nil, for: note.finding)
+            resolutions.set(outcome.resolution, for: outcome.finding)
+            let range: NSRange?
+            if outcome.finding.quote == note.finding.quote, !note.isEdited, let held = note.range {
+                range = held
+            } else {
+                range = CritiqueAnchoring.range(for: outcome.finding, in: text, avoiding: claimed)
+            }
+            if let range { claimed.append(range) }
+            carried.append(Item(
+                finding: outcome.finding,
+                range: range,
+                resolution: outcome.resolution,
+                anchoredText: range.flatMap { Self.passage($0, in: text) }
+            ))
+            // Both quotes: the critic may repeat the note in either words.
+            said.append(note.finding)
+            said.append(outcome.finding)
+        }
+
+        var fresh: [Item] = []
+        for finding in answer.report.findings {
+            if plan.isCarried, CritiqueCarry.isRepeat(finding, of: said) { continue }
+            let range = CritiqueAnchoring.range(for: finding, in: text, avoiding: claimed)
+            if let range { claimed.append(range) }
+            // A finding the author has already answered arrives answered.
+            // Without this every re-run resurrects every dismissal, and the
+            // feature nags at somebody who told it not to.
+            fresh.append(Item(
+                finding: finding,
+                range: range,
+                resolution: resolutions.resolution(for: finding),
+                anchoredText: range.flatMap { Self.passage($0, in: text) }
+            ))
+        }
+
+        // The report that goes into the history is the whole rail, not just
+        // what came back from this run. A narrowed run returns findings about
+        // one passage, and filing only those would lose every note it kept
+        // the next time the document was opened. The summary fields come from
+        // this run, which was asked to describe the whole draft even when it
+        // only criticised part of it.
+        let standing = kept + carried + fresh
+        let stored = answer.report.replacingFindings(with: standing.map(\.finding))
+        resolutions.prune(keeping: stored.findings)
+        CritiqueResolutionStore.save(resolutions, for: documentURL)
+        history.add(
+            CritiqueRevision(report: stored, documentText: text, fixed: fixed.map(\.finding))
+        )
+        CritiqueHistoryStore.save(history, for: documentURL)
+        shownRevisionID = nil
+        report = stored
+        items = Self.ordered(standing + fixed)
+        criticisedText = text
+        lastChange = plan.isCarried
+            ? CritiqueCarry.Delta(
+                fixed: fixed.count,
+                reopened: reopened,
+                new: fresh.filter(\.isOutstanding).count
+            )
+            : nil
         isRunning = false
         progress = nil
         failure = nil
@@ -520,20 +910,46 @@ final class CritiqueModel: ObservableObject {
         // the same patch of screen, but it is not over the note that was
         // there a moment ago.
         hoveredFindingID = nil
+        if showsUnchangedNotice { showsUnchangedNotice = false }
+        // Then on to the draft as it is now, the way any other edit goes.
+        // Without this, typing while the critic read left every note with a
+        // range measured in the text it read rather than the one on screen.
+        if latest != text { noteCurrentText(latest) }
     }
 
-    /// Outstanding first in reading order, answered ones after them.
+    private func reorder() {
+        let ordered = Self.ordered(items)
+        if ordered != items { items = ordered }
+    }
+
+    /// Outstanding first in reading order, answered ones after them, and the
+    /// ones a critique found fixed last of all.
+    ///
+    /// Ordered by where they are in the document, not by severity. The rail
+    /// sits beside the text, and a rail beside the text that is ordered by
+    /// something other than the text reads as a list that happens to be on
+    /// the right. Reading down the notes should mean reading down the draft.
+    /// Severity is not lost — it is the colour and the label on
+    /// every card, and counted at the top — but it decides how a finding
+    /// *looks*, not where it sits.
     ///
     /// Answered findings stay in the list rather than disappearing, because a
     /// decision the author cannot see is a decision they cannot take back —
     /// and because "I already dealt with that" is worth being able to check.
-    private func reorder() {
-        items = items
+    /// A finding whose quote was not found has no position, so it goes last
+    /// in its group rather than to the top, which is where an unset offset
+    /// would put it.
+    static func ordered(_ items: [Item]) -> [Item] {
+        func group(_ item: Item) -> Int {
+            if item.isOutstanding { return 0 }
+            return item.isFixed ? 2 : 1
+        }
+        return items
             .enumerated()
             .sorted { left, right in
-                let leftDone = !left.element.isOutstanding
-                let rightDone = !right.element.isOutstanding
-                if leftDone != rightDone { return rightDone }
+                let leftGroup = group(left.element)
+                let rightGroup = group(right.element)
+                if leftGroup != rightGroup { return leftGroup < rightGroup }
                 let leftAt = left.element.range?.location ?? Int.max
                 let rightAt = right.element.range?.location ?? Int.max
                 if leftAt != rightAt { return leftAt < rightAt }

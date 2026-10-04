@@ -11,7 +11,10 @@ import Foundation
 /// nothing.
 ///
 /// It scores what still stands against the draft. A note marked Done stops
-/// counting, because the author has fixed it. A dismissed note keeps its full
+/// counting, because the author has fixed it. So does a note whose passage the
+/// author has since rewritten, and one a later critique found fixed; those are
+/// tracked where the notes are, so `counts(_:)` only has to judge the author's
+/// own answers. A dismissed note keeps its full
 /// weight, because dismissing is a decision to leave the passage as it is —
 /// the problem the critic named is still on the page. Scoring dismissals as
 /// fixes is what let a draft reach "100, Ready" by dismissing all eight of its

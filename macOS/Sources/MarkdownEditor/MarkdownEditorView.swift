@@ -336,7 +336,6 @@ struct MarkdownEditorView: View {
     }
 
     /// Start a critique of the document as it stands.
-    /// Start a critique of the document as it stands.
     ///
     /// A closed rail with a saved critique in it is re-opened rather than
     /// re-run: the button says "critique this", and spending half a minute and
@@ -348,14 +347,11 @@ struct MarkdownEditorView: View {
             critique.reveal()
             return
         }
-        // The menu item and ⌃⌘C follow the same default as the rail's re-run
-        // button: the changed paragraphs when there are some, the whole draft
-        // otherwise. `defaultScope` decides, so the two cannot drift apart.
-        critique.run(
-            on: document.text,
-            documentURL: fileURL,
-            scope: critique.defaultScope
-        )
+        // The menu item and ⌃⌘C go the same way as the rail's re-run button:
+        // the changed paragraphs when there are some, the whole draft
+        // otherwise, and nothing at all when nothing has changed. `request`
+        // decides, so the three cannot drift apart.
+        critique.request(on: document.text, documentURL: fileURL)
     }
 
     private func clampedExplorerWidth(
@@ -561,11 +557,7 @@ struct ResizableRichTextPreview: View {
                             )
                         },
                         onRerunChanges: {
-                            critique.run(
-                                on: text,
-                                documentURL: documentURL,
-                                scope: critique.defaultScope
-                            )
+                            critique.request(on: text, documentURL: documentURL)
                         }
                     )
                     // A fixed width, docked against the document.

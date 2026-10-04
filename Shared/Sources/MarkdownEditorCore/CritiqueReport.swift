@@ -198,6 +198,25 @@ public enum CritiqueReportDecoder {
     /// line are all things a model does. So the object is *found* in the text
     /// rather than assumed to be all of it.
     public static func decode(_ reply: String) throws -> CritiqueReport {
+        report(from: try object(in: reply))
+    }
+
+    /// Reads a report and what it said about the earlier notes it was shown.
+    ///
+    /// The verdicts are read as forgivingly as the findings: a model that
+    /// writes "Fixed", "resolved" or "still applies" means the same thing as
+    /// one that writes the exact words asked for, and a verdict that cannot be
+    /// read at all is left out rather than failing the whole critique. A note
+    /// with no verdict is kept as it was.
+    public static func decodeAnswer(_ reply: String) throws -> CritiqueAnswer {
+        let object = try object(in: reply)
+        return CritiqueAnswer(
+            report: report(from: object),
+            verdicts: verdicts(from: object["previous"])
+        )
+    }
+
+    private static func object(in reply: String) throws -> [String: Any] {
         guard let json = extractJSONObject(from: reply) else {
             throw Failure.noJSONFound
         }
@@ -213,7 +232,74 @@ public enum CritiqueReportDecoder {
         guard let object = parsed as? [String: Any] else {
             throw Failure.malformedJSON("the reply is not a JSON object")
         }
-        return report(from: object)
+        return object
+    }
+
+    /// Accepts the list that was asked for — `[{"id": "n1", "status": …}]` —
+    /// and the map a model sometimes writes instead, `{"n1": "fixed"}`.
+    static func verdicts(from value: Any?) -> [String: CritiqueNoteVerdict] {
+        var entries: [(key: String, entry: [String: Any])] = []
+        if let list = value as? [Any] {
+            for case let entry as [String: Any] in list {
+                guard let key = noteKey(entry["id"] ?? entry["key"]) else { continue }
+                entries.append((key, entry))
+            }
+        } else if let map = value as? [String: Any] {
+            for (rawKey, raw) in map {
+                guard let key = noteKey(rawKey) else { continue }
+                if let entry = raw as? [String: Any] {
+                    entries.append((key, entry))
+                } else {
+                    entries.append((key, ["status": raw]))
+                }
+            }
+        }
+        var verdicts: [String: CritiqueNoteVerdict] = [:]
+        for (key, entry) in entries {
+            switch status(entry["status"] ?? entry["verdict"]) {
+            case .fixed?:
+                verdicts[key] = .fixed
+            case .stillApplies?:
+                verdicts[key] = .stillApplies(
+                    quote: string(entry["quote"]),
+                    location: string(entry["location"])
+                )
+            case nil:
+                continue
+            }
+        }
+        return verdicts
+    }
+
+    private enum Status { case fixed, stillApplies }
+
+    private static func status(_ value: Any?) -> Status? {
+        guard let raw = value as? String else { return nil }
+        let word = raw.lowercased().filter(\.isLetter)
+        switch word {
+        case "fixed", "resolved", "addressed", "gone", "done", "nolongerapplies":
+            return .fixed
+        case "stillapplies", "applies", "open", "remains", "stillopen",
+             "notfixed", "unresolved", "unchanged", "stands":
+            return .stillApplies
+        default:
+            return nil
+        }
+    }
+
+    /// "n3", whatever it arrived as: `"N3"`, `" n3 "`, `3` or `"3"`.
+    private static func noteKey(_ value: Any?) -> String? {
+        let raw: String
+        if let text = value as? String {
+            raw = text
+        } else if let number = value as? NSNumber {
+            raw = number.stringValue
+        } else {
+            return nil
+        }
+        let key = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !key.isEmpty else { return nil }
+        return key.allSatisfy(\.isNumber) ? "n\(key)" : key
     }
 
     /// The first balanced `{…}` run in `text`, ignoring braces inside strings.

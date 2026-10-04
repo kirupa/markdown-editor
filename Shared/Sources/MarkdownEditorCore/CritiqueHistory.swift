@@ -13,12 +13,23 @@ public struct CritiqueRevision: Equatable, Sendable, Codable, Identifiable {
     public let report: CritiqueReport
     /// The draft exactly as it was when this critique was written.
     public let documentText: String
+    /// The earlier notes this critique found fixed.
+    ///
+    /// Kept apart from `report.findings`, which are the notes that still stand,
+    /// so the score this revision arrived with is the score of what was left —
+    /// and so reopening the document shows what the last critique cleared,
+    /// rather than the cleared notes vanishing as if they had never been
+    /// raised. Optional, and left out when empty, so a history written before
+    /// it existed still loads and one written after still loads in a build
+    /// that does not know it.
+    public let fixed: [CritiqueFinding]?
 
     public init(
         id: UUID = UUID(),
         date: Date = Date(),
         report: CritiqueReport,
-        documentText: String
+        documentText: String,
+        fixed: [CritiqueFinding] = []
     ) {
         self.id = id
         // Truncated to the second, which is the precision it is stored and
@@ -28,6 +39,7 @@ public struct CritiqueRevision: Equatable, Sendable, Codable, Identifiable {
         self.date = Date(timeIntervalSince1970: date.timeIntervalSince1970.rounded(.down))
         self.report = report
         self.documentText = documentText
+        self.fixed = fixed.isEmpty ? nil : fixed
     }
 
     /// The score this critique arrived with, before anything was answered —

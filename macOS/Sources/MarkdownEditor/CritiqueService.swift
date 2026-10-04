@@ -1,6 +1,24 @@
 import Foundation
 import MarkdownEditorCore
 
+/// What the rail needs from whoever answers a critique.
+///
+/// The service, in the app. The checks stand in for it so they can press Stop
+/// on a run that is still waiting, and fail one on purpose, without spending a
+/// request to get either.
+@MainActor
+protocol CritiqueAsking: AnyObject {
+    /// `previous` is the earlier notes being carried into this run; the answer
+    /// says what became of each, alongside whatever is new.
+    func critique(
+        document: String,
+        focus: String?,
+        previous: [CritiquePreviousNote],
+        onProgress: @escaping (CritiqueProgress) -> Void
+    ) async throws -> CritiqueAnswer
+    func cancel()
+}
+
 /// Runs the konvo critique pass over a document and hands back a report.
 ///
 /// The work is done by the GitHub Copilot CLI in non-interactive mode. That is
@@ -12,21 +30,6 @@ import MarkdownEditorCore
 /// What it costs is a dependency the app cannot install. Every way that can
 /// fail is therefore a named case below, because "nothing happened" is the one
 /// outcome a person cannot act on.
-/// What the rail needs from whoever answers a critique.
-///
-/// The service, in the app. The checks stand in for it so they can press Stop
-/// on a run that is still waiting, and fail one on purpose, without spending a
-/// request to get either.
-@MainActor
-protocol CritiqueAsking: AnyObject {
-    func critique(
-        document: String,
-        focus: String?,
-        onProgress: @escaping (CritiqueProgress) -> Void
-    ) async throws -> CritiqueReport
-    func cancel()
-}
-
 @MainActor
 final class CritiqueService: CritiqueAsking {
     enum Failure: LocalizedError, Equatable {
@@ -183,8 +186,9 @@ final class CritiqueService: CritiqueAsking {
     func critique(
         document: String,
         focus: String? = nil,
+        previous: [CritiquePreviousNote] = [],
         onProgress: @escaping (CritiqueProgress) -> Void = { _ in }
-    ) async throws -> CritiqueReport {
+    ) async throws -> CritiqueAnswer {
         // The model checks this first so that nothing spins; this is the
         // backstop for anything that calls the service directly.
         if let words = CritiqueRequest.shortfall(in: document) {
@@ -196,7 +200,8 @@ final class CritiqueService: CritiqueAsking {
         let prompt = CritiqueRequest.prompt(
             forDocument: document,
             focus: focus,
-            skill: Self.loadedSkillPass()
+            skill: Self.loadedSkillPass(),
+            previous: previous
         )
         let provider = CritiqueCredentials.provider
         let reply: String
@@ -216,7 +221,7 @@ final class CritiqueService: CritiqueAsking {
             reply = try await run(cli: cli, prompt: prompt, onProgress: onProgress)
         }
         do {
-            return try CritiqueReportDecoder.decode(reply)
+            return try CritiqueReportDecoder.decodeAnswer(reply)
         } catch {
             // The reply is kept out of the message on purpose: it can be long,
             // and the first line is usually the CLI explaining itself, which

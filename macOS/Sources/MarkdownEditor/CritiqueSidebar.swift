@@ -190,10 +190,11 @@ enum CritiqueTypography {
     /// The rail says two different kinds of thing and they were set in one
     /// face, so they read as one voice. What a reviewer wrote about your
     /// sentence is theirs; "AWESOMENESS", "62/100", "WHAT WORKS", "Stop",
-    /// "3 of 5 notes still point at something" are the app talking *about*
-    /// that — furniture, not commentary. Handwriting on the furniture makes
-    /// the rail look like a novelty and, worse, makes a score and a criticism
-    /// carry the same weight when only one of them is somebody's judgement.
+    /// "3 of 5 notes still point at the words they were written about" are
+    /// the app talking *about* that — furniture, not commentary. Handwriting
+    /// on the furniture makes the rail look like a novelty and, worse, makes
+    /// a score and a criticism carry the same weight when only one of them is
+    /// somebody's judgement.
     ///
     /// Set a little smaller than the number asks for. These sizes were chosen
     /// against handwriting, which runs small for its point size — Architects
@@ -254,10 +255,11 @@ struct CritiqueSidebar: View {
     let isStale: Bool
     /// Re-read the whole draft.
     let onRerun: () -> Void
-    /// Re-read only the paragraphs that changed, keeping the notes about the
-    /// rest. Required rather than defaulted: a default of "do nothing" is a
-    /// button that silently does nothing, and a default of "re-read
-    /// everything" is the expensive thing this exists to avoid.
+    /// Re-read what changed: only the paragraphs that did, when they are few
+    /// enough to be worth narrowing to, and nothing when nothing has.
+    /// Required rather than defaulted: a default of "do nothing" is a button
+    /// that silently does nothing, and a default of "re-read everything" is
+    /// the expensive thing this exists to avoid.
     let onRerunChanges: () -> Void
 
     var body: some View {
@@ -350,12 +352,6 @@ struct CritiqueSidebar: View {
         .padding(.vertical, 10)
     }
 
-    /// The list of earlier critiques.
-    ///
-    /// Named by when they were written rather than by number, because that is
-    /// what anybody is actually looking for — "the one before I rewrote the
-    /// opening" — and carrying their score, so the list reads as a record of
-    /// whether the draft is getting better.
     /// Pick the hand the comments are written in — from the same list, shown
     /// the same way, as Customize Theme ▸ Font. See `TypefaceMenuItems`.
     private var handMenu: some View {
@@ -375,6 +371,12 @@ struct CritiqueSidebar: View {
         .help("The hand the notes are written in")
     }
 
+    /// The list of earlier critiques.
+    ///
+    /// Named by when they were written rather than by number, because that is
+    /// what anybody is actually looking for — "the one before I rewrote the
+    /// opening" — and carrying their score, so the list reads as a record of
+    /// whether the draft is getting better.
     private var revisionMenu: some View {
         Menu {
             Button {
@@ -642,9 +644,10 @@ struct CritiqueSidebar: View {
                     if let failure = critique.failure { failureBanner(failure) }
                     scoreBanner
                     if isStale { staleNotice }
+                    if critique.showsUnchangedNotice { unchangedNotice }
                     summary(report)
 
-                    if critique.items.isEmpty {
+                    if critique.standingCount == 0 {
                         Text("No high or medium problems found.")
                             .font(CritiqueTypography.chrome(18))
                             .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
@@ -653,7 +656,10 @@ struct CritiqueSidebar: View {
 
                     ForEach(critique.items) { item in
                         if item.id == firstResolvedID {
-                            answeredHeading
+                            groupHeading("ANSWERED")
+                        }
+                        if item.id == firstFixedID {
+                            groupHeading("FIXED")
                         }
                         CritiqueCard(
                             item: item,
@@ -839,6 +845,15 @@ struct CritiqueSidebar: View {
             }
             .frame(height: 7)
 
+            // What this run changed, in words. The number moving says that
+            // something happened; this says what.
+            if let change = critique.lastChange {
+                Text(change.summary)
+                    .font(CritiqueTypography.chrome(CritiqueTypography.captionSize))
+                    .foregroundStyle(colorTheme.primaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             if let caption = scoreCaption {
                 Text(caption)
                     .font(CritiqueTypography.chrome(CritiqueTypography.captionSize))
@@ -898,7 +913,7 @@ struct CritiqueSidebar: View {
         }
         var sentences: [String] = []
         if answered > 0 {
-            sentences.append("\(answered) of \(critique.items.count) answered.")
+            sentences.append("\(answered) of \(critique.standingCount) answered.")
         }
         if !stillCounting.isEmpty {
             let list = stillCounting.joined(separator: " and ")
@@ -920,13 +935,26 @@ struct CritiqueSidebar: View {
     }
 
     /// The first answered card, so the divider can be drawn above it.
+    ///
+    /// The first of the answered ones at the *end* of the list, rather than
+    /// the first anywhere. A note the author is rewriting stops being
+    /// outstanding with the first keystroke, and is deliberately not moved
+    /// while they type — so it can sit among the outstanding ones, and a
+    /// heading drawn above it would split them in two.
     private var firstResolvedID: UUID? {
-        critique.items.first { !$0.isOutstanding }?.id
+        let items = critique.items
+        let start = (items.lastIndex(where: \.isOutstanding) ?? -1) + 1
+        return items[start...].first { !$0.isFixed }?.id
     }
 
-    private var answeredHeading: some View {
+    /// The first note a critique found fixed. They are always last.
+    private var firstFixedID: UUID? {
+        critique.items.first(where: \.isFixed)?.id
+    }
+
+    private func groupHeading(_ title: String) -> some View {
         HStack(spacing: 6) {
-            Text("ANSWERED")
+            Text(title)
                 .font(CritiqueTypography.heading())
                 .tracking(0.5)
                 .foregroundStyle(colorTheme.primaryText)
@@ -938,6 +966,40 @@ struct CritiqueSidebar: View {
         .padding(.top, 10)
     }
 
+    /// Said instead of running, when re-run is asked for a draft the critique
+    /// on screen already describes.
+    ///
+    /// Reading the same words again costs a request and half a minute, and
+    /// comes back as the same notes in other words — which reads as the
+    /// critic changing its mind. So the rail says what would make another
+    /// read worth having, and still offers one to somebody who wants it.
+    private var unchangedNotice: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(
+                "Nothing has changed since this critique. Rewrite a passage or "
+                    + "mark a note Done, and the next one checks it.",
+                systemImage: "equal.circle"
+            )
+            .font(CritiqueTypography.chrome(18))
+            .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
+            .fixedSize(horizontal: false, vertical: true)
+            Button("Critique again anyway") { onRerun() }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(noticeBackground)
+        .padding(.horizontal, 12)
+    }
+
+    private var noticeBackground: some View {
+        ZStack {
+            Rectangle().fill(CritiqueInk.quiet(on: colorTheme.mode).opacity(0.10))
+            Rectangle().strokeBorder(
+                PixelStyle.line(colorTheme), lineWidth: PixelStyle.border
+            )
+        }
+    }
+
     private var staleNotice: some View {
         // A critique describes the draft at the moment it was asked for. Once
         // the words move, the offsets it was anchored to are pointing at
@@ -947,7 +1009,7 @@ struct CritiqueSidebar: View {
         // And it says *how much* still applies, which is the useful number: an
         // old critique is worth reading in proportion to how much of the draft
         // it described is still there, not to how recent it is.
-        let total = critique.items.count
+        let total = critique.standingCount
         let applying = critique.stillApplyingCount
         let when = critique.shownRevision.map {
             CritiqueRevisionLabel.relative($0.date).lowercased()
@@ -955,7 +1017,7 @@ struct CritiqueSidebar: View {
         let opening = when.map { "Written \($0), and the draft has changed since." }
             ?? "The draft has changed since this critique."
         let survivors = total > 0
-            ? " \(applying) of \(total) notes still point at something."
+            ? " \(applying) of \(total) notes still point at the words they were written about."
             : ""
         return VStack(alignment: .leading, spacing: 10) {
             Label(opening + survivors, systemImage: "clock.badge.exclamationmark")
@@ -966,11 +1028,10 @@ struct CritiqueSidebar: View {
             // Two ways to re-read, and the cheap one is first.
             //
             // Reading the whole draft again to find out what one new paragraph
-            // broke costs a whole request and throws away every note the author
-            // has not dealt with yet — a re-run replaces the report, so an
-            // untouched finding comes back with a new identity, a new place in
-            // the rail, and any "answered" mark on it gone. Most edits are
-            // local. The default should be too.
+            // broke costs a whole request, and asks the critic about every
+            // note again — the ones about paragraphs nobody touched included,
+            // each a chance for it to word the same complaint differently.
+            // Most edits are local. The default should be too.
             //
             // Both are offered because "only the changes" is a judgement about
             // the draft that the app is not entitled to make alone: a new
@@ -990,14 +1051,7 @@ struct CritiqueSidebar: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            ZStack {
-                Rectangle().fill(CritiqueInk.quiet(on: colorTheme.mode).opacity(0.10))
-                Rectangle().strokeBorder(
-                    PixelStyle.line(colorTheme), lineWidth: PixelStyle.border
-                )
-            }
-        )
+        .background(noticeBackground)
         .padding(.horizontal, 12)
     }
 
@@ -1059,12 +1113,12 @@ struct CritiqueSidebar: View {
                     .padding(.top, 1)
                 }
 
-                let unanchored = critique.items.count - critique.anchoredCount
+                let unanchored = critique.unmatchedCount
                 if unanchored > 0 {
                     // Said plainly rather than hidden: a note with no highlight
                     // is otherwise just a comment that does nothing when clicked.
                     Text(
-                        "\(unanchored) of \(critique.items.count) could not be matched to a passage."
+                        "\(unanchored) of \(critique.standingCount) could not be matched to a passage."
                     )
                     .font(CritiqueTypography.chrome(14))
                     .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
@@ -1364,16 +1418,16 @@ struct CritiqueCard: View {
     /// Severity reads twice over: the paper it is written on, and the tag
     /// itself. That is deliberate rather than redundant — the colour is what
     /// you take in scrolling past, and the word is what you check when it
-    /// matters. An answered note shows what was decided instead, in grey,
-    /// because the severity of something you have dealt with is no longer the
-    /// useful fact about it.
+    /// matters. A note that is no longer outstanding shows what became of it
+    /// instead, in grey, because the severity of something dealt with is no
+    /// longer the useful fact about it.
     private var severityTag: some View {
-        let answered = item.resolution
-        return Text(answered?.label.uppercased() ?? finding.severity.label.uppercased())
+        let standing = item.standing
+        return Text(standing?.label.uppercased() ?? finding.severity.label.uppercased())
             .font(CritiqueTypography.chrome(14))
             .tracking(0.6)
             .foregroundStyle(
-                answered == nil ? Color.white : CritiqueInk.body(on: colorTheme.mode)
+                standing == nil ? Color.white : CritiqueInk.body(on: colorTheme.mode)
             )
             .padding(.horizontal, 8)
             .padding(.vertical, 2)
@@ -1384,7 +1438,7 @@ struct CritiqueCard: View {
                         .offset(x: 2, y: 2)
                     Rectangle()
                         .fill(
-                            answered == nil
+                            standing == nil
                                 // The deep member of the hue, not the bright
                                 // one. White on the bright amber measures
                                 // 2.35:1 — the tag was a colour with a word
@@ -1403,24 +1457,28 @@ struct CritiqueCard: View {
     /// Always present rather than revealed on hover: a control that appears
     /// only when the pointer is over it is a control nobody finds, and these
     /// two are the whole reason the rail is not merely a list of complaints.
+    ///
+    /// A note found fixed has none. The critic said so, and there is nothing
+    /// for the author to take back.
     @ViewBuilder
     private var actions: some View {
-        if isAnswered {
-            Button {
-                onResolve(nil)
-            } label: {
-                Image(systemName: "arrow.uturn.backward")
+        if item.isFixed {
+            EmptyView()
+        } else if item.resolution != nil {
+            putBack(help: "Put this note back.")
+        } else if item.isEdited {
+            // Only where the passage is still there to be about. Putting back
+            // a note whose sentence was deleted would put back a note about
+            // nothing.
+            if item.isAnchored {
+                putBack(help: "My change did not fix this. Put the note back.")
             }
-            .buttonStyle(.plain)
-            .font(.system(size: 11, weight: .bold))
-            .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
-            .help("Put this note back.")
         } else {
             ActionStamp(
                 symbol: "checkmark",
                 fill: CritiqueCard.doneGreen,
                 theme: colorTheme,
-                help: "I have fixed this. It will not be raised again."
+                help: "I have fixed this. The next critique checks it."
             ) { onResolve(.completed) }
 
             ActionStamp(
@@ -1430,6 +1488,19 @@ struct CritiqueCard: View {
                 help: "I am not doing this. It will not be raised again."
             ) { onResolve(.dismissed) }
         }
+    }
+
+    private func putBack(help: String) -> some View {
+        Button {
+            onResolve(nil)
+        } label: {
+            Image(systemName: "arrow.uturn.backward")
+        }
+        .buttonStyle(.plain)
+        .font(.system(size: 11, weight: .bold))
+        .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
+        .help(help)
+        .accessibilityLabel(help)
     }
 
     /// Deep enough to carry white, on any of the four papers.
@@ -1442,14 +1513,6 @@ struct CritiqueCard: View {
     static let doneGreen = Color(red: 0.09, green: 0.46, blue: 0.20)
     static let dismissRed = Color(red: 0.80, green: 0.15, blue: 0.13)
 
-    /// The green the summary's "what works" is headed in.
-    ///
-    /// Lightened for a dark theme like every other reading colour here: the
-    /// one green measured 2.9:1 on the dark card it is set on.
-    /// The green the summary's "what works" is headed in.
-    ///
-    /// Lightened for a dark theme like every other reading colour here: the
-    /// one green measured 2.9:1 on the dark card it is set on.
     /// The two colours a note is written in.
     ///
     /// A note's own, not the theme's. The theme's text colours are picked
@@ -1471,6 +1534,10 @@ struct CritiqueCard: View {
             : Color(red: 0.34, green: 0.32, blue: 0.32)
     }
 
+    /// The green the summary's "what works" is headed in.
+    ///
+    /// Lightened for a dark theme like every other reading colour here: the
+    /// one green measured 2.9:1 on the dark card it is set on.
     static func worksGreen(on mode: EditorAppearanceMode) -> Color {
         mode == .dark
             ? Color(red: 0.42, green: 0.82, blue: 0.56)
@@ -1487,10 +1554,12 @@ struct CritiqueCard: View {
             isSelected: isSelected,
             selectionColour: finding.severity.tint,
             dimmed: isAnswered,
-            // An answered note has nothing to take you to, so it keeps its
-            // selectable text: there is no press competing for the click, and
-            // it is still prose somebody may want to copy out.
-            onPress: isAnswered ? nil : onTap,
+            // A note that has been decided has nothing to take you to, so it
+            // keeps its selectable text: there is no press competing for the
+            // click, and it is still prose somebody may want to copy out. One
+            // being rewritten has not been decided — it is the one the author
+            // is in the middle of — so it still goes to its passage.
+            onPress: item.resolution == nil && !item.isFixed ? onTap : nil,
             onHoverChange: onHoverChange
         ) {
             VStack(alignment: .leading, spacing: 6) {
@@ -1558,7 +1627,17 @@ struct CritiqueCard: View {
             }
 
             HStack(spacing: 6) {
-                if item.isAnchored {
+                if item.isFixed {
+                    Label("A later critique found this fixed.", systemImage: "checkmark.seal")
+                        .font(CritiqueTypography.chrome(14))
+                        .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
+                } else if item.isEdited {
+                    // Not "fixed": a rewrite can as easily keep the problem or
+                    // make a new one, and only a critique can tell which.
+                    Label("Changed since. The next critique checks it.", systemImage: "pencil")
+                        .font(CritiqueTypography.chrome(14))
+                        .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
+                } else if item.isAnchored {
                     if !finding.location.isEmpty {
                         Text(finding.location)
                             .font(CritiqueTypography.chrome(14))
