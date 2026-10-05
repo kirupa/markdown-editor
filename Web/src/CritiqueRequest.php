@@ -103,7 +103,7 @@ final class CritiqueRequest
             . '  "jobRead": "one sentence naming the apparent reader, purpose and container",' . "\n"
             . '  "overall": "one or two sentences: strongest working choice, largest quality risk",' . "\n"
             . '  "whatWorks": ["two or three things the draft already does well and should survive a revision"],' . "\n"
-            . '  "whatDoesNotWork": ["two or three things holding it back, in the round rather than passage by passage"],' . "\n"
+            . '  "whatDoesNotWork": ["up to three things holding it back, in the round rather than passage by passage"],' . "\n"
             . '  "findings": [' . "\n"
             . "    {\n"
             . '      "severity": "high" | "medium" | "low",' . "\n"
@@ -137,7 +137,9 @@ final class CritiqueRequest
             . "the findings again. The first names real choices worth keeping; the "
             . "second names the shape of the problem. Both are about the piece as a "
             . "whole. If the draft genuinely has nothing working yet, return an empty "
-            . "array rather than inventing praise.\n\n"
+            . "array rather than inventing praise. If nothing is holding it back, "
+            . 'return an empty "whatDoesNotWork": every entry in it counts against '
+            . "the draft's score, so do not fill it to make up a number.\n\n"
             . self::OPENING_FENCE . "\n"
             . $document . "\n"
             . self::CLOSING_FENCE

@@ -816,6 +816,56 @@ shape of the problem is different again — assigning `attributedText` resets
 `contentOffset` outright — so a port should establish what its own toolkit does
 rather than assume this one transfers.
 
+### The critique's score
+
+A score is the one part of a critique that gets read without the notes, so it
+must not be possible to raise it without changing the draft. The macOS README
+records the rule as I-274 to I-276. Every build that scores a critique has to
+match it, because two builds with the same critique and different numbers have
+both stopped meaning anything.
+
+- **What counts.** Every note counts against the draft, at 12 for high, 5 for
+  medium and 2 for low, unless it is marked **Done**. A **dismissed** note still
+  counts: dismissing is a decision to leave the passage as it is, not a fix.
+  Each problem the summary lists counts 2, the weight of a low note, so that
+  answering every note cannot reach 100 while the summary still names three
+  things wrong.
+- **How it is scored.** The score is `round(100 · e^(−penalty / 60))`, between
+  1 and 100, and exactly 100 when nothing counts. It decays rather than
+  subtracting, so every fix is worth something and no draft reaches zero.
+- **Ready means the critic said so.** 100 reads **Ready** only when a critique
+  of the draft exactly as it stands found nothing. A 100 reached by marking
+  notes Done, or over a draft edited since, reads **Looks ready**, with
+  **Critique again** beside it. Below that the bands are **Nearly there** from
+  85, **Solid, with work to do** from 60, **Needs a pass** from 35, and **Needs a
+  rewrite** under 35.
+- **A fresh critique reopens a Done note it raises again**, and keeps a
+  dismissal. Done means *fixed*, and the same objection about the draft as it
+  stands says it was not. Carried over, the Done would hold the score at a
+  hundred that no re-run could confirm.
+- **The line under the score says why**, when the notes do not: how many notes
+  are answered, that dismissed notes still count, and, once no note is open,
+  that the problems in the summary still count. When the number explains
+  itself, there is no line.
+- **The critic is not asked to fill a quota.** The prompt asks for *up to*
+  three problems, and for none when nothing holds the draft back, because each
+  one now costs the score. With none listed, the overall read stands on its own
+  and is not filed under what does not work.
+- **The verdict changes on the edit that makes the draft stale**, not on the
+  next redraw for some other reason. The web build first did this only when an
+  edit moved a mark, and a clean critique has no marks.
+- **A quick pass has no score.** It reads only for slips and serious problems,
+  and a number out of it would look like a verdict on structure and voice it
+  never read. It shows how many notes are left to fix instead.
+
+The rule is `CritiqueScore` in
+`Shared/Sources/MarkdownEditorCore/CritiqueScore.swift`, with
+`CritiqueScoreTests.swift` as the specification. The web build ports it in
+`Web/public/app/core/critique-score.js` and `critique-model.js`, tested in
+`Web/public/tests/critique.test.js`. The web port was brought back into line in
+the same change after it had kept the old rule, under which dismissing every
+note printed 100 · Ready. The web build has no quick pass yet.
+
 ### Taking the reader to a criticised passage
 
 Every build shades the passage each critique note is about, and every build

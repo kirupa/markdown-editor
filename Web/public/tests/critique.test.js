@@ -21,14 +21,25 @@ import {
   paragraphRanges,
   rangeForFinding,
 } from '../app/core/critique-anchoring.js';
-import { critiqueScore, critiqueVerdict, scoreForPenalty } from '../app/core/critique-score.js';
 import {
+  countsAgainstScore,
+  critiqueScore,
+  critiqueVerdict,
+  scoreForPenalty,
+} from '../app/core/critique-score.js';
+import {
+  carriedResolutions,
+  dismissedCount,
   highlightsFor,
+  isConfirmed,
   makeItems,
   reorder,
   resolutionKey,
+  scoreCaption,
   scoreFor,
   severityCounts,
+  stalenessChanged,
+  verdictFor,
 } from '../app/core/critique-model.js';
 import { adjustAnchor, editBetween } from '../app/core/critique-anchor-tracking.js';
 import { makeRange } from '../app/core/range.js';
@@ -252,6 +263,130 @@ suite('Scoring a draft', () => {
     expectEqual(critiqueVerdict(70), 'Solid, with work to do');
     expectEqual(critiqueVerdict(40), 'Needs a pass');
     expectEqual(critiqueVerdict(10), 'Needs a rewrite');
+  });
+
+  test('problems the summary lists count as a low note each', () => {
+    // A perfect score next to a list of reasons the piece is not perfect reads
+    // as a broken number.
+    expectEqual(critiqueScore([], 1), 97);
+    expectEqual(critiqueScore([], 3), 90);
+    expectEqual(critiqueScore([], 1), critiqueScore([finding({ severity: 'low' })]));
+    expectEqual(critiqueScore([], -2), 100);
+  });
+
+  test('Done clears a note; dismissing it does not', () => {
+    // Dismissing is a decision to leave the passage as it is. Scoring it as a
+    // fix is what let a draft reach "100, Ready" with every note dismissed.
+    expect(countsAgainstScore(null));
+    expect(countsAgainstScore('dismissed'));
+    expect(!countsAgainstScore('completed'));
+  });
+
+  test('a hundred is Ready only when a critique of the text as it is says so', () => {
+    expectEqual(critiqueVerdict(100, true), 'Ready');
+    expectEqual(critiqueVerdict(100, false), 'Looks ready');
+    // Below a hundred the bands do not depend on it.
+    expectEqual(critiqueVerdict(90, false), 'Nearly there');
+    expectEqual(critiqueVerdict(85), 'Nearly there');
+    expectEqual(critiqueVerdict(84), 'Solid, with work to do');
+    expectEqual(critiqueVerdict(60), 'Solid, with work to do');
+    expectEqual(critiqueVerdict(59), 'Needs a pass');
+    expectEqual(critiqueVerdict(35), 'Needs a pass');
+    expectEqual(critiqueVerdict(34), 'Needs a rewrite');
+  });
+});
+
+suite('What the score says about itself', () => {
+  const text = 'alpha beta\n\ngamma delta';
+  const high = finding({ id: 'a', quote: 'alpha', severity: 'high' });
+  const low = finding({ id: 'b', quote: 'gamma', severity: 'low' });
+  const answered = (resolutions) =>
+    makeItems(
+      [high, low],
+      text,
+      Object.fromEntries(
+        Object.entries(resolutions).map(([id, resolution]) => [
+          resolutionKey(id === 'a' ? high : low),
+          resolution,
+        ])
+      )
+    );
+
+  test('dismissing every note leaves the score where it was', () => {
+    const open = answered({});
+    const dismissed = answered({ a: 'dismissed', b: 'dismissed' });
+    expectEqual(scoreFor(dismissed), scoreFor(open));
+    expect(scoreFor(open) < 100);
+    expectEqual(dismissedCount(dismissed), 2);
+    expectEqual(scoreFor(answered({ a: 'completed', b: 'completed' })), 100);
+  });
+
+  test("the summary's problems hold a draft with no notes left below a hundred", () => {
+    const done = answered({ a: 'completed', b: 'completed' });
+    expectEqual(scoreFor(done, 3), 90);
+    expectEqual(verdictFor(done, { listedProblems: 3 }), 'Nearly there');
+  });
+
+  test('a hundred reached by marking notes Done is the author\'s word, not the critic\'s', () => {
+    const done = answered({ a: 'completed', b: 'completed' });
+    expect(!isConfirmed(done, false));
+    expectEqual(verdictFor(done, { confirmed: isConfirmed(done, false) }), 'Looks ready');
+    // Dismissing confirms nothing either, but it does not reach a hundred.
+    expect(isConfirmed(answered({ a: 'dismissed' }), false));
+    // A clean critique of the draft as it stands is the critic's own word,
+    // until the draft changes.
+    expect(isConfirmed([], false));
+    expect(!isConfirmed([], true));
+  });
+
+  test('the caption explains a number that is not obvious, and only then', () => {
+    expectEqual(scoreCaption(answered({})), null);
+    expectEqual(scoreCaption([], { confirmed: true }), null);
+    expectEqual(
+      scoreCaption(answered({ a: 'completed', b: 'completed' }), { confirmed: false }),
+      'Every note answered. Critique again to confirm it is ready.'
+    );
+    expectEqual(
+      scoreCaption([], { confirmed: false }),
+      'The draft has changed since. Critique again to confirm it is ready.'
+    );
+    expectEqual(
+      scoreCaption(answered({ a: 'dismissed' })),
+      '1 of 2 answered. Dismissed notes still count.'
+    );
+    expectEqual(
+      scoreCaption(answered({ a: 'completed', b: 'completed' }), { listedProblems: 2 }),
+      '2 of 2 answered. The problems in the summary still count.'
+    );
+    expectEqual(
+      scoreCaption(answered({ a: 'completed', b: 'dismissed' }), { listedProblems: 2 }),
+      '2 of 2 answered. Dismissed notes and the problems in the summary still count.'
+    );
+    // The summary's problems are only named once nothing else is left to
+    // explain the number.
+    expectEqual(scoreCaption(answered({ a: 'completed' }), { listedProblems: 2 }), '1 of 2 answered.');
+  });
+
+  test('a fresh critique reopens a Done note it raises again, and keeps a dismissal', () => {
+    // Done says "fixed". The same objection in the same words from a critique
+    // of the draft as it stands says it was not -- and carried, it would hold
+    // the score at a hundred no re-run could confirm.
+    const remembered = {
+      [resolutionKey(high)]: 'completed',
+      [resolutionKey(low)]: 'dismissed',
+      gone: 'completed',
+    };
+    const carried = carriedResolutions([{ ...high, id: 'run-2' }, { ...low, id: 'run-2b' }], remembered);
+    expectEqual(carried, { [resolutionKey(low)]: 'dismissed', gone: 'completed' });
+  });
+
+  test('an edit that makes the critique stale, or fresh again, is one the rail redraws for', () => {
+    // A clean critique leaves no marks for an edit to move, which is what used
+    // to be the only thing that redrew the rail: "Ready" outlived the draft.
+    expect(stalenessChanged('draft', 'draft', 'draft!'), 'the first edit after a critique');
+    expect(!stalenessChanged('draft', 'draft!', 'draft!!'), 'already stale, still stale');
+    expect(stalenessChanged('draft', 'draft!', 'draft'), 'undone back to what was read');
+    expect(!stalenessChanged(null, 'draft', 'draft!'), 'nothing criticised yet');
   });
 });
 

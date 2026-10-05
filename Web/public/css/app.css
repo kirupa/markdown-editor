@@ -1953,6 +1953,8 @@ body {
   color: var(--me-note-quiet);
 }
 
+.me-critique__score-again { margin-top: 9px; }
+
 /* --- The stale notice ----------------------------------------------------- */
 
 .me-critique__stale {
@@ -2121,6 +2123,15 @@ body {
   font-size: 12px;
   line-height: 1.45;
   color: var(--me-note-quiet);
+}
+
+/* The overall read, when the critic lists nothing holding the draft back. Ink
+   rather than the quiet grey of the job read above it: it is the verdict. */
+.me-critique__overall {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--me-note-ink);
 }
 
 .me-critique__summary-section { display: flex; flex-direction: column; gap: 3px; }

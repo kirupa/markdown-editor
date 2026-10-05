@@ -873,6 +873,16 @@ $runner->suite('The critique the server runs', function (TestRunner $t): void {
         $t->expect(str_contains($prompt, 'exact string search'));
     });
 
+    $t->test('the prompt does not ask for problems to fill a quota', function (TestRunner $t): void {
+        // Every entry in "whatDoesNotWork" now counts against the score, so a
+        // prompt asking for "two or three" of them would put a ceiling on every
+        // draft that has fewer.
+        $prompt = MarkdownEditor\CritiqueRequest::prompt('Draft.');
+        $t->expect(str_contains($prompt, '"whatDoesNotWork": ["up to three things holding it back'));
+        $t->expect(str_contains($prompt, 'return an empty "whatDoesNotWork"'));
+        $t->expect(str_contains($prompt, 'do not fill it to make up a number'));
+    });
+
     $t->test('the skill is fenced separately from the draft', function (TestRunner $t): void {
         // Distinct fences so the two cannot be confused by a draft that happens
         // to quote one of them.
