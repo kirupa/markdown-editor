@@ -65,6 +65,22 @@ private let source: String = {
     for _ in 0..<4 {
         lines += ["", "More prose, so the document carries on below it."]
     }
+    lines += [
+        "",
+        "A paragraph before the quote.",
+        "",
+        "> The first quoted line, long enough to wrap onto a second line in a "
+            + "pane this narrow, so the bar has to run down beside both.",
+        "> A second quoted line, a paragraph of its own.",
+        ">",
+        "> A third, after an empty quoted line.",
+        "",
+        "A paragraph between the quotes.",
+        "",
+        "> Another quote, apart from the first.",
+        "",
+        "A paragraph after the quotes.",
+    ]
     return lines.joined(separator: "\n")
 }()
 
@@ -329,6 +345,126 @@ func checkScrolling(theme: EditorColorTheme, name: String) {
     )
 }
 
+/// A block quote's bar: there, beside the quote and nothing else, one bar for
+/// a run of quoted lines, and the same however little of it is redrawn.
+@MainActor
+func checkQuoteBar(theme: EditorColorTheme, name: String) {
+    print("\(theme.title): the bar down a block quote")
+    let editor = Editor(theme: theme)
+    let view = editor.view
+    let whole = editor.draw(view.bounds)
+    whole.save("quote-whole-\(name)")
+
+    let bars = view.quoteBarRectsAsDrawn()
+    check(
+        "two quotes with a paragraph between them have a bar each",
+        bars.count == 2,
+        "\(bars.count) bars"
+    )
+    guard bars.count == 2 else { return }
+    let (bar, other) = (bars[0], bars[1])
+
+    let page = theme.editorBackgroundColor
+    let ink = theme.quoteBarColor.composited(over: page)
+    let isBar = { (color: NSColor) in
+        distance(color, ink) < 3.0 / 255 && distance(ink, page) > 0.1
+    }
+    let isPage = { (color: NSColor) in distance(color, page) < 2.0 / 255 }
+
+    let first = editor.rect(of: "The first quoted line")
+    let wrapped = editor.rect(of: "so the bar has to run down beside both.")
+    let second = editor.rect(of: "A second quoted line")
+    let third = editor.rect(of: "A third, after an empty quoted line.")
+    let before = editor.rect(of: "A paragraph before the quote.")
+    let between = editor.rect(of: "A paragraph between the quotes.")
+    let another = editor.rect(of: "Another quote, apart from the first.")
+
+    // The case being tested, actually set up: the first line wraps, and the
+    // quoted lines are paragraphs with space between them.
+    check(
+        "the first quoted line wraps, and the next starts below a gap",
+        wrapped.minY > first.maxY - 1 && second.minY > wrapped.maxY,
+        "first \(first), wrapped \(wrapped), second \(second)"
+    )
+    check(
+        "the bar is beside the quote's text, the indent's width to its left",
+        bar.maxX < first.minX && abs(first.minX - bar.minX - 20) <= 1,
+        "bar \(bar.minX)–\(bar.maxX), text at \(first.minX)"
+    )
+    check(
+        "it runs from the first quoted line's top to the last's bottom",
+        abs(bar.minY - first.minY) <= 2 && abs(bar.maxY - third.maxY) <= 3,
+        "bar \(bar.minY)–\(bar.maxY); text \(first.minY)–\(third.maxY)"
+    )
+    check(
+        "and the second quote's bar is the second quote's",
+        abs(other.minY - another.minY) <= 2
+            && abs(other.maxY - another.maxY) <= 3,
+        "bar \(other.minY)–\(other.maxY); text \(another.minY)–\(another.maxY)"
+    )
+
+    // What reaches the page.
+    let x = bar.midX
+    let samples: [(String, CGFloat, Bool)] = [
+        ("beside the first quoted line", first.midY, true),
+        ("beside the line it wraps onto", wrapped.midY, true),
+        ("in the space between two quoted lines",
+         (wrapped.maxY + second.minY) / 2, true),
+        ("beside the empty quoted line",
+         (second.maxY + third.minY) / 2, true),
+        ("beside the last quoted line", third.midY, true),
+        ("not beside the paragraph before", before.midY, false),
+        ("not beside the paragraph between", between.midY, false),
+        ("not in the space after the quote", (third.maxY + between.minY) / 2,
+         false),
+    ]
+    for (label, y, drawn) in samples {
+        let colour = whole.color(at: NSPoint(x: x, y: y))
+        check(
+            drawn ? "the bar is drawn \(label)" : "the bar is \(label)",
+            drawn ? isBar(colour) : isPage(colour),
+            "at y \(y): \(colour)"
+        )
+    }
+
+    // A scroll asks for a strip, sometimes no wider than the bar's own
+    // neighbourhood, with no character in it.
+    let top = before.minY
+    let bottom = another.maxY + 12
+    var strips = 0
+    var differing: [String] = []
+    for (width, height) in [
+        (view.bounds.width, 0.5), (view.bounds.width, 8),
+        (24, 2), (24, 12),
+    ] as [(CGFloat, CGFloat)] {
+        var y = top
+        while y < bottom {
+            let strip = NSRect(
+                x: width == view.bounds.width ? 0 : bar.midX - width / 2,
+                y: y, width: width, height: height
+            )
+            let picture = editor.draw(strip)
+            strips += 1
+            if let point = picture.firstDifference(from: whole),
+               differing.count < 3 {
+                differing.append(
+                    "\(width)×\(height) at y \(y): first at "
+                        + "(\(point.x), \(point.y))"
+                )
+                picture.save(
+                    "quote-strip-\(name)-\(Int(width))-\(Int(y * 2))"
+                )
+            }
+            y += 0.5
+        }
+    }
+    check(
+        "every strip of \(strips) across the quotes draws what the whole has",
+        differing.isEmpty,
+        differing.joined(separator: "; ")
+    )
+}
+
 @main
 struct CheckCodeBlockScroll {
     @MainActor
@@ -340,6 +476,14 @@ struct CheckCodeBlockScroll {
             name: "blue-light"
         )
         checkScrolling(
+            theme: EditorColorTheme(color: .blue, mode: .dark),
+            name: "blue-dark"
+        )
+        checkQuoteBar(
+            theme: EditorColorTheme(color: .blue, mode: .light),
+            name: "blue-light"
+        )
+        checkQuoteBar(
             theme: EditorColorTheme(color: .blue, mode: .dark),
             name: "blue-dark"
         )

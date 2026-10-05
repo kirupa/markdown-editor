@@ -45,30 +45,45 @@ func check(
     }
 }
 
+/// The editor with its document in SwiftUI state, as `DocumentGroup` holds
+/// it, so that typing reaches `onChange` the way it does in the app. A binding
+/// over a captured variable takes the edit without telling SwiftUI, and the
+/// editor never hears about its own text changing.
+struct EditorHost: View {
+    @State var document: MarkdownDocument
+    let fileURL: URL?
+    @State private var themeColor = EditorThemeColor.blue.rawValue
+    @State private var appearance = EditorAppearanceMode.light.rawValue
+
+    var body: some View {
+        MarkdownEditorView(
+            document: $document,
+            fileURL: fileURL,
+            themeColorRawValue: $themeColor,
+            appearanceModeRawValue: $appearance,
+            typefaceRawValue: .constant(EditorTypeface.sans.rawValue),
+            textScale: .constant(1)
+        )
+    }
+}
+
 /// A real editor in a real window, of a given content width.
 @MainActor
 struct EditorWindow {
     let window: NSWindow
-    let hosting: NSHostingView<MarkdownEditorView>
+    let hosting: NSHostingView<EditorHost>
 
-    init(contentWidth: CGFloat, documentURL: URL, text: String) {
-        var document = MarkdownDocument(text: text)
-        var themeColor = EditorThemeColor.blue.rawValue
-        var appearance = EditorAppearanceMode.light.rawValue
-
-        let view = MarkdownEditorView(
-            document: Binding(get: { document }, set: { document = $0 }),
-            fileURL: documentURL,
-            themeColorRawValue: Binding(
-                get: { themeColor },
-                set: { themeColor = $0 }
-            ),
-            appearanceModeRawValue: Binding(
-                get: { appearance },
-                set: { appearance = $0 }
-            ),
-            typefaceRawValue: .constant(EditorTypeface.sans.rawValue),
-            textScale: .constant(1)
+    /// `owner` stands in for the `NSDocument` behind a real document window,
+    /// attached the way `DocumentGroup` attaches its own: through a window
+    /// controller, before the editor is in the window.
+    init(
+        contentWidth: CGFloat,
+        documentURL: URL?,
+        text: String,
+        owner: NSDocument? = nil
+    ) {
+        let view = EditorHost(
+            document: MarkdownDocument(text: text), fileURL: documentURL
         )
 
         let frame = NSRect(x: 0, y: 0, width: contentWidth, height: 620)
@@ -81,6 +96,9 @@ struct EditorWindow {
             backing: .buffered,
             defer: false
         )
+        if let owner {
+            owner.addWindowController(NSWindowController(window: window))
+        }
         window.contentView = hosting
         // On a real screen, because the screen is what growth is clamped
         // against — but invisible, and behind everything else.
@@ -95,6 +113,18 @@ struct EditorWindow {
 
     var contentWidth: CGFloat {
         window.contentRect(forFrameRect: window.frame).width
+    }
+
+    /// The editor's text view, found in the view tree.
+    var textView: NSTextView? {
+        func find(in view: NSView) -> NSTextView? {
+            if let textView = view as? RichMarkdownTextView { return textView }
+            for subview in view.subviews {
+                if let found = find(in: subview) { return found }
+            }
+            return nil
+        }
+        return find(in: hosting)
     }
 
     func settle(for seconds: TimeInterval) {
@@ -153,6 +183,24 @@ struct EditorWindow {
         try? rep.representation(using: .png, properties: [:])?
             .write(to: URL(fileURLWithPath: path))
         print("  wrote \(path)")
+    }
+}
+
+/// Stands where `NSDocument` stands in the app, and counts the saves it is
+/// asked for instead of writing. The autosave looks its file's document up
+/// before saving, and one it cannot find gets an alert — which here would
+/// stop the checks where they stand rather than fail them.
+final class SaveRecorder: NSDocument {
+    private(set) var saves = 0
+
+    override func save(
+        to url: URL,
+        ofType typeName: String,
+        for saveOperation: NSDocument.SaveOperationType,
+        completionHandler: @escaping (Error?) -> Void
+    ) {
+        saves += 1
+        completionHandler(nil)
     }
 }
 
@@ -237,6 +285,160 @@ enum Harness {
             narrow.writePNG(rep, named: "MDE_WINDOW_PNG")
         } else {
             check("the window can be drawn", false)
+        }
+
+        print("")
+        print("The title bar says how long the draft is")
+
+        // Through the real view to the real window, which is the part a unit
+        // test of `DocumentLength` cannot see: the count has to reach the
+        // subtitle, and a selection made in the text view has to reach the
+        // count. Spelled out rather than computed with `DocumentLength`, so a
+        // change to the count shows up here as well as in its own tests.
+        check(
+            "the subtitle gives the words and a reading time",
+            narrow.window.subtitle == "64 words · 1 min read",
+            "it reads \"\(narrow.window.subtitle)\""
+        )
+        if let textView = narrow.textView {
+            // "Invalidation is the hard part." — five words. Found in the
+            // view's own text, which hides the `#` marks, so a range taken
+            // from the source would select something else.
+            let sentence = (textView.string as NSString).range(
+                of: "Invalidation is the hard part."
+            )
+            textView.setSelectedRange(sentence)
+            narrow.settle(for: 0.5)
+            check(
+                "a selection is counted on its own",
+                narrow.window.subtitle == "5 of 64 words",
+                "it reads \"\(narrow.window.subtitle)\""
+            )
+            textView.setSelectedRange(NSRange(location: sentence.location, length: 0))
+            narrow.settle(for: 0.5)
+            check(
+                "and a caret goes back to the whole draft",
+                narrow.window.subtitle == "64 words · 1 min read",
+                "it reads \"\(narrow.window.subtitle)\""
+            )
+        } else {
+            check("the editor has a text view", false)
+        }
+
+        print("")
+        print("A draft never saved is named by its title")
+
+        // Through the real view to a real `NSDocument`, the one name both the
+        // title bar and Save read. The model's half is unit-tested as
+        // `DocumentTitle`; what this can see is the rename reaching the
+        // document, and only the documents it should.
+        let draftText = """
+            # Field notes on speed
+
+            Caching is important because the cache stores data for later reads.
+
+            """
+        let owner = NSDocument()
+        let untitled = owner.displayName ?? ""
+        let draft = EditorWindow(
+            contentWidth: 1_100, documentURL: nil, text: draftText, owner: owner
+        )
+        draft.settle(for: 1.0)
+        check(
+            "it opens named by its title, as typed",
+            owner.displayName == "Field notes on speed"
+                && draft.window.title == "Field notes on speed",
+            "the document is \"\(owner.displayName ?? "")\", "
+                + "the window \"\(draft.window.title)\""
+        )
+        if let textView = draft.textView {
+            let speed = (textView.string as NSString).range(of: "speed")
+            textView.insertText(
+                ": a field guide",
+                replacementRange: NSRange(location: NSMaxRange(speed), length: 0)
+            )
+            draft.settle(for: 0.6)
+            check(
+                "a new title renames it, made safe to save",
+                owner.displayName == "Field notes on speed - a field guide",
+                "it is \"\(owner.displayName ?? "")\""
+            )
+            let words = (textView.string as NSString).range(
+                of: "Field notes on speed: a field guide"
+            )
+            textView.insertText("", replacementRange: words)
+            draft.settle(for: 0.6)
+            check(
+                "and a title taken away gives the placeholder back",
+                owner.displayName == untitled && draft.window.title == untitled,
+                "the document is \"\(owner.displayName ?? "")\", "
+                    + "the window \"\(draft.window.title)\""
+            )
+
+            owner.fileURL = documentURL
+            let saved = owner.displayName ?? ""
+            textView.insertText(
+                "A saved title",
+                replacementRange: NSRange(location: words.location, length: 0)
+            )
+            draft.settle(for: 0.6)
+            check(
+                "once saved, the file's name is left alone",
+                owner.displayName == saved,
+                "it became \"\(owner.displayName ?? "")\""
+            )
+        } else {
+            check("the draft has a text view", false)
+        }
+
+        // A duplicate is named "… copy" so that saving it cannot overwrite its
+        // original. Named by its title it would propose the original's name.
+        let original = NSDocument()
+        original.displayName = "Field notes copy"
+        let copy = EditorWindow(
+            contentWidth: 1_100, documentURL: nil, text: draftText, owner: original
+        )
+        copy.settle(for: 1.0)
+        check(
+            "a duplicate keeps the name it was given",
+            original.displayName == "Field notes copy",
+            "it became \"\(original.displayName ?? "")\""
+        )
+
+        // Reopened after a quit, a draft is handed back under the name it had,
+        // which macOS 27.2 then replaced with a suggestion of its own at the
+        // first autosave unless the app named it again. What shows here is the
+        // claim: a draft reopened under its own title follows the title.
+        let reopened = NSDocument()
+        reopened.displayName = "Field notes on speed"
+        let again = EditorWindow(
+            contentWidth: 1_100, documentURL: nil, text: draftText, owner: reopened
+        )
+        again.settle(for: 1.0)
+        if let textView = again.textView {
+            let speed = (textView.string as NSString).range(of: "speed")
+            textView.insertText(
+                ", revisited",
+                replacementRange: NSRange(location: NSMaxRange(speed), length: 0)
+            )
+            again.settle(for: 0.6)
+            check(
+                "a draft reopened under its title goes on being named by it",
+                reopened.displayName == "Field notes on speed, revisited",
+                "it is \"\(reopened.displayName ?? "")\""
+            )
+
+            reopened.displayName = "My own name"
+            let revisited = (textView.string as NSString).range(of: "revisited")
+            textView.insertText("reread", replacementRange: revisited)
+            again.settle(for: 0.6)
+            check(
+                "and a name its writer gives it is theirs to keep",
+                reopened.displayName == "My own name",
+                "it became \"\(reopened.displayName ?? "")\""
+            )
+        } else {
+            check("the reopened draft has a text view", false)
         }
 
         print("")
@@ -391,6 +593,100 @@ enum Harness {
             plain.close()
         } else {
             check("there is a screen to widen against", false)
+        }
+
+        print("")
+        print("Closing a document window")
+
+        // macOS 27.2 keeps a closed document's window alive, editor and all,
+        // and never sends the editor `onDisappear`. So it went on autosaving
+        // and watching its file behind a window nobody could see, and twice
+        // that ended in "KONVO couldn't autosave" over the writer's next
+        // document. The windows here are kept alive the same way: by holding
+        // on to them.
+        func recorded(_ name: String) -> (url: URL, document: SaveRecorder)? {
+            let url = directory.appendingPathComponent(name).standardizedFileURL
+            try? text.write(to: url, atomically: true, encoding: .utf8)
+            let document = SaveRecorder()
+            document.fileURL = url
+            NSDocumentController.shared.addDocument(document)
+            guard NSDocumentController.shared.document(for: url) === document
+            else { return nil }
+            return (url, document)
+        }
+
+        if let typed = recorded("typed.md") {
+            let window = EditorWindow(
+                contentWidth: 1_100, documentURL: typed.url, text: text
+            )
+            window.window.isReleasedWhenClosed = false
+            window.settle(for: 1.0)
+            if let textView = window.textView {
+                func type(_ words: String) {
+                    let end = NSMaxRange(
+                        (textView.string as NSString).range(of: "later reads.")
+                    )
+                    textView.insertText(
+                        words, replacementRange: NSRange(location: end, length: 0)
+                    )
+                }
+                // So that nothing saved after the close can be put down to
+                // the recorder not being where the autosave looks.
+                type(" Typed.")
+                window.settle(for: 2.0)
+                check(
+                    "an edit is autosaved while its window is open",
+                    typed.document.saves == 1,
+                    "it was saved \(typed.document.saves) times"
+                )
+
+                // ⌘W a moment after the last word, inside the autosave's
+                // delay: the document has saved itself by the time its
+                // window closes, and the editor's own save is left over.
+                type(" And again.")
+                window.window.close()
+                // At once, while `close()` is still running. Taken down a
+                // moment later instead, once the window had left the screen,
+                // the editor left its layers' surfaces behind: about 15 MB a
+                // close, every close.
+                check(
+                    "closing the window takes the editor out of it at once",
+                    window.textView == nil,
+                    "the closed window still holds a text view"
+                )
+                window.settle(for: 2.0)
+                check(
+                    "and the autosave it had waiting is dropped",
+                    typed.document.saves == 1,
+                    "it was saved \(typed.document.saves) times"
+                )
+            } else {
+                check("the closing editor has a text view", false)
+            }
+        } else {
+            check("the autosave can find the document it saves", false)
+        }
+
+        // Rewritten by another app after its window has closed: the editor
+        // used to take the new version in and autosave it, to a document that
+        // was no longer open.
+        if let watched = recorded("watched.md") {
+            let window = EditorWindow(
+                contentWidth: 1_100, documentURL: watched.url, text: text
+            )
+            window.window.isReleasedWhenClosed = false
+            window.settle(for: 1.0)
+            window.window.close()
+            try? (text + "\nAdded by another app.\n")
+                .write(to: watched.url, atomically: true, encoding: .utf8)
+            window.settle(for: 3.0)
+            check(
+                "a file another app changes after its window closes is left alone",
+                watched.document.saves == 0,
+                "it was saved \(watched.document.saves) times"
+            )
+        } else {
+            check("the autosave can find the document it saves", false)
         }
 
         print("")

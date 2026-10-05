@@ -366,6 +366,16 @@ extension NSAttributedString.Key {
     public static let markdownCodeBlockBackground = Self(
         "com.kirupa.markdown-editor.code-block-background"
     )
+
+    /// Marks the text of a block quote, carrying the colour of the bar drawn
+    /// down its left side.
+    ///
+    /// It covers what the quote's indent covers — a line's text, or the
+    /// newline of an empty quoted line — so a text view finds the quoted
+    /// paragraphs by it and draws one bar beside each run of them.
+    public static let markdownQuoteBar = Self(
+        "com.kirupa.markdown-editor.quote-bar"
+    )
 }
 
 extension PlatformColor {

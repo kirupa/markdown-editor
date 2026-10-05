@@ -890,12 +890,19 @@ final class RichMarkdownTextView: NSTextView {
     /// The glyph nearest a point is not necessarily under it — past the end of
     /// a line the nearest glyph is the last one on that line — so the point has
     /// to be inside the glyph's own rect before its attributes mean anything.
+    ///
+    /// Runs on every pointer move, so it must not ask how many glyphs the
+    /// document has: `numberOfGlyphs` generates glyphs for the *whole* text to
+    /// answer, and on a 23,000-word draft that one question was 278 of the
+    /// samples in a profile of typing — against 393 for inserting the text
+    /// itself. `isValidGlyphIndex` only has to generate as far as the glyph
+    /// under the pointer, which laying out the visible page already did.
     private func hasLink(at point: NSPoint) -> Bool {
         guard
             let layoutManager,
             let textContainer,
             let textStorage,
-            layoutManager.numberOfGlyphs > 0
+            textStorage.length > 0
         else { return false }
 
         let origin = textContainerOrigin
@@ -906,7 +913,7 @@ final class RichMarkdownTextView: NSTextView {
             in: textContainer,
             fractionOfDistanceThroughGlyph: &fraction
         )
-        guard glyph < layoutManager.numberOfGlyphs else { return false }
+        guard layoutManager.isValidGlyphIndex(glyph) else { return false }
         let glyphRect = layoutManager
             .boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: textContainer)
             .offsetBy(dx: origin.x, dy: origin.y)
@@ -1383,6 +1390,7 @@ final class RichMarkdownTextView: NSTextView {
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
         drawCodeBlockBackgrounds(in: rect)
+        drawQuoteBars(in: rect)
         drawCritiqueHighlights(in: rect)
         drawSelectionHighlight(in: rect)
     }
@@ -1721,19 +1729,50 @@ final class RichMarkdownTextView: NSTextView {
         character == 0x20 || character == 0x09
     }
 
+    /// The boxes each highlight is drawn as, in `critiqueHighlights` order.
+    ///
+    /// The measured boxes, after neighbouring passages have given way to
+    /// each other (`CritiqueHighlightLayout`), so a check can assert on what
+    /// reaches the screen rather than on what was measured.
+    func critiqueHighlightBoxesAsDrawn() -> [[CGRect]] {
+        critiqueHighlightLayout().map(\.drawn)
+    }
+
+    private func critiqueHighlightLayout() -> [(measured: [CGRect], drawn: [CGRect])] {
+        let measured = critiqueHighlights.map {
+            critiqueHighlightBoxes(for: $0.range)
+        }
+        let drawn = CritiqueHighlightLayout.separated(
+            zip(critiqueHighlights, measured).map {
+                (range: $0.range, boxes: $1)
+            }
+        )
+        return Array(zip(measured, drawn))
+    }
+
     /// Shade the passages a critique points at, under the text.
     private func drawCritiqueHighlights(in rect: NSRect) {
         guard !critiqueHighlights.isEmpty else { return }
-        for highlight in critiqueHighlights {
-            let boxes = critiqueHighlightBoxes(for: highlight.range)
-            highlight.colour.setFill()
-            for box in boxes where box.intersects(rect) {
+        let layout = critiqueHighlightLayout()
+        for (highlight, boxes) in zip(critiqueHighlights, layout) {
+            // One shape per passage, not one fill per line. A passage's lines
+            // overlap by the air each is given, and filled a line at a time
+            // the overlap came out at twice the alpha — a stripe between every
+            // pair of lines, which read as the seam between two notes.
+            let shape = NSBezierPath()
+            shape.windingRule = .nonZero
+            for box in boxes.drawn where box.intersects(rect) {
                 // Rounded, but by no more than half the line height, so a mark
                 // on one line and a mark across three look like the same
                 // object rather than a pill and a rectangle.
                 let radius = min(5, box.height / 2)
-                NSBezierPath(roundedRect: box, xRadius: radius, yRadius: radius)
-                    .fill()
+                shape.append(
+                    NSBezierPath(roundedRect: box, xRadius: radius, yRadius: radius)
+                )
+            }
+            if !shape.isEmpty {
+                highlight.colour.setFill()
+                shape.fill()
             }
             // The open note's passage is ruled as well as washed. A wash on
             // its own is a difference of a few hundredths of an alpha under
@@ -1743,13 +1782,21 @@ final class RichMarkdownTextView: NSTextView {
             guard let rule = highlight.rule else { continue }
             rule.setFill()
             let thickness = CritiqueSeverity.selectionRuleThickness
-            for box in boxes {
+            for (measured, drawn) in zip(boxes.measured, boxes.drawn) {
                 // Square, while the wash it sits under is rounded: a rule that
                 // tapers at both ends stops looking like a rule.
+                //
+                // Under the measured line rather than the drawn box, so it sits
+                // the same distance below the words on every line — a box that
+                // gave way to a neighbour underneath is 2pt shorter, and a rule
+                // that followed it rose into the descenders on that line only.
+                // Across, it covers the ink and stops at the wash.
+                let left = max(measured.minX + 3, drawn.minX)
+                let right = min(measured.maxX - 3, drawn.maxX)
                 let under = NSRect(
-                    x: box.minX + 3,
-                    y: box.maxY - thickness,
-                    width: max(0, box.width - 6),
+                    x: left,
+                    y: measured.maxY - thickness,
+                    width: max(0, right - left),
                     height: thickness
                 )
                 guard under.width > 0, under.intersects(rect) else { continue }
@@ -1862,6 +1909,76 @@ final class RichMarkdownTextView: NSTextView {
         }
 
         NSSound.beep()
+    }
+
+    // MARK: - Spelling
+
+    /// Where the writer's answer to Edit ▸ Spelling and Grammar is kept.
+    ///
+    /// On by default. A typo is the cheapest thing a draft can get wrong and
+    /// the most expensive thing to have a critique find: the same "todays"
+    /// that a red underline catches for free, as it is typed, cost a note in
+    /// a half-minute request when this was off and the menu that would have
+    /// turned it on did not exist.
+    static let continuousSpellCheckingKey = "continuousSpellChecking"
+    /// Off by default. Grammar checking reads Markdown's own shape — a
+    /// heading with no full stop, a list of fragments — as mistakes, and a
+    /// draft covered in underlines it does not deserve teaches the writer to
+    /// ignore the ones that matter.
+    static let grammarCheckingKey = "grammarChecking"
+
+    /// Take up whatever the writer last chose, in a pane that is just opening.
+    func adoptSpellingPreferences(_ defaults: UserDefaults = .standard) {
+        isContinuousSpellCheckingEnabled =
+            defaults.object(forKey: Self.continuousSpellCheckingKey) as? Bool
+            ?? true
+        isGrammarCheckingEnabled = defaults.bool(forKey: Self.grammarCheckingKey)
+    }
+
+    // Remembered from the menu rather than from a setting of its own: the
+    // menu is where a Mac writer looks for this, and a choice made there that
+    // the next window forgot would read as the app ignoring it.
+    override func toggleContinuousSpellChecking(_ sender: Any?) {
+        super.toggleContinuousSpellChecking(sender)
+        UserDefaults.standard.set(
+            isContinuousSpellCheckingEnabled,
+            forKey: Self.continuousSpellCheckingKey
+        )
+    }
+
+    override func toggleGrammarChecking(_ sender: Any?) {
+        super.toggleGrammarChecking(sender)
+        UserDefaults.standard.set(
+            isGrammarCheckingEnabled,
+            forKey: Self.grammarCheckingKey
+        )
+    }
+
+    /// Whether a checked range is code, which is not prose and is never
+    /// misspelt: `numberOfGlyphs` underlined in red is noise that trains the
+    /// writer to stop looking at the underlines.
+    ///
+    /// Read from the face rather than from the Markdown, because this is what
+    /// the pane draws: the styler sets inline code and fenced blocks alike in
+    /// the system's monospaced face, and nothing else is.
+    static func isCode(_ range: NSRange, in storage: NSAttributedString) -> Bool {
+        guard range.location < storage.length else { return false }
+        if storage.attribute(
+            .markdownCodeBlockBackground,
+            at: range.location,
+            effectiveRange: nil
+        ) != nil {
+            return true
+        }
+        guard let font = storage.attribute(
+            .font,
+            at: range.location,
+            effectiveRange: nil
+        ) as? NSFont else {
+            return false
+        }
+        return font.isFixedPitch
+            || font.fontDescriptor.symbolicTraits.contains(.monoSpace)
     }
 
     private func finishComposition() {
@@ -2035,6 +2152,199 @@ final class RichMarkdownTextView: NSTextView {
             in: whole
         ) != nil {
             end = NSMaxRange(run)
+        }
+        return NSRange(location: start, length: end - start)
+    }
+
+    // MARK: - Quote bars
+
+    /// How wide the bar beside a quote is: the web's 3px border.
+    static let quoteBarWidth: CGFloat = 3
+
+    /// The bar down the left of each block quote.
+    ///
+    /// A quote used to be told from the paragraphs around it by a 20pt indent
+    /// and a greyer colour alone, which at a glance is a paragraph that
+    /// happens to be indented. In a draft, a quote is somebody else's words,
+    /// and that is the difference worth seeing. The web build has always drawn
+    /// this bar, as `.me-quote`'s border; this is the same bar, at the
+    /// column's left edge with the text 20pt in from it.
+    ///
+    /// One bar beside each run of quoted lines rather than one per line:
+    /// every `>` line is a paragraph of its own, and the 7pt between
+    /// paragraphs would otherwise break the bar into a dash per line. It runs
+    /// from the top of the first line's text to the bottom of the last's, so
+    /// it never reaches into the space before the next paragraph.
+    private func drawQuoteBars(in dirtyRect: NSRect) {
+        guard let textStorage,
+            let layoutManager,
+            let textContainer,
+            textStorage.length > 0,
+            let searched = quoteSearchRange(
+                for: dirtyRect,
+                in: textStorage,
+                layoutManager: layoutManager,
+                textContainer: textContainer
+            )
+        else {
+            return
+        }
+        for (bar, colour) in quoteBars(in: searched)
+        where bar.intersects(dirtyRect) {
+            colour.setFill()
+            NSBezierPath(
+                roundedRect: bar,
+                xRadius: Self.quoteBarWidth / 2,
+                yRadius: Self.quoteBarWidth / 2
+            ).fill()
+        }
+    }
+
+    /// The bars `drawQuoteBars(in:)` draws over the whole view, in this
+    /// view's coordinates. For the checks, which hold the bar to its quote.
+    func quoteBarRectsAsDrawn() -> [NSRect] {
+        guard let textStorage else { return [] }
+        return quoteBars(
+            in: NSRange(location: 0, length: textStorage.length)
+        ).map(\.0)
+    }
+
+    /// The bar beside each quote in `range`, in this view's coordinates.
+    private func quoteBars(in range: NSRange) -> [(NSRect, NSColor)] {
+        guard let textStorage, let layoutManager, let textContainer else {
+            return []
+        }
+        let x = textContainerOrigin.x + textContainer.lineFragmentPadding
+            + page.bleed
+        return quoteRuns(in: range, of: textStorage).compactMap {
+            run, colour in
+            let glyphs = layoutManager.glyphRange(
+                forCharacterRange: run,
+                actualCharacterRange: nil
+            )
+            guard glyphs.length > 0 else { return nil }
+            var extent = NSRect.null
+            layoutManager.enumerateLineFragments(
+                forGlyphRange: glyphs
+            ) { _, usedRect, _, _, _ in
+                extent = extent.union(usedRect)
+            }
+            guard !extent.isNull else { return nil }
+            let bar = NSRect(
+                x: x,
+                y: textContainerOrigin.y + extent.minY,
+                width: Self.quoteBarWidth,
+                height: extent.height
+            )
+            return (bar, colour)
+        }
+    }
+
+    /// Each run of consecutive quoted paragraphs in `range`, whole, with the
+    /// colour its bar is drawn in.
+    ///
+    /// The attribute stops short of each line's newline, as the quote's
+    /// indent does, so the runs it makes are a line apart; it is the
+    /// paragraphs they are in that meet.
+    private func quoteRuns(
+        in range: NSRange,
+        of textStorage: NSTextStorage
+    ) -> [(NSRange, NSColor)] {
+        let string = textStorage.string as NSString
+        var runs: [(NSRange, NSColor)] = []
+        textStorage.enumerateAttribute(
+            .markdownQuoteBar,
+            in: range
+        ) { value, characters, _ in
+            guard let colour = value as? NSColor else { return }
+            let paragraph = string.paragraphRange(for: characters)
+            if let last = runs.last,
+                NSMaxRange(last.0) >= paragraph.location
+            {
+                runs[runs.count - 1].0 = NSUnionRange(last.0, paragraph)
+            } else {
+                runs.append((paragraph, colour))
+            }
+        }
+        return runs
+    }
+
+    /// Whether any of a paragraph is quoted. Usually its first character is,
+    /// but a quoted list item puts its bullet in front of the quote.
+    private func isQuoted(
+        _ paragraph: NSRange,
+        in textStorage: NSTextStorage
+    ) -> Bool {
+        guard paragraph.length > 0 else { return false }
+        var run = NSRange(location: 0, length: 0)
+        if textStorage.attribute(
+            .markdownQuoteBar,
+            at: paragraph.location,
+            longestEffectiveRange: &run,
+            in: paragraph
+        ) != nil {
+            return true
+        }
+        let next = NSMaxRange(run)
+        return next < NSMaxRange(paragraph)
+            && textStorage.attribute(
+                .markdownQuoteBar, at: next, effectiveRange: nil
+            ) != nil
+    }
+
+    /// The characters worth looking at to draw the quote bars in a rect: the
+    /// ones in it, grown outwards to whole quotes.
+    ///
+    /// Grown for the reason `codeBlockSearchRange` is: a quote taller than
+    /// the rect starts above it and ends below it, and a bar measured from
+    /// the part a scroll uncovers would put its rounded end across the middle
+    /// of the quote. Here the attribute stops at every newline, so the
+    /// growing goes a paragraph at a time, and stops at the first paragraph
+    /// that is not quoted.
+    private func quoteSearchRange(
+        for dirtyRect: NSRect,
+        in textStorage: NSTextStorage,
+        layoutManager: NSLayoutManager,
+        textContainer: NSTextContainer
+    ) -> NSRange? {
+        let probe = NSRect(
+            x: 0,
+            y: dirtyRect.minY - textContainerOrigin.y,
+            width: max(1, textContainer.size.width),
+            height: dirtyRect.height
+        )
+        let glyphs = layoutManager.glyphRange(
+            forBoundingRect: probe,
+            in: textContainer
+        )
+        let characters = NSIntersectionRange(
+            layoutManager.characterRange(
+                forGlyphRange: glyphs, actualGlyphRange: nil
+            ),
+            NSRange(location: 0, length: textStorage.length)
+        )
+        guard characters.length > 0 else { return nil }
+
+        let string = textStorage.string as NSString
+        var start = string.paragraphRange(
+            for: NSRange(location: characters.location, length: 0)
+        ).location
+        while start > 0 {
+            let above = string.paragraphRange(
+                for: NSRange(location: start - 1, length: 0)
+            )
+            guard isQuoted(above, in: textStorage) else { break }
+            start = above.location
+        }
+        var end = NSMaxRange(string.paragraphRange(
+            for: NSRange(location: NSMaxRange(characters) - 1, length: 0)
+        ))
+        while end < string.length {
+            let below = string.paragraphRange(
+                for: NSRange(location: end, length: 0)
+            )
+            guard isQuoted(below, in: textStorage) else { break }
+            end = NSMaxRange(below)
         }
         return NSRange(location: start, length: end - start)
     }

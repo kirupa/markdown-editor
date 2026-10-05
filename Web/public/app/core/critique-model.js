@@ -8,7 +8,7 @@
 // quietly wrong, and they are the parts that can be checked without a screen.
 
 import { anchorFindings } from './critique-anchoring.js';
-import { critiqueScore, critiqueVerdict } from './critique-score.js';
+import { countsAgainstScore, critiqueScore, critiqueVerdict } from './critique-score.js';
 import { SEVERITY_RANK } from './critique-report.js';
 
 /** What the author decided about a finding. */
@@ -91,18 +91,92 @@ export function outstandingItems(items) {
 }
 
 /**
- * How good the draft looks, counting only what is still outstanding.
- *
- * Answering everything returns it to 100 -- the point of the two actions is
- * that the author has said what they meant to say, and the score should agree
- * with them rather than keep score against them.
+ * How good the draft looks: what is outstanding, what was dismissed, and what
+ * the summary still lists. See `critique-score.js` for why Done clears a note
+ * and Dismiss does not.
  */
-export function scoreFor(items) {
-  return critiqueScore(outstandingItems(items).map((item) => item.finding));
+export function scoreFor(items, listedProblems = 0) {
+  return critiqueScore(
+    items.filter((item) => countsAgainstScore(item.resolution)).map((item) => item.finding),
+    listedProblems
+  );
 }
 
-export function verdictFor(items) {
-  return critiqueVerdict(scoreFor(items));
+/**
+ * Whether the score is the critic's own rather than the author's: a critique
+ * of the text exactly as it stands, with nothing marked Done since. Only then
+ * is a hundred "Ready".
+ */
+export function isConfirmed(items, isStale) {
+  return !isStale && !items.some((item) => item.resolution === RESOLUTION.completed);
+}
+
+/**
+ * Whether an edit from `before` to `after` changes whether the critique of
+ * `criticised` still describes the draft.
+ *
+ * The rail redraws when it does. It used to redraw on an edit only when the
+ * edit moved a mark, which an edit after a clean critique never does: the
+ * draft could be rewritten under a "Ready" that was no longer the critic's.
+ */
+export function stalenessChanged(criticised, before, after) {
+  if (criticised === null) return false;
+  return (criticised !== before) !== (criticised !== after);
+}
+
+export function verdictFor(items, { listedProblems = 0, confirmed = true } = {}) {
+  return critiqueVerdict(scoreFor(items, listedProblems), confirmed);
+}
+
+/**
+ * Why the number is what it is, when that is not obvious from the notes, or
+ * null when it is.
+ *
+ * Each line answers a question the old banner left open. "Everything
+ * answered" beside a perfect score was the rail agreeing with itself; a score
+ * that does not move when a note is dismissed needs to say that it was not
+ * meant to. The wording is the Mac's, because it is the same rule.
+ */
+export function scoreCaption(items, { listedProblems = 0, confirmed = true } = {}) {
+  const answered = resolvedCount(items);
+  if (scoreFor(items, listedProblems) === 100) {
+    if (confirmed) return null;
+    return answered > 0
+      ? 'Every note answered. Critique again to confirm it is ready.'
+      : 'The draft has changed since. Critique again to confirm it is ready.';
+  }
+  const stillCounting = [];
+  if (dismissedCount(items) > 0) stillCounting.push('dismissed notes');
+  if (outstandingItems(items).length === 0 && listedProblems > 0) {
+    stillCounting.push('the problems in the summary');
+  }
+  const sentences = [];
+  if (answered > 0) sentences.push(`${answered} of ${items.length} answered.`);
+  if (stillCounting.length > 0) {
+    const list = stillCounting.join(' and ');
+    sentences.push(`${list[0].toUpperCase()}${list.slice(1)} still count.`);
+  }
+  return sentences.length > 0 ? sentences.join(' ') : null;
+}
+
+/**
+ * The remembered answers that still hold for a fresh critique of the draft.
+ *
+ * A dismissal carries over: it is the author declining the note, and the
+ * critic raising it again is not news. A Done does not, for a finding the
+ * critic has just reported again. Done says "fixed", and a critique of the
+ * draft as it stands that makes the same objection in the same words says it
+ * was not -- so the note comes back open, as it does on the Mac. Carried, it
+ * would hold the score at a hundred the critic never gave, and no number of
+ * re-runs could confirm it.
+ */
+export function carriedResolutions(findings, resolutions) {
+  const reported = new Set(findings.map(resolutionKey));
+  return Object.fromEntries(
+    Object.entries(resolutions).filter(
+      ([key, resolution]) => !(resolution === RESOLUTION.completed && reported.has(key))
+    )
+  );
 }
 
 /**
@@ -142,4 +216,8 @@ export function anchoredCount(items) {
 
 export function resolvedCount(items) {
   return items.length - outstandingItems(items).length;
+}
+
+export function dismissedCount(items) {
+  return items.filter((item) => item.resolution === RESOLUTION.dismissed).length;
 }

@@ -326,6 +326,76 @@ func checkOwnSavesAreNotReportedBack() {
     }
 }
 
+// MARK: - A critique's suggestion
+
+/// Apply goes through the session because the session is what knows which
+/// pane holds the document. What it must never do is write into text that has
+/// moved on since the note was drawn: the range came from the rail, and the
+/// rail can be a keystroke behind.
+@MainActor
+func checkSuggestionsReplaceOnlyWhatTheyWereWrittenFor() {
+    print("\na critique's suggestion")
+
+    let original = "# Notes\n\nEach one has it own tradeoffs.\n"
+    let session = MarkdownEditorSession(fileURL: nil, initialText: original)
+    let pane = RecordingSurface("SOURCE", text: original)
+    // Not focused: the button that asks for this is in the rail, and pressing
+    // it is not a reason for the editor to have been the last thing clicked.
+    session.attach(pane)
+
+    let quote = "it own"
+    let range = (original as NSString).range(of: quote)
+    let replaced = session.replaceSourceText(
+        in: range,
+        expecting: quote,
+        with: "its own",
+        actionName: "Apply Suggestion"
+    )
+    let expected = "# Notes\n\nEach one has its own tradeoffs.\n"
+    check(
+        "the passage is swapped for the suggestion",
+        replaced == expected && pane.sourceText == expected,
+        "editor holds \(pane.sourceText.debugDescription)"
+    )
+    check(
+        "as one named, undoable edit",
+        pane.appliedActions == ["Apply Suggestion"],
+        "actions \(pane.appliedActions)"
+    )
+    check(
+        "with the caret after the new words",
+        pane.selectedSourceRange
+            == NSRange(location: range.location + ("its own" as NSString).length, length: 0),
+        "selection \(pane.selectedSourceRange)"
+    )
+
+    // The same range again: it now covers "its ow", not "it own".
+    let stale = session.replaceSourceText(
+        in: range,
+        expecting: quote,
+        with: "its own",
+        actionName: "Apply Suggestion"
+    )
+    check(
+        "a range whose words have changed is refused, and nothing is written",
+        stale == nil && pane.sourceText == expected
+            && pane.appliedActions == ["Apply Suggestion"],
+        "editor holds \(pane.sourceText.debugDescription)"
+    )
+
+    let past = session.replaceSourceText(
+        in: NSRange(location: (expected as NSString).length, length: 4),
+        expecting: "tail",
+        with: "head",
+        actionName: "Apply Suggestion"
+    )
+    check(
+        "so is a range past the end of the document",
+        past == nil && pane.sourceText == expected,
+        "editor holds \(pane.sourceText.debugDescription)"
+    )
+}
+
 // MARK: - Run
 
 @MainActor
@@ -333,6 +403,7 @@ func runChecks() -> Int32 {
     print("changes made by another app")
     checkExternalChangesReachTheEditor()
     checkOwnSavesAreNotReportedBack()
+    checkSuggestionsReplaceOnlyWhatTheyWereWrittenFor()
 
     print("")
     if failures == 0 {

@@ -124,6 +124,9 @@ struct FormattingBar: View {
         .foregroundStyle(PixelStyle.ink(colorTheme))
 
         .help("Paragraph and heading style")
+        // Unnamed, both menus were read by their glyphs' own names:
+        // "Change Text Size" and "Embed Code".
+        .accessibilityLabel("Paragraph Style")
     }
 
     private var codeMenu: some View {
@@ -150,6 +153,7 @@ struct FormattingBar: View {
         .foregroundStyle(PixelStyle.ink(colorTheme))
 
         .help("Insert single-line or multi-line code")
+        .accessibilityLabel("Code")
     }
 }
 
@@ -214,6 +218,11 @@ private struct PixelBarButton: View {
                 ? title
                 : "\(title) — not available inside code, where Markdown is literal"
         )
+        // Named by what it does. Left to itself VoiceOver reads the symbol's
+        // own name, and three of them name something else entirely: the
+        // quote mark is "Lyrics", the rule is "Remove", and the picture is
+        // "Photo With A Plus Badge".
+        .accessibilityLabel(title)
     }
 }
 

@@ -143,5 +143,41 @@ struct CritiqueReportDecoderTests {
         #expect(report.findings.first?.needsVerification == true)
         #expect(report.findings.last?.adviceLabel == "Fix")
         #expect(report.keep.count == 1)
+        // From before the field was asked for, so there is nothing to apply.
+        #expect(report.findings.allSatisfy { $0.replacement == nil })
+    }
+
+    // MARK: - Suggestions
+
+    private func finding(replacement: String) throws -> CritiqueFinding {
+        let reply = """
+            {"findings":[{"severity":"medium","category":"Grammar and mechanics",
+             "location":"paragraph 3","quote":"each one has it own tradeoffs",
+             "why":"Possessive pronoun error.",
+             "fix":"Change \\"it\\" to \\"its\\".","replacement":\(replacement)}]}
+            """
+        return try #require(try CritiqueReportDecoder.decode(reply).findings.first)
+    }
+
+    @Test("A straight swap comes with the words to put in")
+    func decodesAReplacement() throws {
+        let note = try finding(replacement: #""each one has its own tradeoffs""#)
+        #expect(note.replacement == "each one has its own tradeoffs")
+        // The prose stays as it was: the replacement is offered beside it,
+        // not instead of it.
+        #expect(note.adviceLabel == "Fix")
+    }
+
+    @Test("A replacement that changes nothing is not offered", arguments: [
+        #""""#,
+        #""   ""#,
+        #""each one has it own tradeoffs""#,
+        #"" each one has it own tradeoffs ""#,
+        "null",
+    ])
+    func dropsAReplacementThatChangesNothing(_ replacement: String) throws {
+        // "" is what the prompt asks for when the fix needs the author, and a
+        // replacement that is the quote again is an Apply that does nothing.
+        #expect(try finding(replacement: replacement).replacement == nil)
     }
 }

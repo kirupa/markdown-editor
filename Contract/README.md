@@ -664,9 +664,11 @@ T-21, and the web's rows are WT-16 and WT-17.
 
 Beneath the Font chooser is a **Size** slider: **75% to 150%, in steps of 5%**,
 with the percentage beside it. It is the face's correction, because two hands
-at the same size can look a size apart. Like the colours, it is part of the
-Customize Theme draft: the preview follows it, Apply commits it and Cancel
-drops it. It is kept app-wide as `editorTextScale`, a number (1.25 for 125%).
+at the same size can look a size apart. It is chosen in Customize Theme with
+the colours, and Cancel puts back the size the popover opened with. (The Mac
+applies each choice as it is made, so the page is the preview; the web still
+previews a draft and commits it on Apply.) It is kept app-wide as
+`editorTextScale`, a number (1.25 for 125%).
 
 - **It scales everything the rendered text is set with**: the type, the space
   between lines and paragraphs, and the indents of lists, quotes and code. So
@@ -678,14 +680,19 @@ drops it. It is kept app-wide as `editorTextScale`, a number (1.25 for 125%).
 - **A stored value is clamped into range and rounded to a whole percent**, and
   anything that is not a number reads as 100%. Rounding is what makes a
   slider's 1.0000000000000002 the 100% it says it is.
+- **Make Text Bigger and Make Text Smaller step through stops**: 0.75, 0.8,
+  then every tenth to 1.5 (`EditorColorTheme.textScaleStops`). A size between
+  stops moves to the next stop in that direction, so a size set on the
+  slider's 5% steps comes back to a round number on the first press, and at
+  either end the command does nothing.
 - **The popover must not change width as the size changes.** The web's first
   version sized the popover to its preview, so a larger size or a wider face
   widened it, and the slider with it, which moved the thumb out from under the
   pointer mid-drag. The popover is now a fixed width. The preview wraps, and the
   popover grows downward only, below the slider.
 
-Reference: `EditorColorTheme.textScale` and `clampedTextScale`, tested in the
-"Editor text size" suite (`EditorTextScaleTests`), and
+Reference: `EditorColorTheme.textScale`, `clampedTextScale` and
+`steppedTextScale`, tested in the "Editor text size" suite (`EditorTextScaleTests`), and
 `Web/public/app/core/text-scale.js` with `Web/public/tests/text-scale.test.js`.
 The macOS README has the rule as T-23, and the web's row is WT-19.
 
@@ -702,9 +709,16 @@ These are product, not platform courtesy, and a build should have them:
 | `Ctrl/⌘ Alt/⌥ I` | Insert image |
 | `Ctrl/⌘ Alt/⌥ M` | Cycle editor view |
 | `Ctrl/⌘ Alt/⌥ O` | Open folder |
+| `Ctrl/⌘ 1` – `6` | Heading 1 – 6 |
+| `Ctrl/⌘ Alt/⌥ 0` | Paragraph (no heading) |
+| `Ctrl/⌘ '` | Quote |
+| `Ctrl/⌘ +` / `−` / `0` | Make text bigger / smaller / actual size, where the platform does not already take them for zoom |
 
 Plus the platform's own document shortcuts — New, Open, Save, Save As, Close —
 using whatever that platform's convention is.
+
+The heading, quote and text-size keys arrived on the Mac first (§14.1 of the
+macOS README); the web and Windows builds do not have them yet.
 
 ### Keeping the reader's place while re-styling
 
@@ -801,6 +815,56 @@ state to test from is a pane that has *not* been measured yet. On UIKit the
 shape of the problem is different again — assigning `attributedText` resets
 `contentOffset` outright — so a port should establish what its own toolkit does
 rather than assume this one transfers.
+
+### The critique's score
+
+A score is the one part of a critique that gets read without the notes, so it
+must not be possible to raise it without changing the draft. The macOS README
+records the rule as I-274 to I-276. Every build that scores a critique has to
+match it, because two builds with the same critique and different numbers have
+both stopped meaning anything.
+
+- **What counts.** Every note counts against the draft, at 12 for high, 5 for
+  medium and 2 for low, unless it is marked **Done**. A **dismissed** note still
+  counts: dismissing is a decision to leave the passage as it is, not a fix.
+  Each problem the summary lists counts 2, the weight of a low note, so that
+  answering every note cannot reach 100 while the summary still names three
+  things wrong.
+- **How it is scored.** The score is `round(100 · e^(−penalty / 60))`, between
+  1 and 100, and exactly 100 when nothing counts. It decays rather than
+  subtracting, so every fix is worth something and no draft reaches zero.
+- **Ready means the critic said so.** 100 reads **Ready** only when a critique
+  of the draft exactly as it stands found nothing. A 100 reached by marking
+  notes Done, or over a draft edited since, reads **Looks ready**, with
+  **Critique again** beside it. Below that the bands are **Nearly there** from
+  85, **Solid, with work to do** from 60, **Needs a pass** from 35, and **Needs a
+  rewrite** under 35.
+- **A fresh critique reopens a Done note it raises again**, and keeps a
+  dismissal. Done means *fixed*, and the same objection about the draft as it
+  stands says it was not. Carried over, the Done would hold the score at a
+  hundred that no re-run could confirm.
+- **The line under the score says why**, when the notes do not: how many notes
+  are answered, that dismissed notes still count, and, once no note is open,
+  that the problems in the summary still count. When the number explains
+  itself, there is no line.
+- **The critic is not asked to fill a quota.** The prompt asks for *up to*
+  three problems, and for none when nothing holds the draft back, because each
+  one now costs the score. With none listed, the overall read stands on its own
+  and is not filed under what does not work.
+- **The verdict changes on the edit that makes the draft stale**, not on the
+  next redraw for some other reason. The web build first did this only when an
+  edit moved a mark, and a clean critique has no marks.
+- **A quick pass has no score.** It reads only for slips and serious problems,
+  and a number out of it would look like a verdict on structure and voice it
+  never read. It shows how many notes are left to fix instead.
+
+The rule is `CritiqueScore` in
+`Shared/Sources/MarkdownEditorCore/CritiqueScore.swift`, with
+`CritiqueScoreTests.swift` as the specification. The web build ports it in
+`Web/public/app/core/critique-score.js` and `critique-model.js`, tested in
+`Web/public/tests/critique.test.js`. The web port was brought back into line in
+the same change after it had kept the old rule, under which dismissing every
+note printed 100 · Ready. The web build has no quick pass yet.
 
 ### Taking the reader to a criticised passage
 
@@ -919,11 +983,67 @@ often enough to matter. Clearing unconditionally on departure turns the new
 highlight straight back off, which on screen is a flicker rather than a move.
 Clear only when the note being left is still the one holding the pointer.
 
-The state machine, the three washes and the rule are shared and testable:
-`Shared/Sources/MarkdownEditorUI/CritiqueHighlight.swift`, with
-`CritiqueHighlightTests.swift` asserting the ordering, the hue, that nine
-distinct washes come out of three severities in three states, and that the rule
-belongs to the open state alone.
+**While a note is open, every other passage steps back** to a fainter wash of
+its own colour, so on a page with a mark in every paragraph the open passage is
+the one that stands out. The order is selection, then hover, then receded, then
+rest: hovering another note still tints its passage, because "which passage is
+this?" has to be answerable with a note open as much as without. A port will be
+tempted to hide the other marks instead, and it is worse. A mark is how a reader
+finds a note from the draft, and a page shading only the open passage has lost
+the map of the others and the places to click with it. The receded wash has to
+stay visible: the faintest, a low note on white, measures ΔE 5.0 from the page
+and 3.3 from the resting wash it replaces, and the tests hold every severity in
+both modes to at least 4.6 and 3.
+
+**Two notes' marks never run together.** A mark is padded beyond its words —
+in the macOS build 3pt either side and 1pt above and below — and that padding
+made two neighbouring sentences overlap by 2pt, on a line and between lines, so
+their washes drew as one and nobody could tell which note owned which words.
+Where two passages' words are apart and their marks would touch, both give way
+to the midpoint and leave 2pt of page between them. A passage inside another,
+or two that share words, has no gap to leave and is drawn as it is. It is the
+padding that gives way, never the words.
+
+**A passage is filled once**, as one shape, not once per line. Its own lines
+overlap by the same padding, and a semi-transparent wash filled a line at a time
+comes out at twice the alpha where they meet — a stripe between every pair of
+lines that reads as the seam between two notes. The open note's rule follows the
+line as measured, not the mark as cut, so it sits the same distance under the
+words on every line.
+
+The state machine, the four washes, the rule and the separation are shared and
+testable: `Shared/Sources/MarkdownEditorUI/CritiqueHighlight.swift`, with
+`CritiqueHighlightTests.swift` asserting the ordering, the hue, that twelve
+distinct washes come out of three severities in four states, that the rule
+belongs to the open state alone, and that `CritiqueHighlightLayout.separated`
+leaves the gap between neighbours and only there.
+
+### A note names where it is
+
+The critic writes a location with every note, and it is not fit to show: the
+same paragraph was "Opening, paragraph 2" on one read and "Opening, paragraph
+1" on the next, because whether a title counts as a paragraph is a judgement
+the model makes afresh each time, and the label was fixed at the moment of the
+read, so a paragraph added above a note left it naming the one before. **The
+place under a note is worked out from where the note is anchored**, from the
+draft as it is now:
+
+- The section is the nearest heading above the passage, its markup taken out
+  and cut at a word past 32 characters, with an ellipsis. Before the first
+  heading it is **Opening**; a draft with no headings says only **Paragraph
+  2**.
+- A level-one heading on the draft's first line is the **Title**, not a
+  section, and does not count as a paragraph.
+- Paragraphs are always numbered. A list, quote or code block is numbered only
+  when its section has more than one.
+- Blocks are counted the way the editor draws the draft, not the way CommonMark
+  parses it, so the label agrees with the page.
+- A passage in front matter keeps the critic's label; there is nothing to count.
+
+The rules are `CritiqueOutline` and `CritiquePlace` in
+`Shared/Sources/MarkdownEditorCore/CritiquePlace.swift`, with
+`CritiquePlaceTests.swift` as the specification, including which edits can move
+a place and so are worth recounting for. The web build does not do this yet.
 
 ### Noticing that the file changed underneath the editor
 
@@ -973,6 +1093,59 @@ Reference: `Shared/Sources/MarkdownEditorCore/ExternalDocumentChange.swift` and
 asserted end to end by `macOS/Scripts/check-session.swift`. The web build
 reaches the same outcome from a different direction — it has no file to watch,
 so it re-reads the document whenever the tab comes back to the front.
+
+### Closing a document stops its editor
+
+An editor that saves on a timer, watches its file and runs a critique has three
+things that outlive the document unless something stops them, and on macOS
+27.2 nothing does it for you. A SwiftUI `DocumentGroup` keeps a closed
+document's window alive, and the view in it is never told it has gone:
+`onDisappear` does not run. The closed editor goes on working, and the ways
+that shows are worse than the memory it holds:
+
+- A file another app rewrites after its window has closed is still noticed,
+  taken in and autosaved, to a document that no longer exists. That surfaces
+  as a "couldn't autosave" alert over whatever the writer is doing next.
+- Typing and closing inside the autosave's delay does the same, over a file
+  that had in fact saved: the platform's document saved it as the window
+  closed, and the timer fired afterwards.
+
+So when a document's window closes:
+
+1. **Drop** the pending autosave rather than flushing it. `NSDocument` has
+   saved before its window closes; a second save after the close is the false
+   alarm above. A port whose platform does not save on close must flush here
+   instead, so check which yours is.
+2. Stop watching the file.
+3. Stop a critique that is still running.
+4. Remove whatever was installed app-wide on the window's behalf. On macOS
+   that is two local mouse monitors for the title bar.
+5. Take the editor out of the window **while the window is still on screen**.
+
+Hang this on the window's own close notification (`NSWindow.willCloseNotification`),
+not on the UI framework's disappearance callback and not on the request to
+close. A close the writer cancels from the save sheet must change nothing, and
+the notification is not posted for one. Step 5's timing is measured, not
+taste: taken down once the window had left the screen, the editor's layers
+stayed behind, about 15 MB of footprint on every close of the 21,500-word
+document. Taken down inside the close, then laid out and flushed there, eight
+closes in a row add 0.4 MB of heap in all.
+
+Test it against a document whose saves are counted, not the real one: on macOS
+an autosave aimed at a closed document presents a modal error, which hangs an
+unattended run instead of failing it. Type, let one autosave land as the
+positive control, type again, close at once, and check the count stays put.
+Then close a watched document, rewrite its file from outside, and check again.
+
+Reference: `windowIsClosing(_:)` in `macOS/Sources/MarkdownEditor/WindowChrome.swift`
+and `documentWindowClosed()` in `macOS/Sources/MarkdownEditor/MarkdownEditorView.swift`,
+asserted by the "Closing a document window" checks in
+`macOS/Scripts/check-window.swift`. The macOS README records the requirement
+as D-42. The web build
+has no window to close. A tab holds one document at a time, its watchers
+follow the open document when it becomes a different one
+(`Web/public/app/live.js`), and a hidden tab flushes its autosave rather than
+dropping it, because nothing else will save it.
 
 ### The size a document window opens at
 
@@ -1167,6 +1340,154 @@ Four things a port has to get right, each measured rather than assumed:
 The artwork stays vector. The generator renders ten sizes from 16 to 1024
 pixels, and a vector redrawn at each of them is sharp where one bitmap resampled
 ten times is not.
+
+### How long a draft is
+
+Somebody writing to a slot — 600 words for a column, five minutes for a talk —
+checks two numbers more than any others, and a build that cannot say them sends
+the draft off to something that can. Every build shows them wherever it keeps a
+document's subtitle; macOS puts them under the name in the title bar:
+
+- `1,234 words · 6 min read` for the whole draft, and `1 word · 1 min read`
+  for one word;
+- `56 of 1,234 words` while a selection holds a word, and the whole draft's
+  line again when it holds none — a caret, or a selection of only spaces and
+  Markdown marks;
+- `0 words` for a draft with none, rather than a reading time of nothing.
+
+**The words are the critique's words.** They are `MarkdownProse.wordCount`, the
+count that decides whether a draft is long enough to critique (thirty words), so
+the title bar can never show 40 for a draft the critique turns away as too
+short. It skips what a reader never reads as prose — fenced code, front matter,
+link and image destinations, reference definitions, HTML tags and comments,
+list and heading markers — and counts a run of non-space characters with a
+letter or digit in it, so a dash between spaces is not a word and
+`state-of-the-art` is one. Han, Hiragana and Katakana count a character a word,
+which is how counts are conventionally given for them. A selection is counted
+on its own text, never as a share of the whole: a share would have to know
+where the code blocks fall, which is the one thing the count exists to know.
+
+**The reading time is at 238 words a minute, rounded up.** That is Brysbaert's
+2019 review of 190 studies of silent reading. The 200 most counters use is a
+round number rather than a measurement, and adds a minute to every five.
+Rounding up makes a 250-word post a two-minute read, and a single sentence a
+minute rather than none.
+
+Counting is one pass over the draft: 1.4ms on the 21,500-word document the
+macOS typing measurements use. That is nothing once, and too much to add to
+every keystroke on exactly the drafts where typing is slowest, so the count
+waits for a quarter of a second without an edit. A document that opens shows
+its count on its first frame.
+
+The rules are `DocumentLength` and `MarkdownProse` in
+`Shared/Sources/MarkdownEditorCore/`, with `DocumentLengthTests.swift` and
+`MarkdownProseTests.swift` as the specification. The web build does not do this
+yet.
+
+### A draft is named by its title
+
+A draft that has never been saved still has a name: the window shows it and
+Save proposes it. Every build should make that name the draft's own title, as
+its writer typed it. Left alone, macOS 26 and later name an untitled draft a
+few seconds after its first autosave, and invent the name rather than read it:
+on macOS 27.2 two drafts that both opened `# Field notes on speed` were offered
+as "Field Notes on Speed" and "Draft Speed and Latency Notes". A writer who has
+typed their title should not have to type it again in a save sheet, letter case
+and all.
+
+- **The title is the line the critique calls the Title** (see "A note names
+  where it is"): a Heading 1 on the draft's first written line, front matter
+  and blank lines aside, with its Markdown taken out. A draft that opens any
+  other way has no title — including `# ` with no words after it, which is how
+  every new document begins — and keeps whatever the platform calls it.
+- **It is made safe to save, and otherwise left alone.** `: ` becomes ` - `, and
+  any other colon or slash becomes `-`, because Finder will not take a colon and
+  stores a slash as one: `# Speed: a field guide` is saved as "Speed - a field
+  guide". Runs of spaces become one. Leading dots go, because a leading dot
+  hides the file, and trailing dots, spaces, dashes and commas go. Past 80
+  characters it stops at the last whole word that fits, or cuts at 80 when that
+  would leave fewer than 40. Last, it is cut to 240 UTF-8 bytes: a name holds
+  255 with its extension, and an emoji is four.
+- **It follows the title** as the title is edited. When the title goes, the
+  draft gets back the placeholder it opened under, "Untitled" or "Untitled 2",
+  by that name: asking macOS for a fresh one named it "Untitled -1".
+- **It never takes a name it did not give.** A duplicate arrives named
+  "… copy" so that saving it cannot overwrite its original, and renaming it
+  after its title would propose exactly the original's name. A name the writer
+  types into the title bar is theirs to keep. Once saved, a document is named by
+  its file, like any other.
+
+`DocumentTitle` in `Shared/Sources/MarkdownEditorCore/DocumentTitle.swift`
+holds what the title is and the name it makes, with `DocumentTitleTests.swift`
+as the specification. Following the title is the platform's own document
+machinery: on macOS it is `DraftNamer` in
+`macOS/Sources/MarkdownEditor/TitleBarModel.swift`, asserted against real
+windows by `make -C macOS check-window`. The web build does not do this yet:
+an unsaved draft there is "Untitled", and Save proposes `Untitled.md`.
+
+### A block quote has one bar
+
+A quote drawn as an indent and nothing else reads, on a page of paragraphs, as
+a layout slip rather than somebody else's words. Every build draws **a bar down
+the left of a block quote**, in the quote's left inset: 3 points wide, rounded,
+in the text colour at 28% so that it follows the theme.
+
+**It is one bar for a run of quoted lines**, from the first line's text to the
+last line's, through wrapped lines and the space between quoted paragraphs. A
+line that is not quoted ends the run, so a paragraph between two quotes gives
+each its own bar. This is the part a port gets wrong. A renderer that makes
+each `>` line a block of its own and borders each block draws a dash beside
+every line instead, because the gap between two blocks belongs to neither. The
+web build did exactly that until the gap between two quoted lines was moved
+from margin into padding. Measured in headless Chrome, three 18px dashes with
+7px between them became one 68px bar: the same 68px the lines spanned before,
+so the lines of a quote sit no closer together than the paragraphs around it.
+
+**It is the same however little of it is redrawn.** A native text view redraws
+only the rectangle that changed — a caret blink, a line of scrolling — and a bar
+worked out from the text inside that rectangle comes out as a short piece of
+itself. Find the run from the text, then clip it to the rectangle.
+
+The styling is `RichMarkdownStyler`, which marks quoted text with
+`.markdownQuoteBar`, and `EditorColorTheme.quoteBarColor`, with
+`RichMarkdownStylerTests.swift` and `EditorColorThemeTests.swift` as the
+specification. The macOS drawing is in
+`macOS/Sources/MarkdownEditor/RichMarkdownTextView.swift`, and
+`make -C macOS check-code-block-scroll` draws two quotes whole and then a strip
+at a time, in both palettes, and checks that each comes out as one bar either
+way. The web build's rule is `.me-block.me-quote + .me-block.me-quote` in
+`Web/public/css/app.css`, kept there by `Web/public/tests/stylesheet.test.js`.
+
+### Every control is named by what it does
+
+A screen reader reads a control by its name, and a control left to its symbol
+is named after the picture: on macOS, VoiceOver read Quote as "Lyrics",
+Horizontal Rule as "Remove", Add Image as "Photo With A Plus Badge" and the
+heading menu as "Change Text Size". Every build holds to four rules, each of
+which a port meets in its own accessibility API — `accessibilityLabel` in
+SwiftUI, `aria-label` on the web:
+
+- **Name a control by what it does**, never by its icon. A formatting button is
+  named by its tooltip's title, and the heading menu is **Paragraph Style**,
+  which is what the web build already called it.
+- **Hide a picture that only decorates.** The sparkles beside CRITIQUE and the
+  folder in an empty explorer were each a stop of their own, read as "Sparkle"
+  and "Move".
+- **Say what a control holds as well as what it is.** The theme popover's size
+  slider is **Text size**, valued "100%". If the platform makes the A at each
+  end a button — SwiftUI does, and each steps the size by 5% — it is named
+  **Smaller text** or **Larger text**; hidden, it was still a stop, and read as
+  nothing. Where they are only decoration, as on the web, they are hidden.
+- **Write capitals into the string, not the style.** A severity chip drawn
+  "1 HIGH" must be read "1 high". SwiftUI's `.textCase(.uppercase)` reaches past
+  the text into the button's name and hint, so VoiceOver was handed "1 HIGH"
+  and "SHOWS ONLY THESE NOTES".
+
+A name is checked by asking the platform what it would say, never by reading
+the source. On macOS that is `make -C macOS check-voiceover`: 29 checks of the
+names, values and presses the real views give VoiceOver, 15 of which fail
+against the views as they were before these rules. The macOS README's §13.4
+lists what each control is called.
 
 ### What is deliberately per-platform
 

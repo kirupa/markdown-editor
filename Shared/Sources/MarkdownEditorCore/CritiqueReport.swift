@@ -129,6 +129,14 @@ public struct CritiqueFinding: Equatable, Identifiable, Sendable, Codable {
     /// What needs to change, when the revision needs judgement only the author
     /// has.
     public let direction: String?
+    /// The quote as it should read, when the fix is a straight swap.
+    ///
+    /// `fix` is prose — `Change "noticable" to "noticeable".` — written for
+    /// a person to carry out, and carrying it out was retyping it by hand.
+    /// This is the same correction as text the app can put in the quote's
+    /// place. Nil when the fix needs the author, and never the quote itself:
+    /// a replacement that changes nothing is not offered.
+    public let replacement: String?
 
     public init(
         id: UUID = UUID(),
@@ -139,7 +147,8 @@ public struct CritiqueFinding: Equatable, Identifiable, Sendable, Codable {
         quote: String,
         why: String,
         fix: String? = nil,
-        direction: String? = nil
+        direction: String? = nil,
+        replacement: String? = nil
     ) {
         self.id = id
         self.severity = severity
@@ -150,6 +159,51 @@ public struct CritiqueFinding: Equatable, Identifiable, Sendable, Codable {
         self.why = why
         self.fix = fix
         self.direction = direction
+        let trimmed = replacement?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.replacement = trimmed?.isEmpty == false && replacement != quote
+            ? replacement
+            : nil
+    }
+
+    /// The same note about a different quote.
+    ///
+    /// The replacement is dropped unless it is still the quote it was written
+    /// for: it was a rewrite of particular words, and pasting it over other
+    /// words would put the critic's sentence where it never meant one to go.
+    public func requoted(_ quote: String, location: String) -> CritiqueFinding {
+        CritiqueFinding(
+            id: id,
+            severity: severity,
+            category: category,
+            needsVerification: needsVerification,
+            location: location,
+            quote: quote,
+            why: why,
+            fix: fix,
+            direction: direction,
+            replacement: quote == self.quote ? replacement : nil
+        )
+    }
+
+    /// The same note under another identity.
+    ///
+    /// A note shown while the report was still arriving is decoded a second
+    /// time when the report ends. Giving the second copy the first one's
+    /// identity is what keeps the card the author already pressed the same
+    /// card, instead of one that vanishes and is replaced by its twin.
+    public func identified(as id: UUID) -> CritiqueFinding {
+        CritiqueFinding(
+            id: id,
+            severity: severity,
+            category: category,
+            needsVerification: needsVerification,
+            location: location,
+            quote: quote,
+            why: why,
+            fix: fix,
+            direction: direction,
+            replacement: replacement
+        )
     }
 
     /// What to show under "Why" — the advice, whichever form it came in.
@@ -198,6 +252,25 @@ public enum CritiqueReportDecoder {
     /// line are all things a model does. So the object is *found* in the text
     /// rather than assumed to be all of it.
     public static func decode(_ reply: String) throws -> CritiqueReport {
+        report(from: try object(in: reply))
+    }
+
+    /// Reads a report and what it said about the earlier notes it was shown.
+    ///
+    /// The verdicts are read as forgivingly as the findings: a model that
+    /// writes "Fixed", "resolved" or "still applies" means the same thing as
+    /// one that writes the exact words asked for, and a verdict that cannot be
+    /// read at all is left out rather than failing the whole critique. A note
+    /// with no verdict is kept as it was.
+    public static func decodeAnswer(_ reply: String) throws -> CritiqueAnswer {
+        let object = try object(in: reply)
+        return CritiqueAnswer(
+            report: report(from: object),
+            verdicts: verdicts(from: object["previous"])
+        )
+    }
+
+    private static func object(in reply: String) throws -> [String: Any] {
         guard let json = extractJSONObject(from: reply) else {
             throw Failure.noJSONFound
         }
@@ -213,7 +286,74 @@ public enum CritiqueReportDecoder {
         guard let object = parsed as? [String: Any] else {
             throw Failure.malformedJSON("the reply is not a JSON object")
         }
-        return report(from: object)
+        return object
+    }
+
+    /// Accepts the list that was asked for — `[{"id": "n1", "status": …}]` —
+    /// and the map a model sometimes writes instead, `{"n1": "fixed"}`.
+    static func verdicts(from value: Any?) -> [String: CritiqueNoteVerdict] {
+        var entries: [(key: String, entry: [String: Any])] = []
+        if let list = value as? [Any] {
+            for case let entry as [String: Any] in list {
+                guard let key = noteKey(entry["id"] ?? entry["key"]) else { continue }
+                entries.append((key, entry))
+            }
+        } else if let map = value as? [String: Any] {
+            for (rawKey, raw) in map {
+                guard let key = noteKey(rawKey) else { continue }
+                if let entry = raw as? [String: Any] {
+                    entries.append((key, entry))
+                } else {
+                    entries.append((key, ["status": raw]))
+                }
+            }
+        }
+        var verdicts: [String: CritiqueNoteVerdict] = [:]
+        for (key, entry) in entries {
+            switch status(entry["status"] ?? entry["verdict"]) {
+            case .fixed?:
+                verdicts[key] = .fixed
+            case .stillApplies?:
+                verdicts[key] = .stillApplies(
+                    quote: string(entry["quote"]),
+                    location: string(entry["location"])
+                )
+            case nil:
+                continue
+            }
+        }
+        return verdicts
+    }
+
+    private enum Status { case fixed, stillApplies }
+
+    private static func status(_ value: Any?) -> Status? {
+        guard let raw = value as? String else { return nil }
+        let word = raw.lowercased().filter(\.isLetter)
+        switch word {
+        case "fixed", "resolved", "addressed", "gone", "done", "nolongerapplies":
+            return .fixed
+        case "stillapplies", "applies", "open", "remains", "stillopen",
+             "notfixed", "unresolved", "unchanged", "stands":
+            return .stillApplies
+        default:
+            return nil
+        }
+    }
+
+    /// "n3", whatever it arrived as: `"N3"`, `" n3 "`, `3` or `"3"`.
+    private static func noteKey(_ value: Any?) -> String? {
+        let raw: String
+        if let text = value as? String {
+            raw = text
+        } else if let number = value as? NSNumber {
+            raw = number.stringValue
+        } else {
+            return nil
+        }
+        let key = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !key.isEmpty else { return nil }
+        return key.allSatisfy(\.isNumber) ? "n\(key)" : key
     }
 
     /// The first balanced `{…}` run in `text`, ignoring braces inside strings.
@@ -276,7 +416,10 @@ public enum CritiqueReportDecoder {
         )
     }
 
-    private static func finding(from object: [String: Any]) -> CritiqueFinding? {
+    /// One finding, read from its object. Shared with `CritiqueFindingStream`
+    /// so a note shown while the report is arriving is read by the same rules
+    /// as the report it lands in.
+    static func finding(from object: [String: Any]) -> CritiqueFinding? {
         let quote = string(object["quote"]) ?? ""
         let why = string(object["why"]) ?? ""
         // A finding with neither a passage nor a reason has nothing to say and
@@ -291,7 +434,8 @@ public enum CritiqueReportDecoder {
             quote: quote,
             why: why,
             fix: string(object["fix"]),
-            direction: string(object["direction"])
+            direction: string(object["direction"]),
+            replacement: string(object["replacement"])
         )
     }
 

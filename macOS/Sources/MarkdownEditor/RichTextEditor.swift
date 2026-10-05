@@ -50,12 +50,18 @@ struct RichTextEditor: NSViewRepresentable {
         textView.allowsUndo = true
         textView.isRichText = true
         textView.importsGraphics = false
-        textView.usesFindPanel = true
+        // The find *bar*, not the panel: it sits at the top of the page it is
+        // searching rather than floating over it, and incremental search
+        // marks every match as it is typed. Edit ▸ Find is what reaches it —
+        // `TextEditingCommands` in the app's scene — and without that menu
+        // ⌘F had nothing to send it to.
+        textView.usesFindBar = true
         textView.isIncrementalSearchingEnabled = true
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false
         textView.isAutomaticSpellingCorrectionEnabled = false
+        textView.adoptSpellingPreferences()
         textView.smartInsertDeleteEnabled = false
         textView.textContainerInset = NSSize(
             width: 24, height: Layout.textTopInset
@@ -740,6 +746,30 @@ struct RichTextEditor: NSViewRepresentable {
 
         func textDidBeginEditing(_ notification: Notification) {
             session?.activate(self)
+        }
+
+        /// Spelling is checked against what the pane shows, and the pane
+        /// shows code as well as prose. Dropping what lands in code here,
+        /// rather than switching checking off around it, keeps one rule for
+        /// both the underline and the context menu's suggestions.
+        func textView(
+            _ view: NSTextView,
+            didCheckTextIn range: NSRange,
+            types checkingTypes: NSTextCheckingTypes,
+            options: [NSSpellChecker.OptionKey: Any] = [:],
+            results: [NSTextCheckingResult],
+            orthography: NSOrthography,
+            wordCount: Int
+        ) -> [NSTextCheckingResult] {
+            guard let storage = view.textStorage else { return results }
+            return results.filter { result in
+                guard result.resultType == .spelling
+                    || result.resultType == .grammar
+                else {
+                    return true
+                }
+                return !RichMarkdownTextView.isCode(result.range, in: storage)
+            }
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {

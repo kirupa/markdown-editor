@@ -316,6 +316,50 @@ struct RichMarkdownStylerTests {
         #expect(indent(of: styled("- One", page: nil), at: 0) == 24)
     }
 
+    @Test("A quote's text carries its bar, and nothing else does")
+    func aQuoteIsMarkedForItsBar() {
+        // The text view draws a bar beside whatever carries this, so a
+        // paragraph that picked it up would be drawn as a quote.
+        let text = styled(
+            "Before.\n\n> Quoted, and **bold** inside.\n\nAfter.",
+            page: nil
+        ) as NSAttributedString
+        let string = text.string as NSString
+        let bar = EditorColorTheme(color: .blue, mode: .light).quoteBarColor
+        let quoted = string.range(of: "Quoted, and bold inside.")
+        var run = NSRange(location: 0, length: 0)
+        let value = text.attribute(
+            .markdownQuoteBar, at: quoted.location,
+            longestEffectiveRange: &run, in: quoted
+        ) as? PlatformColor
+        #expect(value == bar)
+        #expect(run == quoted, "the whole line, bold and all, is one run")
+        for plain in ["Before.", "After."] {
+            #expect(text.attribute(
+                .markdownQuoteBar,
+                at: string.range(of: plain).location,
+                effectiveRange: nil
+            ) == nil)
+        }
+    }
+
+    @Test("An empty quoted line carries the bar on its own newline")
+    func anEmptyQuotedLineIsMarkedToo() {
+        // Where its indent is, for the same reason (I-230): a bar that skipped
+        // the empty line would break in two where the writer left a gap.
+        let text = styled("> One\n>\n> Two", page: nil)
+        // Drawn as "One\n\nTwo": the empty line is the second newline.
+        let empty = 4
+        #expect(text.string == "One\n\nTwo")
+        #expect(text.attribute(.markdownQuoteBar, at: empty, effectiveRange: nil)
+            != nil)
+        // And the newline ending a line with text on it is left alone, as the
+        // indent leaves it: the bar is drawn by paragraph, not by character.
+        #expect(text.attribute(
+            .markdownQuoteBar, at: empty - 1, effectiveRange: nil
+        ) == nil)
+    }
+
     @Test("A picture gives up its indent as it outgrows the column")
     func aPictureSpreadsIntoTheMargins() {
         let page = MarkdownPageMetrics(measure: 642, bleed: 100)

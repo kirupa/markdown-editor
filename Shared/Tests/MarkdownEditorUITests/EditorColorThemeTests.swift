@@ -264,6 +264,33 @@ struct EditorColorThemeTests {
         }
     }
 
+    @Test("A quote's bar shows on every page, and stays quieter than text")
+    func quoteBarsAreVisibleButQuiet() {
+        for theme in Self.allThemes {
+            let page = theme.editorBackgroundColor
+            let bar = theme.quoteBarColor.composited(over: page)
+            let ratio = bar.contrastRatio(with: page)
+            // Translucent text, as the web's `.me-quote` border is, so the
+            // two builds cannot drift to different greys.
+            #expect(
+                theme.quoteBarColor.alphaComponent == 0.28,
+                "\(theme.title): the bar is not the web's 28%"
+            )
+            #expect(
+                ratio >= 1.4,
+                "\(theme.title): the bar is \(ratio):1 against the page"
+            )
+            let quoteText = theme.secondaryTextColor.contrastRatio(with: page)
+            #expect(
+                ratio < quoteText,
+                """
+                \(theme.title): the bar (\(ratio):1) is louder than the \
+                quote it marks (\(quoteText):1)
+                """
+            )
+        }
+    }
+
     // MARK: - Every colour has to be a real colour
 
     /// Every palette colour must convert to sRGB.

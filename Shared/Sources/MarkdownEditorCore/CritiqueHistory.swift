@@ -13,12 +13,31 @@ public struct CritiqueRevision: Equatable, Sendable, Codable, Identifiable {
     public let report: CritiqueReport
     /// The draft exactly as it was when this critique was written.
     public let documentText: String
+    /// The earlier notes this critique found fixed.
+    ///
+    /// Kept apart from `report.findings`, which are the notes that still stand,
+    /// so the score this revision arrived with is the score of what was left —
+    /// and so reopening the document shows what the last critique cleared,
+    /// rather than the cleared notes vanishing as if they had never been
+    /// raised. Optional, and left out when empty, so a history written before
+    /// it existed still loads and one written after still loads in a build
+    /// that does not know it.
+    public let fixed: [CritiqueFinding]?
+    /// The reader and goal this critique was told to hold the draft to, or
+    /// nil when it was left to guess. Optional for the same reason as `fixed`.
+    public let brief: String?
+    /// `.quick` for a quick pass, and nil for a full critique — the only kind
+    /// there was before this field, so it is what a history without it holds.
+    public let depth: CritiqueDepth?
 
     public init(
         id: UUID = UUID(),
         date: Date = Date(),
         report: CritiqueReport,
-        documentText: String
+        documentText: String,
+        fixed: [CritiqueFinding] = [],
+        brief: String? = nil,
+        depth: CritiqueDepth = .full
     ) {
         self.id = id
         // Truncated to the second, which is the precision it is stored and
@@ -28,10 +47,38 @@ public struct CritiqueRevision: Equatable, Sendable, Codable, Identifiable {
         self.date = Date(timeIntervalSince1970: date.timeIntervalSince1970.rounded(.down))
         self.report = report
         self.documentText = documentText
+        self.fixed = fixed.isEmpty ? nil : fixed
+        let brief = brief.map(CritiqueBrief.normalized)
+        self.brief = brief?.isEmpty == false ? brief : nil
+        self.depth = depth == .quick ? .quick : nil
     }
 
-    /// The score this critique arrived with, before anything was answered.
-    public var score: Int { CritiqueScore.score(for: report.findings) }
+    /// A quick pass: mechanics and serious problems only, and no score. See
+    /// `CritiqueDepth`.
+    public var isQuick: Bool { depth == .quick }
+
+    /// Who this critique took the draft to be for: the brief it was given,
+    /// and otherwise its own read.
+    ///
+    /// A critique left to guess still held its notes to *somebody*, and that
+    /// guess is the reader its notes are for — so it is what a brief is
+    /// compared with to tell whether these notes were written for the reader
+    /// named now.
+    public var reader: String {
+        brief ?? CritiqueBrief.normalized(report.jobRead)
+    }
+
+    /// The score this critique arrived with, before anything was answered —
+    /// its notes and the problems its summary listed, as the rail counts them.
+    ///
+    /// Meaningless for a quick pass, which did not look for most of what the
+    /// score counts. Nothing shows one; see `CritiqueRevisionLabel.measure`.
+    public var score: Int {
+        CritiqueScore.score(
+            for: report.findings,
+            listedProblems: report.whatDoesNotWork.count
+        )
+    }
 
     /// Whether the draft has moved on since this was written.
     public func isStale(against text: String) -> Bool { documentText != text }
@@ -79,8 +126,18 @@ public struct CritiqueHistory: Equatable, Sendable, Codable {
     /// stacking beside it. Two critiques of the same text are two opinions
     /// about one thing, and a history that fills up with them buries the
     /// revisions that actually differ.
+    ///
+    /// Unless they were written for different readers. Then they are two
+    /// different things, and the one for the reader somebody has just
+    /// corrected away from is exactly what they might want to look back at.
+    ///
+    /// Nor does a quick pass replace a full critique. It read less of the
+    /// same text, and the full one's summary and score are not in it; the
+    /// other way round loses nothing, because a full critique says everything
+    /// a quick pass could.
     public mutating func add(_ revision: CritiqueRevision) {
-        if let first = revisions.first, first.documentText == revision.documentText {
+        if let first = revisions.first, first.documentText == revision.documentText,
+           first.reader == revision.reader, !revision.isQuick || first.isQuick {
             revisions.removeFirst()
         }
         revisions.insert(revision, at: 0)
@@ -106,5 +163,11 @@ public enum CritiqueRevisionLabel {
         formatter.locale = locale
         formatter.unitsStyle = .full
         return formatter.localizedString(for: date, relativeTo: now)
+    }
+
+    /// What a revision is worth, beside when it was written: its score, or
+    /// that it was a quick pass and so has none.
+    public static func measure(_ revision: CritiqueRevision) -> String {
+        revision.isQuick ? "Quick pass" : "\(revision.score)/100"
     }
 }

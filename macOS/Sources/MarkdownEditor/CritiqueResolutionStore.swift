@@ -9,12 +9,13 @@ import MarkdownEditorCore
 /// and commit.
 ///
 /// The cost is that the decisions are per-machine, and that moving the file
-/// loses them. Both are the right trade for a record of "I already read that
-/// one": losing it costs a dismissal, and the alternative costs the tidiness of
-/// somebody's project.
+/// while it is closed loses them — a move KONVO sees, a Save As or a rename of
+/// the open document, takes them along. Both are the right trade for a record
+/// of "I already read that one": losing it costs a dismissal, and the
+/// alternative costs the tidiness of somebody's project.
 enum CritiqueResolutionStore {
     private static let key = "critiqueResolutions"
-    /// How many documents are remembered, most recently used first.
+    /// How many documents are remembered.
     ///
     /// Without a cap this grows for the life of the install. A hundred
     /// documents is far more than anyone has open in a working week, and the
@@ -46,17 +47,18 @@ enum CritiqueResolutionStore {
         defaults.set(trimmed(all, keeping: url.path), forKey: key)
     }
 
-    /// Keeps the store bounded, never dropping the document in hand.
-    static func trimmed(
-        _ all: [String: [String: String]],
+    /// Keeps a per-document store bounded, never dropping the document in hand.
+    /// Shared with `CritiqueBriefStore`, which is bounded the same way.
+    static func trimmed<Value>(
+        _ all: [String: Value],
         keeping current: String,
         limit: Int = documentLimit
-    ) -> [String: [String: String]] {
+    ) -> [String: Value] {
         guard all.count > limit else { return all }
         // Nothing here records when a document was last touched, so the
         // honest rule is "keep the one being used and an arbitrary rest"
         // rather than pretending to an order that was never recorded.
-        var kept: [String: [String: String]] = [:]
+        var kept: [String: Value] = [:]
         if let mine = all[current] { kept[current] = mine }
         for (path, entries) in all where path != current {
             guard kept.count < limit else { break }

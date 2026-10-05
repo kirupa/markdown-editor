@@ -353,6 +353,288 @@ func checkHighlightsAndClicking() {
     )
 }
 
+/// Notes about neighbouring words stay two marks.
+///
+/// Each box is given a little air past its glyphs, and measured in a 700pt
+/// column that air is exactly what joined neighbours: "Caching is important."
+/// and the sentence after it overlapped by 2pt in the space between them, and
+/// a passage's last line overlapped the start of the next. A passage's own
+/// lines overlapped each other too, and filled one at a time that left a
+/// stripe of double strength between every pair of lines — which read as the
+/// seam between two notes, in a passage that was one.
+@MainActor
+func checkNeighbouringNotesStayApart() {
+    print("")
+    print("Keeping neighbouring notes apart")
+
+    let source = """
+        # Understanding Caching
+
+        Caching is important. The cache stores data for later reads, and a \
+        passage this long has to wrap onto several lines so the shading can be \
+        measured on a line it covers completely, which is the case that used \
+        to run the full width of the page. Studies show it helps.
+        """
+    let styled = NSMutableAttributedString(
+        attributedString: RichMarkdownStyler.attributedString(
+            for: MarkdownRenderer.render(source),
+            documentURL: nil,
+            colorTheme: EditorColorTheme(color: .blue, mode: .light)
+        )
+    )
+    // Drawn without its letters, so a sample lands on the wash rather than
+    // on whichever glyph happens to be there. Colour does not move a glyph.
+    styled.addAttribute(
+        .foregroundColor, value: NSColor.clear,
+        range: NSRange(location: 0, length: styled.length)
+    )
+
+    let frame = NSRect(x: 0, y: 0, width: 700, height: 300)
+    let view = RichMarkdownTextView(frame: frame)
+    view.textContainerInset = NSSize(width: 24, height: 20)
+    view.textContainer?.containerSize = NSSize(
+        width: frame.width - 48, height: .greatestFiniteMagnitude
+    )
+    view.textContainer?.widthTracksTextView = true
+    view.isVerticallyResizable = true
+    view.drawsBackground = true
+    view.backgroundColor = .white
+    view.textStorage?.setAttributedString(styled)
+    let window = NSWindow(
+        contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false
+    )
+    window.contentView = view
+    view.layoutManager?.ensureLayout(for: view.textContainer!)
+
+    // All one severity, which is the worst case: the same colour either side
+    // of the join is what made two notes read as one.
+    let text = view.string as NSString
+    let quotes = [
+        "Caching is important.",
+        "The cache stores data for later reads, and a passage this long has to "
+            + "wrap onto several lines so the shading can be measured on a line "
+            + "it covers completely, which is the case that used to run the full "
+            + "width of the page.",
+        "Studies show it helps.",
+    ]
+    let wash = CritiqueSeverity.medium.highlight(on: .light)
+    view.critiqueHighlights = quotes.map {
+        .init(id: UUID(), range: text.range(of: $0), colour: wash)
+    }
+    guard view.critiqueHighlights.allSatisfy({ $0.range.location != NSNotFound })
+    else {
+        check("the three passages are in the rendered draft", false)
+        return
+    }
+    let measured = view.critiqueHighlights.map {
+        view.critiqueHighlightBoxes(for: $0.range)
+    }
+    let drawn = view.critiqueHighlightBoxesAsDrawn()
+
+    func overlaps(_ one: CGRect, _ other: CGRect) -> Bool {
+        let shared = one.intersection(other)
+        return !shared.isNull && shared.width > 0.01 && shared.height > 0.01
+    }
+    func anyOverlap(_ one: [CGRect], _ other: [CGRect]) -> Bool {
+        one.contains { box in other.contains { overlaps(box, $0) } }
+    }
+
+    // The case being tested, actually set up. If a change of font or column
+    // ever stops these measuring as overlapping, everything below passes
+    // without having tested anything.
+    check(
+        "the passages measure as overlapping their neighbours, which is the case",
+        anyOverlap(measured[0], measured[1]) && anyOverlap(measured[1], measured[2])
+            && measured[1].count >= 3,
+        "measured \(measured.map(\.count)) boxes"
+    )
+    check(
+        "but no note's mark is drawn over another's",
+        !anyOverlap(drawn[0], drawn[1]) && !anyOverlap(drawn[1], drawn[2])
+            && !anyOverlap(drawn[0], drawn[2])
+    )
+    if let first = drawn[0].first, let second = drawn[1].first {
+        let gap = second.minX - first.maxX
+        check(
+            "two sentences on one line have a gap between their marks",
+            gap >= 1.5,
+            String(format: "%.1fpt apart", gap)
+        )
+    }
+    let own = drawn[1]
+    check(
+        "while a note's own lines still meet, so it is one mark",
+        zip(own, own.dropFirst()).allSatisfy { $0.maxY >= $1.minY - 0.01 },
+        own.map { String(format: "%.0f–%.0f", $0.minY, $0.maxY) }
+            .joined(separator: ", ")
+    )
+    let cutIntoWords = zip(measured.joined(), drawn.joined()).filter {
+        let ink = $0.insetBy(dx: 3, dy: 1)
+        return $1.minX > ink.minX + 0.01 || $1.maxX < ink.maxX - 0.01
+    }
+    check(
+        "and giving way never trims a mark into its own words",
+        cutIntoWords.isEmpty,
+        "\(cutIntoWords.count) boxes cut short"
+    )
+
+    // What actually reaches the page.
+    guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
+        check("the page can be drawn", false)
+        return
+    }
+    view.cacheDisplay(in: view.bounds, to: rep)
+    let scale = CGFloat(rep.pixelsWide) / view.bounds.width
+    func colour(at point: CGPoint) -> NSColor? {
+        rep.colorAt(x: Int(point.x * scale), y: Int(point.y * scale))?
+            .usingColorSpace(.sRGB)
+    }
+    func difference(_ one: NSColor?, _ other: NSColor?) -> CGFloat {
+        guard let one, let other else { return .infinity }
+        return max(
+            abs(one.redComponent - other.redComponent),
+            abs(one.greenComponent - other.greenComponent),
+            abs(one.blueComponent - other.blueComponent)
+        )
+    }
+    let page = NSColor.white.usingColorSpace(.sRGB)
+
+    // Where the long passage's first two lines overlap, against the middle
+    // of its first line: one wash, so one colour. Filled a line at a time,
+    // the overlap was about twice as dark.
+    let (line1, line2) = (measured[1][0], measured[1][1])
+    let across = (max(line1.minX, line2.minX) + min(line1.maxX, line2.maxX)) / 2
+    let seam = colour(at: CGPoint(x: across, y: (line1.maxY + line2.minY) / 2))
+    let body = colour(at: CGPoint(x: across, y: line1.midY))
+    check(
+        "a passage's lines are washed once where they meet, with no stripe",
+        difference(seam, body) <= 3.0 / 255 && difference(body, page) > 0.02,
+        String(format: "the seam differs from the line by %.0f/255",
+               difference(seam, body) * 255)
+    )
+    // And the gaps are drawn, not only computed.
+    if let first = drawn[0].first, let second = drawn[1].first {
+        let between = colour(
+            at: CGPoint(x: (first.maxX + second.minX) / 2, y: first.midY)
+        )
+        check(
+            "the gap between two sentences shows the page",
+            difference(between, page) <= 2.0 / 255,
+            String(format: "it is %.0f/255 off white", difference(between, page) * 255)
+        )
+    }
+    if let last = drawn[1].last, let next = drawn[2].first,
+       let above = drawn[1].dropLast().last {
+        // Under the long passage's second-to-last line, over the third note.
+        let x = (max(above.minX, next.minX) + min(above.maxX, next.maxX)) / 2
+        let between = colour(at: CGPoint(x: x, y: (above.maxY + next.minY) / 2))
+        check(
+            "and so does the gap between a line and the note starting under it",
+            difference(between, page) <= 2.0 / 255 && next.minY > above.maxY,
+            String(
+                format: "it is %.0f/255 off white; the last line runs to %.0f",
+                difference(between, page) * 255, last.maxX
+            )
+        )
+    }
+}
+
+/// The place on a note is the draft's, not the critic's.
+///
+/// The critic writes a location with every finding, and the rail used to
+/// print it as written — which was not the same twice: one paragraph was
+/// "Opening, paragraph 2" on one read and "paragraph 1" on the next, and a
+/// paragraph added above it left the label naming the one before.
+@MainActor
+func checkNotesNameTheirPlace() {
+    print("")
+    print("Naming where each note is")
+
+    let draft = """
+        # Understanding Caching
+
+        Caching is important because the cache stores data for later reads.
+
+        ## Why it matters
+
+        Pages feel slow when every read goes to the database.
+
+        Studies show that caching improves performance by 90%.
+        """
+    let opening = "the cache stores data"
+    let cited = "Studies show that caching improves performance by 90%."
+    func report(_ locations: (String, String)) -> CritiqueReport {
+        CritiqueReport(jobRead: "", overall: "", findings: [
+            CritiqueFinding(
+                severity: .low, category: "Clarity and precision",
+                location: locations.0, quote: opening, why: "Vague."
+            ),
+            CritiqueFinding(
+                severity: .high, category: "Logic and credibility",
+                location: locations.1, quote: cited, why: "No citation."
+            ),
+        ])
+    }
+    func place(of quote: String, in model: CritiqueModel) -> String {
+        model.items.first { $0.finding.quote == quote }?.place?.label ?? "nothing"
+    }
+
+    let model = CritiqueModel()
+    model.attach(to: nil, text: draft)
+    // Both of these are what the critic actually wrote on one read or another.
+    model.applyForChecking(report(("Opening, paragraph 2", "paragraph 4")), for: draft)
+    check(
+        "a note is named from the draft, without counting the title",
+        place(of: opening, in: model) == "Opening · paragraph 1",
+        "it reads \"\(place(of: opening, in: model))\""
+    )
+    check(
+        "and a note under a heading is named for its section",
+        place(of: cited, in: model) == "Why it matters · paragraph 2",
+        "it reads \"\(place(of: cited, in: model))\""
+    )
+
+    let again = CritiqueModel()
+    again.attach(to: nil, text: draft)
+    again.applyForChecking(report(("paragraph 1", "Section 2, paragraph 3")), for: draft)
+    check(
+        "a second read that counts differently names the same places",
+        place(of: opening, in: again) == place(of: opening, in: model)
+            && place(of: cited, in: again) == place(of: cited, in: model),
+        "it reads \"\(place(of: opening, in: again))\" and \"\(place(of: cited, in: again))\""
+    )
+
+    let typed = draft.replacingOccurrences(
+        of: "Pages feel slow", with: "Pages feel very slow"
+    )
+    model.noteCurrentText(typed)
+    check(
+        "typing inside a paragraph leaves every place as it was",
+        place(of: opening, in: model) == "Opening · paragraph 1"
+            && place(of: cited, in: model) == "Why it matters · paragraph 2"
+    )
+
+    let added = typed.replacingOccurrences(
+        of: "## Why it matters\n\n", with: "## Why it matters\n\nA new first paragraph.\n\n"
+    )
+    model.noteCurrentText(added)
+    check(
+        "a paragraph added above a note renames it",
+        place(of: cited, in: model) == "Why it matters · paragraph 3",
+        "it reads \"\(place(of: cited, in: model))\""
+    )
+
+    let renamed = added.replacingOccurrences(
+        of: "## Why it matters", with: "## What it costs"
+    )
+    model.noteCurrentText(renamed)
+    check(
+        "and renaming its section renames the note",
+        place(of: cited, in: model) == "What it costs · paragraph 3",
+        "it reads \"\(place(of: cited, in: model))\""
+    )
+}
+
 /// Load the fonts the app bundles, so this measures what the app draws.
 @MainActor
 func registerBundledFonts() {
@@ -557,12 +839,13 @@ func checkTheHandsAreAvailable() {
     // The specific labels that were handwriting and should not be. Named, so
     // that a count staying the same while the wrong lines move cannot pass.
     // The summary card is a digest of the notes, not one of them, so the whole
-    // card is typeset — the reader's-impression line and both bullet lists.
-    // Half-converting it was worse than not converting it: the heading said
-    // one thing in the app's voice and the bullets under it answered in the
-    // reviewer's.
+    // card is typeset — both bullet lists, and the audience and goal that used
+    // to open it and is now the line above the rail. Half-converting it was
+    // worse than not converting it: the heading said one thing in the app's
+    // voice and the bullets under it answered in the reviewer's.
     for furniture in [
-        "Text(\"AWESOMENESS\")", "Text(\"/100\")", "Text(report.jobRead)",
+        "Text(\"AWESOMENESS\")", "Text(\"/100\")",
+        "TextField(Self.placeholder",
         // The author's own sentence quoted back at them. It has to stay
         // recognisable as theirs, which is what the comment beside it has
         // always claimed while the code set it in the reviewer's hand.
@@ -729,8 +1012,21 @@ struct CheckCritique {
         checkTheScoreIsLegible()
         checkEveryColourIsLegible()
         checkHighlightsAndClicking()
+        checkNeighbouringNotesStayApart()
+        checkNotesNameTheirPlace()
         checkTheHistory()
         checkTheRailRenders()
+        await checkStopAndFailureKeepTheCritique()
+        await checkNotesArriveAsTheyAreWritten()
+        await checkTheCLIIsReadAsItWrites()
+        await checkAQuickPass()
+        await checkRerunsCarryTheNotes()
+        checkApplyingASuggestion()
+        await checkTheBriefIsTheReader()
+        checkTheBriefLineTakesTheKeyboard()
+        await checkWorkingThroughTheNotes()
+        checkTheRailFitsTheNotes()
+        checkTheCritiqueMenu()
 
         // The live half costs credits and half a minute. Everything above is
         // free, so it runs either way.
@@ -799,7 +1095,7 @@ struct CheckCritique {
         var sawCommentary = false
         var peakFindings = 0
         do {
-            report = try await service.critique(document: draft) { update in
+            let answer = try await service.critique(document: draft) { update in
                 if stagesSeen.last != update.stage {
                     stagesSeen.append(update.stage)
                     print("    · \(update.stage.headline)")
@@ -807,6 +1103,7 @@ struct CheckCritique {
                 if update.stage == .reading, update.detail != nil { sawCommentary = true }
                 peakFindings = max(peakFindings, update.findingsSoFar)
             }
+            report = answer.report
         } catch {
             print("  FAIL the critique did not complete — \(error.localizedDescription)")
             if let failure = error as? CritiqueService.Failure,
@@ -901,6 +1198,1326 @@ struct CheckCritique {
     }
 }
 
+/// Stands in for the service, so a run can be held open, stopped and failed
+/// without a request.
+///
+/// `cancel()` deliberately does nothing. That is how an API request behaved:
+/// nothing stopped it, so its answer arrived after Stop. The model has to
+/// ignore that answer itself rather than rely on the service to prevent it.
+@MainActor
+final class HeldCritique: CritiqueAsking {
+    private var waiting: CheckedContinuation<CritiqueAnswer, Error>?
+    private(set) var asked = 0
+    /// The earlier notes the last request carried, as the critic saw them.
+    private(set) var lastPrevious: [CritiquePreviousNote] = []
+    /// The passage the last request was narrowed to, if it was.
+    private(set) var lastFocus: String?
+    /// Who the last request said the draft was for, if it said.
+    private(set) var lastBrief: CritiqueBrief?
+    /// Whether the last request was a full critique or a quick pass.
+    private(set) var lastDepth: CritiqueDepth?
+    /// The last run's progress, kept after it is answered so an update can
+    /// be sent late on purpose.
+    private var reporting: ((CritiqueProgress) -> Void)?
+    var isWaiting: Bool { waiting != nil }
+
+    func critique(
+        document: String,
+        focus: String?,
+        previous: [CritiquePreviousNote],
+        brief: CritiqueBrief?,
+        depth: CritiqueDepth,
+        onProgress: @escaping (CritiqueProgress) -> Void
+    ) async throws -> CritiqueAnswer {
+        asked += 1
+        lastPrevious = previous
+        lastFocus = focus
+        lastBrief = brief
+        lastDepth = depth
+        reporting = onProgress
+        return try await withCheckedThrowingContinuation { waiting = $0 }
+    }
+
+    func cancel() {}
+
+    /// Says how the run is going, as the CLI's stream would.
+    func report(_ progress: CritiqueProgress) {
+        reporting?(progress)
+    }
+
+    func answer(_ report: CritiqueReport, verdicts: [String: CritiqueNoteVerdict] = [:]) {
+        waiting?.resume(returning: CritiqueAnswer(report: report, verdicts: verdicts))
+        waiting = nil
+    }
+
+    func refuse(_ failure: CritiqueService.Failure) {
+        waiting?.resume(throwing: failure)
+        waiting = nil
+    }
+}
+
+/// Lets the run's task get as far as it can, so what is checked next is
+/// where it settled rather than where it happened to be.
+@MainActor
+func settle(until condition: () -> Bool = { false }) async {
+    for _ in 0..<50 {
+        if condition() { return }
+        try? await Task.sleep(nanoseconds: 5_000_000)
+    }
+}
+
+/// Notes on the rail as the critic writes them.
+///
+/// What it replaced, measured on a 52-second critique of a 467-word post:
+/// the first note was finished 37.6 seconds in, and the rail showed a stage
+/// bar and nothing else until 52.5. A re-run was worse — it took every note
+/// off the rail for the whole of it, which is the half minute somebody would
+/// most like to spend working through them. A held service stands in for the
+/// critic here, so the notes can be handed over one at a time.
+@MainActor
+func checkNotesArriveAsTheyAreWritten() async {
+    print("")
+    print("Notes that arrive as they are written")
+
+    let held = HeldCritique()
+    let model = CritiqueModel(service: held)
+    let rail = CritiqueSidebar(
+        critique: model, colorTheme: EditorColorTheme(color: .blue, mode: .light),
+        isStale: false, onRerun: {}, onRerunChanges: {}
+    )
+    let draft = """
+        # Shipping Faster
+
+        Our deploys take forty minutes because every test runs on every change.
+
+        Most teams never measure where that time goes, so they guess.
+
+        Caching the dependency install alone saved us twelve minutes a build.
+        """
+    let early = CritiqueFinding(
+        severity: .high, category: "Logic and credibility", location: "paragraph 1",
+        quote: "every test runs on every change", why: "Every test? Say which."
+    )
+    let late = CritiqueFinding(
+        severity: .medium, category: "Clarity and precision", location: "paragraph 2",
+        quote: "so they guess", why: "Who guesses, and at what?"
+    )
+    func words(_ id: UUID, in text: String) -> String? {
+        guard let range = model.item(withID: id)?.range,
+              NSMaxRange(range) <= (text as NSString).length
+        else { return nil }
+        return (text as NSString).substring(with: range)
+    }
+    // The sans hand, because a check that reads the rail back has to be
+    // able to read it; the handwritten faces are for people.
+    func drawnRail(_ name: String) -> String {
+        let storedHand = UserDefaults.standard.string(forKey: CritiqueHand.storageKey)
+        UserDefaults.standard.set(CritiqueHand.sans.rawValue, forKey: CritiqueHand.storageKey)
+        defer {
+            if let storedHand {
+                UserDefaults.standard.set(storedHand, forKey: CritiqueHand.storageKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: CritiqueHand.storageKey)
+            }
+        }
+        let host = NSHostingView(rootView: rail)
+        host.frame = NSRect(x: 0, y: 0, width: 340, height: 1400)
+        let window = NSWindow(
+            contentRect: host.frame, styleMask: [.borderless],
+            backing: .buffered, defer: false
+        )
+        window.contentView = host
+        window.orderBack(nil)
+        host.layoutSubtreeIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+        host.layoutSubtreeIfNeeded()
+        defer { window.orderOut(nil) }
+        if let path = ProcessInfo.processInfo.environment["MDE_ARRIVING_PNG"],
+           let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+            host.cacheDisplay(in: host.bounds, to: rep)
+            let file = path.replacingOccurrences(of: ".png", with: "-\(name).png")
+            try? rep.representation(using: .png, properties: [:])?
+                .write(to: URL(fileURLWithPath: file))
+            print("  wrote \(file)")
+        }
+        return readable(recognisedText(in: host).joined(separator: " "))
+    }
+
+    model.run(on: draft, documentURL: nil)
+    await settle { held.isWaiting }
+    check(
+        "a first run with nothing written yet keeps the whole panel",
+        rail.state == .running && model.items.isEmpty && model.arriving.isEmpty,
+        "state \(rail.state), \(model.arriving.count) arriving"
+    )
+
+    held.report(CritiqueProgress(stage: .writing, findingsSoFar: 1, findings: [late]))
+    await settle { !model.arriving.isEmpty }
+    check(
+        "a note is on the rail as soon as it is written",
+        model.arriving.map(\.id) == [late.id] && model.isRunning,
+        "\(model.arriving.count) arriving, running \(model.isRunning)"
+    )
+    check(
+        "anchored and shaded, so its passage can be found",
+        words(late.id, in: draft) == "so they guess"
+            && model.highlights.contains { $0.id == late.id },
+        "marks \"\(words(late.id, in: draft) ?? "nothing")\""
+    )
+    if let arrived = model.arriving.first { model.press(arrived) }
+    check(
+        "and pressed, which opens it",
+        model.selectedFindingID == late.id,
+        "selected \(String(describing: model.selectedFindingID))"
+    )
+
+    held.report(CritiqueProgress(stage: .writing, findingsSoFar: 2, findings: [late, early]))
+    await settle { model.arriving.count == 2 }
+    check(
+        "a later note about an earlier passage goes above it, where it will land",
+        model.arriving.map(\.id) == [early.id, late.id],
+        "order \(model.arriving.map(\.finding.quote))"
+    )
+    let first = drawnRail("first-run")
+    check(
+        "the rail draws the notes under the run's progress",
+        legible("Every test? Say which.", in: first)
+            && legible("Who guesses, and at what?", in: first)
+            && legible("Writing the notes", in: first)
+            && legible("2 new so far", in: first),
+        "read \"\(first.prefix(240))\""
+    )
+    // Answering half a report has nowhere to keep the answer if the run is
+    // stopped, so an early note is not answerable until the run lands.
+    model.setResolution(.dismissed, for: early.id)
+    check(
+        "an early note cannot be answered yet",
+        model.item(withID: early.id)?.resolution == nil,
+        "it is \(String(describing: model.item(withID: early.id)?.resolution))"
+    )
+
+    // The finished reply is decoded again, which gives every finding a new
+    // identity — and every card would be replaced by a copy of itself.
+    held.answer(CritiqueReport(
+        jobRead: "A post for developers.", overall: "Close.",
+        findings: [early.identified(as: UUID()), late.identified(as: UUID())]
+    ))
+    await settle { !model.isRunning }
+    check(
+        "the notes that arrived are the notes that land, not copies of them",
+        model.items.map(\.id) == [early.id, late.id] && model.arriving.isEmpty,
+        "landed \(model.items.map(\.id)), \(model.arriving.count) still arriving"
+    )
+    check(
+        "and the one open when the run finished is still open",
+        model.selectedFindingID == late.id,
+        "selected \(String(describing: model.selectedFindingID))"
+    )
+    held.report(CritiqueProgress(stage: .writing, findingsSoFar: 2, findings: [late, early]))
+    await settle()
+    check(
+        "an update queued behind the answer does not put the notes back",
+        model.arriving.isEmpty && model.items.count == 2 && model.progress == nil,
+        "\(model.arriving.count) arriving, progress \(String(describing: model.progress))"
+    )
+
+    model.setResolution(.completed, for: early.id)
+    model.run(on: draft, documentURL: nil)
+    await settle { held.isWaiting }
+    check(
+        "a re-run leaves the notes on the rail while it reads",
+        rail.state == .running && model.items.count == 2,
+        "state \(rail.state), \(model.items.count) notes"
+    )
+    let reread = drawnRail("rerun")
+    check(
+        "and draws them",
+        legible("Who guesses, and at what?", in: reread)
+            && legible("Starting up", in: reread),
+        "read \"\(reread.prefix(240))\""
+    )
+    let said = CritiqueFinding(
+        severity: .medium, category: "Clarity and precision", location: "paragraph 2",
+        quote: "so they guess", why: "Unclear who is guessing."
+    )
+    let new = CritiqueFinding(
+        severity: .low, category: "Evidence", location: "paragraph 3",
+        quote: "saved us twelve minutes a build", why: "Out of how many?"
+    )
+    held.report(CritiqueProgress(stage: .writing, findingsSoFar: 2, findings: [said, new]))
+    await settle { !model.arriving.isEmpty }
+    check(
+        "a new note joins them",
+        model.arriving.map(\.id) == [new.id],
+        "arriving \(model.arriving.map(\.finding.quote))"
+    )
+    check(
+        "and one the rail already holds is not said twice",
+        !model.arriving.contains { $0.id == said.id },
+        "the repeat is on the rail"
+    )
+    let joined = drawnRail("rerun-new")
+    check(
+        "under a heading that says it is new",
+        legible("new", in: joined) && legible("Out of how many?", in: joined)
+            && legible("Who guesses, and at what?", in: joined),
+        "read \"\(joined.prefix(240))\""
+    )
+    // The author keeps writing while the critic does.
+    let typed = "Updated. " + draft
+    model.noteCurrentText(typed)
+    check(
+        "an early note follows the text it is about",
+        words(new.id, in: typed) == "saved us twelve minutes a build",
+        "marks \"\(words(new.id, in: typed) ?? "nothing")\""
+    )
+    model.noteCurrentText(draft)
+
+    if let arrived = model.arriving.first { model.press(arrived) }
+    model.cancel()
+    check(
+        "Stop takes the early notes away with the run",
+        !model.isRunning && model.arriving.isEmpty && model.items.count == 2,
+        "running \(model.isRunning), \(model.arriving.count) arriving, "
+            + "\(model.items.count) notes"
+    )
+    check(
+        "and closes one that was open",
+        model.selectedFindingID == nil && !model.highlights.contains { $0.id == new.id },
+        "selected \(String(describing: model.selectedFindingID))"
+    )
+    check(
+        "the notes from before the run keep their answers",
+        model.item(withID: early.id)?.resolution == .completed,
+        "it is \(String(describing: model.item(withID: early.id)?.resolution))"
+    )
+    held.report(CritiqueProgress(stage: .writing, findingsSoFar: 3, findings: [said, new, early]))
+    held.answer(CritiqueReport(jobRead: "Late.", overall: "", findings: [new]))
+    await settle()
+    check(
+        "and what the stopped run says afterwards lands nowhere",
+        model.arriving.isEmpty && model.items.count == 2
+            && model.report?.jobRead == "A post for developers.",
+        "\(model.arriving.count) arriving, \(model.items.count) notes"
+    )
+
+    model.run(on: draft, documentURL: nil)
+    await settle { held.isWaiting }
+    held.report(CritiqueProgress(stage: .writing, findingsSoFar: 1, findings: [new]))
+    await settle { !model.arriving.isEmpty }
+    held.refuse(.providerUnreachable("The request timed out."))
+    await settle { !model.isRunning }
+    check(
+        "a run that fails takes its early notes with it",
+        model.failure != nil && model.arriving.isEmpty && model.items.count == 2,
+        "failure \(String(describing: model.failure)), \(model.arriving.count) arriving"
+    )
+    model.clearFailure()
+}
+
+/// The service reading a CLI that writes the way the real one does.
+///
+/// A script stands in for the CLI, first on the PATH, so the reading can be
+/// checked offline: the notes have to come out as they are written, the
+/// answer has to come back when the CLI says it is done rather than when it
+/// gets round to exiting — measured, most of a second later — and Stop has to
+/// stop the run it was pressed on, even when another has started since.
+@MainActor
+func checkTheCLIIsReadAsItWrites() async {
+    print("")
+    print("Reading the CLI as it writes")
+
+    let files = FileManager.default
+    let folder = files.temporaryDirectory
+        .appendingPathComponent("konvo-cli-\(UUID().uuidString)")
+    try? files.createDirectory(at: folder, withIntermediateDirectories: true)
+    let cli = folder.appendingPathComponent("copilot")
+    let plan = folder.appendingPathComponent("plan")
+    let arguments = folder.appendingPathComponent("arguments")
+    // `exec`, so Stop's signal reaches the process holding the pipe open.
+    // A child `sleep` outlives a terminated shell and keeps the output open
+    // until it finishes, which a real CLI does not do.
+    let script = """
+        #!/bin/bash
+        here="$(dirname "$0")"
+        printf '%s\\n' "$@" > "$here/arguments"
+        while IFS= read -r line; do
+          case "$line" in
+            PAUSE) sleep 0.3 ;;
+            HOLD) exec sleep 30 ;;
+            LINGER) exec sleep 4 ;;
+            REFUSE) echo "You are not signed in." >&2; exit 1 ;;
+            *) printf '%s\\n' "$line" ;;
+          esac
+        done < "$here/plan"
+        """
+    try? script.write(to: cli, atomically: true, encoding: .utf8)
+    try? files.setAttributes([.posixPermissions: 0o755], ofItemAtPath: cli.path)
+
+    func event(_ type: String, _ data: [String: Any] = [:]) -> String {
+        let object: [String: Any] = ["type": type, "data": data]
+        let json = try? JSONSerialization.data(withJSONObject: object)
+        return json.map { String(decoding: $0, as: UTF8.self) } ?? ""
+    }
+    func writing(_ text: String) -> String {
+        event("assistant.message_delta", ["deltaContent": text])
+    }
+    func write(_ steps: [String]) {
+        try? steps.joined(separator: "\n").appending("\n")
+            .write(to: plan, atomically: true, encoding: .utf8)
+    }
+    let one = #"{"severity":"high","category":"Logic","location":"paragraph 1","#
+        + #""quote":"every test runs on every change","why":"Every test? Say which."}"#
+    let two = #"{"severity":"low","category":"Evidence","location":"paragraph 3","#
+        + #""quote":"saved us twelve minutes a build","why":"Out of how many?"}"#
+    let opening = [
+        event("assistant.reasoning_delta", ["deltaContent": "Reading the opening. "]),
+        event("assistant.message_start"),
+        writing(#"{"jobRead":"A post.","overall":"Close.","findings":["# + one),
+    ]
+    let draft = String(
+        repeating: "Our deploys take forty minutes because every test runs on every change. ",
+        count: 4
+    )
+
+    let storedPath = ProcessInfo.processInfo.environment["PATH"] ?? ""
+    let storedProvider = UserDefaults.standard.string(forKey: CritiqueProvider.storageKey)
+    setenv("PATH", folder.path + ":" + storedPath, 1)
+    CritiqueCredentials.provider = .copilotCLI
+    defer {
+        setenv("PATH", storedPath, 1)
+        if let storedProvider {
+            UserDefaults.standard.set(storedProvider, forKey: CritiqueProvider.storageKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: CritiqueProvider.storageKey)
+        }
+        try? files.removeItem(at: folder)
+    }
+    guard CritiqueService.locateCLI()?.path == cli.path else {
+        check("the stand-in CLI is the one found", false, "found \(String(describing: CritiqueService.locateCLI()))")
+        return
+    }
+
+    func wait(_ seconds: Double = 5, until condition: () -> Bool) async {
+        let deadline = Date().addingTimeInterval(seconds)
+        while !condition(), Date() < deadline {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+    }
+    final class Seen { var counts: [Int] = [] }
+    func start(_ service: CritiqueService, _ seen: Seen) -> Task<Result<CritiqueAnswer, Error>, Never> {
+        Task { @MainActor in
+            do {
+                return .success(try await service.critique(document: draft) { update in
+                    seen.counts.append(update.findings.count)
+                })
+            } catch {
+                return .failure(error)
+            }
+        }
+    }
+
+    write(opening + [
+        "PAUSE", writing("," + two), "PAUSE", writing(#"],"keep":[]}"#),
+        #"{"type":"result","exitCode":0,"usage":{}}"#, "LINGER",
+    ])
+    let service = CritiqueService()
+    let seen = Seen()
+    let began = Date()
+    let answered = await start(service, seen).value
+    let took = Date().timeIntervalSince(began)
+    let report = try? answered.get().report
+    check(
+        "the stand-in's answer is read",
+        report?.findings.map(\.why) == ["Every test? Say which.", "Out of how many?"],
+        "\(answered)"
+    )
+    check(
+        "each note is handed over as it is finished, before the answer",
+        seen.counts.contains(1) && seen.counts.last == 2,
+        "the notes arrived as \(seen.counts)"
+    )
+    check(
+        "the answer comes back when the CLI says it is done, not when it exits",
+        took < 3,
+        String(format: "took %.1fs against a CLI that exits 4s after its answer", took)
+    )
+    let passed = (try? String(contentsOf: arguments, encoding: .utf8))?
+        .split(separator: "\n").map(String.init) ?? []
+    let fenced = passed.firstIndex(of: "--available-tools").map { index in
+        index + 1 < passed.count && passed[index + 1] == "konvo_no_tools"
+    } ?? false
+    check(
+        "it asks for a model with no tools at all",
+        fenced,
+        "the arguments were \(passed.filter { $0.hasPrefix("--") })"
+    )
+    check(
+        "a full critique leaves the model to think as hard as it would",
+        !passed.contains("--reasoning-effort"),
+        "the arguments were \(passed.filter { $0.hasPrefix("--") })"
+    )
+
+    // Most of what makes a quick pass quick is this flag, and nothing on
+    // the rail shows whether it was sent: a pass that lost it would still
+    // say QUICK PASS, and take as long as the full critique.
+    write(opening + [writing(#"],"keep":[]}"#), #"{"type":"result","exitCode":0,"usage":{}}"#])
+    let quickly = await Task { @MainActor in
+        try? await CritiqueService().critique(document: draft, depth: .quick)
+    }.value
+    let quickArguments = (try? String(contentsOf: arguments, encoding: .utf8))?
+        .split(separator: "\n").map(String.init) ?? []
+    let effort = quickArguments.firstIndex(of: "--reasoning-effort").flatMap { index in
+        index + 1 < quickArguments.count ? quickArguments[index + 1] : nil
+    }
+    check(
+        "a quick pass tells the model to think less",
+        quickly != nil && effort == CritiqueService.quickPassEffort,
+        "effort \(effort ?? "not sent"), answered \(quickly != nil)"
+    )
+
+    write(opening + [#"{"type":"result","exitCode":1,"usage":{}}"#, "REFUSE"])
+    let refused = await start(CritiqueService(), Seen()).value
+    var failure: CritiqueService.Failure?
+    if case .failure(let error) = refused { failure = error as? CritiqueService.Failure }
+    check(
+        "a CLI that ends its turn in failure is reported, in its own words",
+        failure == .cliFailed(status: 1, message: "You are not signed in."),
+        "it said \(String(describing: failure))"
+    )
+
+    write(opening + ["HOLD"])
+    let stopping = CritiqueService()
+    let held = Seen()
+    let stopped = start(stopping, held)
+    await wait { held.counts.contains(1) }
+    let pressed = Date()
+    stopping.cancel()
+    var outcome: CritiqueService.Failure?
+    if case .failure(let error) = await stopped.value {
+        outcome = error as? CritiqueService.Failure
+    }
+    check(
+        "Stop ends a run that is part-way through its notes",
+        outcome == .cancelled && Date().timeIntervalSince(pressed) < 3,
+        "it ended with \(String(describing: outcome))"
+    )
+
+    // Stop, and a new run before the old one has wound down. The old run
+    // used to clear the new one's process as it finished, and the second
+    // Stop then had nothing to stop: the run went on for as long as the
+    // critic took.
+    let racing = CritiqueService()
+    let firstSeen = Seen()
+    let firstRun = start(racing, firstSeen)
+    await wait { firstSeen.counts.contains(1) }
+    racing.cancel()
+    let secondSeen = Seen()
+    let secondRun = start(racing, secondSeen)
+    await wait { secondSeen.counts.contains(1) }
+    _ = await firstRun.value
+    let pressedAgain = Date()
+    racing.cancel()
+    var second: CritiqueService.Failure?
+    if case .failure(let error) = await secondRun.value {
+        second = error as? CritiqueService.Failure
+    }
+    check(
+        "Stop still stops a run started while the last one was winding down",
+        second == .cancelled && Date().timeIntervalSince(pressedAgain) < 3,
+        String(
+            format: "it ended with %@ after %.1fs",
+            String(describing: second), Date().timeIntervalSince(pressedAgain)
+        )
+    )
+}
+
+/// A quick pass: what a reader would trip over, and nothing else.
+///
+/// The full critique is the slow half of the loop — 52 seconds on a 467-word
+/// post, with nothing to read for the first 38 — and most of the times
+/// somebody runs it they want to know whether the rewrite they just made is
+/// clean, not to be marked again. A quick pass reads the whole draft for
+/// typos and serious problems only and does not score it, because it did not
+/// read the draft for what the score measures.
+@MainActor
+func checkAQuickPass() async {
+    print("")
+    print("A quick pass")
+
+    let held = HeldCritique()
+    let model = CritiqueModel(service: held)
+    let storedHand = UserDefaults.standard.string(forKey: CritiqueHand.storageKey)
+    UserDefaults.standard.set(CritiqueHand.sans.rawValue, forKey: CritiqueHand.storageKey)
+    defer {
+        if let storedHand {
+            UserDefaults.standard.set(storedHand, forKey: CritiqueHand.storageKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: CritiqueHand.storageKey)
+        }
+    }
+    /// The rail as drawn, read back from its pixels, in the sans hand
+    /// because the handwritten faces are for people.
+    func drawnRail(_ name: String, isStale: Bool = false) -> String {
+        let host = NSHostingView(rootView: CritiqueSidebar(
+            critique: model, colorTheme: EditorColorTheme(color: .blue, mode: .light),
+            isStale: isStale, onRerun: {}, onRerunChanges: {}, onQuickPass: {}
+        ))
+        host.frame = NSRect(x: 0, y: 0, width: 340, height: 1400)
+        let window = NSWindow(
+            contentRect: host.frame, styleMask: [.borderless],
+            backing: .buffered, defer: false
+        )
+        window.contentView = host
+        window.orderBack(nil)
+        host.layoutSubtreeIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+        host.layoutSubtreeIfNeeded()
+        defer { window.orderOut(nil) }
+        if let path = ProcessInfo.processInfo.environment["MDE_QUICK_PNG"],
+           let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+            host.cacheDisplay(in: host.bounds, to: rep)
+            let file = path.replacingOccurrences(of: ".png", with: "-\(name).png")
+            try? rep.representation(using: .png, properties: [:])?
+                .write(to: URL(fileURLWithPath: file))
+            print("  wrote \(file)")
+        }
+        return readable(recognisedText(in: host).joined(separator: " "))
+    }
+
+    // The CLI, which needs no key, so the rail offers to run rather than to
+    // set up whichever provider this machine happens to have chosen.
+    let storedProvider = UserDefaults.standard.string(forKey: CritiqueProvider.storageKey)
+    CritiqueCredentials.provider = .copilotCLI
+    let untouched = drawnRail("empty")
+    if let storedProvider {
+        UserDefaults.standard.set(storedProvider, forKey: CritiqueProvider.storageKey)
+    } else {
+        UserDefaults.standard.removeObject(forKey: CritiqueProvider.storageKey)
+    }
+    // Not "Run critique" as well: a bordered button's bezel is not drawn
+    // off screen, and its white title on white cannot be read back.
+    check(
+        "an empty rail offers the quick pass beside the full critique",
+        legible("Quick pass", in: untouched) && legible("No score.", in: untouched),
+        "read \"\(untouched.prefix(240))\""
+    )
+
+    let draft = """
+        # Shipping Faster
+
+        Our deploys take forty minutes becuase every test runs on every change.
+
+        Most teams never measure where that time goes, so they guess.
+
+        Caching the dependency install alone saved us twelve minutes a build.
+        """
+    let typo = CritiqueFinding(
+        severity: .low, category: "Grammar and mechanics", location: "paragraph 1",
+        quote: "becuase", why: "Misspelt.", replacement: "because"
+    )
+
+    model.request(on: draft, documentURL: nil, depth: .quick)
+    await settle { held.isWaiting }
+    check(
+        "a quick pass is asked for as one",
+        held.lastDepth == .quick && model.runningDepth == .quick,
+        "asked \(String(describing: held.lastDepth)), running \(model.runningDepth)"
+    )
+    let reading = drawnRail("running")
+    check(
+        "and the rail says which critique is running",
+        legible("Quick pass", in: reading),
+        "read \"\(reading.prefix(200))\""
+    )
+
+    // Everything a full critique would fill in, filled in: a quick pass is
+    // told not to judge the piece as a whole, and one that did anyway would
+    // otherwise be filed as if it had.
+    held.answer(CritiqueReport(
+        jobRead: "A post for developers.", overall: "One misspelling.",
+        whatWorks: ["A clear claim."], whatDoesNotWork: ["Thin evidence."],
+        findings: [typo],
+        repeatedPatterns: [CritiquePattern(pattern: "Vague plurals", locations: ["paragraph 2"])],
+        keep: ["The opening line."]
+    ))
+    await settle { !model.isRunning }
+    check(
+        "it lands as a quick pass",
+        model.isQuick && model.history.latest?.isQuick == true && model.items.count == 1,
+        "quick \(model.isQuick), \(model.items.count) notes"
+    )
+    check(
+        "keeping none of the judgements of the whole draft it was not asked for",
+        model.report?.whatWorks.isEmpty == true
+            && model.report?.whatDoesNotWork.isEmpty == true
+            && model.report?.repeatedPatterns.isEmpty == true
+            && model.report?.keep.isEmpty == true
+            && model.report?.overall == "One misspelling.",
+        "kept \(String(describing: model.report))"
+    )
+    check(
+        "and never calls a draft ready",
+        !model.isConfirmed,
+        "it is confirmed"
+    )
+    let landed = drawnRail("landed")
+    // Read without spaces: Vision closes the gap between the banner's
+    // tracked capitals, and reads "1 TO FIX" as "1 tofix". Pinning the count
+    // to the label is the stricter check anyway.
+    check(
+        "the rail counts what to fix instead of scoring the draft",
+        landed.replacingOccurrences(of: " ", with: "").contains("1tofix")
+            && legible("Quick pass", in: landed)
+            && landed.contains(readable("scores the draft"))
+            && !landed.contains("/100") && !landed.contains("awesomeness"),
+        "read \"\(landed.prefix(320))\""
+    )
+    check(
+        "and the history names it for what it is",
+        model.history.latest.map(CritiqueRevisionLabel.measure) == "Quick pass",
+        "it says \(String(describing: model.history.latest.map(CritiqueRevisionLabel.measure)))"
+    )
+
+    let asked = held.asked
+    model.request(on: draft, documentURL: nil, depth: .quick)
+    await settle()
+    check(
+        "a second quick pass of the same words is declined",
+        held.asked == asked && model.showsUnchangedNotice,
+        "asked \(held.asked - asked) more times"
+    )
+
+    // A full critique of the same words is not declined: the quick pass
+    // did not ask most of what a full one does.
+    model.request(on: draft, documentURL: nil)
+    await settle { held.isWaiting }
+    check(
+        "a full critique after a quick pass reads the whole draft, and every note",
+        held.asked == asked + 1 && held.lastDepth == .full && held.lastFocus == nil
+            && held.lastPrevious.count == 1,
+        "asked \(held.asked - asked), \(String(describing: held.lastDepth)), "
+            + "focus \(held.lastFocus ?? "none"), \(held.lastPrevious.count) notes"
+    )
+    let structure = CritiqueFinding(
+        severity: .medium, category: "Structure", location: "paragraph 2",
+        quote: "so they guess", why: "Who guesses?"
+    )
+    let pacing = CritiqueFinding(
+        severity: .medium, category: "Pacing", location: "paragraph 3",
+        quote: "saved us twelve minutes a build", why: "Out of how many?"
+    )
+    held.answer(
+        CritiqueReport(
+            jobRead: "A post for developers.", overall: "Close.",
+            whatWorks: ["A clear claim."], findings: [structure, pacing]
+        ),
+        verdicts: ["n1": .stillApplies(quote: nil, location: nil)]
+    )
+    await settle { !model.isRunning }
+    check(
+        "and scores it again",
+        !model.isQuick && model.items.count == 3
+            && model.history.revisions.filter(\.isQuick).isEmpty,
+        "quick \(model.isQuick), \(model.items.count) notes, "
+            + "\(model.history.revisions.count) revisions"
+    )
+
+    // The loop the quick pass is for: one note fixed, checked fast.
+    guard let fixedID = model.items.first(where: { $0.finding.quote == "so they guess" })?.id else {
+        check("the full critique's note is on the rail", false)
+        return
+    }
+    model.setResolution(.completed, for: fixedID)
+    model.request(on: draft, documentURL: nil, depth: .quick)
+    await settle { held.isWaiting }
+    check(
+        "a quick pass after a full critique asks only about the notes marked done",
+        held.lastDepth == .quick && held.lastPrevious.count == 1
+            && held.lastPrevious.first?.quote == "so they guess",
+        "it asked about \(held.lastPrevious.map(\.quote))"
+    )
+    held.answer(CritiqueReport(jobRead: "A post for developers.", overall: "Clean.", findings: []))
+    await settle { !model.isRunning }
+    check(
+        "keeping every other note where it was",
+        model.outstanding.map(\.finding.quote).sorted()
+            == ["becuase", "saved us twelve minutes a build"]
+            && model.item(withID: fixedID)?.isFixed == true,
+        "outstanding \(model.outstanding.map(\.finding.quote))"
+    )
+    check(
+        "and the full critique it followed is still in the history",
+        model.history.latest?.isQuick == true
+            && model.history.revisions.dropFirst().first?.isQuick == false,
+        "\(model.history.revisions.map(CritiqueRevisionLabel.measure))"
+    )
+
+    // After a quick pass, the next full critique reads everything, however
+    // small the change: nobody has read the unchanged paragraphs for anything
+    // but typos since the last full one.
+    let edited = draft.replacingOccurrences(of: "becuase", with: "because")
+    model.noteCurrentText(edited)
+    model.request(on: edited, documentURL: nil)
+    await settle { held.isWaiting }
+    check(
+        "a full critique after a quick pass is never narrowed to the changes",
+        held.lastDepth == .full && held.lastFocus == nil,
+        "focus \(held.lastFocus ?? "none")"
+    )
+    held.refuse(.cancelled)
+    await settle { !model.isRunning }
+}
+
+/// What a re-run that does not finish does to the critique already there.
+///
+/// Each of these used to clear the rail: Stop replaced the notes with "The
+/// critique was stopped.", a timeout replaced them with the timeout, and an
+/// empty draft spun "Starting" before being refused. None of them changed the
+/// draft, so none of them should change what the rail says about it.
+@MainActor
+func checkStopAndFailureKeepTheCritique() async {
+    print("")
+    print("Keeping the critique through Stop, a failure and a short draft")
+
+    let held = HeldCritique()
+    let model = CritiqueModel(service: held)
+    let draft = String(
+        repeating: "This paragraph says enough to be worth reading closely. ",
+        count: 6
+    )
+    model.applyForChecking(
+        CritiqueReport(
+            jobRead: "A note.", overall: "Fine.",
+            findings: [
+                CritiqueFinding(
+                    severity: .medium, category: "Clarity",
+                    location: "paragraph 1",
+                    quote: "This paragraph says enough", why: "Vague."
+                )
+            ]
+        ),
+        for: draft
+    )
+    let note = model.items.first!.id
+    model.setResolution(.completed, for: note)
+    let rail = CritiqueSidebar(
+        critique: model, colorTheme: EditorColorTheme(color: .blue, mode: .light),
+        isStale: false, onRerun: {}, onRerunChanges: {}
+    )
+
+    model.run(on: draft, documentURL: nil)
+    await settle { held.isWaiting }
+    check(
+        "a re-run waiting on its answer shows as running",
+        model.isRunning && held.isWaiting,
+        "running \(model.isRunning), asked \(held.asked)"
+    )
+    model.cancel()
+    check(
+        "Stop puts the critique back, not a message about stopping",
+        !model.isRunning && model.failure == nil && model.items.count == 1,
+        "running \(model.isRunning), failure \(String(describing: model.failure)), "
+            + "\(model.items.count) notes"
+    )
+    held.answer(CritiqueReport(jobRead: "Late.", overall: "", findings: []))
+    await settle()
+    check(
+        "and the answer that arrives after Stop lands nowhere",
+        model.report?.jobRead == "A note." && model.items.count == 1,
+        "the rail now shows \"\(model.report?.jobRead ?? "nothing")\""
+    )
+    check(
+        "the answer given before Stop is still there",
+        model.items.first?.resolution == .completed,
+        "it is \(String(describing: model.items.first?.resolution))"
+    )
+
+    model.run(on: draft, documentURL: nil)
+    await settle { held.isWaiting }
+    held.refuse(.providerUnreachable("The request timed out."))
+    await settle { !model.isRunning }
+    check(
+        "a re-run that fails keeps the notes and the answers",
+        model.failure != nil && model.items.count == 1
+            && model.items.first?.resolution == .completed,
+        "failure \(String(describing: model.failure)), \(model.items.count) notes"
+    )
+    check(
+        "and shows the failure above them rather than instead of them",
+        rail.state == .findings,
+        "it shows \(rail.state)"
+    )
+    // Drawn as well as decided: a banner the state allows but the layout
+    // drops would pass the check above while the author saw nothing at all.
+    let storedHand = UserDefaults.standard.string(forKey: CritiqueHand.storageKey)
+    UserDefaults.standard.set(CritiqueHand.sans.rawValue, forKey: CritiqueHand.storageKey)
+    let host = NSHostingView(rootView: rail)
+    host.frame = NSRect(x: 0, y: 0, width: 340, height: 900)
+    let window = NSWindow(
+        contentRect: host.frame, styleMask: [.borderless],
+        backing: .buffered, defer: false
+    )
+    window.contentView = host
+    window.orderBack(nil)
+    host.layoutSubtreeIfNeeded()
+    RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+    host.layoutSubtreeIfNeeded()
+    let drawn = readable(recognisedText(in: host).joined(separator: " "))
+    if let path = ProcessInfo.processInfo.environment["MDE_FAILURE_PNG"],
+       let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+        host.cacheDisplay(in: host.bounds, to: rep)
+        try? rep.representation(using: .png, properties: [:])?
+            .write(to: URL(fileURLWithPath: path))
+        print("  wrote \(path)")
+    }
+    window.orderOut(nil)
+    if let storedHand {
+        UserDefaults.standard.set(storedHand, forKey: CritiqueHand.storageKey)
+    } else {
+        UserDefaults.standard.removeObject(forKey: CritiqueHand.storageKey)
+    }
+    let message = model.failure?.errorDescription ?? ""
+    check(
+        "the rail draws the failure",
+        !message.isEmpty && drawn.contains(readable(message)),
+        "\"\(message)\" is not legible on the rail"
+    )
+    check(
+        "and the notes it did not replace",
+        drawn.contains(readable("The notes below are from the last critique")),
+        "the banner's explanation is not legible"
+    )
+    model.clearFailure()
+    check("the failure can be put away", model.failure == nil, "it is still there")
+
+    let askedBefore = held.asked
+    model.run(on: "Too short to read yet.", documentURL: nil)
+    check(
+        "a draft under thirty words is refused before anything spins",
+        !model.isRunning && model.progress == nil,
+        "running \(model.isRunning)"
+    )
+    await settle()
+    check(
+        "and nothing is sent",
+        held.asked == askedBefore,
+        "\(held.asked - askedBefore) requests made"
+    )
+    check(
+        "it says how much there is, so the author knows how far off it is",
+        model.failure == .draftTooShort(words: 5),
+        "it says \(String(describing: model.failure))"
+    )
+    check(
+        "and offers to run it, not to try again",
+        model.failure?.retryTitle == "Run critique",
+        "the button says \(model.failure?.retryTitle ?? "nothing")"
+    )
+    let empty = CritiqueModel(service: held)
+    empty.run(on: "Too short.", documentURL: nil)
+    check(
+        "with nothing to keep, the failure takes the panel",
+        CritiqueSidebar(
+            critique: empty, colorTheme: EditorColorTheme(color: .blue, mode: .light),
+            isStale: false, onRerun: {}, onRerunChanges: {}
+        ).state == .failed,
+        "it shows something else"
+    )
+}
+
+/// A re-run carries the notes on screen into the next critique.
+///
+/// What it replaced, measured on a 467-word post: one typo fixed, a re-run,
+/// and the paragraph's other notes came back reworded under new identities, a
+/// new nit landed on the sentence just fixed, the answered notes were gone and
+/// the score was back where it started. Each step here is one of those, run
+/// through the same `request`, `carryPlan` and `land` the window uses, with a
+/// held service standing in for the critic so its answer can be dictated.
+@MainActor
+func checkRerunsCarryTheNotes() async {
+    print("")
+    print("Re-runs that carry the notes")
+
+    let held = HeldCritique()
+    let model = CritiqueModel(service: held)
+    let draft = """
+        # Shipping Faster
+
+        Our deploys take forty minutes because every test runs on every change.
+
+        Most teams never measure where that time goes, so they guess.
+
+        Caching the dependency install alone saved us twelve minutes a build.
+
+        The rest came from splitting the suite by what each change could touch.
+        """
+    let first = [
+        CritiqueFinding(
+            severity: .high, category: "Logic and credibility",
+            location: "paragraph 1",
+            quote: "every test runs on every change", why: "Every test? Say which."
+        ),
+        CritiqueFinding(
+            severity: .medium, category: "Clarity and precision",
+            location: "paragraph 2",
+            quote: "so they guess", why: "Who guesses, and at what?"
+        ),
+        CritiqueFinding(
+            severity: .low, category: "Evidence",
+            location: "paragraph 3",
+            quote: "saved us twelve minutes a build", why: "Out of how many?"
+        ),
+        CritiqueFinding(
+            severity: .low, category: "Clarity and precision",
+            location: "paragraph 4",
+            quote: "splitting the suite", why: "Splitting it how?"
+        ),
+    ]
+    model.applyForChecking(
+        CritiqueReport(jobRead: "A post for developers.", overall: "Close.", findings: first),
+        for: draft
+    )
+    let (idA, idB, idC, idD) = (first[0].id, first[1].id, first[2].id, first[3].id)
+    func note(_ id: UUID) -> CritiqueModel.Item? { model.item(withID: id) }
+    func words(_ id: UUID, in text: String) -> String? {
+        guard let range = note(id)?.range,
+              NSMaxRange(range) <= (text as NSString).length
+        else { return nil }
+        return (text as NSString).substring(with: range)
+    }
+    check(
+        "every note is anchored to begin with",
+        model.items.count == 4 && model.stillApplyingCount == 4,
+        "\(model.items.count) notes, \(model.stillApplyingCount) still applying"
+    )
+
+    // Typing in a passage is the author acting on its note. It used to keep
+    // counting until they found the card and pressed Done.
+    let scoreBefore = model.score
+    let reworded = draft.replacingOccurrences(of: "so they guess", with: "so they mostly guess")
+    model.noteCurrentText(reworded)
+    check(
+        "typing inside a noted passage marks the note edited",
+        note(idB)?.isEdited == true && !model.outstanding.contains { $0.id == idB },
+        "edited \(String(describing: note(idB)?.isEdited))"
+    )
+    check(
+        "and it stops counting at once",
+        model.score > scoreBefore && model.stillApplyingCount == 3,
+        "score \(scoreBefore) -> \(model.score), "
+            + "\(model.stillApplyingCount) still applying"
+    )
+    check(
+        "an edited note gives up its shading",
+        !model.highlights.contains { $0.id == idB },
+        "its passage is still shaded"
+    )
+    // Except while it is the one the author is working on: the shading is
+    // what shows how far the passage still runs.
+    model.press(note(idB)!)
+    check(
+        "unless it is the note selected",
+        model.highlights.contains { $0.id == idB },
+        "selecting it did not shade it"
+    )
+    model.selectedFindingID = nil
+
+    model.noteCurrentText(draft)
+    check(
+        "taking the edit back makes it a note again",
+        note(idB)?.isEdited == false && model.score == scoreBefore,
+        "edited \(String(describing: note(idB)?.isEdited)), score \(model.score)"
+    )
+
+    // Undo after cutting the end off a passage puts the words back *beside*
+    // the shortened mark, which is outside it by the boundary rule — so
+    // following the edit alone would leave a note the author has taken
+    // straight back marked Edited.
+    let cut = draft.replacingOccurrences(
+        of: "every test runs on every change.", with: "every test runs."
+    )
+    model.noteCurrentText(cut)
+    check(
+        "cutting the end off a passage marks its note edited",
+        note(idA)?.isEdited == true,
+        "edited \(String(describing: note(idA)?.isEdited))"
+    )
+    model.noteCurrentText(draft)
+    check(
+        "and undoing the cut finds the whole passage again",
+        note(idA)?.isEdited == false
+            && words(idA, in: draft) == "every test runs on every change",
+        "edited \(String(describing: note(idA)?.isEdited)), "
+            + "marks \"\(words(idA, in: draft) ?? "nothing")\""
+    )
+
+    let beside = draft.replacingOccurrences(
+        of: "twelve minutes a build.", with: "twelve minutes a build, on average."
+    )
+    model.noteCurrentText(beside)
+    check(
+        "typing beside a passage leaves its note alone",
+        note(idC)?.isEdited == false && note(idC)?.isOutstanding == true
+            && words(idC, in: beside) == "saved us twelve minutes a build",
+        "edited \(String(describing: note(idC)?.isEdited)), "
+            + "marks \"\(words(idC, in: beside) ?? "nothing")\""
+    )
+    model.noteCurrentText(draft)
+
+    // Re-run on the draft the critique already describes, with nothing
+    // waiting on it: half a minute and a request for the same notes in other
+    // words. The rail says so instead.
+    let askedBefore = held.asked
+    model.request(on: draft, documentURL: nil)
+    await settle()
+    check(
+        "re-running an unchanged draft says so rather than asking again",
+        model.showsUnchangedNotice && !model.isRunning && held.asked == askedBefore,
+        "notice \(model.showsUnchangedNotice), running \(model.isRunning), "
+            + "\(held.asked - askedBefore) requests"
+    )
+
+    let storedHand = UserDefaults.standard.string(forKey: CritiqueHand.storageKey)
+    UserDefaults.standard.set(CritiqueHand.sans.rawValue, forKey: CritiqueHand.storageKey)
+    defer {
+        if let storedHand {
+            UserDefaults.standard.set(storedHand, forKey: CritiqueHand.storageKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: CritiqueHand.storageKey)
+        }
+    }
+    /// The rail as drawn, read back from its pixels.
+    func drawnRail(isStale: Bool) -> String {
+        let host = NSHostingView(rootView: CritiqueSidebar(
+            critique: model, colorTheme: EditorColorTheme(color: .blue, mode: .light),
+            isStale: isStale, onRerun: {}, onRerunChanges: {}
+        ))
+        host.frame = NSRect(x: 0, y: 0, width: 340, height: 2000)
+        let window = NSWindow(
+            contentRect: host.frame, styleMask: [.borderless],
+            backing: .buffered, defer: false
+        )
+        window.contentView = host
+        window.orderBack(nil)
+        host.layoutSubtreeIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+        host.layoutSubtreeIfNeeded()
+        defer { window.orderOut(nil) }
+        if let path = ProcessInfo.processInfo.environment["MDE_CARRY_PNG"],
+           let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+            host.cacheDisplay(in: host.bounds, to: rep)
+            let file = path.replacingOccurrences(
+                of: ".png", with: isStale ? "-after.png" : "-unchanged.png"
+            )
+            try? rep.representation(using: .png, properties: [:])?
+                .write(to: URL(fileURLWithPath: file))
+            print("  wrote \(file)")
+        }
+        return readable(recognisedText(in: host).joined(separator: " "))
+    }
+    check(
+        "and the rail draws that",
+        drawnRail(isStale: false)
+            .contains(readable("Nothing has changed since this critique")),
+        "the notice is not legible on the rail"
+    )
+
+    // Anything that waits on a critique is a reason to run one.
+    model.setResolution(.completed, for: idC)
+    check(
+        "marking a note Done puts the notice away",
+        !model.showsUnchangedNotice,
+        "it is still up"
+    )
+
+    let rewritten = draft.replacingOccurrences(of: "so they guess", with: "so they just guess")
+    model.noteCurrentText(rewritten)
+    model.request(on: rewritten, documentURL: nil)
+    await settle { held.isWaiting }
+    let sent = held.lastPrevious
+    check(
+        "a re-run of one changed paragraph asks about that paragraph's note",
+        model.isRunning && sent.contains { $0.quote == "so they guess" }
+            && (held.lastFocus ?? "").contains("so they just guess"),
+        "running \(model.isRunning), sent \(sent.map(\.quote)), "
+            + "focus \(held.lastFocus ?? "none")"
+    )
+    check(
+        "and about the note marked Done elsewhere, which is waiting on it",
+        sent.contains { $0.quote == "saved us twelve minutes a build" },
+        "sent \(sent.map(\.quote))"
+    )
+    check(
+        "but not about the paragraphs it was not asked to read",
+        !sent.contains { $0.quote == "every test runs on every change" }
+            && !sent.contains { $0.quote == "splitting the suite" },
+        "sent \(sent.map(\.quote))"
+    )
+    let keyB = sent.first { $0.quote == "so they guess" }?.key ?? "?"
+    let repeated = CritiqueFinding(
+        severity: .high, category: "Logic and credibility",
+        location: "paragraph 1",
+        quote: "because every test runs on every change",
+        why: "Is it really every test?"
+    )
+    let added = CritiqueFinding(
+        severity: .medium, category: "Structure and pacing",
+        location: "paragraph 2",
+        quote: "Most teams never measure where that time goes",
+        why: "Which teams? Say how you know."
+    )
+    held.answer(
+        CritiqueReport(
+            jobRead: "A post for developers.", overall: "Closer.",
+            findings: [repeated, added]
+        ),
+        verdicts: [keyB: .stillApplies(quote: "so they just guess", location: "paragraph 2")]
+    )
+    await settle { !model.isRunning }
+
+    check(
+        "a rewrite the critic says did not work comes back as the same note, open",
+        note(idB)?.isOutstanding == true && note(idB)?.finding.quote == "so they just guess"
+            && words(idB, in: rewritten) == "so they just guess",
+        "outstanding \(String(describing: note(idB)?.isOutstanding)), "
+            + "quotes \"\(note(idB)?.finding.quote ?? "nothing")\""
+    )
+    check(
+        "a note marked Done that the critic does not raise again is fixed",
+        note(idC)?.isFixed == true
+            && !(model.report?.findings.contains { $0.id == idC } ?? true),
+        "fixed \(String(describing: note(idC)?.isFixed))"
+    )
+    check(
+        "the notes it was not asked about are kept as they were",
+        note(idA)?.isOutstanding == true && note(idD)?.isOutstanding == true
+            && words(idA, in: rewritten) == "every test runs on every change",
+        "\(model.items.count) notes"
+    )
+    check(
+        "a carried note said again in other words is not added twice",
+        !model.items.contains { $0.finding.quote == repeated.quote },
+        "the reworded repeat is in the rail beside the note it repeats"
+    )
+    check(
+        "while something genuinely new is",
+        model.items.contains { $0.id == added.id && $0.isOutstanding },
+        "the new note is missing"
+    )
+    check(
+        "the rail says what the run changed",
+        model.lastChange == CritiqueCarry.Delta(fixed: 1, reopened: 1, new: 1)
+            && model.lastChange?.summary == "1 fixed · 1 reopened · 1 new since the last critique.",
+        "it says \(model.lastChange?.summary ?? "nothing")"
+    )
+    check(
+        "the saved critique keeps what was fixed, apart from what still stands",
+        model.history.latest?.fixed?.map(\.id) == [idC]
+            && model.report?.findings.count == 4,
+        "fixed \(model.history.latest?.fixed?.map(\.quote) ?? []), "
+            + "\(model.report?.findings.count ?? -1) standing"
+    )
+    check(
+        "and a critique of the draft as it stands, with nothing waiting, is the critic's word",
+        model.isConfirmed,
+        "it is not confirmed"
+    )
+
+    // The whole draft, with an open note found fixed and a dismissed one
+    // found still there.
+    model.setResolution(.dismissed, for: idD)
+    model.run(on: rewritten, documentURL: nil, scope: .whole)
+    await settle { held.isWaiting }
+    let wholeSent = held.lastPrevious
+    check(
+        "a whole re-run asks about every standing note",
+        wholeSent.count == 4 && held.lastFocus == nil,
+        "sent \(wholeSent.map(\.quote)), focus \(held.lastFocus ?? "none")"
+    )
+    check(
+        "but not again about the one already found fixed",
+        !wholeSent.contains { $0.quote == "saved us twelve minutes a build" },
+        "sent \(wholeSent.map(\.quote))"
+    )
+    let keyA = wholeSent.first { $0.quote == "every test runs on every change" }?.key ?? "?"
+    let keyD = wholeSent.first { $0.quote == "splitting the suite" }?.key ?? "?"
+    held.answer(
+        CritiqueReport(jobRead: "A post for developers.", overall: "Nearly.", findings: []),
+        verdicts: [keyA: .fixed, keyD: .stillApplies(quote: nil, location: nil)]
+    )
+    await settle { !model.isRunning }
+    check(
+        "an open note the critic finds fixed is marked fixed",
+        note(idA)?.isFixed == true,
+        "fixed \(String(describing: note(idA)?.isFixed))"
+    )
+    check(
+        "a dismissed note the critic still sees stays dismissed",
+        note(idD)?.resolution == .dismissed && note(idD)?.isFixed == false,
+        "it is \(String(describing: note(idD)?.resolution))"
+    )
+    check(
+        "and notes it said nothing about stay open",
+        note(idB)?.isOutstanding == true && note(added.id)?.isOutstanding == true,
+        "\(model.outstanding.count) outstanding"
+    )
+    check(
+        "a note found fixed is the last run's news, not every run's",
+        note(idC) == nil && model.lastChange == CritiqueCarry.Delta(fixed: 1, reopened: 0, new: 0),
+        "the earlier fixed note is still listed, change \(model.lastChange?.summary ?? "none")"
+    )
+
+    // Reopened later, the critique still says what its run fixed.
+    model.show(revision: model.history.revisions.last?.id)
+    model.show(revision: nil)
+    check(
+        "putting the newest critique back on screen keeps its fixed notes",
+        note(idA)?.isFixed == true && note(idD)?.resolution == .dismissed,
+        "fixed \(String(describing: note(idA)?.isFixed))"
+    )
+
+    // The gate again, after a run, and a note marked Done opening it.
+    let askedAfter = held.asked
+    model.request(on: rewritten, documentURL: nil)
+    check(
+        "re-running straight after a critique says nothing has changed",
+        model.showsUnchangedNotice && held.asked == askedAfter,
+        "notice \(model.showsUnchangedNotice), \(held.asked - askedAfter) requests"
+    )
+    model.setResolution(.completed, for: added.id)
+    model.request(on: rewritten, documentURL: nil)
+    await settle { held.isWaiting }
+    check(
+        "marking a note Done is enough to run it",
+        held.asked == askedAfter + 1 && model.isRunning,
+        "\(held.asked - askedAfter) requests"
+    )
+    held.answer(CritiqueReport(jobRead: "A post for developers.", overall: "Ready.", findings: []))
+    await settle { !model.isRunning }
+    check(
+        "and the critic agreeing fixes it",
+        note(added.id)?.isFixed == true,
+        "fixed \(String(describing: note(added.id)?.isFixed))"
+    )
+
+    // Drawn: an Edited card and a Fixed one each say what they are.
+    let again = rewritten.replacingOccurrences(of: "so they just guess", with: "so they simply guess")
+    model.noteCurrentText(again)
+    let drawn = drawnRail(isStale: true)
+    for phrase in [
+        "A later critique found this fixed.",
+        "Changed since. The next critique checks it.",
+        "1 fixed since the last critique.",
+    ] {
+        check(
+            "the rail draws \"\(phrase)\"",
+            legible(phrase, in: drawn),
+            "not legible on the rail, which reads: \(drawn)"
+        )
+    }
+}
+
 /// Renders the rail for real.
 ///
 /// Everything else here checks the model behind the rail. This checks the rail
@@ -956,7 +2573,7 @@ func checkTheRailRenders() {
     let outstandingBefore = model.outstanding.count
     let scoreBefore = model.score
     let answered = model.items.first { $0.finding.severity == .low }
-    model.setResolution(.dismissed, for: answered!.id)
+    model.setResolution(.completed, for: answered!.id)
 
     check(
         "answering one takes it out of the outstanding count",
@@ -964,9 +2581,27 @@ func checkTheRailRenders() {
         "\(model.outstanding.count) of \(outstandingBefore)"
     )
     check(
-        "the score goes up when something is answered",
+        "the score goes up when a note is marked Done",
         model.score > scoreBefore,
         "\(scoreBefore) -> \(model.score)"
+    )
+    // Dismissing is a decision not to act, and the draft is no better for it.
+    // A score that rose for it let "Dismiss all" print "Ready" over a draft
+    // nobody had touched.
+    model.setResolution(.dismissed, for: answered!.id)
+    check(
+        "but not when it is dismissed",
+        model.score == scoreBefore,
+        "\(scoreBefore) -> \(model.score)"
+    )
+    let caption = CritiqueSidebar(
+        critique: model, colorTheme: EditorColorTheme(color: .blue, mode: .light),
+        isStale: false, onRerun: {}, onRerunChanges: {}
+    ).scoreCaption
+    check(
+        "and the rail says why the dismissed note still counts",
+        caption?.contains("Dismissed notes still count") == true,
+        "it says \(caption ?? "nothing")"
     )
     check(
         "an answered finding stops shading its passage",
@@ -978,18 +2613,59 @@ func checkTheRailRenders() {
         model.items.last?.id == answered!.id,
         "it is at position \(model.items.firstIndex { $0.id == answered!.id } ?? -1)"
     )
+    // A hundred reached by ticking boxes is the author's word, not the
+    // critic's, so it says so until a fresh critique agrees.
+    let allDone = CritiqueModel()
+    allDone.applyForChecking(
+        CritiqueReport(jobRead: "", overall: "", findings: model.items.map(\.finding)),
+        for: source
+    )
+    for item in allDone.items { allDone.setResolution(.completed, for: item.id) }
     check(
-        "answering everything returns the score to a hundred",
-        {
-            let all = CritiqueModel()
-            all.applyForChecking(
-                CritiqueReport(jobRead: "", overall: "", findings: model.items.map(\.finding)),
-                for: source
-            )
-            for item in all.items { all.setResolution(.completed, for: item.id) }
-            return all.score == 100
-        }(),
-        "it did not reach 100"
+        "marking every note Done reaches a hundred",
+        allDone.score == 100,
+        "it reached \(allDone.score)"
+    )
+    check(
+        "but says it looks ready, not that it is",
+        allDone.verdict == "Looks ready" && !allDone.isConfirmed,
+        "it says \"\(allDone.verdict)\""
+    )
+    let fresh = CritiqueModel()
+    fresh.applyForChecking(CritiqueReport(jobRead: "", overall: "", findings: []), for: source)
+    check(
+        "a fresh critique with nothing to say is the one that says Ready",
+        fresh.score == 100 && fresh.verdict == "Ready",
+        "\(fresh.score), \"\(fresh.verdict)\""
+    )
+    let dismissedAll = CritiqueModel()
+    dismissedAll.applyForChecking(
+        CritiqueReport(jobRead: "", overall: "", findings: model.items.map(\.finding)),
+        for: source
+    )
+    let untouched = dismissedAll.score
+    for item in dismissedAll.items { dismissedAll.setResolution(.dismissed, for: item.id) }
+    check(
+        "dismissing every note leaves the score where it was",
+        dismissedAll.score == untouched,
+        "\(untouched) -> \(dismissedAll.score)"
+    )
+    // The summary's problems are the critic's verdict too. Every note Done
+    // while it still lists two is not a finished draft.
+    let listed = CritiqueModel()
+    listed.applyForChecking(
+        CritiqueReport(
+            jobRead: "", overall: "",
+            whatDoesNotWork: ["No example.", "The ending trails off."],
+            findings: model.items.map(\.finding)
+        ),
+        for: source
+    )
+    for item in listed.items { listed.setResolution(.completed, for: item.id) }
+    check(
+        "problems the summary still lists keep it under a hundred",
+        listed.score < 100,
+        "it reached \(listed.score)"
     )
     // And taking the answer back restores it.
     model.setResolution(nil, for: answered!.id)
@@ -1006,12 +2682,18 @@ func checkTheRailRenders() {
     // from, so this drawing uses the system face and puts the choice back.
     let storedRailHand = UserDefaults.standard.string(forKey: CritiqueHand.storageKey)
     UserDefaults.standard.set(CritiqueHand.sans.rawValue, forKey: CritiqueHand.storageKey)
+    // Every note in full and the summary open, which is the drawing the
+    // checks below were written against. Closed is checked at the end.
+    let restoreSummary = pinDefault(CritiqueSidebar.summaryExpandedKey, to: true)
+    let restoreDensity = pinDefault(CritiqueSidebar.compactNotesKey, to: false)
     defer {
         if let storedRailHand {
             UserDefaults.standard.set(storedRailHand, forKey: CritiqueHand.storageKey)
         } else {
             UserDefaults.standard.removeObject(forKey: CritiqueHand.storageKey)
         }
+        restoreSummary()
+        restoreDensity()
     }
 
     let rail = CritiqueSidebar(
@@ -1119,6 +2801,20 @@ func checkTheRailRenders() {
     }
     host.cacheDisplay(in: host.bounds, to: rep)
     let scale = CGFloat(rep.pixelsWide) / host.bounds.width
+
+    // Everything the bands below look for sits under the audience line, and
+    // that line is as tall as the brief in it, so its height is taken from a
+    // drawing of it rather than assumed. At the offsets measured before it
+    // went in, the score and the stale notice both read as missing.
+    let briefLine = NSHostingView(rootView: CritiqueBriefLine(
+        critique: model, colorTheme: EditorColorTheme(color: .blue, mode: .light),
+        onRerun: {}
+    ).frame(width: host.bounds.width))
+    // And the rule under it.
+    let below = briefLine.fittingSize.height + 1
+    if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
+        print("  the audience line takes \(Int(below))pt")
+    }
 
     /// How much of a band is not the background colour.
     func inkedFraction(fromTop top: CGFloat, height: CGFloat) -> Double {
@@ -1262,7 +2958,7 @@ func checkTheRailRenders() {
         // question, so only the left of the banner is considered.
         let lastCol = min(rep.pixelsWide, Int(Double(rep.pixelsWide) * 0.42))
         let firstCol = Int(18 * scale)
-        let searchTo = min(rep.pixelsHigh, Int(280 * scale))
+        let searchTo = min(rep.pixelsHigh, Int((280 + below) * scale))
         guard firstCol < lastCol, searchTo > 0 else { return 0 }
 
         var isInkRow = [Bool](repeating: false, count: searchTo)
@@ -1388,7 +3084,8 @@ func checkTheRailRenders() {
         alpha: 1
     )
     let papers = dominantPapers(
-        fromTop: 200, height: host.bounds.height - 200, excluding: bannerWash
+        fromTop: 200 + below, height: host.bounds.height - 200 - below,
+        excluding: bannerWash
     )
     if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
         print("  dominant note papers: \(papers.prefix(3).map { "\($0.0)x\($0.1)" })")
@@ -1407,10 +3104,10 @@ func checkTheRailRenders() {
                 + "\(papers[1].0) x\(papers[1].1)"
     )
 
-    let scoreInk = saturatedArea(fromTop: 58, height: 64)
+    let scoreInk = saturatedArea(fromTop: 58 + below, height: 64)
     if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
         print("  saturated ink in the score band: \(Int(scoreInk))pt²")
-        for top in stride(from: 0.0, to: 200.0, by: 20.0) {
+        for top in stride(from: below, to: 200.0 + below, by: 20.0) {
             print("    band \(Int(top))-\(Int(top)+20): \(Int(saturatedArea(fromTop: top, height: 20)))pt²")
         }
     }
@@ -1443,7 +3140,7 @@ func checkTheRailRenders() {
         "only \(Int(accent))pt² of accent colour at the top of the rail"
     )
 
-    let noticeRun = widestRun(fromTop: 36, height: 52)
+    let noticeRun = widestRun(fromTop: 36 + below, height: 52)
     if ProcessInfo.processInfo.environment["MDE_DUMP_RAIL"] != nil {
         print("  widest run in the notice band: \(Int(noticeRun))pt")
     }
@@ -1451,6 +3148,40 @@ func checkTheRailRenders() {
         "a stale critique says so rather than drifting quietly",
         noticeRun > 150,
         "widest run was \(Int(noticeRun))pt, which is text, not a panel"
+    )
+
+    // The summary as it opens: the overall read, and a switch naming what is
+    // behind it. Both lists open on every critique filled the first screen
+    // of the rail before a single note.
+    UserDefaults.standard.set(false, forKey: CritiqueSidebar.summaryExpandedKey)
+    let closed = NSHostingView(rootView: CritiqueSidebar(
+        critique: model,
+        colorTheme: EditorColorTheme(color: .blue, mode: .light),
+        isStale: true,
+        onRerun: {}, onRerunChanges: {}
+    ))
+    closed.frame = host.frame
+    window.contentView = closed
+    closed.layoutSubtreeIfNeeded()
+    RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+    closed.layoutSubtreeIfNeeded()
+    let closedRead = readable(recognisedText(in: closed).joined(separator: " "))
+    window.orderOut(nil)
+    check(
+        "the summary opens on its one-sentence read",
+        legible("Clear, but the claim needs support.", in: closedRead),
+        "read \"\(closedRead.prefix(400))\""
+    )
+    check(
+        "with a switch that says what is behind it",
+        legible("What works (1) and what", in: closedRead),
+        "read \"\(closedRead.prefix(400))\""
+    )
+    check(
+        "and the lists themselves behind it",
+        !legible("The mechanism is described correctly.", in: closedRead)
+            && !legible("Nothing is grounded in an example.", in: closedRead),
+        "read \"\(closedRead.prefix(400))\""
     )
 }
 
@@ -1550,6 +3281,10 @@ func checkEveryColourIsLegible() {
                 ("its /100", srgb(severity.ink(on: mode)), wash, 4.5),
                 ("the awesomeness caption on a \(name) banner", secondary, wash, 4.5),
                 ("the verdict on a \(name) banner", primary, wash, 4.5),
+                // The strip's switches: the one narrowed to is filled with
+                // its severity's colour, and its count is written over that.
+                ("the \(name) switch while it is chosen",
+                 primary, over(srgb(severity.tint).withAlphaComponent(0.18), canvas), 4.5),
             ]
         }
 
@@ -1565,6 +3300,8 @@ func checkEveryColourIsLegible() {
             ("the ANSWERED divider", primary, canvas, 4.5),
             // Text that sits straight on the rail's own background.
             ("a plain rail line", noteSub, canvas, 4.5),
+            ("a switch on the strip that is not chosen",
+             srgb(CritiqueInk.quiet(on: mode)), canvas, 4.5),
             ("the stale notice",
              noteSub, over(noteSub.withAlphaComponent(0.10), canvas), 4.5),
             ("the tick stamp", srgb(NSColor.white), srgb(CritiqueCard.doneGreen), 4.5),
@@ -2595,6 +4332,1311 @@ func checkTheHistory() {
     )
 }
 
+/// A note whose fix is a straight swap makes it, and takes it back.
+///
+/// Every way this goes wrong is quiet. A suggestion applied twice reads as a
+/// typo the author made — "good enough enough" — and a note that cannot tell
+/// its own words came back goes on saying Applied about a sentence that is
+/// exactly as criticised. Both look like working features on screen.
+@MainActor
+func checkApplyingASuggestion() {
+    print("")
+    print("Applying a suggestion")
+
+    let draft = """
+        # Caching
+
+        Caching is good for most apps, and each one has it own tradeoffs.
+
+        The tradeoff is staleness, and it is “genuinely” hard.
+        """
+    let spelling = CritiqueFinding(
+        severity: .medium, category: "Grammar and mechanics", location: "paragraph 2",
+        quote: "each one has it own tradeoffs", why: "Possessive, not a contraction.",
+        fix: "Change \"it\" to \"its\".", replacement: "each one has its own tradeoffs"
+    )
+    let hedge = CritiqueFinding(
+        severity: .low, category: "Clarity and precision", location: "paragraph 2",
+        quote: "good", why: "Good how?", fix: "Say how good.", replacement: "good enough"
+    )
+    let claim = CritiqueFinding(
+        severity: .high, category: "Logic and credibility", location: "paragraph 3",
+        quote: "The tradeoff is staleness", why: "How stale?",
+        direction: "Say how stale, and for whom."
+    )
+    // Quoted with straight quotes where the draft has curly ones.
+    let retyped = CritiqueFinding(
+        severity: .low, category: "Voice and tone", location: "paragraph 3",
+        quote: "it is \"genuinely\" hard", why: "Scare quotes.",
+        fix: "Drop the word.", replacement: "it is hard"
+    )
+    let model = CritiqueModel()
+    model.attach(to: nil, text: draft)
+    model.applyForChecking(
+        CritiqueReport(jobRead: "", overall: "", findings: [spelling, hedge, claim, retyped]),
+        for: draft
+    )
+    func note(_ finding: CritiqueFinding) -> CritiqueModel.Item? {
+        model.item(withID: finding.id)
+    }
+    func state(_ finding: CritiqueFinding) -> String {
+        note(finding)?.standing?.label ?? "outstanding"
+    }
+
+    // The editor's half, as `MarkdownEditorSession.replaceSourceText` does it:
+    // the words at the range checked, replaced, and the draft handed back.
+    var text = draft
+    var made: [CritiqueModel.Swap] = []
+    func replace(_ swap: CritiqueModel.Swap) -> String? {
+        let source = text as NSString
+        guard NSMaxRange(swap.range) <= source.length,
+              source.substring(with: swap.range) == swap.expected
+        else { return nil }
+        made.append(swap)
+        text = source.replacingCharacters(in: swap.range, with: swap.replacement)
+        return text
+    }
+    /// A change that did not come from the rail — typing, ⌘Z, ⌘⇧Z — arriving
+    /// the way the view's `onChange` delivers every one.
+    func edit(_ next: String) {
+        text = next
+        model.noteCurrentText(next)
+    }
+    func words(_ finding: CritiqueFinding) -> String {
+        guard let range = note(finding)?.range,
+              NSMaxRange(range) <= (text as NSString).length
+        else { return "nothing" }
+        return (text as NSString).substring(with: range)
+    }
+
+    check(
+        "a straight swap is offered, and a fix that needs the author is not",
+        note(spelling)?.suggestion == "each one has its own tradeoffs"
+            && note(hedge)?.suggestion == "good enough"
+            && note(claim)?.suggestion == nil,
+        "spelling offers \(note(spelling)?.suggestion ?? "nothing"), "
+            + "the claim offers \(note(claim)?.suggestion ?? "nothing")"
+    )
+    check(
+        "nor is one for a quote found only by allowing for retyping",
+        note(retyped)?.isAnchored == true && note(retyped)?.suggestion == nil,
+        "anchored: \(note(retyped)?.isAnchored == true), "
+            + "offers \(note(retyped)?.suggestion ?? "nothing")"
+    )
+
+    let scoreBefore = model.score
+    let order = model.items.map(\.id)
+    check("Apply makes the change", model.applySuggestion(for: spelling.id, using: replace))
+    // What the view's `onChange` does next. The rail has already been told.
+    model.noteCurrentText(text)
+    check(
+        "the draft reads as the critic suggested",
+        text.contains("each one has its own tradeoffs") && !text.contains("has it own"),
+        text
+    )
+    check(
+        "as one change Undo can name",
+        made.count == 1 && made.last?.name == "Apply Suggestion",
+        made.map(\.name).joined(separator: ", ")
+    )
+    check(
+        "the note says Applied, and stops counting",
+        note(spelling)?.standing == .applied && note(spelling)?.counts == false
+            && model.score > scoreBefore,
+        "\(state(spelling)), score \(scoreBefore) then \(model.score)"
+    )
+    check(
+        "it stays where it was pressed, marking the new words",
+        model.items.map(\.id) == order && words(spelling) == "each one has its own tradeoffs",
+        "it marks \"\(words(spelling))\""
+    )
+    check(
+        "the other marks move with their words",
+        words(claim) == "The tradeoff is staleness" && words(hedge) == "good",
+        "the claim marks \"\(words(claim))\""
+    )
+    check("and an applied note offers no second Apply", note(spelling)?.suggestion == nil)
+
+    let applied = text
+    edit(draft)
+    check(
+        "Undo puts the note back as it was",
+        note(spelling)?.isOutstanding == true && note(spelling)?.suggestion != nil
+            && words(spelling) == "each one has it own tradeoffs" && model.score == scoreBefore,
+        "\(state(spelling)), marking \"\(words(spelling))\", score \(model.score)"
+    )
+    edit(applied)
+    check(
+        "and Redo applies it again",
+        note(spelling)?.standing == .applied && words(spelling) == "each one has its own tradeoffs",
+        "\(state(spelling)), marking \"\(words(spelling))\""
+    )
+
+    // A suggestion that keeps the quoted words and adds to them. The added
+    // words land beside the passage rather than in it, which every other
+    // edit takes as typing next to a note.
+    check("a suggestion that adds to the words applies", model.applySuggestion(for: hedge.id, using: replace))
+    check(
+        "and its mark takes the added words in",
+        note(hedge)?.standing == .applied && words(hedge) == "good enough",
+        "\(state(hedge)), marking \"\(words(hedge))\""
+    )
+    let addedTo = text
+    let takenBack = addedTo.replacingOccurrences(of: "good enough", with: "good")
+    edit(takenBack)
+    check(
+        "Undo brings it back, though the edit is worked out a character late",
+        note(hedge)?.isOutstanding == true && words(hedge) == "good",
+        "\(state(hedge)), marking \"\(words(hedge))\""
+    )
+    edit(addedTo)
+    check(
+        "and Redo applies it, though its words land beside the passage",
+        note(hedge)?.standing == .applied && words(hedge) == "good enough",
+        "\(state(hedge)), marking \"\(words(hedge))\""
+    )
+    check(
+        "after which there is nothing to apply twice",
+        note(hedge)?.suggestion == nil
+            && !model.applySuggestion(for: hedge.id, using: replace)
+            && !text.contains("enough enough"),
+        text
+    )
+
+    // Typed by hand, a letter at a time, the way somebody who read the note
+    // and did not see the button would.
+    edit(takenBack)
+    let after = (takenBack as NSString).range(of: "good").location + 4
+    var typed = takenBack as NSString
+    for (offset, letter) in " enough".enumerated() {
+        typed = typed.replacingCharacters(
+            in: NSRange(location: after + offset, length: 0), with: String(letter)
+        ) as NSString
+        edit(typed as String)
+    }
+    check(
+        "typing the suggestion in counts as applying it",
+        note(hedge)?.standing == .applied && words(hedge) == "good enough",
+        "\(state(hedge)), marking \"\(words(hedge))\""
+    )
+
+    // The way back that is not ⌘Z: undo walks back through everything typed
+    // since, and this takes back the one passage.
+    check("Revert puts the words back", model.revertSuggestion(for: spelling.id, using: replace))
+    check(
+        "the original words, as one change Undo can name",
+        text.contains("each one has it own tradeoffs") && made.last?.name == "Revert Suggestion",
+        text
+    )
+    check(
+        "and the note is outstanding again",
+        note(spelling)?.isOutstanding == true && words(spelling) == "each one has it own tradeoffs",
+        "\(state(spelling)), marking \"\(words(spelling))\""
+    )
+
+    // The draft moved on in the editor before the rail heard about it — a
+    // keystroke the view has not yet reported.
+    let unreported = text.replacingOccurrences(of: "each one has", with: "every one has")
+    text = unreported
+    let swapsBefore = made.count
+    check(
+        "Apply against words that have moved on changes nothing",
+        !model.applySuggestion(for: spelling.id, using: replace)
+            && text == unreported && made.count == swapsBefore,
+        text
+    )
+    edit(unreported)
+    edit(unreported.replacingOccurrences(of: "every one has", with: "each one has"))
+
+    // Opened again later: the saved critique is anchored afresh against a
+    // draft that took two of its suggestions, one of which no longer
+    // contains the words it was quoted on.
+    check("Apply again", model.applySuggestion(for: spelling.id, using: replace))
+    model.show(revision: nil)
+    check(
+        "a suggestion that replaced its words is found applied on reopening",
+        note(spelling)?.standing == .applied && words(spelling) == "each one has its own tradeoffs",
+        "\(state(spelling)), marking \"\(words(spelling))\""
+    )
+    check(
+        "and one that added to them is not offered a second time",
+        note(hedge)?.standing == .applied && words(hedge) == "good enough"
+            && note(hedge)?.suggestion == nil,
+        "\(state(hedge)), marking \"\(words(hedge))\""
+    )
+
+    // The critique of a draft that already reads as the suggestion — typed in
+    // where nothing was watching. Apply says so rather than adding it again.
+    let already = CritiqueModel()
+    let alreadyText = "Caching is good enough for most apps."
+    already.attach(to: nil, text: alreadyText)
+    already.applyForChecking(
+        CritiqueReport(jobRead: "", overall: "", findings: [hedge]),
+        for: alreadyText
+    )
+    text = alreadyText
+    let applying = already.applySuggestion(for: hedge.id, using: replace)
+    check(
+        "a suggestion already in place is marked, not made again",
+        applying && text == alreadyText
+            && already.item(withID: hedge.id)?.standing == .applied,
+        "\(text) — \(already.item(withID: hedge.id)?.standing?.label ?? "outstanding")"
+    )
+
+    // Drawn: the words it would put in, and the button that does it.
+    let shown = CritiqueModel()
+    shown.attach(to: nil, text: draft)
+    shown.applyForChecking(
+        CritiqueReport(jobRead: "", overall: "", findings: [spelling]),
+        for: draft
+    )
+    func drawn(replacing: Bool) -> String {
+        let host = NSHostingView(rootView: CritiqueSidebar(
+            critique: shown, colorTheme: EditorColorTheme(color: .blue, mode: .light),
+            isStale: false, onRerun: {}, onRerunChanges: {},
+            replaceText: replacing ? { _ in nil } : nil
+        ))
+        host.frame = NSRect(x: 0, y: 0, width: 356, height: 900)
+        let window = NSWindow(
+            contentRect: host.frame, styleMask: [.borderless],
+            backing: .buffered, defer: false
+        )
+        window.contentView = host
+        window.orderBack(nil)
+        host.layoutSubtreeIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+        host.layoutSubtreeIfNeeded()
+        defer { window.orderOut(nil) }
+        if replacing, let path = ProcessInfo.processInfo.environment["MDE_APPLY_PNG"],
+           let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+            host.cacheDisplay(in: host.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?
+                .write(to: URL(fileURLWithPath: path))
+            print("  wrote \(path)")
+        }
+        return readable(recognisedText(in: host).joined(separator: " "))
+    }
+    let withApply = drawn(replacing: true)
+    check(
+        "the card shows the suggestion and an Apply button",
+        withApply.contains("suggested")
+            && withApply.contains(readable("each one has its own tradeoffs"))
+            && withApply.contains("apply"),
+        withApply
+    )
+    check(
+        "and offers none where there is no draft to change",
+        !drawn(replacing: false).contains("suggested")
+    )
+}
+
+/// Who the draft is for: said by the author, or guessed once and then held.
+///
+/// The critic used to guess the reader afresh on every run and word the guess
+/// differently each time — in grey, at the top of the summary, with no way to
+/// say it was wrong. Every note is advice for that reader, so a wrong guess
+/// was a rail of advice for somebody else, and a drifting one was two
+/// critiques of one draft disagreeing for no reason anybody could see.
+@MainActor
+func checkTheBriefIsTheReader() async {
+    print("")
+    print("Holding every note to who the draft is for")
+
+    let draft = String(
+        repeating: "This paragraph says enough to be worth reading closely. ",
+        count: 6
+    )
+    let finding = CritiqueFinding(
+        severity: .medium, category: "Clarity", location: "paragraph 1",
+        quote: "This paragraph says enough to be worth reading closely.",
+        why: "Says it twice."
+    )
+    // The stores are the real ones, so the addresses are unique and
+    // everything written under them is taken away again.
+    let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent("brief-\(UUID().uuidString).md")
+    let saved = FileManager.default.temporaryDirectory
+        .appendingPathComponent("brief-saved-\(UUID().uuidString).md")
+    defer {
+        for each in [url, saved] {
+            CritiqueHistoryStore.save(CritiqueHistory(), for: each)
+            CritiqueResolutionStore.save(CritiqueResolutions(), for: each)
+            CritiqueBriefStore.save(nil, for: each)
+        }
+    }
+
+    let held = HeldCritique()
+    let model = CritiqueModel(service: held)
+
+    /// The top of the rail as drawn, read back: the line is only as good as
+    /// what a writer can see of it.
+    func drawnLine(savingTo variable: String) -> String {
+        let host = NSHostingView(rootView: CritiqueSidebar(
+            critique: model, colorTheme: EditorColorTheme(color: .blue, mode: .light),
+            isStale: false, onRerun: {}, onRerunChanges: {}
+        ))
+        host.frame = NSRect(x: 0, y: 0, width: 356, height: 420)
+        let window = NSWindow(
+            contentRect: host.frame, styleMask: [.borderless],
+            backing: .buffered, defer: false
+        )
+        window.contentView = host
+        window.orderBack(nil)
+        host.layoutSubtreeIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+        host.layoutSubtreeIfNeeded()
+        defer { window.orderOut(nil) }
+        if let path = ProcessInfo.processInfo.environment[variable],
+           let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+            host.cacheDisplay(in: host.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?
+                .write(to: URL(fileURLWithPath: path))
+            print("  wrote \(path)")
+        }
+        return readable(recognisedText(in: host).joined(separator: " "))
+    }
+
+    model.attach(to: url, text: draft)
+    // Nothing has been read yet, so there is nothing to call a guess. The
+    // first version headed this empty line GUESSED in every new document.
+    let unread = drawnLine(savingTo: "MDE_BRIEF_UNREAD_PNG")
+    check(
+        "before any critique the line claims no guess",
+        model.brief == CritiqueBrief() && !model.brief.isGuess
+            && unread.contains("audience and goal") && !unread.contains("guessed")
+            && unread.contains(readable("Leave it empty and the critic will guess.")),
+        unread
+    )
+    model.request(on: draft, documentURL: url)
+    await settle { held.isWaiting }
+    check(
+        "with nobody named, the critic is left to guess",
+        held.asked == 1 && held.lastBrief == nil,
+        "it was told \(held.lastBrief?.text ?? "nothing") after \(held.asked) requests"
+    )
+    held.answer(CritiqueReport(
+        jobRead: "A post for\n web developers new to caching. ",
+        overall: "Close.", findings: [finding]
+    ))
+    await settle { !model.isRunning }
+    let guess = CritiqueBrief("A post for web developers new to caching.", isGuess: true)
+    check(
+        "its read becomes the line, marked as a guess",
+        model.brief == guess && model.authorBrief == nil && !model.isForAnotherReader,
+        "\(model.brief)"
+    )
+    model.setBrief(" A post for web developers   new to caching. ")
+    check(
+        "accepting the guess as it stands leaves it a guess",
+        model.brief == guess && CritiqueBriefStore.load(for: url) == nil,
+        "\(model.brief)"
+    )
+    let guessed = drawnLine(savingTo: "MDE_BRIEF_GUESS_PNG")
+    check(
+        "the rail draws the guess, and the heading says it is one",
+        guessed.contains("audience and goal") && guessed.contains("guessed")
+            && guessed.contains(readable("A post for web developers new to caching.")),
+        guessed
+    )
+
+    let edited = draft + "And a sentence that was not there before."
+    model.noteCurrentText(edited)
+    model.request(on: edited, documentURL: url)
+    await settle { held.isWaiting }
+    check(
+        "the next critique is held to that guess rather than guessing again",
+        held.lastBrief == guess,
+        "it was told \(held.lastBrief.map { "\($0)" } ?? "nothing")"
+    )
+    held.answer(CritiqueReport(
+        jobRead: "Developers who want a mental model of caching.",
+        overall: "Closer.", findings: [finding]
+    ))
+    await settle { !model.isRunning }
+    check(
+        "and the reader does not drift with the critic's wording",
+        model.brief == guess && model.history.revisions.count == 2,
+        "\(model.brief), \(model.history.revisions.count) critiques"
+    )
+
+    // The author says who it is for. The draft has not changed, and that is
+    // no longer a reason to decline: these notes were for somebody else.
+    let senior = "Senior engineers who already cache; get them to measure first."
+    model.setBrief("  Senior engineers\nwho already cache;  get them to measure first. ")
+    check(
+        "the author's words replace the guess, as one line",
+        model.brief == CritiqueBrief(senior) && !model.brief.isGuess,
+        "\(model.brief)"
+    )
+    check(
+        "and are kept for the document",
+        CritiqueBriefStore.load(for: url) == senior,
+        CritiqueBriefStore.load(for: url) ?? "nothing was kept"
+    )
+    check(
+        "the notes on screen say they were written for somebody else",
+        model.isForAnotherReader && !model.canCritiqueChangesOnly,
+        "isForAnotherReader \(model.isForAnotherReader)"
+    )
+
+    let corrected = drawnLine(savingTo: "MDE_BRIEF_PNG")
+    check(
+        "the rail draws the line, the brief, and the way to act on it",
+        corrected.contains("audience and goal")
+            && !corrected.contains("guessed")
+            && corrected.contains(readable("Senior engineers who already cache"))
+            && corrected.contains(readable("written for a different reader"))
+            && corrected.contains(readable("Critique again")),
+        corrected
+    )
+
+    let asked = held.asked
+    model.request(on: edited, documentURL: url)
+    await settle { held.isWaiting }
+    check(
+        "re-running an unchanged draft for a new reader is not declined",
+        held.asked == asked + 1 && !model.showsUnchangedNotice,
+        "\(held.asked - asked) requests, notice \(model.showsUnchangedNotice)"
+    )
+    check(
+        "it is sent as the author's word",
+        held.lastBrief == CritiqueBrief(senior),
+        "it was told \(held.lastBrief.map { "\($0)" } ?? "nothing")"
+    )
+    check(
+        "and it starts over: the whole draft, nothing carried from the old reader",
+        held.lastFocus == nil && held.lastPrevious.isEmpty,
+        "focus \(held.lastFocus ?? "none"), \(held.lastPrevious.count) carried"
+    )
+    let forSenior = CritiqueFinding(
+        severity: .high, category: "Audience fit", location: "paragraph 1",
+        quote: "This paragraph says enough to be worth reading closely.",
+        why: "A senior engineer knows this already."
+    )
+    held.answer(CritiqueReport(jobRead: "Senior engineers.", overall: "Fine.", findings: [forSenior]))
+    await settle { !model.isRunning }
+    check(
+        "once it lands, the notes are this reader's",
+        !model.isForAnotherReader && model.lastChange == nil
+            && model.items.map(\.finding.why) == ["A senior engineer knows this already."],
+        model.items.map(\.finding.why).joined(separator: " / ")
+    )
+    check(
+        "and the critique for the old reader is still in the history",
+        model.history.revisions.count == 3
+            && model.history.revisions.first?.brief == senior
+            && model.history.revisions.dropFirst().first?.reader == guess.text,
+        model.history.revisions.map(\.reader).joined(separator: " / ")
+    )
+    model.request(on: edited, documentURL: url)
+    check(
+        "asked again for the same reader and the same draft, it declines",
+        model.showsUnchangedNotice && held.asked == asked + 1,
+        "\(held.asked - asked) requests"
+    )
+    model.setBrief(senior + " ")
+    check(
+        "retyping the same brief changes nothing",
+        model.showsUnchangedNotice && !model.isForAnotherReader,
+        "isForAnotherReader \(model.isForAnotherReader)"
+    )
+
+    let reopened = CritiqueModel(service: HeldCritique())
+    reopened.attach(to: url, text: edited)
+    check(
+        "reopening the document brings its reader back",
+        reopened.brief == CritiqueBrief(senior) && !reopened.isForAnotherReader,
+        "\(reopened.brief)"
+    )
+
+    // Cleared: the critic guesses again, and the line shows the new guess.
+    model.setBrief("")
+    check(
+        "cleared, the line is empty and the notes are no longer for anybody named",
+        model.brief.isEmpty && model.isForAnotherReader
+            && CritiqueBriefStore.load(for: url) == "",
+        "\(model.brief)"
+    )
+    model.request(on: edited, documentURL: url)
+    await settle { held.isWaiting }
+    check("the critic is left to guess again", held.lastBrief == nil)
+    held.answer(CritiqueReport(jobRead: "Engineering managers.", overall: "Fine.", findings: [finding]))
+    await settle { !model.isRunning }
+    check(
+        "and its new read is the line",
+        model.brief == CritiqueBrief("Engineering managers.", isGuess: true)
+            && CritiqueBriefStore.load(for: url) == nil,
+        "\(model.brief), kept \(CritiqueBriefStore.load(for: url) ?? "nothing")"
+    )
+
+    // The first ⌘S of an untitled draft. This went through `attach`, which
+    // took the new address for a new document and emptied the rail.
+    let untitled = CritiqueModel(service: HeldCritique())
+    untitled.attach(to: nil, text: draft)
+    untitled.setBrief("Beginners.")
+    untitled.applyForChecking(
+        CritiqueReport(jobRead: "", overall: "", findings: [finding]), for: draft
+    )
+    untitled.setResolution(.dismissed, for: untitled.items[0].id)
+    let notes = untitled.items.map(\.id)
+    untitled.move(to: saved, text: draft)
+    check(
+        "saving an untitled draft keeps its critique on screen",
+        untitled.report != nil && untitled.items.map(\.id) == notes
+            && untitled.brief == CritiqueBrief("Beginners."),
+        "\(untitled.items.count) notes, \(untitled.brief)"
+    )
+    let reread = CritiqueModel(service: HeldCritique())
+    reread.attach(to: saved, text: draft)
+    check(
+        "and files it, its answers and its reader under the new name",
+        reread.history.latest?.brief == "Beginners."
+            && reread.brief == CritiqueBrief("Beginners.")
+            && reread.items.first?.resolution == .dismissed,
+        "\(reread.history.revisions.count) critiques, \(reread.brief)"
+    )
+    // A window with nothing of its own takes what is kept for the file,
+    // rather than writing its emptiness over it.
+    let opening = CritiqueModel(service: HeldCritique())
+    opening.move(to: url, text: edited)
+    check(
+        "a window with no critique of its own shows the one kept for the file",
+        opening.history.revisions.count == model.history.revisions.count
+            && opening.report != nil,
+        "\(opening.history.revisions.count) critiques"
+    )
+}
+
+/// Return keeps what was typed, Esc puts the line back, and both hand the
+/// keyboard to the draft.
+///
+/// Driven with key events through a real window rather than by calling the
+/// model, because each of those is a promise the line prints under the field
+/// while it is being typed in, and none of it is the model's doing: it is
+/// SwiftUI's text field, its focus, and how AppKit's field editor routes the
+/// two keys. Esc in particular is a key a field editor would otherwise spend
+/// on completion.
+@MainActor
+func checkTheBriefLineTakesTheKeyboard() {
+    print("")
+    print("Typing in the audience line")
+
+    let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent("brief-keys-\(UUID().uuidString).md")
+    defer {
+        CritiqueHistoryStore.save(CritiqueHistory(), for: url)
+        CritiqueResolutionStore.save(CritiqueResolutions(), for: url)
+        CritiqueBriefStore.save(nil, for: url)
+    }
+    let model = CritiqueModel(service: HeldCritique())
+    model.attach(to: url, text: "A draft.")
+    model.applyForChecking(
+        CritiqueReport(jobRead: "Developers new to caching.", overall: "", findings: []),
+        for: "A draft."
+    )
+    var returned = 0
+    let host = NSHostingView(rootView: CritiqueBriefLine(
+        critique: model, colorTheme: EditorColorTheme(color: .blue, mode: .light),
+        onRerun: {}, returnToDraft: { returned += 1 }
+    ).frame(width: 356))
+    host.frame = NSRect(x: 0, y: 0, width: 356, height: 200)
+    // Titled, because a borderless window cannot take the keyboard.
+    let window = NSWindow(
+        contentRect: host.frame, styleMask: [.titled],
+        backing: .buffered, defer: false
+    )
+    window.contentView = host
+    window.orderBack(nil)
+    defer { window.orderOut(nil) }
+    func spin(_ seconds: Double = 0.15) {
+        RunLoop.current.run(until: Date().addingTimeInterval(seconds))
+    }
+    spin(0.3)
+
+    func field(in view: NSView) -> NSTextField? {
+        if let field = view as? NSTextField, field.isEditable { return field }
+        for child in view.subviews {
+            if let found = field(in: child) { return found }
+        }
+        return nil
+    }
+    guard let line = field(in: host) else {
+        check("the line is a field that can be typed in", false, "no editable field was drawn")
+        return
+    }
+    // Straight to the window, which is where the application would send them:
+    // with the screen locked there is no key window for it to pick.
+    func press(_ characters: String, keyCode: UInt16, _ modifiers: NSEvent.ModifierFlags = []) {
+        for phase in [NSEvent.EventType.keyDown, .keyUp] {
+            guard let event = NSEvent.keyEvent(
+                with: phase, location: .zero, modifierFlags: modifiers,
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil,
+                characters: characters, charactersIgnoringModifiers: characters,
+                isARepeat: false, keyCode: keyCode
+            ) else { continue }
+            window.sendEvent(event)
+        }
+        spin(0.05)
+    }
+    func write(_ text: String) {
+        for character in text { press(String(character), keyCode: 0) }
+        spin()
+    }
+    func startTyping() -> Bool {
+        let took = window.makeFirstResponder(line)
+        spin(0.3)
+        return took && line.currentEditor() != nil
+    }
+    let returnKey: UInt16 = 36, escape: UInt16 = 53
+
+    check(
+        "the line takes the keyboard",
+        startTyping(),
+        "the first responder is \(window.firstResponder.map { "\(type(of: $0))" } ?? "nothing")"
+    )
+    // Focus selects the line, so typing replaces the guess outright.
+    write("Senior engineers.")
+    press("\r", keyCode: returnKey)
+    check(
+        "Return keeps what was typed",
+        model.brief == CritiqueBrief("Senior engineers.")
+            && CritiqueBriefStore.load(for: url) == "Senior engineers.",
+        "\(model.brief)"
+    )
+    check(
+        "and hands the keyboard back to the draft",
+        returned == 1 && line.currentEditor() == nil,
+        "returned \(returned) times, still editing \(line.currentEditor() != nil)"
+    )
+
+    _ = startTyping()
+    write("Somebody else entirely")
+    press("\u{1b}", keyCode: escape)
+    check(
+        "Esc puts the line back as it was",
+        model.brief == CritiqueBrief("Senior engineers.")
+            && line.stringValue == "Senior engineers.",
+        "the brief is \(model.brief), the line shows \(line.stringValue)"
+    )
+    check(
+        "and hands the keyboard back too",
+        returned == 2 && line.currentEditor() == nil,
+        "returned \(returned) times, still editing \(line.currentEditor() != nil)"
+    )
+
+    // A second line is allowed while typing, and kept as one: the brief is
+    // a sentence about a reader, not a document.
+    _ = startTyping()
+    write("Senior engineers")
+    press("\r", keyCode: returnKey, .option)
+    write("who already cache.")
+    check(
+        "Option-Return breaks the line without leaving it",
+        line.currentEditor() != nil && returned == 2,
+        "still editing \(line.currentEditor() != nil)"
+    )
+    press("\r", keyCode: returnKey)
+    check(
+        "and what it kept reads as one line",
+        model.brief == CritiqueBrief("Senior engineers who already cache."),
+        "\(model.brief)"
+    )
+
+    // Clicking somewhere else keeps the words, like leaving any field, and
+    // leaves the keyboard wherever the click put it.
+    _ = startTyping()
+    write("Engineering managers.")
+    window.makeFirstResponder(nil)
+    spin(0.3)
+    check(
+        "leaving the line another way keeps what was typed",
+        model.brief == CritiqueBrief("Engineering managers.") && returned == 3,
+        "\(model.brief), returned \(returned) times"
+    )
+}
+
+/// Working through a critique from the keyboard, and narrowing it to one
+/// severity.
+///
+/// What it replaced: each note was answered by finding its card and pressing
+/// a stamp the size of a letter, and the notes could only be read in the
+/// rail's order — the highest first, which sends somebody revising up and
+/// down the draft. Next and Previous go in the draft's order instead.
+@MainActor
+func checkWorkingThroughTheNotes() async {
+    print("")
+    print("Working through the notes")
+
+    let draft = [
+        "# Working through",
+        "The first claim stands alone here, without any support from data or "
+            + "from a source anybody could check.",
+        "This second paragraph is low and slow, and it drifts along without "
+            + "much of a point to make.",
+        "A third paragraph is medium and muddled, mixing two ideas that each "
+            + "deserve some room of their own.",
+        "Finally the fourth claim repeats the first without adding evidence, "
+            + "which weakens the ending.",
+    ].joined(separator: "\n\n")
+    let firstHigh = CritiqueFinding(
+        severity: .high, category: "Evidence", location: "paragraph 1",
+        quote: "The first claim stands alone here", why: "Unsupported."
+    )
+    let low = CritiqueFinding(
+        severity: .low, category: "Voice", location: "paragraph 2",
+        quote: "low and slow", why: "Flat."
+    )
+    let medium = CritiqueFinding(
+        severity: .medium, category: "Structure", location: "paragraph 3",
+        quote: "medium and muddled", why: "Two ideas at once."
+    )
+    let secondHigh = CritiqueFinding(
+        severity: .high, category: "Logic", location: "paragraph 4",
+        quote: "the fourth claim repeats the first", why: "Still unsupported."
+    )
+    let report = CritiqueReport(
+        jobRead: "A post for developers.", overall: "Close.",
+        findings: [firstHigh, low, medium, secondHigh]
+    )
+
+    let model = CritiqueModel()
+    model.applyForChecking(report, for: draft)
+    func opened() -> String {
+        model.item(withID: model.selectedFindingID)?.finding.category ?? "nothing"
+    }
+    func idOf(_ finding: CritiqueFinding) -> UUID {
+        model.items.first { $0.finding.quote == finding.quote }?.id ?? UUID()
+    }
+    func answer(_ finding: CritiqueFinding) -> CritiqueResolution? {
+        model.items.first { $0.finding.quote == finding.quote }?.resolution
+    }
+    guard model.items.count == 4, model.items.allSatisfy(\.isAnchored) else {
+        check(
+            "every note is pinned to its passage",
+            false,
+            "\(model.items.filter(\.isAnchored).count) of \(model.items.count)"
+        )
+        return
+    }
+    let reveals = model.revealRequests
+    model.selectNext()
+    check(
+        "Next with nothing open opens the first note in the draft, and goes to it",
+        opened() == "Evidence" && model.revealRequests == reveals + 1,
+        "opened \(opened()), \(model.revealRequests - reveals) reveals"
+    )
+    model.selectNext()
+    check(
+        "and the one after is the next one down the draft",
+        opened() == "Voice",
+        "opened \(opened())"
+    )
+    model.selectNext()
+    model.selectNext()
+    check("on to the last", opened() == "Logic", "opened \(opened())")
+    model.selectNext()
+    check("then round to the first again", opened() == "Evidence", "opened \(opened())")
+    model.selectPrevious()
+    check(
+        "and Previous from the first goes round to the last",
+        opened() == "Logic",
+        "opened \(opened())"
+    )
+    model.dismiss()
+    model.selectPrevious()
+    check(
+        "Previous behind a closed rail brings the rail back with the note open",
+        model.isPresented && opened() == "Logic",
+        "presented \(model.isPresented), opened \(opened())"
+    )
+
+    // A note whose passage is being rewritten has stopped asking for
+    // anything, so it is not a stop on the way — but it is where the reader
+    // is, so Next from it carries on from there.
+    model.reveal(idOf(medium))
+    model.noteCurrentText(
+        draft.replacingOccurrences(of: "medium and muddled", with: "medium and clear")
+    )
+    check(
+        "a note being rewritten is not stepped to, nor answered from the keyboard",
+        model.item(withID: idOf(medium))?.isEdited == true
+            && !model.steppableNotes.contains { $0.finding.category == "Structure" }
+            && !model.canAnswerSelected,
+        "edited \(String(describing: model.item(withID: idOf(medium))?.isEdited)), "
+            + "steps through \(model.steppableNotes.map(\.finding.category))"
+    )
+    model.selectNext()
+    check(
+        "Next from it carries on down the draft instead of starting at the top",
+        opened() == "Logic",
+        "opened \(opened())"
+    )
+    model.reveal(idOf(medium))
+    model.selectPrevious()
+    check("and Previous from it goes back up", opened() == "Voice", "opened \(opened())")
+
+    model.reveal(idOf(firstHigh))
+    let scoreBefore = model.score
+    check("the open note can be answered from the keyboard", model.canAnswerSelected)
+    model.answerSelected(.completed)
+    check(
+        "Done marks the open note and opens the next one down the draft",
+        answer(firstHigh) == .completed && opened() == "Voice",
+        "\(String(describing: answer(firstHigh))), opened \(opened())"
+    )
+    check(
+        "and moves the score as the stamp does",
+        model.score > scoreBefore,
+        "\(scoreBefore) -> \(model.score)"
+    )
+    model.answerSelected(.dismissed)
+    check(
+        "Dismiss does the same",
+        answer(low) == .dismissed && opened() == "Logic",
+        "\(String(describing: answer(low))), opened \(opened())"
+    )
+    model.answerSelected(.completed)
+    check(
+        "answering the last leaves nothing open and nothing to step to",
+        model.selectedFindingID == nil && !model.canStepNotes,
+        "opened \(opened()), \(model.steppableNotes.count) to step to"
+    )
+    model.selectNext()
+    check("so Next does nothing", model.selectedFindingID == nil, "opened \(opened())")
+
+    print("")
+    print("Narrowing the notes to one severity")
+
+    let typo = CritiqueFinding(
+        severity: .low, category: "Grammar", location: "paragraph 2",
+        quote: "drifts along", why: "Vague.", replacement: "wanders"
+    )
+    let narrowed = CritiqueModel()
+    narrowed.applyForChecking(
+        CritiqueReport(
+            jobRead: "A post for developers.", overall: "Close.",
+            findings: [firstHigh, low, medium, secondHigh, typo]
+        ),
+        for: draft
+    )
+    func noteID(_ category: String) -> UUID {
+        narrowed.items.first { $0.finding.category == category }?.id ?? UUID()
+    }
+    let everything = narrowed.score
+    narrowed.severityFilter = .high
+    check(
+        "narrowed to high, only the high notes are stepped through",
+        narrowed.steppableNotes.map(\.finding.category) == ["Evidence", "Logic"],
+        "steps through \(narrowed.steppableNotes.map(\.finding.category))"
+    )
+    check(
+        "and only their passages are shaded",
+        Set(narrowed.highlights.map(\.id)) == [noteID("Evidence"), noteID("Logic")],
+        "\(narrowed.highlights.count) passages shaded"
+    )
+    check(
+        "while the score still counts every note",
+        narrowed.score == everything && narrowed.outstanding.count == 5,
+        "\(everything) -> \(narrowed.score), \(narrowed.outstanding.count) outstanding"
+    )
+    narrowed.reveal(noteID("Logic"))
+    narrowed.selectNext()
+    check(
+        "and Next goes round the notes it shows",
+        narrowed.selectedFindingID == noteID("Evidence"),
+        "opened \(String(describing: narrowed.item(withID: narrowed.selectedFindingID)?.finding.category))"
+    )
+
+    narrowed.severityFilter = nil
+    narrowed.reveal(noteID("Voice"))
+    narrowed.hover(noteID("Structure"))
+    narrowed.severityFilter = .high
+    check(
+        "narrowing closes a note it hides, and lets go of the one under the pointer",
+        narrowed.selectedFindingID == nil && narrowed.hoveredFindingID == nil,
+        "open \(String(describing: narrowed.selectedFindingID)), "
+            + "hovered \(String(describing: narrowed.hoveredFindingID))"
+    )
+    narrowed.severityFilter = nil
+    narrowed.reveal(noteID("Evidence"))
+    narrowed.severityFilter = .high
+    check(
+        "but leaves open a note it still shows",
+        narrowed.selectedFindingID == noteID("Evidence")
+    )
+
+    narrowed.severityFilter = nil
+    narrowed.reveal(noteID("Grammar"))
+    check("Apply is offered for the open note's suggestion", narrowed.canApplySelected)
+    narrowed.reveal(noteID("Voice"))
+    check(
+        "and not for a note without one",
+        narrowed.canAnswerSelected && !narrowed.canApplySelected
+    )
+
+    narrowed.severityFilter = .medium
+    narrowed.noteCurrentText(draft + "\n\nOne more line at the end.")
+    check("typing leaves the narrowing alone", narrowed.severityFilter == .medium)
+    narrowed.show(revision: narrowed.history.latest?.id)
+    check(
+        "putting a critique on screen shows every note again",
+        narrowed.history.latest != nil && narrowed.severityFilter == nil,
+        "\(narrowed.history.revisions.count) critiques kept, "
+            + "filter \(String(describing: narrowed.severityFilter))"
+    )
+    narrowed.severityFilter = .low
+    narrowed.attach(
+        to: URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("narrowed-\(UUID().uuidString).md"),
+        text: draft
+    )
+    check(
+        "and so does opening another document",
+        narrowed.severityFilter == nil,
+        "filter \(String(describing: narrowed.severityFilter))"
+    )
+
+    let held = HeldCritique()
+    let running = CritiqueModel(service: held)
+    running.applyForChecking(report, for: draft)
+    running.severityFilter = .high
+    running.request(on: draft + "\n\nA new closing line for this run.", documentURL: nil)
+    await settle { held.isWaiting }
+    check(
+        "and so does running a critique, whose rail has no strip to undo it from",
+        running.isRunning && running.severityFilter == nil,
+        "running \(running.isRunning), filter \(String(describing: running.severityFilter))"
+    )
+
+    // The one time the rail and the draft disagree about the order: a run's
+    // new notes sit above the old ones until it lands, and a Next that
+    // followed the rail would jump from the middle of the draft to the top.
+    let arrival = CritiqueFinding(
+        severity: .medium, category: "Pacing", location: "paragraph 3",
+        quote: "deserve some room of their own", why: "Which two?"
+    )
+    held.report(CritiqueProgress(stage: .writing, findingsSoFar: 1, findings: [arrival]))
+    await settle { !running.arriving.isEmpty }
+    func runningOpened() -> String {
+        running.item(withID: running.selectedFindingID)?.finding.category ?? "nothing"
+    }
+    running.reveal(running.items.first { $0.finding.category == "Structure" }?.id ?? UUID())
+    running.selectNext()
+    check(
+        "a note still arriving sits above the rest, but Next reaches it where its passage is",
+        running.arriving.map(\.finding.category) == ["Pacing"] && runningOpened() == "Pacing",
+        "\(running.arriving.count) arriving, opened \(runningOpened())"
+    )
+    check(
+        "though it cannot be answered from the keyboard until the run lands",
+        !running.canAnswerSelected
+    )
+    running.selectNext()
+    check(
+        "and Next from it goes on down the draft",
+        runningOpened() == "Logic",
+        "opened \(runningOpened())"
+    )
+    held.answer(CritiqueReport(jobRead: "A post for developers.", overall: "Close.", findings: []))
+    await settle { !running.isRunning }
+}
+
+/// More than two notes to a screen.
+///
+/// What it replaced, measured on the friction pass: a real critique's summary
+/// filled the first screen of the rail, and under it the notes fitted about
+/// two and a half to a 900-point window. A compact note is its heading and
+/// the first line of its comment until it is opened, and the summary's two
+/// lists wait to be asked for.
+@MainActor
+func checkTheRailFitsTheNotes() {
+    print("")
+    print("Fitting the notes to a screen")
+
+    let theme = EditorColorTheme(color: .blue, mode: .light)
+    let restoreHand = pinDefault(CritiqueHand.storageKey, to: CritiqueHand.sans.rawValue)
+    let restoreSummary = pinDefault(CritiqueSidebar.summaryExpandedKey, to: false)
+    let restoreDensity = pinDefault(CritiqueSidebar.compactNotesKey, to: false)
+    defer {
+        restoreHand()
+        restoreSummary()
+        restoreDensity()
+    }
+
+    // One note, both ways, at the width the rail gives a note.
+    let wordy = CritiqueFinding(
+        severity: .high, category: "Logic and credibility", needsVerification: true,
+        location: "Opening, paragraph 2", quote: "the sentence in question",
+        why: "This note says enough that it runs to a second and a third line "
+            + "at the rail's width, as most of a real critique's notes do.",
+        fix: "Put the point first, and the qualification after it."
+    )
+    func cardHeight(compact: Bool) -> CGFloat {
+        let host = NSHostingView(rootView: CritiqueCard(
+            item: CritiqueModel.Item(finding: wordy, range: NSRange(location: 0, length: 4)),
+            colorTheme: theme,
+            isSelected: false,
+            onTap: {},
+            onHoverChange: { _ in },
+            onResolve: { _ in },
+            isCompact: compact
+        ).frame(width: 316))
+        return host.fittingSize.height
+    }
+    let fullHeight = cardHeight(compact: false)
+    let compactHeight = cardHeight(compact: true)
+    check(
+        "a compact note takes under half the height of the same note in full",
+        compactHeight > 0 && compactHeight * 2 < fullHeight,
+        "\(Int(compactHeight))pt against \(Int(fullHeight))pt"
+    )
+
+    let categories = [
+        "Evidence", "Pacing", "Voice", "Structure", "Clarity", "Rhythm", "Grammar", "Endings",
+    ]
+    var paragraphs: [String] = []
+    var findings: [CritiqueFinding] = []
+    for (index, category) in categories.enumerated() {
+        let quote = "paragraph number \(index + 1) says something"
+        paragraphs.append("This \(quote) that a reader would want to see shown with an example.")
+        findings.append(CritiqueFinding(
+            severity: index < 3 ? .high : (index < 6 ? .medium : .low),
+            category: category, location: "paragraph \(index + 1)",
+            quote: quote,
+            why: "This note says enough that it runs to a second and a third line "
+                + "at the rail's width.",
+            fix: "Show it with an example from the team's own builds."
+        ))
+    }
+    let model = CritiqueModel()
+    model.applyForChecking(
+        CritiqueReport(
+            jobRead: "A post for developers.",
+            overall: "A clear argument that needs one worked example and a firmer "
+                + "close before it goes out.",
+            whatWorks: [
+                "The opening names the problem in its first line.",
+                "Each section makes one point.",
+                "It sounds like a person talking.",
+            ],
+            whatDoesNotWork: [
+                "Nothing is shown, only told.",
+                "The close repeats the opening.",
+                "Two claims have no source.",
+            ],
+            findings: findings
+        ),
+        for: paragraphs.joined(separator: "\n\n")
+    )
+
+    /// The rail as a 700-point window shows it, read back from its pixels.
+    func drawnRail(_ name: String) -> String {
+        let host = NSHostingView(rootView: CritiqueSidebar(
+            critique: model, colorTheme: theme, isStale: false,
+            onRerun: {}, onRerunChanges: {}
+        ))
+        host.frame = NSRect(x: 0, y: 0, width: 340, height: 700)
+        let window = NSWindow(
+            contentRect: host.frame, styleMask: [.borderless],
+            backing: .buffered, defer: false
+        )
+        window.contentView = host
+        window.orderBack(nil)
+        host.layoutSubtreeIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+        host.layoutSubtreeIfNeeded()
+        defer { window.orderOut(nil) }
+        if let path = ProcessInfo.processInfo.environment["MDE_DENSE_PNG"],
+           let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+            host.cacheDisplay(in: host.bounds, to: rep)
+            let file = path.replacingOccurrences(of: ".png", with: "-\(name).png")
+            try? rep.representation(using: .png, properties: [:])?
+                .write(to: URL(fileURLWithPath: file))
+            print("  wrote \(file)")
+        }
+        return readable(recognisedText(in: host).joined(separator: " "))
+    }
+    func notesShown(in drawn: String) -> [String] {
+        categories.filter { legible($0, in: drawn) }
+    }
+
+    let inFull = drawnRail("full")
+    check(
+        "with the summary closed, the first note is on the first screen",
+        legible("Evidence", in: inFull),
+        "read \"\(inFull.prefix(500))\""
+    )
+    check(
+        "and the strip counts what is still open at each severity",
+        legible("3 high", in: inFull) && legible("3 medium", in: inFull)
+            && legible("2 low", in: inFull),
+        "read \"\(inFull.prefix(300))\""
+    )
+
+    UserDefaults.standard.set(true, forKey: CritiqueSidebar.compactNotesKey)
+    let inCompact = drawnRail("compact")
+    let fullCount = notesShown(in: inFull).count
+    let compactCount = notesShown(in: inCompact).count
+    check(
+        "compact notes fit at least twice as many to the same screen",
+        compactCount >= 2 * max(1, fullCount) && compactCount >= 5,
+        "\(compactCount) compact (\(notesShown(in: inCompact))) against \(fullCount) in full"
+    )
+    check(
+        "and a compact note keeps its advice to itself",
+        !legible("Show it with an example", in: inCompact),
+        "read \"\(inCompact.prefix(500))\""
+    )
+    model.reveal(model.items.first { $0.finding.category == "Pacing" }?.id ?? UUID())
+    let withOneOpen = drawnRail("open")
+    check(
+        "until it is the open note, which is always in full",
+        legible("Show it with an example", in: withOneOpen),
+        "read \"\(withOneOpen.prefix(500))\""
+    )
+
+    model.severityFilter = .low
+    let lows = drawnRail("low")
+    check(
+        "narrowed to low, the rail shows only the low notes",
+        notesShown(in: lows) == ["Grammar", "Endings"],
+        "it shows \(notesShown(in: lows))"
+    )
+    for item in model.items where item.finding.severity == .low {
+        model.setResolution(.completed, for: item.id)
+    }
+    let none = drawnRail("exhausted")
+    check(
+        "and once they are answered it says so, with the way back beside it",
+        legible("No open low notes left.", in: none) && legible("Show all", in: none),
+        "read \"\(none.prefix(500))\""
+    )
+
+    // The empty rail is where the keys are learned: the menu that holds them
+    // is not somewhere anybody reads before they need it.
+    let storedProvider = UserDefaults.standard.string(forKey: CritiqueProvider.storageKey)
+    CritiqueCredentials.provider = .copilotCLI
+    defer {
+        if let storedProvider {
+            UserDefaults.standard.set(storedProvider, forKey: CritiqueProvider.storageKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: CritiqueProvider.storageKey)
+        }
+    }
+    let unread = CritiqueModel()
+    let emptyHost = NSHostingView(rootView: CritiqueSidebar(
+        critique: unread, colorTheme: theme, isStale: false,
+        onRerun: {}, onRerunChanges: {}, onQuickPass: {}
+    ))
+    emptyHost.frame = NSRect(x: 0, y: 0, width: 340, height: 700)
+    let emptyWindow = NSWindow(
+        contentRect: emptyHost.frame, styleMask: [.borderless],
+        backing: .buffered, defer: false
+    )
+    emptyWindow.contentView = emptyHost
+    emptyWindow.orderBack(nil)
+    emptyHost.layoutSubtreeIfNeeded()
+    RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+    emptyHost.layoutSubtreeIfNeeded()
+    let empty = readable(recognisedText(in: emptyHost).joined(separator: " "))
+    emptyWindow.orderOut(nil)
+    check(
+        "an empty rail says what a critique does, and lists the keys that drive it",
+        legible("pins a note to each passage", in: empty)
+            && legible("Next note, previous note", in: empty)
+            && legible("Show or hide this rail", in: empty),
+        "read \"\(empty.prefix(500))\""
+    )
+
+    print("")
+    print("The summary's switch")
+    for (works, doesNot, isOpen, expected) in [
+        (0, 0, false, nil),
+        (0, 0, true, nil),
+        (2, 0, false, "What works (2)"),
+        (0, 3, false, "What doesn't work (3)"),
+        (2, 3, false, "What works (2) and what doesn't (3)"),
+        (2, 3, true, "Show less"),
+    ] as [(Int, Int, Bool, String?)] {
+        let said = CritiqueSidebar.summaryDisclosure(
+            works: works, doesNotWork: doesNot, isExpanded: isOpen
+        )
+        check(
+            "\(works) and \(doesNot), \(isOpen ? "open" : "closed"): "
+                + (expected.map { "\"\($0)\"" } ?? "no switch"),
+            said == expected,
+            "it says \(said ?? "nothing")"
+        )
+    }
+}
+
+/// Every way of working through the notes is in the Critique menu, on a key
+/// the text view does not already use.
+///
+/// Read from the source rather than from a running menu bar, which this
+/// checker does not have. What matters is that the keys are the ones the
+/// rail's empty state and its tooltips promise.
+@MainActor
+func checkTheCritiqueMenu() {
+    print("")
+    print("The Critique menu")
+
+    let commands = (try? String(
+        contentsOfFile: "Sources/MarkdownEditor/MarkdownEditorCommands.swift",
+        encoding: .utf8
+    )) ?? ""
+    guard let menuStart = commands.range(of: "CommandMenu(\"Critique\")") else {
+        check("there is a Critique menu", false)
+        return
+    }
+    let menu = String(commands[menuStart.lowerBound...])
+    let before = String(commands[..<menuStart.lowerBound])
+    check(
+        "running a critique moved out of the Markdown menu into it",
+        menu.contains("Button(\"AI Assisted Critique\")")
+            && menu.contains("Button(\"Quick Critique Pass\")")
+            && !before.contains("AI Assisted Critique"),
+        "the Markdown menu still lists it"
+    )
+    for (title, keys, shortcut) in [
+        ("Next Note", "⌥⌘↓", ".keyboardShortcut(.downArrow, modifiers: [.option, .command])"),
+        ("Previous Note", "⌥⌘↑", ".keyboardShortcut(.upArrow, modifiers: [.option, .command])"),
+        ("Mark Note Done", "⌥⌘↩", ".keyboardShortcut(.return, modifiers: [.option, .command])"),
+        ("Dismiss Note", "⌥⌘⌫", ".keyboardShortcut(.delete, modifiers: [.option, .command])"),
+        ("Apply Suggestion", "⇧⌥⌘↩",
+         ".keyboardShortcut(.return, modifiers: [.shift, .option, .command])"),
+    ] {
+        let at = menu.range(of: "Button(\"\(title)\")")
+        let follows = at.map { menu[$0.upperBound...].prefix(160).contains(shortcut) } ?? false
+        check("\(title) is in it, on \(keys)", follows)
+        // The keys the empty rail teaches are the keys the menu has.
+        check(
+            "and the empty rail teaches \(keys)",
+            CritiqueSidebar.keyList.contains { $0.keys.contains(keys) },
+            "the rail lists \(CritiqueSidebar.keyList.map(\.keys))"
+        )
+    }
+    check(
+        "and so is the compact switch",
+        menu.contains("Toggle(\"Compact Notes\", isOn: $compactNotes)")
+    )
+    check(
+        "the rail can be shown and hidden from the View menu, on ⌃⌘I",
+        before.contains("\"Show Critique\" : \"Hide Critique\"")
+            && before.contains(".keyboardShortcut(\"i\", modifiers: [.control, .command])"),
+        "no Show/Hide Critique on ⌃⌘I"
+    )
+    // ⌘⌫ deletes to the start of the line in every Mac text view. A menu key
+    // wins over the text view, so taking it would have cost the writer that.
+    check(
+        "no note command takes a key the text view already uses",
+        !menu.contains("modifiers: .command)") && !menu.contains(".delete)")
+            && !menu.contains("modifiers: [.command])"),
+        "a note command is on ⌘ alone"
+    )
+}
+
 @MainActor
 func finish() -> Never {
     print("")
@@ -2713,12 +5755,26 @@ func checkPartialCritiqueKeepsTheOtherNotes() {
     )
 
     // Rewriting the criticised sentence must supersede its note rather than
-    // leaving a criticism of text that is gone.
+    // leaving a criticism of text that is gone. In two steps: the rewrite
+    // stops the note counting at once, and the critique that reads the new
+    // sentence is what says the problem has gone.
     let rewritten = after.replacingOccurrences(
         of: "Studies show that caching improves performance by 90%.",
         with: "Caching cut our median response time from 400ms to 20ms."
     )
     model.noteCurrentText(rewritten)
+    let edited = model.items.first { $0.finding.quote == stale.quote }
+    check(
+        "rewriting a criticised sentence marks its note edited, not fixed",
+        edited?.isEdited == true && edited?.isFixed == false,
+        "edited \(String(describing: edited?.isEdited)), "
+            + "fixed \(String(describing: edited?.isFixed))"
+    )
+    check(
+        "and it stops counting against the score straight away",
+        !model.outstanding.contains { $0.finding.quote == stale.quote },
+        "the rewritten sentence's note is still outstanding"
+    )
     guard let secondChange = CritiqueChangeScope.changedParagraphs(
         from: after, to: rewritten
     ) else {
@@ -2732,14 +5788,27 @@ func checkPartialCritiqueKeepsTheOtherNotes() {
         for: rewritten,
         changed: secondChange
     )
+    // Shown the rewritten note and silent about it: the critic has read the
+    // new sentence and has nothing to say. That retires it — as Fixed, kept
+    // at the foot of the rail for this run so the author can see what the
+    // rewrite bought, and out of the report so it does not come back.
+    let retired = model.items.first { $0.finding.quote == stale.quote }
     check(
-        "rewriting a criticised sentence retires its note",
-        !model.items.contains { $0.finding.quote == stale.quote },
-        "the note about the deleted sentence is still in the rail"
+        "a critique that reads the rewrite and says nothing retires its note as fixed",
+        retired?.isFixed == true
+            && !(model.report?.findings.contains { $0.quote == stale.quote } ?? true)
+            && !model.outstanding.contains { $0.finding.quote == stale.quote },
+        "fixed \(String(describing: retired?.isFixed)), "
+            + "\(model.report?.findings.count ?? -1) findings in the report"
+    )
+    check(
+        "and the rail says so",
+        model.lastChange == CritiqueCarry.Delta(fixed: 1, reopened: 0, new: 0),
+        "the change reads \(String(describing: model.lastChange))"
     )
     check(
         "while the note about the untouched paragraph stays",
-        model.items.contains { $0.finding.quote == fresh.quote },
+        model.items.contains { $0.finding.quote == fresh.quote && $0.isOutstanding },
         "an unrelated note was dropped by a rewrite elsewhere"
     )
 }
@@ -3055,6 +6124,24 @@ func recognisedText(in view: NSView) -> [String] {
         .compactMap { $0.topCandidates(1).first?.string }
 }
 
+/// Sets a preference for the length of a check, and returns what puts it
+/// back.
+///
+/// The rail reads its switches from the same defaults the app keeps them in,
+/// so a check that drew it compact and left it so would be a rail somebody
+/// next opens compact without having asked for it.
+func pinDefault(_ key: String, to value: Any) -> () -> Void {
+    let stored = UserDefaults.standard.object(forKey: key)
+    UserDefaults.standard.set(value, forKey: key)
+    return {
+        if let stored {
+            UserDefaults.standard.set(stored, forKey: key)
+        } else {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+    }
+}
+
 /// Text reduced to what reading it back can be trusted with: lower case, and
 /// every run of spacing one space, so a phrase the rail wrapped across two
 /// lines is still found.
@@ -3062,4 +6149,29 @@ func readable(_ text: String) -> String {
     text.lowercased()
         .split(whereSeparator: \.isWhitespace)
         .joined(separator: " ")
+}
+
+/// Whether a phrase can be made out in a drawing read back by `readable`.
+///
+/// Word for word, except that one stray mark of a character or two may sit
+/// between any two of its words. Lines are put in order by height, and an
+/// icon beside a phrase the rail wrapped is read as a character of its own:
+/// the ↩ at the foot of an answered note came back as "5", and on a card
+/// whose jitter tilted it the wrong way that "5" sorted between "critique"
+/// and "checks it." — failing one run in three over a rail that read
+/// perfectly well. A word in the way, rather than a mark, still fails.
+func legible(_ phrase: String, in drawn: String) -> Bool {
+    let words = readable(phrase).split(separator: " ")
+    let read = drawn.split(separator: " ")
+    guard let first = words.first else { return true }
+    search: for start in read.indices where read[start] == first {
+        var at = start
+        for word in words.dropFirst() {
+            at += 1
+            if at < read.count, read[at] != word, read[at].count <= 2 { at += 1 }
+            guard at < read.count, read[at] == word else { continue search }
+        }
+        return true
+    }
+    return false
 }

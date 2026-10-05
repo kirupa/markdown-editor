@@ -11,6 +11,8 @@ struct MarkdownEditorView: View {
     @State private var dragStartExplorerWidth: CGFloat?
     @State private var previewWidth = Layout.defaultPreviewWidth
     @StateObject private var critique = CritiqueModel()
+    /// Whether this document's window has closed. See `documentWindowClosed()`.
+    @State private var isClosed = false
     @Binding private var themeColorRawValue: String
     @Binding private var appearanceModeRawValue: String
     @Binding private var typefaceRawValue: String
@@ -65,6 +67,17 @@ struct MarkdownEditorView: View {
     }
 
     var body: some View {
+        if isClosed {
+            // All that is left once the window has closed. SwiftUI keeps the
+            // window, and this view in it, so what it keeps is made nothing:
+            // the text view, its layers and the rail go with the editor.
+            Color.clear
+        } else {
+            editor
+        }
+    }
+
+    private var editor: some View {
         GeometryReader { geometry in
             let visibleExplorerWidth = clampedExplorerWidth(
                 explorerWidth,
@@ -123,7 +136,8 @@ struct MarkdownEditorView: View {
                         railIsOpen: critique.isPresented
                     ),
                     railIsOpen: critique.isPresented,
-                    fileURL: fileURL
+                    fileURL: fileURL,
+                    onClose: documentWindowClosed
                 )
 
                 if session.isExplorerVisible {
@@ -231,7 +245,16 @@ struct MarkdownEditorView: View {
             for: .windowToolbar
         )
         .toolbarBackground(.visible, for: .windowToolbar)
+        // The length under the document's name, where a Mac window says what
+        // it holds: the page itself stays for the writing. And for a draft
+        // never saved, the name is its own title.
+        .modifier(TitleBar(model: session.titleBar))
         .focusedSceneValue(\.runCritique, startCritique)
+        .focusedSceneValue(\.runQuickCritique, startQuickCritique)
+        // The whole model rather than a closure per command: the Critique
+        // menu asks it what is open and what can be answered, and has to be
+        // redrawn when those change, which a closure cannot say.
+        .focusedSceneObject(critique)
         .onAppear {
             if let fileURL {
                 RecentDocumentsModel.shared.record(fileURL)
@@ -239,6 +262,7 @@ struct MarkdownEditorView: View {
             // Past critiques are there to read the moment a document opens,
             // not only once somebody runs a new one.
             critique.attach(to: fileURL, text: document.text)
+            session.titleBar.noteText(document.text, immediately: true)
             session.startWatchingFile(text: document.text)
             autosaveController.onSave = { [session] in
                 session.externalChange.noteSaved()
@@ -246,7 +270,9 @@ struct MarkdownEditorView: View {
         }
         .onChange(of: fileURL) { newFileURL in
             autosaveController.cancelPendingSave()
-            critique.attach(to: newFileURL, text: document.text)
+            // Moved rather than attached: this is the same document saved
+            // under a new name, and its critique goes with it.
+            critique.move(to: newFileURL, text: document.text)
             session.fileURL = newFileURL
             if let newFileURL {
                 RecentDocumentsModel.shared.record(newFileURL)
@@ -257,6 +283,7 @@ struct MarkdownEditorView: View {
         }
         .onChange(of: document.text) { newText in
             critique.noteCurrentText(newText)
+            session.titleBar.noteText(newText)
             session.externalChange.noteEditorText(newText)
             // Writing during an unresolved conflict would overwrite the other
             // app's version seconds after pointing it out.
@@ -289,6 +316,22 @@ struct MarkdownEditorView: View {
             autosaveController.cancelPendingSave()
             session.stopWatchingFile()
         }
+    }
+
+    /// Stops everything the editor had running, and lets go of it.
+    ///
+    /// Called by the window as it closes, because SwiftUI keeps a closed
+    /// document's window alive and never calls `onDisappear` — see
+    /// `WindowChromeDelegate.watchForClose(of:)`.
+    private func documentWindowClosed() {
+        // By now `NSDocument` has saved — the window closes only after the
+        // document has — so a write still queued here is for a document that
+        // no longer exists, and could only fail out loud.
+        autosaveController.cancelPendingSave()
+        session.stopWatchingFile()
+        // Nobody is left to read it.
+        critique.cancel()
+        isClosed = true
     }
 
     private func resizeGesture(
@@ -336,7 +379,6 @@ struct MarkdownEditorView: View {
     }
 
     /// Start a critique of the document as it stands.
-    /// Start a critique of the document as it stands.
     ///
     /// A closed rail with a saved critique in it is re-opened rather than
     /// re-run: the button says "critique this", and spending half a minute and
@@ -348,14 +390,22 @@ struct MarkdownEditorView: View {
             critique.reveal()
             return
         }
-        // The menu item and ⌃⌘C follow the same default as the rail's re-run
-        // button: the changed paragraphs when there are some, the whole draft
-        // otherwise. `defaultScope` decides, so the two cannot drift apart.
-        critique.run(
-            on: document.text,
-            documentURL: fileURL,
-            scope: critique.defaultScope
-        )
+        // The menu item and ⌃⌘C go the same way as the rail's re-run button:
+        // the changed paragraphs when there are some, the whole draft
+        // otherwise, and nothing at all when nothing has changed. `request`
+        // decides, so the three cannot drift apart.
+        critique.request(on: document.text, documentURL: fileURL)
+    }
+
+    /// Start a quick pass: typos and serious problems, over the whole draft.
+    ///
+    /// Not routed through the closed-rail rule above. Somebody who asks for a
+    /// quick pass has said which critique they want, and a saved full one is
+    /// not it; `request` still declines one of a draft a critique on file has
+    /// already read as it stands.
+    private func startQuickCritique() {
+        guard !critique.isRunning else { return }
+        critique.request(on: document.text, documentURL: fileURL, depth: .quick)
     }
 
     private func clampedExplorerWidth(
@@ -561,12 +611,15 @@ struct ResizableRichTextPreview: View {
                             )
                         },
                         onRerunChanges: {
-                            critique.run(
-                                on: text,
-                                documentURL: documentURL,
-                                scope: critique.defaultScope
+                            critique.request(on: text, documentURL: documentURL)
+                        },
+                        onQuickPass: {
+                            critique.request(
+                                on: text, documentURL: documentURL, depth: .quick
                             )
-                        }
+                        },
+                        replaceText: { swap in session.replace(swap) },
+                        returnToDraft: { session.focusEditor() }
                     )
                     // A fixed width, docked against the document.
                     //

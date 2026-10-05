@@ -1,6 +1,28 @@
 import Foundation
 import MarkdownEditorCore
 
+/// What the rail needs from whoever answers a critique.
+///
+/// The service, in the app. The checks stand in for it so they can press Stop
+/// on a run that is still waiting, and fail one on purpose, without spending a
+/// request to get either.
+@MainActor
+protocol CritiqueAsking: AnyObject {
+    /// `previous` is the earlier notes being carried into this run; the answer
+    /// says what became of each, alongside whatever is new. `brief` is who the
+    /// draft is for, or nil to let the critic guess. `depth` is a full
+    /// critique or a quick pass; see `CritiqueDepth`.
+    func critique(
+        document: String,
+        focus: String?,
+        previous: [CritiquePreviousNote],
+        brief: CritiqueBrief?,
+        depth: CritiqueDepth,
+        onProgress: @escaping (CritiqueProgress) -> Void
+    ) async throws -> CritiqueAnswer
+    func cancel()
+}
+
 /// Runs the konvo critique pass over a document and hands back a report.
 ///
 /// The work is done by the GitHub Copilot CLI in non-interactive mode. That is
@@ -13,10 +35,11 @@ import MarkdownEditorCore
 /// fail is therefore a named case below, because "nothing happened" is the one
 /// outcome a person cannot act on.
 @MainActor
-final class CritiqueService {
+final class CritiqueService: CritiqueAsking {
     enum Failure: LocalizedError, Equatable {
         case cliNotFound
-        case documentIsEmpty
+        /// Fewer words of prose than `CritiqueRequest.minimumProseWords`.
+        case draftTooShort(words: Int)
         case cancelled
         case cliFailed(status: Int32, message: String)
         case unreadableReply(String)
@@ -28,8 +51,8 @@ final class CritiqueService {
             switch self {
             case .cliNotFound:
                 return "No critique provider is set up."
-            case .documentIsEmpty:
-                return "There is nothing to critique yet."
+            case .draftTooShort:
+                return "Not enough here to critique yet."
             case .cancelled:
                 return "The critique was stopped."
             case .cliFailed:
@@ -47,6 +70,13 @@ final class CritiqueService {
             }
         }
 
+        /// What the button beside the message says. A draft that was too
+        /// short is not retried — it is critiqued, once there is more of it.
+        var retryTitle: String {
+            if case .draftTooShort = self { return "Run critique" }
+            return "Try Again"
+        }
+
         var recoverySuggestion: String? {
             switch self {
             case .cliNotFound:
@@ -57,8 +87,13 @@ final class CritiqueService {
                     Open Settings, choose a provider and enter an API key, \
                     then ask for a critique again.
                     """
-            case .documentIsEmpty:
-                return "Write a paragraph or two, then ask for a critique."
+            case .draftTooShort(let words):
+                let counted = words == 1 ? "1 word" : "\(words) words"
+                return """
+                    Write a paragraph or two first. A critique needs at least \
+                    \(CritiqueRequest.minimumProseWords) words of prose, and \
+                    this draft has \(counted). Nothing was sent.
+                    """
             case .cancelled:
                 return nil
             case .cliFailed(_, let message):
@@ -72,7 +107,8 @@ final class CritiqueService {
                     """
             case .notConfigured:
                 return """
-                    Choose a provider and enter an API key in Settings, then                     ask for a critique again.
+                    Choose a provider and enter an API key in Settings, then \
+                    ask for a critique again.
                     """
             case .providerUnreachable(let detail):
                 return "The request did not complete. \(detail)"
@@ -80,15 +116,18 @@ final class CritiqueService {
                 switch status {
                 case 401, 403:
                     return """
-                        Check the API key in Settings. This is what a wrong or                         revoked key looks like.
+                        Check the API key in Settings. This is what a wrong or \
+                        revoked key looks like.
                         """
                 case 429:
                     return """
-                        The provider is rate limiting or the account is out of                         credit. Wait a moment, or check the billing on it.
+                        The provider is rate limiting or the account is out of \
+                        credit. Wait a moment, or check the billing on it.
                         """
                 case 404:
                     return """
-                        The model was not found. Pick another one in Settings —                         not every account has access to every model. \(message)
+                        The model was not found. Pick another one in Settings — \
+                        not every account has access to every model. \(message)
                         """
                 default:
                     return message
@@ -98,8 +137,6 @@ final class CritiqueService {
     }
 
     private var running: Process?
-    /// The report assembled from the stream, handed back once it has finished.
-    private var streamedReply = ""
 
     var isRunning: Bool { running?.isRunning == true }
 
@@ -151,17 +188,26 @@ final class CritiqueService {
     func critique(
         document: String,
         focus: String? = nil,
+        previous: [CritiquePreviousNote] = [],
+        brief: CritiqueBrief? = nil,
+        depth: CritiqueDepth = .full,
         onProgress: @escaping (CritiqueProgress) -> Void = { _ in }
-    ) async throws -> CritiqueReport {
-        let trimmed = document.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { throw Failure.documentIsEmpty }
+    ) async throws -> CritiqueAnswer {
+        // The model checks this first so that nothing spins; this is the
+        // backstop for anything that calls the service directly.
+        if let words = CritiqueRequest.shortfall(in: document) {
+            throw Failure.draftTooShort(words: words)
+        }
 
         // The skill travels with the request, so the critique is KONVO's
         // whichever model answers it.
         let prompt = CritiqueRequest.prompt(
             forDocument: document,
             focus: focus,
-            skill: Self.loadedSkillPass()
+            skill: Self.loadedSkillPass(),
+            previous: previous,
+            brief: brief,
+            depth: depth
         )
         let provider = CritiqueCredentials.provider
         let reply: String
@@ -178,10 +224,15 @@ final class CritiqueService {
             )
         } else {
             guard let cli = Self.locateCLI() else { throw Failure.cliNotFound }
-            reply = try await run(cli: cli, prompt: prompt, onProgress: onProgress)
+            reply = try await run(
+                cli: cli,
+                prompt: prompt,
+                effort: depth == .quick ? Self.quickPassEffort : nil,
+                onProgress: onProgress
+            )
         }
         do {
-            return try CritiqueReportDecoder.decode(reply)
+            return try CritiqueReportDecoder.decodeAnswer(reply)
         } catch {
             // The reply is kept out of the message on purpose: it can be long,
             // and the first line is usually the CLI explaining itself, which
@@ -322,18 +373,39 @@ final class CritiqueService {
         }
     }
 
+    /// How hard a quick pass is told to think, where the provider can be told.
+    ///
+    /// A quick pass asks for less and deliberates less, and the second is most
+    /// of the saving. Measured with the CLI's default model on a 467-word
+    /// draft: the full prompt took 52s at the default effort and 24.5s at this
+    /// one, with its first note arriving at 9s rather than 38s. The quick
+    /// prompt at this effort answered in 13.5s and 7.4s over two runs, its
+    /// first note at 10.2s and 3.9s. Only the CLI takes it. The API providers
+    /// are sent the narrowed prompt alone: each spells reasoning effort
+    /// differently, and not every model accepts it.
+    static let quickPassEffort = "low"
+
+    /// `effort` is passed as `--reasoning-effort`, or left to the CLI's own
+    /// default when nil — which is what a full critique and the connection
+    /// test both want.
     private func run(
         cli: URL,
         prompt: String,
+        effort: String? = nil,
         onProgress: @escaping (CritiqueProgress) -> Void
     ) async throws -> String {
         let process = Process()
         process.executableURL = cli
         process.arguments = [
             "--prompt", prompt,
-            // Non-interactive mode refuses to start without this. Nothing here
-            // asks the model to touch the disk — the draft is in the prompt —
-            // and the tools it could reach for are switched off below.
+            // No tools at all. The draft and the skill are both in the prompt,
+            // so there is nothing to fetch, and a model that has tools uses
+            // them regardless: measured, one critique stopped for 1.6s to run
+            // `echo done`. `--available-tools` given no name leaves every tool
+            // available; given one that does not exist, it leaves none.
+            "--available-tools", "konvo_no_tools",
+            // Non-interactive mode refuses to start without this. The denials
+            // after it stay as a second fence behind the empty tool list.
             "--allow-all-tools",
             "--deny-tool", "shell",
             "--deny-tool", "write",
@@ -350,7 +422,7 @@ final class CritiqueService {
             // is assembled from the same stream, so there is no second source
             // to disagree with it.
             "--output-format", "json",
-        ]
+        ] + (effort.map { ["--reasoning-effort", $0] } ?? [])
 
         let output = Pipe()
         let errors = Pipe()
@@ -370,11 +442,23 @@ final class CritiqueService {
         // Read as it arrives rather than at the end. `readDataToEndOfFile`
         // would give the same bytes half a minute later, with nothing to say
         // in the meantime.
-        let stream = AsyncStream<CritiqueProgress> { continuation in
+        let stream = AsyncStream<CritiqueStreamEvent> { continuation in
             Task.detached {
                 var reader = CritiqueProgressReader()
                 var buffer = Data()
+                var announced = false
                 let handle = output.fileHandleForReading
+                func take(_ line: String) {
+                    if let update = reader.read(line: line) {
+                        continuation.yield(.progress(update))
+                    }
+                    if !announced, let code = reader.exitCode {
+                        announced = true
+                        continuation.yield(.finished(exitCode: code, reply: reader.reply))
+                    }
+                }
+                // Read to the end even after the answer has been handed back,
+                // so the CLI never blocks on a full pipe while it shuts down.
                 while true {
                     let chunk = handle.availableData
                     if chunk.isEmpty { break }
@@ -384,31 +468,53 @@ final class CritiqueService {
                             decoding: buffer[buffer.startIndex..<newline], as: UTF8.self
                         )
                         buffer.removeSubrange(buffer.startIndex...newline)
-                        if let update = reader.read(line: line) {
-                            continuation.yield(update)
-                        }
+                        take(line)
                     }
                 }
                 if !buffer.isEmpty {
-                    _ = reader.read(line: String(decoding: buffer, as: UTF8.self))
+                    take(String(decoding: buffer, as: UTF8.self))
                 }
-                await MainActor.run { self.streamedReply = reader.reply }
+                continuation.yield(.closed(reply: reader.reply))
                 continuation.finish()
             }
         }
-        for await update in stream {
-            onProgress(update)
+        var reply = ""
+        var answered = false
+        for await event in stream {
+            switch event {
+            case .progress(let update):
+                onProgress(update)
+            case .finished(let code, let text):
+                reply = text
+                answered = code == 0
+            case .closed(let text):
+                reply = text
+            }
+            if answered { break }
         }
 
-        let (stderr, _) = await Task.detached { () -> (Data, Void) in
+        // Only this run's process. A Stop and a fresh run inside the second
+        // it takes this one to finish used to clear the new run's process
+        // here, and the next Stop then had nothing to stop.
+        if running === process { running = nil }
+
+        if answered {
+            // The CLI has said it is done; it takes most of a second more to
+            // exit, and that second is no longer spent here. Its error stream
+            // is drained so it cannot stall on the way out.
+            Task.detached {
+                _ = errors.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
+            }
+            return reply
+        }
+
+        let stderr = await Task.detached { () -> Data in
             let err = errors.fileHandleForReading.readDataToEndOfFile()
             process.waitUntilExit()
-            return (err, ())
+            return err
         }.value
 
-        running = nil
-        let reply = streamedReply
-        streamedReply = ""
         guard process.terminationStatus == 0 else {
             if process.terminationReason == .uncaughtSignal {
                 throw Failure.cancelled
@@ -422,4 +528,13 @@ final class CritiqueService {
         }
         return reply
     }
+}
+
+/// What the CLI reader passes back from its own thread.
+private enum CritiqueStreamEvent: Sendable {
+    case progress(CritiqueProgress)
+    /// The CLI's `result`: the turn is over, with this exit code.
+    case finished(exitCode: Int, reply: String)
+    /// Its output has closed, said or not.
+    case closed(reply: String)
 }

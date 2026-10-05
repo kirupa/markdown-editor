@@ -112,7 +112,14 @@ final class MarkdownEditorSession: ObservableObject {
     func noteSelection(_ selection: NSRange) {
         rememberedSelection = selection
         refreshCodeContext()
+        titleBar.noteSelection(selection)
     }
+
+    /// The draft's length and name, for the title bar. Held here because the
+    /// selection arrives here; deliberately not forwarded to this object's
+    /// observers, which would redraw the whole editor for a number in the
+    /// title bar.
+    let titleBar = TitleBarModel()
 
     /// What the caret is sitting in, as the panes last reported it.
     ///
@@ -197,9 +204,71 @@ final class MarkdownEditorSession: ObservableObject {
         applyExternalText(text, actionName: "Reload")
     }
 
+    /// Puts `replacement` in place of the words at `range`, as one change
+    /// Undo takes back — provided the words there are still `expected`.
+    ///
+    /// For the critique rail, which offers to make the rewrite it suggests.
+    /// Returns the draft as it then reads, or nil when nothing was changed:
+    /// a range measured before the last keystroke is no licence to overwrite
+    /// whatever has since slid under it.
+    func replaceSourceText(
+        in range: NSRange,
+        expecting expected: String,
+        with replacement: String,
+        actionName: String
+    ) -> String? {
+        guard let editor = currentEditor() else {
+            return nil
+        }
+        // Before reading the text: a half-composed character is not in it
+        // yet, and committing it afterwards would land it inside the range
+        // that was just checked.
+        editor.commitPendingComposition()
+        let source = editor.sourceText as NSString
+        guard NSMaxRange(range) <= source.length,
+              source.substring(with: range) == expected
+        else {
+            return nil
+        }
+        let text = source.replacingCharacters(in: range, with: replacement)
+        editor.apply(
+            MarkdownEditResult(
+                text: text,
+                selection: NSRange(
+                    location: range.location + (replacement as NSString).length,
+                    length: 0
+                )
+            ),
+            actionName: actionName
+        )
+        return text
+    }
+
+    /// Makes a change the critique rail asks for. See `replaceSourceText`.
+    ///
+    /// One place for the rail's buttons and the Critique menu's keys to go
+    /// through, so Apply from either is the same single change Undo takes
+    /// back.
+    func replace(_ swap: CritiqueModel.Swap) -> String? {
+        replaceSourceText(
+            in: swap.range,
+            expecting: swap.expected,
+            with: swap.replacement,
+            actionName: swap.name
+        )
+    }
+
     /// Keep what is on screen and let it overwrite the file.
     func keepMyVersion() {
         externalChange.resolveByKeepingMine()
+    }
+
+    /// Puts the keyboard back in the draft, where it was last.
+    ///
+    /// For the rail's fields: the writer finished with one by pressing Return
+    /// or Esc, and either way the next keystroke belongs to the document.
+    func focusEditor() {
+        currentEditor()?.focus()
     }
 
     /// Whether saving must wait. While a conflict is unresolved, writing would

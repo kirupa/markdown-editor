@@ -96,9 +96,16 @@ struct CritiqueSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 } else {
+                    // Where the draft goes, said plainly. This used to read
+                    // "a model already available on this Mac… nothing is
+                    // billed", which was wrong on both counts and is the one
+                    // sentence a privacy-minded writer reads before trusting
+                    // the feature with an unpublished draft.
                     Text(
-                        "Uses a model already available on this Mac. No key is "
-                            + "stored and nothing is billed to an API account."
+                        "Sends the draft to a model through the GitHub account "
+                            + "this Mac is signed in with. No key is stored "
+                            + "here; each critique counts against that "
+                            + "account's plan."
                     )
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -108,7 +115,8 @@ struct CritiqueSettingsView: View {
             }
 
             Section("Appearance") {
-                Picker("Comments are written in", selection: $handRaw) {
+                // "Notes", because that is what the rail calls them.
+                Picker("Notes are written in", selection: $handRaw) {
                     // `available`, not `allCases`: macOS makes several of the
                     // system faces optional downloads and any face can be
                     // switched off in Font Book. Offering one that is not there
@@ -219,13 +227,13 @@ struct CritiqueSettingsView: View {
                     Text(KonvoSkill.summary(for: installed))
                         .monospacedDigit()
                         .textSelection(.enabled)
+                        .help(installed.subject)
                 }
-                if !installed.subject.isEmpty {
-                    Text(installed.subject)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                // The commit's subject line is not shown under the version any
+                // more: it is a note one maintainer left another ("Tighten
+                // the critique pass's quote rule"), which reads as noise to a
+                // writer. It is still there for anyone who wants it, as the
+                // version's tooltip.
                 if installed.isModified {
                     // Said plainly, because an update will refuse rather than
                     // discard the edits — and "the button did nothing" is a

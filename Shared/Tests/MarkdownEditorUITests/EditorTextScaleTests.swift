@@ -193,5 +193,52 @@ struct EditorTextScaleTests {
         ]
         #expect(keys.count == 4)
     }
+
+    @Test("Bigger and Smaller step through the stops and stop at the ends")
+    func steppingWalksTheStops() {
+        var scale: CGFloat = 1
+        var visited: [CGFloat] = []
+        for _ in 0..<10 {
+            scale = EditorColorTheme.steppedTextScale(from: scale, larger: true)
+            visited.append(scale)
+        }
+        #expect(visited.prefix(5) == [1.1, 1.2, 1.3, 1.4, 1.5])
+        #expect(visited.last == EditorColorTheme.textScaleRange.upperBound)
+
+        scale = 1
+        visited = []
+        for _ in 0..<10 {
+            scale = EditorColorTheme.steppedTextScale(from: scale, larger: false)
+            visited.append(scale)
+        }
+        #expect(visited.prefix(3) == [0.9, 0.8, 0.75])
+        #expect(visited.last == EditorColorTheme.textScaleRange.lowerBound)
+    }
+
+    @Test("A size between stops comes back to a round number on one press")
+    func offGridSizesSnapToTheNextStop() {
+        #expect(EditorColorTheme.steppedTextScale(from: 1.05, larger: true) == 1.1)
+        #expect(EditorColorTheme.steppedTextScale(from: 1.05, larger: false) == 1)
+        #expect(EditorColorTheme.steppedTextScale(from: 0.85, larger: false) == 0.8)
+        // A value that has been through storage and come back a hair under
+        // its stop is still on it, not one press behind.
+        #expect(
+            EditorColorTheme.steppedTextScale(from: 0.8999999, larger: true)
+                == 1
+        )
+    }
+
+    @Test("Every stop is a size the slider can show, and 100% is one of them")
+    func stopsAreInRange() {
+        for stop in EditorColorTheme.textScaleStops {
+            #expect(EditorColorTheme.textScaleRange.contains(stop))
+            #expect(EditorColorTheme.clampedTextScale(stop) == stop)
+        }
+        #expect(EditorColorTheme.textScaleStops.contains(1))
+        #expect(
+            EditorColorTheme.textScaleStops
+                == EditorColorTheme.textScaleStops.sorted()
+        )
+    }
 }
 #endif

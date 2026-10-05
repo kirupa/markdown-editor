@@ -16,15 +16,18 @@ import {
   RESOLUTION,
   RESOLUTION_LABEL,
   anchoredCount,
+  carriedResolutions,
   highlightsFor,
   isAnchored,
+  isConfirmed,
   isOutstanding,
   makeItems,
   reorder,
   resolutionKey,
-  resolvedCount,
+  scoreCaption,
   scoreFor,
   severityCounts,
+  stalenessChanged,
   verdictFor,
 } from '../core/critique-model.js';
 import { trackItems } from '../core/critique-anchor-tracking.js';
@@ -236,15 +239,19 @@ export class CritiqueRail {
     const previous = this.currentText;
     this.currentText = text;
     if (previous === '' || previous === text) return;
+    // The verdict, the stale notice and "Critique again" all turn on this,
+    // and an edit that moves no mark would not otherwise redraw them.
+    const staleness = stalenessChanged(this.criticisedText, previous, text);
+    let moved = false;
     // Nothing anchored, nothing to move — and working out what changed means
     // comparing the whole draft against the whole draft.
-    if (this.items.length === 0) return;
-    const before = this.items;
-    this.items = trackItems(this.items, previous, text);
-    if (before.some((item, index) => item.range !== this.items[index].range)) {
-      this.onHighlightsChanged();
-      if (this.visible) this.render();
+    if (this.items.length > 0) {
+      const before = this.items;
+      this.items = trackItems(this.items, previous, text);
+      moved = before.some((item, index) => item.range !== this.items[index].range);
+      if (moved) this.onHighlightsChanged();
     }
+    if ((moved || staleness) && this.visible) this.render();
   }
 
   isStale() {
@@ -346,6 +353,11 @@ export class CritiqueRail {
 
   #apply(report, text) {
     this.report = report;
+    const carried = carriedResolutions(report.findings, this.resolutions);
+    if (Object.keys(carried).length !== Object.keys(this.resolutions).length) {
+      this.resolutions = carried;
+      this.#saveResolutions();
+    }
     this.items = reorder(makeItems(report.findings, text, this.resolutions));
     this.criticisedText = text;
     this.currentText = text;
@@ -593,13 +605,15 @@ export class CritiqueRail {
   /**
    * How good the draft looks, out of a hundred.
    *
-   * Counts only what is outstanding, so answering everything returns it to
-   * 100. That is the point of the two actions: the author has said what they
-   * meant to say, and the score should agree with them rather than keep score
-   * against them.
+   * Counts what still stands against the draft: outstanding notes, dismissed
+   * ones, and the problems the summary lists. Only Done clears a note, and a
+   * hundred is "Ready" only when a critique of the draft as it stands agrees
+   * -- see `critique-score.js`.
    */
   #scoreBanner() {
-    const score = scoreFor(this.items);
+    const listedProblems = this.report.whatDoesNotWork.length;
+    const confirmed = isConfirmed(this.items, this.isStale());
+    const score = scoreFor(this.items, listedProblems);
     const severity = score >= 85 ? 'low' : score >= 50 ? 'medium' : 'high';
     const banner = build('div', `me-critique__score me-critique__score--${severity}`);
 
@@ -608,7 +622,9 @@ export class CritiqueRail {
     const outOf = build('span', 'me-critique__score-outof', '/100');
     const right = build('div', 'me-critique__score-verdict');
     right.append(build('span', 'me-critique__score-caption', 'AWESOMENESS'));
-    right.append(build('span', 'me-critique__score-word', verdictFor(this.items)));
+    right.append(
+      build('span', 'me-critique__score-word', verdictFor(this.items, { listedProblems, confirmed }))
+    );
     top.append(number, outOf, right);
 
     // A bar, because a number alone gives nothing to compare against. It fills
@@ -626,17 +642,15 @@ export class CritiqueRail {
     }
 
     banner.append(top, bar);
-    const answered = resolvedCount(this.items);
-    if (answered > 0) {
-      banner.append(
-        build(
-          'p',
-          'me-critique__score-answered',
-          answered === this.items.length
-            ? 'Everything answered.'
-            : `${answered} of ${this.items.length} answered.`
-        )
-      );
+    const caption = scoreCaption(this.items, { listedProblems, confirmed });
+    if (caption) banner.append(build('p', 'me-critique__score-answered', caption));
+    // Offered here only when the draft is unchanged: when it has changed, the
+    // notice below already offers the same thing.
+    if (score === 100 && !confirmed && !this.isStale()) {
+      const again = build('button', 'me-critique__button me-critique__score-again', 'Critique again');
+      again.type = 'button';
+      again.addEventListener('click', () => this.run());
+      banner.append(again);
     }
     return banner;
   }
@@ -687,14 +701,16 @@ export class CritiqueRail {
     if (report.whatWorks.length > 0) {
       inner.append(this.#summarySection('WHAT WORKS', report.whatWorks, '+', 'works'));
     }
-    const problems =
-      report.whatDoesNotWork.length > 0
-        ? report.whatDoesNotWork
-        : report.overall
-          ? [report.overall]
-          : [];
-    if (problems.length > 0) {
-      inner.append(this.#summarySection("WHAT DOESN'T WORK", problems, '–', 'problems'));
+    // With nothing listed, the overall read stands on its own. It used to be
+    // filed under WHAT DOESN'T WORK with a red dash, which turned "A focused
+    // draft, ready to publish." into a problem -- and an empty list is what
+    // the critic is told to return when nothing holds the draft back.
+    if (report.whatDoesNotWork.length > 0) {
+      inner.append(
+        this.#summarySection("WHAT DOESN'T WORK", report.whatDoesNotWork, '–', 'problems')
+      );
+    } else if (report.overall) {
+      inner.append(build('p', 'me-critique__overall', report.overall));
     }
 
     const counts = severityCounts(this.items);
@@ -832,7 +848,9 @@ export class CritiqueRail {
         })
       );
     } else {
-      const done = iconButton('check', 'I have fixed this. It will not be raised again.', (event) => {
+      // Not "it will not be raised again", which it said until a fresh
+      // critique began reopening a Done note it raises again (WA-37).
+      const done = iconButton('check', 'I have fixed this. The next critique checks it.', (event) => {
         event.stopPropagation();
         this.setResolution(item.id, RESOLUTION.completed);
       });
