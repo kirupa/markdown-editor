@@ -1390,6 +1390,7 @@ final class RichMarkdownTextView: NSTextView {
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
         drawCodeBlockBackgrounds(in: rect)
+        drawQuoteBars(in: rect)
         drawCritiqueHighlights(in: rect)
         drawSelectionHighlight(in: rect)
     }
@@ -2151,6 +2152,199 @@ final class RichMarkdownTextView: NSTextView {
             in: whole
         ) != nil {
             end = NSMaxRange(run)
+        }
+        return NSRange(location: start, length: end - start)
+    }
+
+    // MARK: - Quote bars
+
+    /// How wide the bar beside a quote is: the web's 3px border.
+    static let quoteBarWidth: CGFloat = 3
+
+    /// The bar down the left of each block quote.
+    ///
+    /// A quote used to be told from the paragraphs around it by a 20pt indent
+    /// and a greyer colour alone, which at a glance is a paragraph that
+    /// happens to be indented. In a draft, a quote is somebody else's words,
+    /// and that is the difference worth seeing. The web build has always drawn
+    /// this bar, as `.me-quote`'s border; this is the same bar, at the
+    /// column's left edge with the text 20pt in from it.
+    ///
+    /// One bar beside each run of quoted lines rather than one per line:
+    /// every `>` line is a paragraph of its own, and the 7pt between
+    /// paragraphs would otherwise break the bar into a dash per line. It runs
+    /// from the top of the first line's text to the bottom of the last's, so
+    /// it never reaches into the space before the next paragraph.
+    private func drawQuoteBars(in dirtyRect: NSRect) {
+        guard let textStorage,
+            let layoutManager,
+            let textContainer,
+            textStorage.length > 0,
+            let searched = quoteSearchRange(
+                for: dirtyRect,
+                in: textStorage,
+                layoutManager: layoutManager,
+                textContainer: textContainer
+            )
+        else {
+            return
+        }
+        for (bar, colour) in quoteBars(in: searched)
+        where bar.intersects(dirtyRect) {
+            colour.setFill()
+            NSBezierPath(
+                roundedRect: bar,
+                xRadius: Self.quoteBarWidth / 2,
+                yRadius: Self.quoteBarWidth / 2
+            ).fill()
+        }
+    }
+
+    /// The bars `drawQuoteBars(in:)` draws over the whole view, in this
+    /// view's coordinates. For the checks, which hold the bar to its quote.
+    func quoteBarRectsAsDrawn() -> [NSRect] {
+        guard let textStorage else { return [] }
+        return quoteBars(
+            in: NSRange(location: 0, length: textStorage.length)
+        ).map(\.0)
+    }
+
+    /// The bar beside each quote in `range`, in this view's coordinates.
+    private func quoteBars(in range: NSRange) -> [(NSRect, NSColor)] {
+        guard let textStorage, let layoutManager, let textContainer else {
+            return []
+        }
+        let x = textContainerOrigin.x + textContainer.lineFragmentPadding
+            + page.bleed
+        return quoteRuns(in: range, of: textStorage).compactMap {
+            run, colour in
+            let glyphs = layoutManager.glyphRange(
+                forCharacterRange: run,
+                actualCharacterRange: nil
+            )
+            guard glyphs.length > 0 else { return nil }
+            var extent = NSRect.null
+            layoutManager.enumerateLineFragments(
+                forGlyphRange: glyphs
+            ) { _, usedRect, _, _, _ in
+                extent = extent.union(usedRect)
+            }
+            guard !extent.isNull else { return nil }
+            let bar = NSRect(
+                x: x,
+                y: textContainerOrigin.y + extent.minY,
+                width: Self.quoteBarWidth,
+                height: extent.height
+            )
+            return (bar, colour)
+        }
+    }
+
+    /// Each run of consecutive quoted paragraphs in `range`, whole, with the
+    /// colour its bar is drawn in.
+    ///
+    /// The attribute stops short of each line's newline, as the quote's
+    /// indent does, so the runs it makes are a line apart; it is the
+    /// paragraphs they are in that meet.
+    private func quoteRuns(
+        in range: NSRange,
+        of textStorage: NSTextStorage
+    ) -> [(NSRange, NSColor)] {
+        let string = textStorage.string as NSString
+        var runs: [(NSRange, NSColor)] = []
+        textStorage.enumerateAttribute(
+            .markdownQuoteBar,
+            in: range
+        ) { value, characters, _ in
+            guard let colour = value as? NSColor else { return }
+            let paragraph = string.paragraphRange(for: characters)
+            if let last = runs.last,
+                NSMaxRange(last.0) >= paragraph.location
+            {
+                runs[runs.count - 1].0 = NSUnionRange(last.0, paragraph)
+            } else {
+                runs.append((paragraph, colour))
+            }
+        }
+        return runs
+    }
+
+    /// Whether any of a paragraph is quoted. Usually its first character is,
+    /// but a quoted list item puts its bullet in front of the quote.
+    private func isQuoted(
+        _ paragraph: NSRange,
+        in textStorage: NSTextStorage
+    ) -> Bool {
+        guard paragraph.length > 0 else { return false }
+        var run = NSRange(location: 0, length: 0)
+        if textStorage.attribute(
+            .markdownQuoteBar,
+            at: paragraph.location,
+            longestEffectiveRange: &run,
+            in: paragraph
+        ) != nil {
+            return true
+        }
+        let next = NSMaxRange(run)
+        return next < NSMaxRange(paragraph)
+            && textStorage.attribute(
+                .markdownQuoteBar, at: next, effectiveRange: nil
+            ) != nil
+    }
+
+    /// The characters worth looking at to draw the quote bars in a rect: the
+    /// ones in it, grown outwards to whole quotes.
+    ///
+    /// Grown for the reason `codeBlockSearchRange` is: a quote taller than
+    /// the rect starts above it and ends below it, and a bar measured from
+    /// the part a scroll uncovers would put its rounded end across the middle
+    /// of the quote. Here the attribute stops at every newline, so the
+    /// growing goes a paragraph at a time, and stops at the first paragraph
+    /// that is not quoted.
+    private func quoteSearchRange(
+        for dirtyRect: NSRect,
+        in textStorage: NSTextStorage,
+        layoutManager: NSLayoutManager,
+        textContainer: NSTextContainer
+    ) -> NSRange? {
+        let probe = NSRect(
+            x: 0,
+            y: dirtyRect.minY - textContainerOrigin.y,
+            width: max(1, textContainer.size.width),
+            height: dirtyRect.height
+        )
+        let glyphs = layoutManager.glyphRange(
+            forBoundingRect: probe,
+            in: textContainer
+        )
+        let characters = NSIntersectionRange(
+            layoutManager.characterRange(
+                forGlyphRange: glyphs, actualGlyphRange: nil
+            ),
+            NSRange(location: 0, length: textStorage.length)
+        )
+        guard characters.length > 0 else { return nil }
+
+        let string = textStorage.string as NSString
+        var start = string.paragraphRange(
+            for: NSRange(location: characters.location, length: 0)
+        ).location
+        while start > 0 {
+            let above = string.paragraphRange(
+                for: NSRange(location: start - 1, length: 0)
+            )
+            guard isQuoted(above, in: textStorage) else { break }
+            start = above.location
+        }
+        var end = NSMaxRange(string.paragraphRange(
+            for: NSRange(location: NSMaxRange(characters) - 1, length: 0)
+        ))
+        while end < string.length {
+            let below = string.paragraphRange(
+                for: NSRange(location: end, length: 0)
+            )
+            guard isQuoted(below, in: textStorage) else { break }
+            end = NSMaxRange(below)
         }
         return NSRange(location: start, length: end - start)
     }

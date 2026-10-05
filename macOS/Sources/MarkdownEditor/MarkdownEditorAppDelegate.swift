@@ -5,8 +5,13 @@ import SwiftUI
 /// document — or, on current macOS releases, instead of the Open panel that
 /// `DocumentGroup` raises by itself.
 ///
-/// Three launch paths are covered because AppKit picks between them:
+/// Four launch paths are covered because AppKit and SwiftUI pick between them,
+/// and not the same way on every release:
 ///
+/// - From macOS 15 the document scene is told not to open anything at launch
+///   (see `MarkdownEditorMain`), so a default launch reaches
+///   `applicationDidFinishLaunching(_:)` with nothing on screen, and the
+///   welcome window is shown there and then.
 /// - `applicationOpenUntitledFile(_:)` handles the classic untitled-document
 ///   path.
 /// - `applicationDidFinishLaunching(_:)` handles the newer app-centric Open
@@ -27,16 +32,33 @@ final class MarkdownEditorAppDelegate: NSObject, NSApplicationDelegate {
         TextSizeKeyAlias.install()
 
         guard WelcomeWindowPreferences.showsAtLaunch,
-            !WelcomeWindowController.shared.isVisible,
-            isLaunchingEmpty
+            !WelcomeWindowController.shared.isVisible
         else {
+            return
+        }
+
+        // AppKit's word for W-1's plain launch: nothing to restore, nothing
+        // opened from Finder, nothing handed over by another app.
+        let isDefaultLaunch =
+            notification.userInfo?[NSApplication.launchIsDefaultUserInfoKey]
+            as? Bool ?? false
+        if isDefaultLaunch {
+            closeUntouchedUntitledDocuments()
+        }
+
+        guard isLaunchingEmpty else {
             return
         }
 
         // AppKit only raises the app-centric Open panel when it has nothing to
         // restore, so its presence means the welcome window can be shown right
-        // away. Without it, documents may still be on their way in.
-        if dismissLaunchOpenPanels() {
+        // away, as can a default launch. Otherwise documents may still be on
+        // their way in. Measured on macOS 27, waiting regardless held the
+        // welcome window back for the whole grace period on every launch,
+        // because restoration with nothing to restore finishes *before* this
+        // method runs and its notification is never seen.
+        let hadOpenPanel = dismissLaunchOpenPanels()
+        if isDefaultLaunch || hadOpenPanel {
             WelcomeWindowController.shared.show()
         } else {
             waitForWindowRestoration()
@@ -81,6 +103,20 @@ final class MarkdownEditorAppDelegate: NSObject, NSApplicationDelegate {
             window.isVisible
                 && !(window is NSPanel)
                 && !WelcomeWindowController.shared.owns(window)
+        }
+    }
+
+    /// Closes any untitled document nobody has typed in.
+    ///
+    /// Only called at a default launch, where such a document can only be one
+    /// SwiftUI opened by itself. That is what macOS 27 does when the document
+    /// scene is not told otherwise, and with the welcome window beside it the
+    /// launch put up two windows where W-1 asks for one. On releases where the
+    /// scene is told otherwise there is nothing here to close.
+    private func closeUntouchedUntitledDocuments() {
+        for document in NSDocumentController.shared.documents
+        where document.fileURL == nil && !document.isDocumentEdited {
+            document.close()
         }
     }
 

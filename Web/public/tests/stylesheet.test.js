@@ -346,4 +346,36 @@ suite('stylesheet conformance', () => {
       `--me-surface-padding must be a plain length, not ${padding}`
     );
   });
+
+  test('a quote of several lines is one bar, not a dash per line', () => {
+    // WT-21. Every `>` line renders as a block of its own, and the gap between
+    // blocks is a margin, which a border does not cross: three quoted lines
+    // drew three dashes. Measured in headless Chrome, three 18px bars with 7px
+    // of nothing between each; with the gap moved into the padding, one 68px
+    // bar — and 68px is what the three lines spanned before, so the gap
+    // survived the move. It has to, or the lines of a quote would sit closer
+    // together than the paragraphs around it.
+    const quote = rules.find((rule) => rule.selectors.includes('.me-quote'));
+    expect(
+      (quote?.declarations.get('border-left') ?? '').includes('solid'),
+      'a quote is drawn by its left border'
+    );
+
+    const joined = rules.find((rule) =>
+      rule.selectors.some((s) => /\.me-quote\s*\+\s*\.me-block\.me-quote$/.test(s))
+    );
+    expect(joined !== undefined, 'nothing joins one quoted line to the next');
+    expect(
+      joined?.declarations.get('margin-top') === '0',
+      'consecutive quoted lines must not be parted by a margin'
+    );
+    const gap = rules.find((rule) =>
+      rule.selectors.includes('.me-block + .me-block')
+    )?.declarations.get('margin-top');
+    expect(
+      gap !== undefined && joined?.declarations.get('padding-top') === gap,
+      `the gap between quoted lines must be the paragraph gap, as padding: ` +
+        `${joined?.declarations.get('padding-top')} against ${gap}`
+    );
+  });
 });

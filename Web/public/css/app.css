@@ -635,6 +635,14 @@ body {
   border-left: 3px solid color-mix(in srgb, var(--me-primary-text) 28%, transparent);
 }
 
+/* Every `>` line is a block of its own, and the gap between blocks is a
+   margin, which the border does not cross: a quote of three lines drew as
+   three dashes. The same gap as padding keeps it one bar (Y-4). */
+.me-block.me-quote + .me-block.me-quote {
+  margin-top: 0;
+  padding-top: calc(var(--me-paragraph-gap) * var(--me-text-scale));
+}
+
 .me-rule {
   text-align: center;
   margin: calc(8px * var(--me-text-scale)) 0;         /* Y-6 */

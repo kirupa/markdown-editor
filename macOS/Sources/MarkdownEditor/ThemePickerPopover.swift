@@ -114,6 +114,9 @@ struct ThemePickerPopover: View {
             Text(colorTheme.typeface.title)
         }
         .accessibilityLabel("Font")
+        // The name alone was read as "Font", with no value to say which
+        // face is chosen; the one the writer can see is now its value.
+        .accessibilityValue(colorTheme.typeface.title)
         .help("The face the document is set in")
     }
 
@@ -131,23 +134,27 @@ struct ThemePickerPopover: View {
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
+            // Named once, by its own label. Given a second name on top, it was
+            // read as "Size, Text size".
             Slider(
                 value: $colorTheme.textScale,
                 in: EditorColorTheme.textScaleRange,
                 step: 0.05
             ) {
-                Text("Size")
+                Text("Text size")
             } minimumValueLabel: {
+                // Each A is a button: a click steps the size by 5%, and so
+                // does VoiceOver's press. Hidden, it was a button with no
+                // name, which VoiceOver stopped on and read as nothing.
                 Text(verbatim: "A")
                     .font(.system(size: 10))
-                    .accessibilityHidden(true)
+                    .accessibilityLabel("Smaller text")
             } maximumValueLabel: {
                 Text(verbatim: "A")
                     .font(.system(size: 16))
-                    .accessibilityHidden(true)
+                    .accessibilityLabel("Larger text")
             }
             .labelsHidden()
-            .accessibilityLabel("Text size")
             .accessibilityValue(textScalePercent)
             .help("How large the document's text is drawn")
         }

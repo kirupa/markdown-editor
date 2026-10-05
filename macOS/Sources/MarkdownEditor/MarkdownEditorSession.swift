@@ -112,7 +112,14 @@ final class MarkdownEditorSession: ObservableObject {
     func noteSelection(_ selection: NSRange) {
         rememberedSelection = selection
         refreshCodeContext()
+        titleBar.noteSelection(selection)
     }
+
+    /// The draft's length and name, for the title bar. Held here because the
+    /// selection arrives here; deliberately not forwarded to this object's
+    /// observers, which would redraw the whole editor for a number in the
+    /// title bar.
+    let titleBar = TitleBarModel()
 
     /// What the caret is sitting in, as the panes last reported it.
     ///

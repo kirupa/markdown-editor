@@ -320,6 +320,7 @@ struct CritiqueSidebar: View {
         HStack(spacing: 8) {
             Image(systemName: "sparkles")
                 .foregroundStyle(colorTheme.accent)
+                .accessibilityHidden(true)
             Text("CRITIQUE")
                 .font(CritiqueTypography.heading(16))
                 .tracking(0.5)
@@ -1328,9 +1329,12 @@ struct CritiqueSidebar: View {
                 Rectangle()
                     .fill(severity.tint)
                     .frame(width: 6, height: 6)
-                Text("\(count) \(severity.label)")
+                // Uppercased in the string, not with `.textCase(.uppercase)`:
+                // that one leaks out of the label into the button's own
+                // accessibility label and hint, and VoiceOver was handed
+                // "1 HIGH" and "SHOWS ONLY THESE NOTES".
+                Text("\(count) \(severity.label.uppercased())")
                     .font(CritiqueTypography.chrome(15))
-                    .textCase(.uppercase)
                     .foregroundStyle(
                         isChosen ? colorTheme.primaryText : CritiqueInk.quiet(on: colorTheme.mode)
                     )
@@ -1718,6 +1722,7 @@ struct CritiqueBriefLine: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                     .help("Say who this draft is for")
+                    .accessibilityLabel("Edit audience and goal")
                 }
             }
 

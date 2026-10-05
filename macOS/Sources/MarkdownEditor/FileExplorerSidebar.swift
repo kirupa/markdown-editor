@@ -104,6 +104,7 @@ struct FileExplorerSidebar: View {
             }
             .buttonStyle(.plain)
             .help("Refresh Explorer")
+            .accessibilityLabel("Refresh Explorer")
             .disabled(model.rootURL == nil)
 
             Button {
@@ -126,6 +127,7 @@ struct FileExplorerSidebar: View {
             Image(systemName: "folder")
                 .font(.system(size: 34))
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             Text("No Folder Open")
                 .font(.headline)
             Text("Save this document or choose a folder to browse its files.")

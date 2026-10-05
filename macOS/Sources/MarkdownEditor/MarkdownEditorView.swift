@@ -231,6 +231,10 @@ struct MarkdownEditorView: View {
             for: .windowToolbar
         )
         .toolbarBackground(.visible, for: .windowToolbar)
+        // The length under the document's name, where a Mac window says what
+        // it holds: the page itself stays for the writing. And for a draft
+        // never saved, the name is its own title.
+        .modifier(TitleBar(model: session.titleBar))
         .focusedSceneValue(\.runCritique, startCritique)
         .focusedSceneValue(\.runQuickCritique, startQuickCritique)
         // The whole model rather than a closure per command: the Critique
@@ -244,6 +248,7 @@ struct MarkdownEditorView: View {
             // Past critiques are there to read the moment a document opens,
             // not only once somebody runs a new one.
             critique.attach(to: fileURL, text: document.text)
+            session.titleBar.noteText(document.text, immediately: true)
             session.startWatchingFile(text: document.text)
             autosaveController.onSave = { [session] in
                 session.externalChange.noteSaved()
@@ -264,6 +269,7 @@ struct MarkdownEditorView: View {
         }
         .onChange(of: document.text) { newText in
             critique.noteCurrentText(newText)
+            session.titleBar.noteText(newText)
             session.externalChange.noteEditorText(newText)
             // Writing during an unresolved conflict would overwrite the other
             // app's version seconds after pointing it out.

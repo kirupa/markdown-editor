@@ -251,9 +251,11 @@ public enum RichMarkdownStyler {
                 spacing: colorTheme.scaled(7)
             )
         case .quote:
-            text.addAttribute(
-                .foregroundColor,
-                value: colorTheme.secondaryTextColor,
+            text.addAttributes(
+                [
+                    .foregroundColor: colorTheme.secondaryTextColor,
+                    .markdownQuoteBar: colorTheme.quoteBarColor
+                ],
                 range: range
             )
             let paragraphStyle = paragraphStyle(in: text, at: range.location)

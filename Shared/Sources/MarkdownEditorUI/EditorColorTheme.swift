@@ -308,6 +308,14 @@ public struct EditorColorTheme: Equatable, Hashable {
         palette.primary
     }
 
+    /// The bar down the left of a block quote: the text colour at 28%, which
+    /// is what the web build's `.me-quote` border has always been. Translucent
+    /// rather than mixed in advance, as the web's `color-mix` with
+    /// `transparent` is, so the two builds draw the same grey on every page.
+    public var quoteBarColor: PlatformColor {
+        primaryTextColor.withAlphaComponent(0.28)
+    }
+
     /// The fill for a selected row or a pressed control. Selected *text* uses
     /// `textSelectionBackgroundColor` instead.
     public var selectionBackgroundColor: PlatformColor {

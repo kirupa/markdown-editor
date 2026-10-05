@@ -191,6 +191,7 @@ struct WelcomeView: View {
             Image(systemName: "clock.arrow.circlepath")
                 .font(.system(size: 30, weight: .light))
                 .foregroundStyle(secondaryText)
+                .accessibilityHidden(true)
             Text("No Recent Documents")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(primaryText)

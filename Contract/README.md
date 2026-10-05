@@ -1238,6 +1238,154 @@ The artwork stays vector. The generator renders ten sizes from 16 to 1024
 pixels, and a vector redrawn at each of them is sharp where one bitmap resampled
 ten times is not.
 
+### How long a draft is
+
+Somebody writing to a slot — 600 words for a column, five minutes for a talk —
+checks two numbers more than any others, and a build that cannot say them sends
+the draft off to something that can. Every build shows them wherever it keeps a
+document's subtitle; macOS puts them under the name in the title bar:
+
+- `1,234 words · 6 min read` for the whole draft, and `1 word · 1 min read`
+  for one word;
+- `56 of 1,234 words` while a selection holds a word, and the whole draft's
+  line again when it holds none — a caret, or a selection of only spaces and
+  Markdown marks;
+- `0 words` for a draft with none, rather than a reading time of nothing.
+
+**The words are the critique's words.** They are `MarkdownProse.wordCount`, the
+count that decides whether a draft is long enough to critique (thirty words), so
+the title bar can never show 40 for a draft the critique turns away as too
+short. It skips what a reader never reads as prose — fenced code, front matter,
+link and image destinations, reference definitions, HTML tags and comments,
+list and heading markers — and counts a run of non-space characters with a
+letter or digit in it, so a dash between spaces is not a word and
+`state-of-the-art` is one. Han, Hiragana and Katakana count a character a word,
+which is how counts are conventionally given for them. A selection is counted
+on its own text, never as a share of the whole: a share would have to know
+where the code blocks fall, which is the one thing the count exists to know.
+
+**The reading time is at 238 words a minute, rounded up.** That is Brysbaert's
+2019 review of 190 studies of silent reading. The 200 most counters use is a
+round number rather than a measurement, and adds a minute to every five.
+Rounding up makes a 250-word post a two-minute read, and a single sentence a
+minute rather than none.
+
+Counting is one pass over the draft: 1.4ms on the 21,500-word document the
+macOS typing measurements use. That is nothing once, and too much to add to
+every keystroke on exactly the drafts where typing is slowest, so the count
+waits for a quarter of a second without an edit. A document that opens shows
+its count on its first frame.
+
+The rules are `DocumentLength` and `MarkdownProse` in
+`Shared/Sources/MarkdownEditorCore/`, with `DocumentLengthTests.swift` and
+`MarkdownProseTests.swift` as the specification. The web build does not do this
+yet.
+
+### A draft is named by its title
+
+A draft that has never been saved still has a name: the window shows it and
+Save proposes it. Every build should make that name the draft's own title, as
+its writer typed it. Left alone, macOS 26 and later name an untitled draft a
+few seconds after its first autosave, and invent the name rather than read it:
+on macOS 27.2 two drafts that both opened `# Field notes on speed` were offered
+as "Field Notes on Speed" and "Draft Speed and Latency Notes". A writer who has
+typed their title should not have to type it again in a save sheet, letter case
+and all.
+
+- **The title is the line the critique calls the Title** (see "A note names
+  where it is"): a Heading 1 on the draft's first written line, front matter
+  and blank lines aside, with its Markdown taken out. A draft that opens any
+  other way has no title — including `# ` with no words after it, which is how
+  every new document begins — and keeps whatever the platform calls it.
+- **It is made safe to save, and otherwise left alone.** `: ` becomes ` - `, and
+  any other colon or slash becomes `-`, because Finder will not take a colon and
+  stores a slash as one: `# Speed: a field guide` is saved as "Speed - a field
+  guide". Runs of spaces become one. Leading dots go, because a leading dot
+  hides the file, and trailing dots, spaces, dashes and commas go. Past 80
+  characters it stops at the last whole word that fits, or cuts at 80 when that
+  would leave fewer than 40. Last, it is cut to 240 UTF-8 bytes: a name holds
+  255 with its extension, and an emoji is four.
+- **It follows the title** as the title is edited. When the title goes, the
+  draft gets back the placeholder it opened under, "Untitled" or "Untitled 2",
+  by that name: asking macOS for a fresh one named it "Untitled -1".
+- **It never takes a name it did not give.** A duplicate arrives named
+  "… copy" so that saving it cannot overwrite its original, and renaming it
+  after its title would propose exactly the original's name. A name the writer
+  types into the title bar is theirs to keep. Once saved, a document is named by
+  its file, like any other.
+
+`DocumentTitle` in `Shared/Sources/MarkdownEditorCore/DocumentTitle.swift`
+holds what the title is and the name it makes, with `DocumentTitleTests.swift`
+as the specification. Following the title is the platform's own document
+machinery: on macOS it is `DraftNamer` in
+`macOS/Sources/MarkdownEditor/TitleBarModel.swift`, asserted against real
+windows by `make -C macOS check-window`. The web build does not do this yet:
+an unsaved draft there is "Untitled", and Save proposes `Untitled.md`.
+
+### A block quote has one bar
+
+A quote drawn as an indent and nothing else reads, on a page of paragraphs, as
+a layout slip rather than somebody else's words. Every build draws **a bar down
+the left of a block quote**, in the quote's left inset: 3 points wide, rounded,
+in the text colour at 28% so that it follows the theme.
+
+**It is one bar for a run of quoted lines**, from the first line's text to the
+last line's, through wrapped lines and the space between quoted paragraphs. A
+line that is not quoted ends the run, so a paragraph between two quotes gives
+each its own bar. This is the part a port gets wrong. A renderer that makes
+each `>` line a block of its own and borders each block draws a dash beside
+every line instead, because the gap between two blocks belongs to neither. The
+web build did exactly that until the gap between two quoted lines was moved
+from margin into padding. Measured in headless Chrome, three 18px dashes with
+7px between them became one 68px bar: the same 68px the lines spanned before,
+so the lines of a quote sit no closer together than the paragraphs around it.
+
+**It is the same however little of it is redrawn.** A native text view redraws
+only the rectangle that changed — a caret blink, a line of scrolling — and a bar
+worked out from the text inside that rectangle comes out as a short piece of
+itself. Find the run from the text, then clip it to the rectangle.
+
+The styling is `RichMarkdownStyler`, which marks quoted text with
+`.markdownQuoteBar`, and `EditorColorTheme.quoteBarColor`, with
+`RichMarkdownStylerTests.swift` and `EditorColorThemeTests.swift` as the
+specification. The macOS drawing is in
+`macOS/Sources/MarkdownEditor/RichMarkdownTextView.swift`, and
+`make -C macOS check-code-block-scroll` draws two quotes whole and then a strip
+at a time, in both palettes, and checks that each comes out as one bar either
+way. The web build's rule is `.me-block.me-quote + .me-block.me-quote` in
+`Web/public/css/app.css`, kept there by `Web/public/tests/stylesheet.test.js`.
+
+### Every control is named by what it does
+
+A screen reader reads a control by its name, and a control left to its symbol
+is named after the picture: on macOS, VoiceOver read Quote as "Lyrics",
+Horizontal Rule as "Remove", Add Image as "Photo With A Plus Badge" and the
+heading menu as "Change Text Size". Every build holds to four rules, each of
+which a port meets in its own accessibility API — `accessibilityLabel` in
+SwiftUI, `aria-label` on the web:
+
+- **Name a control by what it does**, never by its icon. A formatting button is
+  named by its tooltip's title, and the heading menu is **Paragraph Style**,
+  which is what the web build already called it.
+- **Hide a picture that only decorates.** The sparkles beside CRITIQUE and the
+  folder in an empty explorer were each a stop of their own, read as "Sparkle"
+  and "Move".
+- **Say what a control holds as well as what it is.** The theme popover's size
+  slider is **Text size**, valued "100%". If the platform makes the A at each
+  end a button — SwiftUI does, and each steps the size by 5% — it is named
+  **Smaller text** or **Larger text**; hidden, it was still a stop, and read as
+  nothing. Where they are only decoration, as on the web, they are hidden.
+- **Write capitals into the string, not the style.** A severity chip drawn
+  "1 HIGH" must be read "1 high". SwiftUI's `.textCase(.uppercase)` reaches past
+  the text into the button's name and hint, so VoiceOver was handed "1 HIGH"
+  and "SHOWS ONLY THESE NOTES".
+
+A name is checked by asking the platform what it would say, never by reading
+the source. On macOS that is `make -C macOS check-voiceover`: 29 checks of the
+names, values and presses the real views give VoiceOver, 15 of which fail
+against the views as they were before these rules. The macOS README's §13.4
+lists what each control is called.
+
 ### What is deliberately per-platform
 
 Not everything is a requirement. These differ between the existing builds on

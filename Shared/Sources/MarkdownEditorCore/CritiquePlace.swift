@@ -483,6 +483,13 @@ extension CritiqueOutline {
         static let longestName = 32
 
         static func sectionName(ofHeading line: String) -> String {
+            let name = headingText(line)
+            return name.isEmpty ? "Untitled section" : shortened(name)
+        }
+
+        /// A heading line's words as they read on the page: no `#` marks at
+        /// either end and no inline markup. Empty for a heading with no words.
+        static func headingText(_ line: String) -> String {
             var content: Substring = line.drop(while: { (c: Character) in c == " " || c == "\t" })
             content = content.drop(while: { (c: Character) in c == "#" })
             content = content.drop(while: { (c: Character) in c == " " || c == "\t" })
@@ -497,8 +504,7 @@ extension CritiqueOutline {
                     content = kept
                 }
             }
-            let name = plain(String(content))
-            return name.isEmpty ? "Untitled section" : shortened(name)
+            return plain(String(content))
         }
 
         /// The words of a heading without its inline markup — emphasis,
