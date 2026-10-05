@@ -462,7 +462,17 @@ struct CritiqueSidebar: View {
     @ViewBuilder
     private var content: some View {
         if critique.isRunning {
-            running
+            // The notes stay on the rail while the critic reads again, and its
+            // new ones join them as each is written. The whole panel is only
+            // for a first run that has nothing to show yet: a re-run used to
+            // take every note off the rail for the length of the run, which
+            // is the half minute somebody would most like to be working
+            // through them.
+            if !critique.items.isEmpty || !critique.arriving.isEmpty {
+                findings(in: critique.report)
+            } else {
+                running
+            }
         } else if let report = critique.report {
             findings(in: report)
         } else if let failure = critique.failure {
@@ -540,21 +550,7 @@ struct CritiqueSidebar: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            // The four stages, so the wait has a shape. A spinner says only
-            // that something is happening; this says which part, and how much
-            // of it is behind you.
-            HStack(spacing: 4) {
-                ForEach(CritiqueProgress.Stage.allCases, id: \.self) { stage in
-                    Rectangle()
-                        .fill(
-                            stage.rawValue <= progress.stage.rawValue
-                                ? colorTheme.accent
-                                : CritiqueInk.quiet(on: colorTheme.mode).opacity(0.18)
-                        )
-                        .frame(height: 5)
-                }
-            }
-            .animation(.easeOut(duration: 0.3), value: progress.stage)
+            stageBar(progress, height: 5)
 
             if progress.findingsSoFar > 0 {
                 Text(
@@ -591,6 +587,101 @@ struct CritiqueSidebar: View {
         .padding(.horizontal, 14)
         .padding(.top, 14)
         .animation(.easeOut(duration: 0.2), value: progress.stage)
+    }
+
+    /// The four stages, so the wait has a shape. A spinner says only that
+    /// something is happening; this says which part, and how much of it is
+    /// behind you.
+    private func stageBar(_ progress: CritiqueProgress, height: CGFloat) -> some View {
+        HStack(spacing: 4) {
+            ForEach(CritiqueProgress.Stage.allCases, id: \.self) { stage in
+                Rectangle()
+                    .fill(
+                        stage.rawValue <= progress.stage.rawValue
+                            ? colorTheme.accent
+                            : CritiqueInk.quiet(on: colorTheme.mode).opacity(0.18)
+                    )
+                    .frame(height: height)
+            }
+        }
+        .animation(.easeOut(duration: 0.3), value: progress.stage)
+    }
+
+    /// The run's progress, small enough to sit above the notes rather than
+    /// in place of them.
+    private var runningSummary: some View {
+        let progress = critique.progress ?? CritiqueProgress(stage: .starting)
+        let count = critique.arriving.count
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(progress.stage.headline.uppercased())
+                    .font(CritiqueTypography.chrome(15))
+                    .tracking(0.5)
+                    .foregroundStyle(colorTheme.primaryText)
+                Spacer(minLength: 0)
+                if count > 0 {
+                    Text(count == 1 ? "1 NEW SO FAR" : "\(count) NEW SO FAR")
+                        .font(CritiqueTypography.chrome(15))
+                        .foregroundStyle(colorTheme.accent)
+                        .contentTransition(.numericText())
+                }
+            }
+            stageBar(progress, height: 3)
+            if let detail = progress.detail, progress.stage == .reading {
+                Text(detail)
+                    .font(CritiqueTypography.chrome(14))
+                    .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
+                    .lineLimit(2)
+                    .transition(.opacity)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.bottom, 4)
+        .animation(.easeOut(duration: 0.2), value: count)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// One note on the rail.
+    ///
+    /// `isPreview` is a note from a run still being written: it can be read
+    /// and pressed, which takes the reader to its passage, but not answered or
+    /// applied until the run lands — an answer given to half a report has
+    /// nowhere to be kept if the run is stopped.
+    private func card(for item: CritiqueModel.Item, isPreview: Bool = false) -> some View {
+        CritiqueCard(
+            item: item,
+            colorTheme: colorTheme,
+            isSelected: critique.selectedFindingID == item.id,
+            onTap: { critique.press(item) },
+            onHoverChange: { hovering in
+                if hovering {
+                    critique.hover(item.id)
+                } else {
+                    critique.endHover(item.id)
+                }
+            },
+            onResolve: isPreview ? nil : { resolution in
+                withAnimation(.easeOut(duration: 0.2)) {
+                    critique.setResolution(resolution, for: item.id)
+                }
+            },
+            onApply: isPreview ? nil : replaceText.map { replace in
+                {
+                    if !critique.applySuggestion(for: item.id, using: replace) {
+                        NSSound.beep()
+                    }
+                }
+            },
+            onRevert: isPreview ? nil : replaceText.map { replace in
+                {
+                    if !critique.revertSuggestion(for: item.id, using: replace) {
+                        NSSound.beep()
+                    }
+                }
+            },
+            isPreview: isPreview
+        )
+        .id(item.id)
     }
 
     private func failure(_ failure: CritiqueService.Failure) -> some View {
@@ -658,21 +749,37 @@ struct CritiqueSidebar: View {
         }
     }
 
-    private func findings(in report: CritiqueReport) -> some View {
+    private func findings(in report: CritiqueReport?) -> some View {
         ScrollViewReader { scroller in
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
-                    if let failure = critique.failure { failureBanner(failure) }
-                    scoreBanner
-                    if isStale { staleNotice }
-                    if critique.showsUnchangedNotice { unchangedNotice }
-                    summary(report)
+                    if critique.isRunning {
+                        // The score and the summary belong to the critique
+                        // being replaced; the notes are what is still useful.
+                        runningSummary
+                    } else if let report {
+                        if let failure = critique.failure { failureBanner(failure) }
+                        scoreBanner
+                        if isStale { staleNotice }
+                        if critique.showsUnchangedNotice { unchangedNotice }
+                        summary(report)
 
-                    if critique.standingCount == 0 {
-                        Text("No high or medium problems found.")
-                            .font(CritiqueTypography.chrome(18))
-                            .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
-                            .padding(.horizontal, 12)
+                        if critique.standingCount == 0 {
+                            Text("No high or medium problems found.")
+                                .font(CritiqueTypography.chrome(18))
+                                .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
+                                .padding(.horizontal, 12)
+                        }
+                    }
+
+                    if !critique.arriving.isEmpty {
+                        if !critique.items.isEmpty { groupHeading("NEW") }
+                        ForEach(critique.arriving) { item in
+                            card(for: item, isPreview: true)
+                        }
+                        if critique.items.first?.isOutstanding == true {
+                            groupHeading("STILL OPEN")
+                        }
                     }
 
                     ForEach(critique.items) { item in
@@ -682,41 +789,10 @@ struct CritiqueSidebar: View {
                         if item.id == firstFixedID {
                             groupHeading("FIXED")
                         }
-                        CritiqueCard(
-                            item: item,
-                            colorTheme: colorTheme,
-                            isSelected: critique.selectedFindingID == item.id,
-                            onTap: { critique.press(item) },
-                            onHoverChange: { hovering in
-                                if hovering {
-                                    critique.hover(item.id)
-                                } else {
-                                    critique.endHover(item.id)
-                                }
-                            },
-                            onResolve: { resolution in
-                                withAnimation(.easeOut(duration: 0.2)) {
-                                    critique.setResolution(resolution, for: item.id)
-                                }
-                            },
-                            onApply: replaceText.map { replace in
-                                {
-                                    if !critique.applySuggestion(for: item.id, using: replace) {
-                                        NSSound.beep()
-                                    }
-                                }
-                            },
-                            onRevert: replaceText.map { replace in
-                                {
-                                    if !critique.revertSuggestion(for: item.id, using: replace) {
-                                        NSSound.beep()
-                                    }
-                                }
-                            }
-                        )
-                        .id(item.id)
+                        card(for: item)
                     }
 
+                    if !critique.isRunning, let report {
                     if !report.repeatedPatterns.isEmpty {
                         section(
                             "Repeated patterns",
@@ -748,6 +824,7 @@ struct CritiqueSidebar: View {
                                     .font(CritiqueTypography.hand(CritiqueTypography.noteBodySize))
                             }
                         }
+                    }
                     }
                 }
                 .padding(.vertical, 12)
@@ -1646,12 +1723,17 @@ struct CritiqueCard: View {
     let onTap: () -> Void
     /// Told when the pointer arrives over this note and when it leaves.
     let onHoverChange: (Bool) -> Void
-    let onResolve: (CritiqueResolution?) -> Void
+    /// Nil for a note that cannot be answered yet. See `isPreview`.
+    let onResolve: ((CritiqueResolution?) -> Void)?
     /// Puts the note's suggestion in place of its passage. Nil where there is
     /// no draft to change, and then no Apply button is drawn.
     var onApply: (() -> Void)? = nil
     /// Puts the passage's own words back in place of an applied suggestion.
     var onRevert: (() -> Void)? = nil
+    /// A note from a run still being written: read in full, suggestion and
+    /// all, so it does not change shape when the run lands, but with nothing
+    /// to press on it until then.
+    var isPreview = false
 
     private var finding: CritiqueFinding { item.finding }
     private var isAnswered: Bool { !item.isOutstanding }
@@ -1718,7 +1800,7 @@ struct CritiqueCard: View {
     /// for the author to take back.
     @ViewBuilder
     private var actions: some View {
-        if item.isFixed {
+        if item.isFixed || isPreview {
             EmptyView()
         } else if item.resolution != nil {
             putBack(help: "Put this note back.")
@@ -1740,14 +1822,14 @@ struct CritiqueCard: View {
                 fill: CritiqueCard.doneGreen,
                 theme: colorTheme,
                 help: "I have fixed this. The next critique checks it."
-            ) { onResolve(.completed) }
+            ) { onResolve?(.completed) }
 
             ActionStamp(
                 symbol: "xmark",
                 fill: CritiqueCard.dismissRed,
                 theme: colorTheme,
                 help: "I am not doing this. It will not be raised again."
-            ) { onResolve(.dismissed) }
+            ) { onResolve?(.dismissed) }
         }
     }
 
@@ -1756,7 +1838,7 @@ struct CritiqueCard: View {
     /// Shown in full, never cut to a line or two the way an unfound quote is:
     /// these are words about to go into the draft, and a preview that hides
     /// the end of them is an Apply nobody can check.
-    private func suggested(_ suggestion: String, apply: @escaping () -> Void) -> some View {
+    private func suggested(_ suggestion: String, apply: (() -> Void)?) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("SUGGESTED")
                 .font(CritiqueTypography.hand(CritiqueTypography.noteLabelSize))
@@ -1777,13 +1859,20 @@ struct CritiqueCard: View {
             // A word, not a glyph. The ✓ and ✗ say something about the note;
             // this changes the draft, and a glyph that rewrites a paragraph
             // is not one anybody should have to hover to identify.
+            //
+            // Drawn, and held, on a note still arriving: taking the button
+            // away would make every such note grow a row when the run lands.
             WordStamp(
                 word: "Apply",
                 fill: CritiqueCard.doneGreen,
                 theme: colorTheme,
-                help: "Put this in place of the passage. ⌘Z takes it back.",
-                action: apply
+                help: apply == nil
+                    ? "Ready when the critique has finished."
+                    : "Put this in place of the passage. ⌘Z takes it back.",
+                action: apply ?? {}
             )
+            .disabled(apply == nil)
+            .opacity(apply == nil ? 0.45 : 1)
             .padding(.top, 2)
         }
         .padding(.top, 2)
@@ -1791,7 +1880,7 @@ struct CritiqueCard: View {
 
     private func putBack(help: String, action: (() -> Void)? = nil) -> some View {
         Button {
-            if let action { action() } else { onResolve(nil) }
+            if let action { action() } else { onResolve?(nil) }
         } label: {
             Image(systemName: "arrow.uturn.backward")
         }
@@ -1925,7 +2014,7 @@ struct CritiqueCard: View {
                 .padding(.top, 2)
             }
 
-            if let suggestion = item.suggestion, let onApply {
+            if let suggestion = item.suggestion, onApply != nil || isPreview {
                 suggested(suggestion, apply: onApply)
             }
 

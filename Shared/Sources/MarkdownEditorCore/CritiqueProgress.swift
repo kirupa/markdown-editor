@@ -2,20 +2,21 @@ import Foundation
 
 /// What the critique is doing right now.
 ///
-/// A critique takes about half a minute, and a spinner for half a minute reads
-/// as a hang. Measured on a real run, that time is not one long wait but four
-/// distinct stages, and the CLI announces every one of them:
+/// A critique takes half a minute or more, and a spinner for that long reads
+/// as a hang. The CLI announces each stage as it reaches it. Measured on a
+/// 467-word draft with the default reasoning effort:
 ///
 /// | | |
 /// | --- | --- |
 /// | 0.0–0.7s | starting the session |
-/// | 0.7–2.1s | a round trip to decide to load the konvo skill, then loading it |
-/// | 2.1–14.3s | reading the draft — the skill reads it twice before saying anything |
-/// | 14.3–27.0s | writing the report |
+/// | 0.7–4.1s | the request out and the model's first thought back |
+/// | 4.1–33.9s | reading the draft — reasoning about it before saying anything |
+/// | 33.9–52.0s | writing the report, findings from 37.6s, one every ~1.5s |
 ///
-/// The last stage is the long one because the report is the product: some four
-/// hundred tokens of findings, at roughly 27ms a token. Nothing is stuck; it is
-/// being written. Saying so is the difference between waiting and worrying.
+/// The skill used to be loaded by a tool call of its own, a round trip of
+/// about 1.4s before anything was read. It travels in the prompt now and the
+/// critique has no tools at all, so `loadingSkill` is only seen if a provider
+/// still announces one.
 public struct CritiqueProgress: Equatable, Sendable {
     public enum Stage: Int, Equatable, Sendable, CaseIterable {
         case starting
@@ -56,11 +57,21 @@ public struct CritiqueProgress: Equatable, Sendable {
     /// How many findings have arrived so far, counted from the report as it
     /// streams. Zero until the report starts.
     public let findingsSoFar: Int
+    /// The findings already written out in full, so they can be read before
+    /// the rest of the report has been. Empty for a provider that answers in
+    /// one piece.
+    public let findings: [CritiqueFinding]
 
-    public init(stage: Stage, detail: String? = nil, findingsSoFar: Int = 0) {
+    public init(
+        stage: Stage,
+        detail: String? = nil,
+        findingsSoFar: Int = 0,
+        findings: [CritiqueFinding] = []
+    ) {
         self.stage = stage
         self.detail = detail
         self.findingsSoFar = findingsSoFar
+        self.findings = findings
     }
 }
 
@@ -78,7 +89,14 @@ public struct CritiqueProgressReader {
     private(set) public var detail: String?
     /// The report as it arrives, so the finished reply needs no second source.
     private(set) public var reply = ""
+    /// The CLI's own exit code, from the `result` event that closes a run.
+    ///
+    /// That event arrives 0.6–1s before the process has finished exiting.
+    /// Waiting for the exit as well spent that time on every critique saying
+    /// nothing the event had not already said.
+    private(set) public var exitCode: Int?
     private var reasoning = ""
+    private var stream = CritiqueFindingStream()
 
     public init() {}
 
@@ -94,9 +112,7 @@ public struct CritiqueProgressReader {
             return nil
         }
         let payload = object["data"] as? [String: Any] ?? [:]
-        let before = CritiqueProgress(
-            stage: stage, detail: detail, findingsSoFar: findingCount
-        )
+        let before = progress
 
         switch type {
         case "tool.execution_start":
@@ -116,16 +132,31 @@ public struct CritiqueProgressReader {
 
         case "assistant.message_delta":
             stage = .writing
-            reply += (payload["deltaContent"] as? String) ?? ""
+            let delta = (payload["deltaContent"] as? String) ?? ""
+            reply += delta
+            stream.append(delta)
+
+        case "result":
+            // At the top level, not under `data`. Read as an Int whichever
+            // way the number arrived.
+            exitCode = (object["exitCode"] as? NSNumber)?.intValue ?? 0
+            return nil
 
         default:
             return nil
         }
 
-        let now = CritiqueProgress(
-            stage: stage, detail: detail, findingsSoFar: findingCount
-        )
+        let now = progress
         return now == before ? nil : now
+    }
+
+    private var progress: CritiqueProgress {
+        CritiqueProgress(
+            stage: stage,
+            detail: detail,
+            findingsSoFar: findingCount,
+            findings: stream.findings
+        )
     }
 
     /// How many findings the part-written report already contains.

@@ -135,8 +135,6 @@ final class CritiqueService: CritiqueAsking {
     }
 
     private var running: Process?
-    /// The report assembled from the stream, handed back once it has finished.
-    private var streamedReply = ""
 
     var isRunning: Bool { running?.isRunning == true }
 
@@ -375,9 +373,14 @@ final class CritiqueService: CritiqueAsking {
         process.executableURL = cli
         process.arguments = [
             "--prompt", prompt,
-            // Non-interactive mode refuses to start without this. Nothing here
-            // asks the model to touch the disk — the draft is in the prompt —
-            // and the tools it could reach for are switched off below.
+            // No tools at all. The draft and the skill are both in the prompt,
+            // so there is nothing to fetch, and a model that has tools uses
+            // them regardless: measured, one critique stopped for 1.6s to run
+            // `echo done`. `--available-tools` given no name leaves every tool
+            // available; given one that does not exist, it leaves none.
+            "--available-tools", "konvo_no_tools",
+            // Non-interactive mode refuses to start without this. The denials
+            // after it stay as a second fence behind the empty tool list.
             "--allow-all-tools",
             "--deny-tool", "shell",
             "--deny-tool", "write",
@@ -414,11 +417,23 @@ final class CritiqueService: CritiqueAsking {
         // Read as it arrives rather than at the end. `readDataToEndOfFile`
         // would give the same bytes half a minute later, with nothing to say
         // in the meantime.
-        let stream = AsyncStream<CritiqueProgress> { continuation in
+        let stream = AsyncStream<CritiqueStreamEvent> { continuation in
             Task.detached {
                 var reader = CritiqueProgressReader()
                 var buffer = Data()
+                var announced = false
                 let handle = output.fileHandleForReading
+                func take(_ line: String) {
+                    if let update = reader.read(line: line) {
+                        continuation.yield(.progress(update))
+                    }
+                    if !announced, let code = reader.exitCode {
+                        announced = true
+                        continuation.yield(.finished(exitCode: code, reply: reader.reply))
+                    }
+                }
+                // Read to the end even after the answer has been handed back,
+                // so the CLI never blocks on a full pipe while it shuts down.
                 while true {
                     let chunk = handle.availableData
                     if chunk.isEmpty { break }
@@ -428,31 +443,53 @@ final class CritiqueService: CritiqueAsking {
                             decoding: buffer[buffer.startIndex..<newline], as: UTF8.self
                         )
                         buffer.removeSubrange(buffer.startIndex...newline)
-                        if let update = reader.read(line: line) {
-                            continuation.yield(update)
-                        }
+                        take(line)
                     }
                 }
                 if !buffer.isEmpty {
-                    _ = reader.read(line: String(decoding: buffer, as: UTF8.self))
+                    take(String(decoding: buffer, as: UTF8.self))
                 }
-                await MainActor.run { self.streamedReply = reader.reply }
+                continuation.yield(.closed(reply: reader.reply))
                 continuation.finish()
             }
         }
-        for await update in stream {
-            onProgress(update)
+        var reply = ""
+        var answered = false
+        for await event in stream {
+            switch event {
+            case .progress(let update):
+                onProgress(update)
+            case .finished(let code, let text):
+                reply = text
+                answered = code == 0
+            case .closed(let text):
+                reply = text
+            }
+            if answered { break }
         }
 
-        let (stderr, _) = await Task.detached { () -> (Data, Void) in
+        // Only this run's process. A Stop and a fresh run inside the second
+        // it takes this one to finish used to clear the new run's process
+        // here, and the next Stop then had nothing to stop.
+        if running === process { running = nil }
+
+        if answered {
+            // The CLI has said it is done; it takes most of a second more to
+            // exit, and that second is no longer spent here. Its error stream
+            // is drained so it cannot stall on the way out.
+            Task.detached {
+                _ = errors.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
+            }
+            return reply
+        }
+
+        let stderr = await Task.detached { () -> Data in
             let err = errors.fileHandleForReading.readDataToEndOfFile()
             process.waitUntilExit()
-            return (err, ())
+            return err
         }.value
 
-        running = nil
-        let reply = streamedReply
-        streamedReply = ""
         guard process.terminationStatus == 0 else {
             if process.terminationReason == .uncaughtSignal {
                 throw Failure.cancelled
@@ -466,4 +503,13 @@ final class CritiqueService: CritiqueAsking {
         }
         return reply
     }
+}
+
+/// What the CLI reader passes back from its own thread.
+private enum CritiqueStreamEvent: Sendable {
+    case progress(CritiqueProgress)
+    /// The CLI's `result`: the turn is over, with this exit code.
+    case finished(exitCode: Int, reply: String)
+    /// Its output has closed, said or not.
+    case closed(reply: String)
 }

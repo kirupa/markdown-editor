@@ -185,6 +185,27 @@ public struct CritiqueFinding: Equatable, Identifiable, Sendable, Codable {
         )
     }
 
+    /// The same note under another identity.
+    ///
+    /// A note shown while the report was still arriving is decoded a second
+    /// time when the report ends. Giving the second copy the first one's
+    /// identity is what keeps the card the author already pressed the same
+    /// card, instead of one that vanishes and is replaced by its twin.
+    public func identified(as id: UUID) -> CritiqueFinding {
+        CritiqueFinding(
+            id: id,
+            severity: severity,
+            category: category,
+            needsVerification: needsVerification,
+            location: location,
+            quote: quote,
+            why: why,
+            fix: fix,
+            direction: direction,
+            replacement: replacement
+        )
+    }
+
     /// What to show under "Why" — the advice, whichever form it came in.
     public var advice: String? {
         let candidates = [fix, direction]
@@ -395,7 +416,10 @@ public enum CritiqueReportDecoder {
         )
     }
 
-    private static func finding(from object: [String: Any]) -> CritiqueFinding? {
+    /// One finding, read from its object. Shared with `CritiqueFindingStream`
+    /// so a note shown while the report is arriving is read by the same rules
+    /// as the report it lands in.
+    static func finding(from object: [String: Any]) -> CritiqueFinding? {
         let quote = string(object["quote"]) ?? ""
         let why = string(object["why"]) ?? ""
         // A finding with neither a passage nor a reason has nothing to say and

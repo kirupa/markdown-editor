@@ -126,6 +126,16 @@ final class CritiqueModel: ObservableObject {
     @Published private(set) var isRunning = false
     /// What the critique is doing, while it is doing it.
     @Published private(set) var progress: CritiqueProgress?
+    /// The notes the run in progress has finished writing, on the rail before
+    /// the rest of the report is.
+    ///
+    /// Kept apart from `items` until the run lands: Stop and a failure both
+    /// leave the rail as it was before the run, and that is only simple to
+    /// promise if nothing of the run has been mixed into it.
+    @Published private(set) var arriving: [Item] = []
+    /// Every finding the run has streamed, repeats included, so the report
+    /// can give each one back its identity when it lands.
+    private var arrived: [CritiqueFinding] = []
     @Published private(set) var failure: CritiqueService.Failure?
     /// Which card is raised, and which highlight is drawn strongly.
     @Published var selectedFindingID: UUID?
@@ -410,9 +420,13 @@ final class CritiqueModel: ObservableObject {
         guard previous != text else { return }
         currentText = text
         if showsUnchangedNotice { showsUnchangedNotice = false }
-        guard !items.isEmpty,
+        guard !items.isEmpty || !arriving.isEmpty,
               let edit = CritiqueAnchorTracking.edit(from: previous, to: text)
         else { return }
+        if !arriving.isEmpty {
+            let early = arriving.map { Self.follow($0, through: edit, in: text) }
+            if early != arriving { arriving = early }
+        }
         var moved = items.map { Self.follow($0, through: edit, in: text) }
         // A second pass, so a note looking for its words again steers clear of
         // where every other note has already settled.
@@ -744,7 +758,7 @@ final class CritiqueModel: ObservableObject {
 
     func item(withID id: UUID?) -> Item? {
         guard let id else { return nil }
-        return items.first { $0.id == id }
+        return items.first { $0.id == id } ?? arriving.first { $0.id == id }
     }
 
     /// What pressing a note in the rail does.
@@ -802,7 +816,7 @@ final class CritiqueModel: ObservableObject {
     /// except while it is the note selected. That is the author mid-rewrite,
     /// and the shading is what shows them how far the passage still runs.
     var highlights: [(id: UUID, range: NSRange, severity: CritiqueSeverity)] {
-        items
+        (items + arriving)
             .filter {
                 $0.isOutstanding
                     || ($0.isEdited && $0.resolution == nil && $0.id == selectedFindingID)
@@ -911,6 +925,8 @@ final class CritiqueModel: ObservableObject {
         isRunning = true
         failure = nil
         progress = CritiqueProgress(stage: .starting)
+        arriving = []
+        arrived = []
         runNumber += 1
         let thisRun = runNumber
 
@@ -922,6 +938,9 @@ final class CritiqueModel: ObservableObject {
             focus = nil
         }
         let previous = CritiqueCarry.previousNotes(plan.asked.map(\.finding))
+        // What a new note must not repeat, for the same reason `land` drops
+        // repeats: a carried note said again in other words is not news.
+        let standing = plan.isCarried ? (plan.kept + plan.asked).map(\.finding) : []
         // Taken now: the author may correct the reader while this run is
         // out, and the critique has to be filed under the reader it was
         // actually written for.
@@ -937,8 +956,13 @@ final class CritiqueModel: ObservableObject {
                     brief: sent
                 ) { update in
                     Task { @MainActor [weak self] in
-                        guard let self, self.runNumber == thisRun else { return }
+                        // `isRunning` as well as the run number: the last
+                        // update can be queued behind the answer itself, and
+                        // taken after the landing it would put the early
+                        // notes back on the rail beside their landed copies.
+                        guard let self, self.runNumber == thisRun, self.isRunning else { return }
                         self.progress = update
+                        self.receive(update.findings, standing: standing)
                     }
                 }
                 guard self.runNumber == thisRun else { return }
@@ -962,6 +986,71 @@ final class CritiqueModel: ObservableObject {
         service.cancel()
         isRunning = false
         progress = nil
+        letGoOfArrivals()
+    }
+
+    /// Puts a run's early notes away when it does not land.
+    ///
+    /// Stop means the rail goes back to what it showed before the run, and
+    /// half a report is not a critique: no score, no summary and nothing in
+    /// the history to come back to.
+    private func letGoOfArrivals() {
+        if let selected = selectedFindingID, arriving.contains(where: { $0.id == selected }) {
+            selectedFindingID = nil
+        }
+        if let hovered = hoveredFindingID, arriving.contains(where: { $0.id == hovered }) {
+            hoveredFindingID = nil
+        }
+        arriving = []
+        arrived = []
+    }
+
+    /// Shows the notes the run has finished writing so far.
+    ///
+    /// Anchored against the draft as it is now — the author may be typing
+    /// while the critic writes — and ordered as the rail orders everything,
+    /// by where they are in the draft, so the order they arrive in is the
+    /// order they stay in when the run lands. A note the author has already
+    /// answered is not news and waits for the landing to be shown, answered.
+    private func receive(_ findings: [CritiqueFinding], standing: [CritiqueFinding]) {
+        guard findings.count > arrived.count else { return }
+        let new = findings[arrived.count...]
+        arrived.append(contentsOf: new)
+        var shown = arriving
+        var claimed = (items + arriving).compactMap(\.range)
+        for finding in new {
+            if !standing.isEmpty, CritiqueCarry.isRepeat(finding, of: standing) { continue }
+            guard resolutions.resolution(for: finding) == nil else { continue }
+            let range = CritiqueAnchoring.range(for: finding, in: currentText, avoiding: claimed)
+            if let range { claimed.append(range) }
+            shown.append(Item(
+                finding: finding,
+                range: range,
+                resolution: nil,
+                anchoredText: range.flatMap { Self.passage($0, in: currentText) }
+            ))
+        }
+        let ordered = Self.ordered(shown)
+        if ordered != arriving { arriving = ordered }
+    }
+
+    /// The report's findings under the identities they arrived with.
+    ///
+    /// The finished reply is decoded again, which gives every finding a new
+    /// identity. Matched back by what they say, the cards on the rail stay
+    /// the same cards: no flash as they are replaced, and a note pressed
+    /// while the run was out is still the note that is open.
+    static func keepingArrivalIDs(
+        _ findings: [CritiqueFinding],
+        arrived: [CritiqueFinding]
+    ) -> [CritiqueFinding] {
+        var unclaimed = arrived
+        return findings.map { finding in
+            guard let index = unclaimed.firstIndex(where: {
+                finding.identified(as: $0.id) == $0
+            }) else { return finding }
+            return unclaimed.remove(at: index)
+        }
     }
 
     func dismiss() {
@@ -1194,7 +1283,7 @@ final class CritiqueModel: ObservableObject {
         }
 
         var fresh: [Item] = []
-        for finding in answer.report.findings {
+        for finding in Self.keepingArrivalIDs(answer.report.findings, arrived: arrived) {
             if plan.isCarried, CritiqueCarry.isRepeat(finding, of: said) { continue }
             let range = CritiqueAnchoring.range(for: finding, in: text, avoiding: claimed)
             if let range { claimed.append(range) }
@@ -1248,10 +1337,17 @@ final class CritiqueModel: ObservableObject {
         isRunning = false
         progress = nil
         failure = nil
-        selectedFindingID = nil
-        // A new set of notes is a new pad. The pointer may well still be over
-        // the same patch of screen, but it is not over the note that was
-        // there a moment ago.
+        arriving = []
+        arrived = []
+        // A note pressed while the run was out — one of the old ones, or one
+        // that arrived early — stays open if it is still a note to act on.
+        // Anything else is a new pad.
+        if let selected = selectedFindingID,
+           !items.contains(where: { $0.id == selected && $0.isOutstanding }) {
+            selectedFindingID = nil
+        }
+        // The pointer may well still be over the same patch of screen, but
+        // the notes under it have moved.
         hoveredFindingID = nil
         if showsUnchangedNotice { showsUnchangedNotice = false }
         // Then on to the draft as it is now, the way any other edit goes.
@@ -1314,6 +1410,7 @@ final class CritiqueModel: ObservableObject {
         self.failure = failure
         isRunning = false
         progress = nil
+        letGoOfArrivals()
     }
 
     /// Puts away a failure the author has read.

@@ -733,6 +733,8 @@ struct CheckCritique {
         checkTheHistory()
         checkTheRailRenders()
         await checkStopAndFailureKeepTheCritique()
+        await checkNotesArriveAsTheyAreWritten()
+        await checkTheCLIIsReadAsItWrites()
         await checkRerunsCarryTheNotes()
         checkApplyingASuggestion()
         await checkTheBriefIsTheReader()
@@ -924,6 +926,9 @@ final class HeldCritique: CritiqueAsking {
     private(set) var lastFocus: String?
     /// Who the last request said the draft was for, if it said.
     private(set) var lastBrief: CritiqueBrief?
+    /// The last run's progress, kept after it is answered so an update can
+    /// be sent late on purpose.
+    private var reporting: ((CritiqueProgress) -> Void)?
     var isWaiting: Bool { waiting != nil }
 
     func critique(
@@ -937,10 +942,16 @@ final class HeldCritique: CritiqueAsking {
         lastPrevious = previous
         lastFocus = focus
         lastBrief = brief
+        reporting = onProgress
         return try await withCheckedThrowingContinuation { waiting = $0 }
     }
 
     func cancel() {}
+
+    /// Says how the run is going, as the CLI's stream would.
+    func report(_ progress: CritiqueProgress) {
+        reporting?(progress)
+    }
 
     func answer(_ report: CritiqueReport, verdicts: [String: CritiqueNoteVerdict] = [:]) {
         waiting?.resume(returning: CritiqueAnswer(report: report, verdicts: verdicts))
@@ -961,6 +972,449 @@ func settle(until condition: () -> Bool = { false }) async {
         if condition() { return }
         try? await Task.sleep(nanoseconds: 5_000_000)
     }
+}
+
+/// Notes on the rail as the critic writes them.
+///
+/// What it replaced, measured on a 52-second critique of a 467-word post:
+/// the first note was finished 37.6 seconds in, and the rail showed a stage
+/// bar and nothing else until 52.5. A re-run was worse — it took every note
+/// off the rail for the whole of it, which is the half minute somebody would
+/// most like to spend working through them. A held service stands in for the
+/// critic here, so the notes can be handed over one at a time.
+@MainActor
+func checkNotesArriveAsTheyAreWritten() async {
+    print("")
+    print("Notes that arrive as they are written")
+
+    let held = HeldCritique()
+    let model = CritiqueModel(service: held)
+    let rail = CritiqueSidebar(
+        critique: model, colorTheme: EditorColorTheme(color: .blue, mode: .light),
+        isStale: false, onRerun: {}, onRerunChanges: {}
+    )
+    let draft = """
+        # Shipping Faster
+
+        Our deploys take forty minutes because every test runs on every change.
+
+        Most teams never measure where that time goes, so they guess.
+
+        Caching the dependency install alone saved us twelve minutes a build.
+        """
+    let early = CritiqueFinding(
+        severity: .high, category: "Logic and credibility", location: "paragraph 1",
+        quote: "every test runs on every change", why: "Every test? Say which."
+    )
+    let late = CritiqueFinding(
+        severity: .medium, category: "Clarity and precision", location: "paragraph 2",
+        quote: "so they guess", why: "Who guesses, and at what?"
+    )
+    func words(_ id: UUID, in text: String) -> String? {
+        guard let range = model.item(withID: id)?.range,
+              NSMaxRange(range) <= (text as NSString).length
+        else { return nil }
+        return (text as NSString).substring(with: range)
+    }
+    // The sans hand, because a check that reads the rail back has to be
+    // able to read it; the handwritten faces are for people.
+    func drawnRail(_ name: String) -> String {
+        let storedHand = UserDefaults.standard.string(forKey: CritiqueHand.storageKey)
+        UserDefaults.standard.set(CritiqueHand.sans.rawValue, forKey: CritiqueHand.storageKey)
+        defer {
+            if let storedHand {
+                UserDefaults.standard.set(storedHand, forKey: CritiqueHand.storageKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: CritiqueHand.storageKey)
+            }
+        }
+        let host = NSHostingView(rootView: rail)
+        host.frame = NSRect(x: 0, y: 0, width: 340, height: 1400)
+        let window = NSWindow(
+            contentRect: host.frame, styleMask: [.borderless],
+            backing: .buffered, defer: false
+        )
+        window.contentView = host
+        window.orderBack(nil)
+        host.layoutSubtreeIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+        host.layoutSubtreeIfNeeded()
+        defer { window.orderOut(nil) }
+        if let path = ProcessInfo.processInfo.environment["MDE_ARRIVING_PNG"],
+           let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+            host.cacheDisplay(in: host.bounds, to: rep)
+            let file = path.replacingOccurrences(of: ".png", with: "-\(name).png")
+            try? rep.representation(using: .png, properties: [:])?
+                .write(to: URL(fileURLWithPath: file))
+            print("  wrote \(file)")
+        }
+        return readable(recognisedText(in: host).joined(separator: " "))
+    }
+
+    model.run(on: draft, documentURL: nil)
+    await settle { held.isWaiting }
+    check(
+        "a first run with nothing written yet keeps the whole panel",
+        rail.state == .running && model.items.isEmpty && model.arriving.isEmpty,
+        "state \(rail.state), \(model.arriving.count) arriving"
+    )
+
+    held.report(CritiqueProgress(stage: .writing, findingsSoFar: 1, findings: [late]))
+    await settle { !model.arriving.isEmpty }
+    check(
+        "a note is on the rail as soon as it is written",
+        model.arriving.map(\.id) == [late.id] && model.isRunning,
+        "\(model.arriving.count) arriving, running \(model.isRunning)"
+    )
+    check(
+        "anchored and shaded, so its passage can be found",
+        words(late.id, in: draft) == "so they guess"
+            && model.highlights.contains { $0.id == late.id },
+        "marks \"\(words(late.id, in: draft) ?? "nothing")\""
+    )
+    if let arrived = model.arriving.first { model.press(arrived) }
+    check(
+        "and pressed, which opens it",
+        model.selectedFindingID == late.id,
+        "selected \(String(describing: model.selectedFindingID))"
+    )
+
+    held.report(CritiqueProgress(stage: .writing, findingsSoFar: 2, findings: [late, early]))
+    await settle { model.arriving.count == 2 }
+    check(
+        "a later note about an earlier passage goes above it, where it will land",
+        model.arriving.map(\.id) == [early.id, late.id],
+        "order \(model.arriving.map(\.finding.quote))"
+    )
+    let first = drawnRail("first-run")
+    check(
+        "the rail draws the notes under the run's progress",
+        legible("Every test? Say which.", in: first)
+            && legible("Who guesses, and at what?", in: first)
+            && legible("Writing the notes", in: first)
+            && legible("2 new so far", in: first),
+        "read \"\(first.prefix(240))\""
+    )
+    // Answering half a report has nowhere to keep the answer if the run is
+    // stopped, so an early note is not answerable until the run lands.
+    model.setResolution(.dismissed, for: early.id)
+    check(
+        "an early note cannot be answered yet",
+        model.item(withID: early.id)?.resolution == nil,
+        "it is \(String(describing: model.item(withID: early.id)?.resolution))"
+    )
+
+    // The finished reply is decoded again, which gives every finding a new
+    // identity — and every card would be replaced by a copy of itself.
+    held.answer(CritiqueReport(
+        jobRead: "A post for developers.", overall: "Close.",
+        findings: [early.identified(as: UUID()), late.identified(as: UUID())]
+    ))
+    await settle { !model.isRunning }
+    check(
+        "the notes that arrived are the notes that land, not copies of them",
+        model.items.map(\.id) == [early.id, late.id] && model.arriving.isEmpty,
+        "landed \(model.items.map(\.id)), \(model.arriving.count) still arriving"
+    )
+    check(
+        "and the one open when the run finished is still open",
+        model.selectedFindingID == late.id,
+        "selected \(String(describing: model.selectedFindingID))"
+    )
+    held.report(CritiqueProgress(stage: .writing, findingsSoFar: 2, findings: [late, early]))
+    await settle()
+    check(
+        "an update queued behind the answer does not put the notes back",
+        model.arriving.isEmpty && model.items.count == 2 && model.progress == nil,
+        "\(model.arriving.count) arriving, progress \(String(describing: model.progress))"
+    )
+
+    model.setResolution(.completed, for: early.id)
+    model.run(on: draft, documentURL: nil)
+    await settle { held.isWaiting }
+    check(
+        "a re-run leaves the notes on the rail while it reads",
+        rail.state == .running && model.items.count == 2,
+        "state \(rail.state), \(model.items.count) notes"
+    )
+    let reread = drawnRail("rerun")
+    check(
+        "and draws them",
+        legible("Who guesses, and at what?", in: reread)
+            && legible("Starting up", in: reread),
+        "read \"\(reread.prefix(240))\""
+    )
+    let said = CritiqueFinding(
+        severity: .medium, category: "Clarity and precision", location: "paragraph 2",
+        quote: "so they guess", why: "Unclear who is guessing."
+    )
+    let new = CritiqueFinding(
+        severity: .low, category: "Evidence", location: "paragraph 3",
+        quote: "saved us twelve minutes a build", why: "Out of how many?"
+    )
+    held.report(CritiqueProgress(stage: .writing, findingsSoFar: 2, findings: [said, new]))
+    await settle { !model.arriving.isEmpty }
+    check(
+        "a new note joins them",
+        model.arriving.map(\.id) == [new.id],
+        "arriving \(model.arriving.map(\.finding.quote))"
+    )
+    check(
+        "and one the rail already holds is not said twice",
+        !model.arriving.contains { $0.id == said.id },
+        "the repeat is on the rail"
+    )
+    let joined = drawnRail("rerun-new")
+    check(
+        "under a heading that says it is new",
+        legible("new", in: joined) && legible("Out of how many?", in: joined)
+            && legible("Who guesses, and at what?", in: joined),
+        "read \"\(joined.prefix(240))\""
+    )
+    // The author keeps writing while the critic does.
+    let typed = "Updated. " + draft
+    model.noteCurrentText(typed)
+    check(
+        "an early note follows the text it is about",
+        words(new.id, in: typed) == "saved us twelve minutes a build",
+        "marks \"\(words(new.id, in: typed) ?? "nothing")\""
+    )
+    model.noteCurrentText(draft)
+
+    if let arrived = model.arriving.first { model.press(arrived) }
+    model.cancel()
+    check(
+        "Stop takes the early notes away with the run",
+        !model.isRunning && model.arriving.isEmpty && model.items.count == 2,
+        "running \(model.isRunning), \(model.arriving.count) arriving, "
+            + "\(model.items.count) notes"
+    )
+    check(
+        "and closes one that was open",
+        model.selectedFindingID == nil && !model.highlights.contains { $0.id == new.id },
+        "selected \(String(describing: model.selectedFindingID))"
+    )
+    check(
+        "the notes from before the run keep their answers",
+        model.item(withID: early.id)?.resolution == .completed,
+        "it is \(String(describing: model.item(withID: early.id)?.resolution))"
+    )
+    held.report(CritiqueProgress(stage: .writing, findingsSoFar: 3, findings: [said, new, early]))
+    held.answer(CritiqueReport(jobRead: "Late.", overall: "", findings: [new]))
+    await settle()
+    check(
+        "and what the stopped run says afterwards lands nowhere",
+        model.arriving.isEmpty && model.items.count == 2
+            && model.report?.jobRead == "A post for developers.",
+        "\(model.arriving.count) arriving, \(model.items.count) notes"
+    )
+
+    model.run(on: draft, documentURL: nil)
+    await settle { held.isWaiting }
+    held.report(CritiqueProgress(stage: .writing, findingsSoFar: 1, findings: [new]))
+    await settle { !model.arriving.isEmpty }
+    held.refuse(.providerUnreachable("The request timed out."))
+    await settle { !model.isRunning }
+    check(
+        "a run that fails takes its early notes with it",
+        model.failure != nil && model.arriving.isEmpty && model.items.count == 2,
+        "failure \(String(describing: model.failure)), \(model.arriving.count) arriving"
+    )
+    model.clearFailure()
+}
+
+/// The service reading a CLI that writes the way the real one does.
+///
+/// A script stands in for the CLI, first on the PATH, so the reading can be
+/// checked offline: the notes have to come out as they are written, the
+/// answer has to come back when the CLI says it is done rather than when it
+/// gets round to exiting — measured, most of a second later — and Stop has to
+/// stop the run it was pressed on, even when another has started since.
+@MainActor
+func checkTheCLIIsReadAsItWrites() async {
+    print("")
+    print("Reading the CLI as it writes")
+
+    let files = FileManager.default
+    let folder = files.temporaryDirectory
+        .appendingPathComponent("konvo-cli-\(UUID().uuidString)")
+    try? files.createDirectory(at: folder, withIntermediateDirectories: true)
+    let cli = folder.appendingPathComponent("copilot")
+    let plan = folder.appendingPathComponent("plan")
+    let arguments = folder.appendingPathComponent("arguments")
+    // `exec`, so Stop's signal reaches the process holding the pipe open.
+    // A child `sleep` outlives a terminated shell and keeps the output open
+    // until it finishes, which a real CLI does not do.
+    let script = """
+        #!/bin/bash
+        here="$(dirname "$0")"
+        printf '%s\\n' "$@" > "$here/arguments"
+        while IFS= read -r line; do
+          case "$line" in
+            PAUSE) sleep 0.3 ;;
+            HOLD) exec sleep 30 ;;
+            LINGER) exec sleep 4 ;;
+            REFUSE) echo "You are not signed in." >&2; exit 1 ;;
+            *) printf '%s\\n' "$line" ;;
+          esac
+        done < "$here/plan"
+        """
+    try? script.write(to: cli, atomically: true, encoding: .utf8)
+    try? files.setAttributes([.posixPermissions: 0o755], ofItemAtPath: cli.path)
+
+    func event(_ type: String, _ data: [String: Any] = [:]) -> String {
+        let object: [String: Any] = ["type": type, "data": data]
+        let json = try? JSONSerialization.data(withJSONObject: object)
+        return json.map { String(decoding: $0, as: UTF8.self) } ?? ""
+    }
+    func writing(_ text: String) -> String {
+        event("assistant.message_delta", ["deltaContent": text])
+    }
+    func write(_ steps: [String]) {
+        try? steps.joined(separator: "\n").appending("\n")
+            .write(to: plan, atomically: true, encoding: .utf8)
+    }
+    let one = #"{"severity":"high","category":"Logic","location":"paragraph 1","#
+        + #""quote":"every test runs on every change","why":"Every test? Say which."}"#
+    let two = #"{"severity":"low","category":"Evidence","location":"paragraph 3","#
+        + #""quote":"saved us twelve minutes a build","why":"Out of how many?"}"#
+    let opening = [
+        event("assistant.reasoning_delta", ["deltaContent": "Reading the opening. "]),
+        event("assistant.message_start"),
+        writing(#"{"jobRead":"A post.","overall":"Close.","findings":["# + one),
+    ]
+    let draft = String(
+        repeating: "Our deploys take forty minutes because every test runs on every change. ",
+        count: 4
+    )
+
+    let storedPath = ProcessInfo.processInfo.environment["PATH"] ?? ""
+    let storedProvider = UserDefaults.standard.string(forKey: CritiqueProvider.storageKey)
+    setenv("PATH", folder.path + ":" + storedPath, 1)
+    CritiqueCredentials.provider = .copilotCLI
+    defer {
+        setenv("PATH", storedPath, 1)
+        if let storedProvider {
+            UserDefaults.standard.set(storedProvider, forKey: CritiqueProvider.storageKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: CritiqueProvider.storageKey)
+        }
+        try? files.removeItem(at: folder)
+    }
+    guard CritiqueService.locateCLI()?.path == cli.path else {
+        check("the stand-in CLI is the one found", false, "found \(String(describing: CritiqueService.locateCLI()))")
+        return
+    }
+
+    func wait(_ seconds: Double = 5, until condition: () -> Bool) async {
+        let deadline = Date().addingTimeInterval(seconds)
+        while !condition(), Date() < deadline {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+    }
+    final class Seen { var counts: [Int] = [] }
+    func start(_ service: CritiqueService, _ seen: Seen) -> Task<Result<CritiqueAnswer, Error>, Never> {
+        Task { @MainActor in
+            do {
+                return .success(try await service.critique(document: draft) { update in
+                    seen.counts.append(update.findings.count)
+                })
+            } catch {
+                return .failure(error)
+            }
+        }
+    }
+
+    write(opening + [
+        "PAUSE", writing("," + two), "PAUSE", writing(#"],"keep":[]}"#),
+        #"{"type":"result","exitCode":0,"usage":{}}"#, "LINGER",
+    ])
+    let service = CritiqueService()
+    let seen = Seen()
+    let began = Date()
+    let answered = await start(service, seen).value
+    let took = Date().timeIntervalSince(began)
+    let report = try? answered.get().report
+    check(
+        "the stand-in's answer is read",
+        report?.findings.map(\.why) == ["Every test? Say which.", "Out of how many?"],
+        "\(answered)"
+    )
+    check(
+        "each note is handed over as it is finished, before the answer",
+        seen.counts.contains(1) && seen.counts.last == 2,
+        "the notes arrived as \(seen.counts)"
+    )
+    check(
+        "the answer comes back when the CLI says it is done, not when it exits",
+        took < 3,
+        String(format: "took %.1fs against a CLI that exits 4s after its answer", took)
+    )
+    let passed = (try? String(contentsOf: arguments, encoding: .utf8))?
+        .split(separator: "\n").map(String.init) ?? []
+    let fenced = passed.firstIndex(of: "--available-tools").map { index in
+        index + 1 < passed.count && passed[index + 1] == "konvo_no_tools"
+    } ?? false
+    check(
+        "it asks for a model with no tools at all",
+        fenced,
+        "the arguments were \(passed.filter { $0.hasPrefix("--") })"
+    )
+
+    write(opening + [#"{"type":"result","exitCode":1,"usage":{}}"#, "REFUSE"])
+    let refused = await start(CritiqueService(), Seen()).value
+    var failure: CritiqueService.Failure?
+    if case .failure(let error) = refused { failure = error as? CritiqueService.Failure }
+    check(
+        "a CLI that ends its turn in failure is reported, in its own words",
+        failure == .cliFailed(status: 1, message: "You are not signed in."),
+        "it said \(String(describing: failure))"
+    )
+
+    write(opening + ["HOLD"])
+    let stopping = CritiqueService()
+    let held = Seen()
+    let stopped = start(stopping, held)
+    await wait { held.counts.contains(1) }
+    let pressed = Date()
+    stopping.cancel()
+    var outcome: CritiqueService.Failure?
+    if case .failure(let error) = await stopped.value {
+        outcome = error as? CritiqueService.Failure
+    }
+    check(
+        "Stop ends a run that is part-way through its notes",
+        outcome == .cancelled && Date().timeIntervalSince(pressed) < 3,
+        "it ended with \(String(describing: outcome))"
+    )
+
+    // Stop, and a new run before the old one has wound down. The old run
+    // used to clear the new one's process as it finished, and the second
+    // Stop then had nothing to stop: the run went on for as long as the
+    // critic took.
+    let racing = CritiqueService()
+    let firstSeen = Seen()
+    let firstRun = start(racing, firstSeen)
+    await wait { firstSeen.counts.contains(1) }
+    racing.cancel()
+    let secondSeen = Seen()
+    let secondRun = start(racing, secondSeen)
+    await wait { secondSeen.counts.contains(1) }
+    _ = await firstRun.value
+    let pressedAgain = Date()
+    racing.cancel()
+    var second: CritiqueService.Failure?
+    if case .failure(let error) = await secondRun.value {
+        second = error as? CritiqueService.Failure
+    }
+    check(
+        "Stop still stops a run started while the last one was winding down",
+        second == .cancelled && Date().timeIntervalSince(pressedAgain) < 3,
+        String(
+            format: "it ended with %@ after %.1fs",
+            String(describing: second), Date().timeIntervalSince(pressedAgain)
+        )
+    )
 }
 
 /// What a re-run that does not finish does to the critique already there.
