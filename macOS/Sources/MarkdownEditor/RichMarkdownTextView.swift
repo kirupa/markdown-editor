@@ -1728,19 +1728,50 @@ final class RichMarkdownTextView: NSTextView {
         character == 0x20 || character == 0x09
     }
 
+    /// The boxes each highlight is drawn as, in `critiqueHighlights` order.
+    ///
+    /// The measured boxes, after neighbouring passages have given way to
+    /// each other (`CritiqueHighlightLayout`), so a check can assert on what
+    /// reaches the screen rather than on what was measured.
+    func critiqueHighlightBoxesAsDrawn() -> [[CGRect]] {
+        critiqueHighlightLayout().map(\.drawn)
+    }
+
+    private func critiqueHighlightLayout() -> [(measured: [CGRect], drawn: [CGRect])] {
+        let measured = critiqueHighlights.map {
+            critiqueHighlightBoxes(for: $0.range)
+        }
+        let drawn = CritiqueHighlightLayout.separated(
+            zip(critiqueHighlights, measured).map {
+                (range: $0.range, boxes: $1)
+            }
+        )
+        return Array(zip(measured, drawn))
+    }
+
     /// Shade the passages a critique points at, under the text.
     private func drawCritiqueHighlights(in rect: NSRect) {
         guard !critiqueHighlights.isEmpty else { return }
-        for highlight in critiqueHighlights {
-            let boxes = critiqueHighlightBoxes(for: highlight.range)
-            highlight.colour.setFill()
-            for box in boxes where box.intersects(rect) {
+        let layout = critiqueHighlightLayout()
+        for (highlight, boxes) in zip(critiqueHighlights, layout) {
+            // One shape per passage, not one fill per line. A passage's lines
+            // overlap by the air each is given, and filled a line at a time
+            // the overlap came out at twice the alpha — a stripe between every
+            // pair of lines, which read as the seam between two notes.
+            let shape = NSBezierPath()
+            shape.windingRule = .nonZero
+            for box in boxes.drawn where box.intersects(rect) {
                 // Rounded, but by no more than half the line height, so a mark
                 // on one line and a mark across three look like the same
                 // object rather than a pill and a rectangle.
                 let radius = min(5, box.height / 2)
-                NSBezierPath(roundedRect: box, xRadius: radius, yRadius: radius)
-                    .fill()
+                shape.append(
+                    NSBezierPath(roundedRect: box, xRadius: radius, yRadius: radius)
+                )
+            }
+            if !shape.isEmpty {
+                highlight.colour.setFill()
+                shape.fill()
             }
             // The open note's passage is ruled as well as washed. A wash on
             // its own is a difference of a few hundredths of an alpha under
@@ -1750,13 +1781,21 @@ final class RichMarkdownTextView: NSTextView {
             guard let rule = highlight.rule else { continue }
             rule.setFill()
             let thickness = CritiqueSeverity.selectionRuleThickness
-            for box in boxes {
+            for (measured, drawn) in zip(boxes.measured, boxes.drawn) {
                 // Square, while the wash it sits under is rounded: a rule that
                 // tapers at both ends stops looking like a rule.
+                //
+                // Under the measured line rather than the drawn box, so it sits
+                // the same distance below the words on every line — a box that
+                // gave way to a neighbour underneath is 2pt shorter, and a rule
+                // that followed it rose into the descenders on that line only.
+                // Across, it covers the ink and stops at the wash.
+                let left = max(measured.minX + 3, drawn.minX)
+                let right = min(measured.maxX - 3, drawn.maxX)
                 let under = NSRect(
-                    x: box.minX + 3,
-                    y: box.maxY - thickness,
-                    width: max(0, box.width - 6),
+                    x: left,
+                    y: measured.maxY - thickness,
+                    width: max(0, right - left),
                     height: thickness
                 )
                 guard under.width > 0, under.intersects(rect) else { continue }

@@ -273,6 +273,13 @@ enum Harness {
             "and no other passage is",
             rule(of: far, in: textView) == nil
         )
+        // The others step back rather than vanish: with every passage at
+        // one wash, the open one's neighbours read as more of it.
+        check(
+            "and every other passage steps back while it is open",
+            colour(of: far, in: textView)
+                == CritiqueSeverity.high.recededHighlight(on: .light)
+        )
 
         critique.endHover(middle.id)
         critique.selectedFindingID = nil
@@ -284,6 +291,10 @@ enum Harness {
         check(
             "and closing the note takes the rule away with it",
             rule(of: middle, in: textView) == nil
+        )
+        check(
+            "and brings the other passages back to rest",
+            colour(of: far, in: textView) == restingColour(for: far)
         )
 
         // Hovering does not rule a passage. The reader asked a question by

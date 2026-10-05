@@ -933,11 +933,67 @@ often enough to matter. Clearing unconditionally on departure turns the new
 highlight straight back off, which on screen is a flicker rather than a move.
 Clear only when the note being left is still the one holding the pointer.
 
-The state machine, the three washes and the rule are shared and testable:
-`Shared/Sources/MarkdownEditorUI/CritiqueHighlight.swift`, with
-`CritiqueHighlightTests.swift` asserting the ordering, the hue, that nine
-distinct washes come out of three severities in three states, and that the rule
-belongs to the open state alone.
+**While a note is open, every other passage steps back** to a fainter wash of
+its own colour, so on a page with a mark in every paragraph the open passage is
+the one that stands out. The order is selection, then hover, then receded, then
+rest: hovering another note still tints its passage, because "which passage is
+this?" has to be answerable with a note open as much as without. A port will be
+tempted to hide the other marks instead, and it is worse. A mark is how a reader
+finds a note from the draft, and a page shading only the open passage has lost
+the map of the others and the places to click with it. The receded wash has to
+stay visible: the faintest, a low note on white, measures ΔE 5.0 from the page
+and 3.3 from the resting wash it replaces, and the tests hold every severity in
+both modes to at least 4.6 and 3.
+
+**Two notes' marks never run together.** A mark is padded beyond its words —
+in the macOS build 3pt either side and 1pt above and below — and that padding
+made two neighbouring sentences overlap by 2pt, on a line and between lines, so
+their washes drew as one and nobody could tell which note owned which words.
+Where two passages' words are apart and their marks would touch, both give way
+to the midpoint and leave 2pt of page between them. A passage inside another,
+or two that share words, has no gap to leave and is drawn as it is. It is the
+padding that gives way, never the words.
+
+**A passage is filled once**, as one shape, not once per line. Its own lines
+overlap by the same padding, and a semi-transparent wash filled a line at a time
+comes out at twice the alpha where they meet — a stripe between every pair of
+lines that reads as the seam between two notes. The open note's rule follows the
+line as measured, not the mark as cut, so it sits the same distance under the
+words on every line.
+
+The state machine, the four washes, the rule and the separation are shared and
+testable: `Shared/Sources/MarkdownEditorUI/CritiqueHighlight.swift`, with
+`CritiqueHighlightTests.swift` asserting the ordering, the hue, that twelve
+distinct washes come out of three severities in four states, that the rule
+belongs to the open state alone, and that `CritiqueHighlightLayout.separated`
+leaves the gap between neighbours and only there.
+
+### A note names where it is
+
+The critic writes a location with every note, and it is not fit to show: the
+same paragraph was "Opening, paragraph 2" on one read and "Opening, paragraph
+1" on the next, because whether a title counts as a paragraph is a judgement
+the model makes afresh each time, and the label was fixed at the moment of the
+read, so a paragraph added above a note left it naming the one before. **The
+place under a note is worked out from where the note is anchored**, from the
+draft as it is now:
+
+- The section is the nearest heading above the passage, its markup taken out
+  and cut at a word past 32 characters, with an ellipsis. Before the first
+  heading it is **Opening**; a draft with no headings says only **Paragraph
+  2**.
+- A level-one heading on the draft's first line is the **Title**, not a
+  section, and does not count as a paragraph.
+- Paragraphs are always numbered. A list, quote or code block is numbered only
+  when its section has more than one.
+- Blocks are counted the way the editor draws the draft, not the way CommonMark
+  parses it, so the label agrees with the page.
+- A passage in front matter keeps the critic's label; there is nothing to count.
+
+The rules are `CritiqueOutline` and `CritiquePlace` in
+`Shared/Sources/MarkdownEditorCore/CritiquePlace.swift`, with
+`CritiquePlaceTests.swift` as the specification, including which edits can move
+a place and so are worth recounting for. The web build does not do this yet.
 
 ### Noticing that the file changed underneath the editor
 

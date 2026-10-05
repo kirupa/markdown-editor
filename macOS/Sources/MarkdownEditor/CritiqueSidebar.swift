@@ -2493,8 +2493,13 @@ struct CritiqueCard: View {
                 .font(CritiqueTypography.chrome(14))
                 .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
         } else if item.isAnchored {
-            if !finding.location.isEmpty {
-                Text(finding.location)
+            // Worked out from where the note is anchored, not the critic's
+            // label, which named the same paragraph differently from one run
+            // to the next. The critic's is only for a passage outside any
+            // block — in front matter — where there is nothing to count.
+            let place = item.place?.label ?? finding.location
+            if !place.isEmpty {
+                Text(place)
                     .font(CritiqueTypography.chrome(14))
                     .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                     .lineLimit(2)

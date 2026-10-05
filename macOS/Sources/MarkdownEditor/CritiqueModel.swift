@@ -43,6 +43,11 @@ final class CritiqueModel: ObservableObject {
         var isApplied = false
         /// A later critique was shown this note and found the problem gone.
         var isFixed = false
+        /// Where the passage sits in the draft, worked out from `range` rather
+        /// than copied from the critic (see `CritiquePlace`), and kept up as
+        /// the draft changes. Nil while the note has no passage, when the
+        /// critic's own words for where it is are the only clue left.
+        var place: CritiquePlace? = nil
 
         var id: UUID { finding.id }
         var isAnchored: Bool { range != nil }
@@ -486,7 +491,8 @@ final class CritiqueModel: ObservableObject {
               let edit = CritiqueAnchorTracking.edit(from: previous, to: text)
         else { return }
         if !arriving.isEmpty {
-            let early = arriving.map { Self.follow($0, through: edit, in: text) }
+            var early = arriving.map { Self.follow($0, through: edit, in: text) }
+            early = placing(early, after: arriving, through: edit, from: previous, to: text)
             if early != arriving { arriving = early }
         }
         var moved = items.map { Self.follow($0, through: edit, in: text) }
@@ -504,9 +510,59 @@ final class CritiqueModel: ObservableObject {
                 moved[index].isEdited = false
             }
         }
+        moved = placing(moved, after: items, through: edit, from: previous, to: text)
         // Assigned once, and only when something moved: every assignment is a
         // redraw of the rail, and this runs on every keystroke.
         if moved != items { items = moved }
+    }
+
+    /// The outline of the draft the places were last worked out in.
+    private var outlineCache: (text: String, outline: CritiqueOutline)?
+
+    private func outline(of text: String) -> CritiqueOutline {
+        if let cache = outlineCache, cache.text == text { return cache.outline }
+        let outline = CritiqueOutline(text)
+        outlineCache = (text, outline)
+        return outline
+    }
+
+    private static func placed(_ items: [Item], in outline: CritiqueOutline) -> [Item] {
+        items.map { item in
+            var item = item
+            item.place = item.range.flatMap(outline.place(of:))
+            return item
+        }
+    }
+
+    /// Notes carried through an edit, named for where they now are.
+    ///
+    /// Typing inside a paragraph — nearly every keystroke — slides every
+    /// block after it by the same amount as every note, so no note's place
+    /// changes and the draft is not read again. Only an edit that changes the
+    /// draft's shape re-reads it; otherwise only a note the edit took
+    /// somewhere new, found again or matched to its suggestion, is placed
+    /// afresh.
+    private func placing(
+        _ moved: [Item],
+        after before: [Item],
+        through edit: CritiqueAnchorTracking.Edit,
+        from previous: String,
+        to text: String
+    ) -> [Item] {
+        if CritiqueOutline.mayMovePlaces(from: previous, to: text, through: edit) {
+            return Self.placed(moved, in: outline(of: text))
+        }
+        var moved = moved
+        for index in moved.indices {
+            guard let range = moved[index].range else {
+                moved[index].place = nil
+                continue
+            }
+            let slid = before[index].range.flatMap { CritiqueAnchorTracking.adjust($0, for: edit) }
+            if range == slid, moved[index].place != nil { continue }
+            moved[index].place = outline(of: text).place(of: range)
+        }
+        return moved
     }
 
     /// One note carried through one edit.
@@ -744,6 +800,7 @@ final class CritiqueModel: ObservableObject {
         // rather than done again — applying it would repeat its words.
         if let inPlace = Self.appliedSuggestion(of: finding, quotedAt: range, in: currentText) {
             items[index].range = inPlace
+            items[index].place = outline(of: currentText).place(of: inPlace)
             items[index].isEdited = true
             items[index].isApplied = true
             if showsUnchangedNotice { showsUnchangedNotice = false }
@@ -804,6 +861,7 @@ final class CritiqueModel: ObservableObject {
         guard let index = items.firstIndex(where: { $0.id == id }) else { return }
         var item = items[index]
         item.range = NSRange(location: range.location, length: (words as NSString).length)
+        item.place = item.range.flatMap(outline(of: text).place(of:))
         item.isEdited = words != item.anchoredText
         item.isApplied = item.isEdited && words == item.finding.replacement
         if item != items[index] { items[index] = item }
@@ -1216,7 +1274,7 @@ final class CritiqueModel: ObservableObject {
                 anchoredText: range.flatMap { Self.passage($0, in: currentText) }
             ))
         }
-        let ordered = Self.ordered(shown)
+        let ordered = Self.ordered(Self.placed(shown, in: outline(of: currentText)))
         if ordered != arriving { arriving = ordered }
     }
 
@@ -1316,7 +1374,7 @@ final class CritiqueModel: ObservableObject {
             Item(finding: $0, range: nil, resolution: nil, isFixed: true)
         }
         report = revision.report
-        items = Self.ordered(shown)
+        items = Self.ordered(Self.placed(shown, in: outline(of: currentText)))
         criticisedText = revision.documentText
         selectedFindingID = nil
         hoveredFindingID = nil
@@ -1530,7 +1588,7 @@ final class CritiqueModel: ObservableObject {
         }
         shownRevisionID = nil
         report = stored
-        items = Self.ordered(standing + fixed)
+        items = Self.ordered(Self.placed(standing + fixed, in: outline(of: text)))
         criticisedText = text
         lastChange = plan.isCarried
             ? CritiqueCarry.Delta(

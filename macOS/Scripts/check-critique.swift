@@ -353,6 +353,288 @@ func checkHighlightsAndClicking() {
     )
 }
 
+/// Notes about neighbouring words stay two marks.
+///
+/// Each box is given a little air past its glyphs, and measured in a 700pt
+/// column that air is exactly what joined neighbours: "Caching is important."
+/// and the sentence after it overlapped by 2pt in the space between them, and
+/// a passage's last line overlapped the start of the next. A passage's own
+/// lines overlapped each other too, and filled one at a time that left a
+/// stripe of double strength between every pair of lines — which read as the
+/// seam between two notes, in a passage that was one.
+@MainActor
+func checkNeighbouringNotesStayApart() {
+    print("")
+    print("Keeping neighbouring notes apart")
+
+    let source = """
+        # Understanding Caching
+
+        Caching is important. The cache stores data for later reads, and a \
+        passage this long has to wrap onto several lines so the shading can be \
+        measured on a line it covers completely, which is the case that used \
+        to run the full width of the page. Studies show it helps.
+        """
+    let styled = NSMutableAttributedString(
+        attributedString: RichMarkdownStyler.attributedString(
+            for: MarkdownRenderer.render(source),
+            documentURL: nil,
+            colorTheme: EditorColorTheme(color: .blue, mode: .light)
+        )
+    )
+    // Drawn without its letters, so a sample lands on the wash rather than
+    // on whichever glyph happens to be there. Colour does not move a glyph.
+    styled.addAttribute(
+        .foregroundColor, value: NSColor.clear,
+        range: NSRange(location: 0, length: styled.length)
+    )
+
+    let frame = NSRect(x: 0, y: 0, width: 700, height: 300)
+    let view = RichMarkdownTextView(frame: frame)
+    view.textContainerInset = NSSize(width: 24, height: 20)
+    view.textContainer?.containerSize = NSSize(
+        width: frame.width - 48, height: .greatestFiniteMagnitude
+    )
+    view.textContainer?.widthTracksTextView = true
+    view.isVerticallyResizable = true
+    view.drawsBackground = true
+    view.backgroundColor = .white
+    view.textStorage?.setAttributedString(styled)
+    let window = NSWindow(
+        contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false
+    )
+    window.contentView = view
+    view.layoutManager?.ensureLayout(for: view.textContainer!)
+
+    // All one severity, which is the worst case: the same colour either side
+    // of the join is what made two notes read as one.
+    let text = view.string as NSString
+    let quotes = [
+        "Caching is important.",
+        "The cache stores data for later reads, and a passage this long has to "
+            + "wrap onto several lines so the shading can be measured on a line "
+            + "it covers completely, which is the case that used to run the full "
+            + "width of the page.",
+        "Studies show it helps.",
+    ]
+    let wash = CritiqueSeverity.medium.highlight(on: .light)
+    view.critiqueHighlights = quotes.map {
+        .init(id: UUID(), range: text.range(of: $0), colour: wash)
+    }
+    guard view.critiqueHighlights.allSatisfy({ $0.range.location != NSNotFound })
+    else {
+        check("the three passages are in the rendered draft", false)
+        return
+    }
+    let measured = view.critiqueHighlights.map {
+        view.critiqueHighlightBoxes(for: $0.range)
+    }
+    let drawn = view.critiqueHighlightBoxesAsDrawn()
+
+    func overlaps(_ one: CGRect, _ other: CGRect) -> Bool {
+        let shared = one.intersection(other)
+        return !shared.isNull && shared.width > 0.01 && shared.height > 0.01
+    }
+    func anyOverlap(_ one: [CGRect], _ other: [CGRect]) -> Bool {
+        one.contains { box in other.contains { overlaps(box, $0) } }
+    }
+
+    // The case being tested, actually set up. If a change of font or column
+    // ever stops these measuring as overlapping, everything below passes
+    // without having tested anything.
+    check(
+        "the passages measure as overlapping their neighbours, which is the case",
+        anyOverlap(measured[0], measured[1]) && anyOverlap(measured[1], measured[2])
+            && measured[1].count >= 3,
+        "measured \(measured.map(\.count)) boxes"
+    )
+    check(
+        "but no note's mark is drawn over another's",
+        !anyOverlap(drawn[0], drawn[1]) && !anyOverlap(drawn[1], drawn[2])
+            && !anyOverlap(drawn[0], drawn[2])
+    )
+    if let first = drawn[0].first, let second = drawn[1].first {
+        let gap = second.minX - first.maxX
+        check(
+            "two sentences on one line have a gap between their marks",
+            gap >= 1.5,
+            String(format: "%.1fpt apart", gap)
+        )
+    }
+    let own = drawn[1]
+    check(
+        "while a note's own lines still meet, so it is one mark",
+        zip(own, own.dropFirst()).allSatisfy { $0.maxY >= $1.minY - 0.01 },
+        own.map { String(format: "%.0f–%.0f", $0.minY, $0.maxY) }
+            .joined(separator: ", ")
+    )
+    let cutIntoWords = zip(measured.joined(), drawn.joined()).filter {
+        let ink = $0.insetBy(dx: 3, dy: 1)
+        return $1.minX > ink.minX + 0.01 || $1.maxX < ink.maxX - 0.01
+    }
+    check(
+        "and giving way never trims a mark into its own words",
+        cutIntoWords.isEmpty,
+        "\(cutIntoWords.count) boxes cut short"
+    )
+
+    // What actually reaches the page.
+    guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
+        check("the page can be drawn", false)
+        return
+    }
+    view.cacheDisplay(in: view.bounds, to: rep)
+    let scale = CGFloat(rep.pixelsWide) / view.bounds.width
+    func colour(at point: CGPoint) -> NSColor? {
+        rep.colorAt(x: Int(point.x * scale), y: Int(point.y * scale))?
+            .usingColorSpace(.sRGB)
+    }
+    func difference(_ one: NSColor?, _ other: NSColor?) -> CGFloat {
+        guard let one, let other else { return .infinity }
+        return max(
+            abs(one.redComponent - other.redComponent),
+            abs(one.greenComponent - other.greenComponent),
+            abs(one.blueComponent - other.blueComponent)
+        )
+    }
+    let page = NSColor.white.usingColorSpace(.sRGB)
+
+    // Where the long passage's first two lines overlap, against the middle
+    // of its first line: one wash, so one colour. Filled a line at a time,
+    // the overlap was about twice as dark.
+    let (line1, line2) = (measured[1][0], measured[1][1])
+    let across = (max(line1.minX, line2.minX) + min(line1.maxX, line2.maxX)) / 2
+    let seam = colour(at: CGPoint(x: across, y: (line1.maxY + line2.minY) / 2))
+    let body = colour(at: CGPoint(x: across, y: line1.midY))
+    check(
+        "a passage's lines are washed once where they meet, with no stripe",
+        difference(seam, body) <= 3.0 / 255 && difference(body, page) > 0.02,
+        String(format: "the seam differs from the line by %.0f/255",
+               difference(seam, body) * 255)
+    )
+    // And the gaps are drawn, not only computed.
+    if let first = drawn[0].first, let second = drawn[1].first {
+        let between = colour(
+            at: CGPoint(x: (first.maxX + second.minX) / 2, y: first.midY)
+        )
+        check(
+            "the gap between two sentences shows the page",
+            difference(between, page) <= 2.0 / 255,
+            String(format: "it is %.0f/255 off white", difference(between, page) * 255)
+        )
+    }
+    if let last = drawn[1].last, let next = drawn[2].first,
+       let above = drawn[1].dropLast().last {
+        // Under the long passage's second-to-last line, over the third note.
+        let x = (max(above.minX, next.minX) + min(above.maxX, next.maxX)) / 2
+        let between = colour(at: CGPoint(x: x, y: (above.maxY + next.minY) / 2))
+        check(
+            "and so does the gap between a line and the note starting under it",
+            difference(between, page) <= 2.0 / 255 && next.minY > above.maxY,
+            String(
+                format: "it is %.0f/255 off white; the last line runs to %.0f",
+                difference(between, page) * 255, last.maxX
+            )
+        )
+    }
+}
+
+/// The place on a note is the draft's, not the critic's.
+///
+/// The critic writes a location with every finding, and the rail used to
+/// print it as written — which was not the same twice: one paragraph was
+/// "Opening, paragraph 2" on one read and "paragraph 1" on the next, and a
+/// paragraph added above it left the label naming the one before.
+@MainActor
+func checkNotesNameTheirPlace() {
+    print("")
+    print("Naming where each note is")
+
+    let draft = """
+        # Understanding Caching
+
+        Caching is important because the cache stores data for later reads.
+
+        ## Why it matters
+
+        Pages feel slow when every read goes to the database.
+
+        Studies show that caching improves performance by 90%.
+        """
+    let opening = "the cache stores data"
+    let cited = "Studies show that caching improves performance by 90%."
+    func report(_ locations: (String, String)) -> CritiqueReport {
+        CritiqueReport(jobRead: "", overall: "", findings: [
+            CritiqueFinding(
+                severity: .low, category: "Clarity and precision",
+                location: locations.0, quote: opening, why: "Vague."
+            ),
+            CritiqueFinding(
+                severity: .high, category: "Logic and credibility",
+                location: locations.1, quote: cited, why: "No citation."
+            ),
+        ])
+    }
+    func place(of quote: String, in model: CritiqueModel) -> String {
+        model.items.first { $0.finding.quote == quote }?.place?.label ?? "nothing"
+    }
+
+    let model = CritiqueModel()
+    model.attach(to: nil, text: draft)
+    // Both of these are what the critic actually wrote on one read or another.
+    model.applyForChecking(report(("Opening, paragraph 2", "paragraph 4")), for: draft)
+    check(
+        "a note is named from the draft, without counting the title",
+        place(of: opening, in: model) == "Opening · paragraph 1",
+        "it reads \"\(place(of: opening, in: model))\""
+    )
+    check(
+        "and a note under a heading is named for its section",
+        place(of: cited, in: model) == "Why it matters · paragraph 2",
+        "it reads \"\(place(of: cited, in: model))\""
+    )
+
+    let again = CritiqueModel()
+    again.attach(to: nil, text: draft)
+    again.applyForChecking(report(("paragraph 1", "Section 2, paragraph 3")), for: draft)
+    check(
+        "a second read that counts differently names the same places",
+        place(of: opening, in: again) == place(of: opening, in: model)
+            && place(of: cited, in: again) == place(of: cited, in: model),
+        "it reads \"\(place(of: opening, in: again))\" and \"\(place(of: cited, in: again))\""
+    )
+
+    let typed = draft.replacingOccurrences(
+        of: "Pages feel slow", with: "Pages feel very slow"
+    )
+    model.noteCurrentText(typed)
+    check(
+        "typing inside a paragraph leaves every place as it was",
+        place(of: opening, in: model) == "Opening · paragraph 1"
+            && place(of: cited, in: model) == "Why it matters · paragraph 2"
+    )
+
+    let added = typed.replacingOccurrences(
+        of: "## Why it matters\n\n", with: "## Why it matters\n\nA new first paragraph.\n\n"
+    )
+    model.noteCurrentText(added)
+    check(
+        "a paragraph added above a note renames it",
+        place(of: cited, in: model) == "Why it matters · paragraph 3",
+        "it reads \"\(place(of: cited, in: model))\""
+    )
+
+    let renamed = added.replacingOccurrences(
+        of: "## Why it matters", with: "## What it costs"
+    )
+    model.noteCurrentText(renamed)
+    check(
+        "and renaming its section renames the note",
+        place(of: cited, in: model) == "What it costs · paragraph 3",
+        "it reads \"\(place(of: cited, in: model))\""
+    )
+}
+
 /// Load the fonts the app bundles, so this measures what the app draws.
 @MainActor
 func registerBundledFonts() {
@@ -730,6 +1012,8 @@ struct CheckCritique {
         checkTheScoreIsLegible()
         checkEveryColourIsLegible()
         checkHighlightsAndClicking()
+        checkNeighbouringNotesStayApart()
+        checkNotesNameTheirPlace()
         checkTheHistory()
         checkTheRailRenders()
         await checkStopAndFailureKeepTheCritique()
