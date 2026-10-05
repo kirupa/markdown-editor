@@ -237,6 +237,20 @@ final class MarkdownEditorSession: ObservableObject {
         return text
     }
 
+    /// Makes a change the critique rail asks for. See `replaceSourceText`.
+    ///
+    /// One place for the rail's buttons and the Critique menu's keys to go
+    /// through, so Apply from either is the same single change Undo takes
+    /// back.
+    func replace(_ swap: CritiqueModel.Swap) -> String? {
+        replaceSourceText(
+            in: swap.range,
+            expecting: swap.expected,
+            with: swap.replacement,
+            actionName: swap.name
+        )
+    }
+
     /// Keep what is on screen and let it overwrite the file.
     func keepMyVersion() {
         externalChange.resolveByKeepingMine()

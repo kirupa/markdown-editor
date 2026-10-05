@@ -142,6 +142,31 @@ final class CritiqueModel: ObservableObject {
     @Published private(set) var failure: CritiqueService.Failure?
     /// Which card is raised, and which highlight is drawn strongly.
     @Published var selectedFindingID: UUID?
+    /// The one severity the rail and the draft are showing, or nil for all.
+    ///
+    /// A way of looking, not a decision: nothing is answered by it and the
+    /// score still counts every note. The shading in the draft follows it as
+    /// well as the rail, because a passage left shaded with its card filtered
+    /// away is a highlight that opens nothing anybody can see.
+    ///
+    /// Back to all whenever a different critique comes on screen or a run
+    /// starts. The running rail has no strip to clear it from, and a filter
+    /// nobody can see the switch for reads as notes gone missing.
+    @Published var severityFilter: CritiqueSeverity? {
+        didSet {
+            guard let severityFilter, severityFilter != oldValue else { return }
+            // Hidden, the open note would be a raised card nobody can see —
+            // and the keyboard's Done would answer it unseen.
+            if let selected = item(withID: selectedFindingID),
+               selected.finding.severity != severityFilter {
+                selectedFindingID = nil
+            }
+            if let hovered = item(withID: hoveredFindingID),
+               hovered.finding.severity != severityFilter {
+                hoveredFindingID = nil
+            }
+        }
+    }
     /// Which card the pointer is over, so its passage can answer.
     ///
     /// Kept here rather than in each card's own `@State` because the thing
@@ -377,6 +402,7 @@ final class CritiqueModel: ObservableObject {
         showsUnchangedNotice = false
         selectedFindingID = nil
         hoveredFindingID = nil
+        severityFilter = nil
         // Opening a document with a saved critique shows it, rather than an
         // empty panel beside a history badge saying two exist. It is anchored
         // against the draft as it is now, so it is immediately honest about
@@ -831,6 +857,106 @@ final class CritiqueModel: ObservableObject {
         revealRequests += 1
     }
 
+    /// Whether the severity filter lets a note through.
+    func matchesFilter(_ item: Item) -> Bool {
+        severityFilter.map { item.finding.severity == $0 } ?? true
+    }
+
+    /// The notes Next and Previous walk through: the ones still asking for
+    /// something that the filter shows, in the order their passages come in
+    /// the draft.
+    ///
+    /// The draft's order rather than the rail's. The two only part while a run
+    /// is out, when its new notes sit above the old ones; somebody stepping
+    /// through is reading the draft, and a Next that jumped back up the page
+    /// to reach a new note would lose their place in it. A note with no
+    /// passage comes last, as it does on the rail.
+    var steppableNotes: [Item] {
+        (items + arriving)
+            .enumerated()
+            .filter { $0.element.isOutstanding && matchesFilter($0.element) }
+            .sorted {
+                let left = $0.element.range?.location ?? Int.max
+                let right = $1.element.range?.location ?? Int.max
+                return left == right ? $0.offset < $1.offset : left < right
+            }
+            .map(\.element)
+    }
+
+    var canStepNotes: Bool { !steppableNotes.isEmpty }
+
+    /// The open note can be marked Done or dismissed: it is still asking for
+    /// something, and it is part of a critique that has landed. The same
+    /// notes the stamps are drawn on, so the keys never answer a note the
+    /// pointer could not.
+    var canAnswerSelected: Bool {
+        guard let id = selectedFindingID,
+              let item = items.first(where: { $0.id == id })
+        else { return false }
+        return item.isOutstanding
+    }
+
+    /// The open note has a suggestion that can be put in place.
+    var canApplySelected: Bool {
+        guard canAnswerSelected, let id = selectedFindingID else { return false }
+        return items.first { $0.id == id }?.suggestion != nil
+    }
+
+    /// Opens the next note still to be answered and takes the reader to its
+    /// passage. See `selectPrevious` for the way back.
+    ///
+    /// From the open note when it is one of them; from where its passage is
+    /// when it is not, because a note being rewritten has stopped asking and
+    /// Next from it should carry on down the draft rather than start at the
+    /// top. With nothing open, Next starts at the top and Previous at the
+    /// bottom. Both wrap, so the notes skipped on the way down come round
+    /// again.
+    ///
+    /// Brings a closed rail back: the key asks to see a note, and selecting
+    /// one behind a closed rail would show nothing at all.
+    func selectNext() { step(by: 1) }
+
+    func selectPrevious() { step(by: -1) }
+
+    private func step(by offset: Int) {
+        guard let target = neighbour(of: selectedFindingID, by: offset, in: steppableNotes)
+        else { return }
+        if isDismissed { isDismissed = false }
+        reveal(target.id)
+    }
+
+    /// Marks the open note Done or dismisses it from the keyboard, and opens
+    /// the next one.
+    ///
+    /// Moving on is what the stamp does not do. A click answers the note under
+    /// the pointer and the next is right there below it; from the keyboard
+    /// nothing is under anything, and a Done that left nothing open would ask
+    /// for a Next after every answer.
+    func answerSelected(_ resolution: CritiqueResolution) {
+        guard canAnswerSelected, let id = selectedFindingID else { return }
+        // Worked out first, while the note still has its place in the order.
+        var next = neighbour(of: id, by: 1, in: steppableNotes)
+        if next?.id == id { next = nil }
+        setResolution(resolution, for: id)
+        if let next { reveal(next.id) }
+    }
+
+    private func neighbour(of id: UUID?, by offset: Int, in notes: [Item]) -> Item? {
+        guard !notes.isEmpty else { return nil }
+        if let id, let index = notes.firstIndex(where: { $0.id == id }) {
+            return notes[(index + offset % notes.count + notes.count) % notes.count]
+        }
+        if let id, let location = item(withID: id)?.range?.location {
+            if offset > 0 {
+                return notes.first { ($0.range?.location ?? Int.max) >= location }
+                    ?? notes.first
+            }
+            return notes.last { ($0.range?.location ?? Int.max) < location }
+                ?? notes.last
+        }
+        return offset > 0 ? notes.first : notes.last
+    }
+
     /// Note that the pointer has arrived over a finding's card.
     func hover(_ id: UUID) {
         hoveredFindingID = id
@@ -857,8 +983,9 @@ final class CritiqueModel: ObservableObject {
     var highlights: [(id: UUID, range: NSRange, severity: CritiqueSeverity)] {
         (items + arriving)
             .filter {
-                $0.isOutstanding
-                    || ($0.isEdited && $0.resolution == nil && $0.id == selectedFindingID)
+                ($0.isOutstanding
+                    || ($0.isEdited && $0.resolution == nil && $0.id == selectedFindingID))
+                    && matchesFilter($0)
             }
             .compactMap { item in
                 item.range.map { (item.id, $0, item.finding.severity) }
@@ -980,6 +1107,7 @@ final class CritiqueModel: ObservableObject {
         if shownRevisionID != nil { show(revision: nil) }
         isRunning = true
         runningDepth = depth
+        severityFilter = nil
         failure = nil
         progress = CritiqueProgress(stage: .starting)
         arriving = []
@@ -1192,6 +1320,7 @@ final class CritiqueModel: ObservableObject {
         criticisedText = revision.documentText
         selectedFindingID = nil
         hoveredFindingID = nil
+        severityFilter = nil
         lastChange = nil
         if showsUnchangedNotice { showsUnchangedNotice = false }
     }

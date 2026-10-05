@@ -310,9 +310,10 @@ function menuDefinitions(commands, state) {
         },
         separator,
         {
-          // ⌃⌘C, matching the macOS build's Markdown ▸ AI Assisted Critique.
-          // There is no Markdown menu here, and adding one for a single item
-          // would be a menu that exists to hold a shortcut.
+          // ⌃⌘C, matching the macOS build's Critique ▸ AI Assisted Critique.
+          // There is no Critique menu here: the macOS one is there for the
+          // keys that work through the notes, which this build does not have,
+          // and without them it would be a menu that exists to hold a shortcut.
           title: 'AI Assisted Critique',
           shortcut: { command: true, control: true, key: 'c' },
           action: commands.critique,

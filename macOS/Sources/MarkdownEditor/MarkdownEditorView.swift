@@ -233,6 +233,10 @@ struct MarkdownEditorView: View {
         .toolbarBackground(.visible, for: .windowToolbar)
         .focusedSceneValue(\.runCritique, startCritique)
         .focusedSceneValue(\.runQuickCritique, startQuickCritique)
+        // The whole model rather than a closure per command: the Critique
+        // menu asks it what is open and what can be answered, and has to be
+        // redrawn when those change, which a closure cannot say.
+        .focusedSceneObject(critique)
         .onAppear {
             if let fileURL {
                 RecentDocumentsModel.shared.record(fileURL)
@@ -578,14 +582,7 @@ struct ResizableRichTextPreview: View {
                                 on: text, documentURL: documentURL, depth: .quick
                             )
                         },
-                        replaceText: { swap in
-                            session.replaceSourceText(
-                                in: swap.range,
-                                expecting: swap.expected,
-                                with: swap.replacement,
-                                actionName: swap.name
-                            )
-                        },
+                        replaceText: { swap in session.replace(swap) },
                         returnToDraft: { session.focusEditor() }
                     )
                     // A fixed width, docked against the document.
