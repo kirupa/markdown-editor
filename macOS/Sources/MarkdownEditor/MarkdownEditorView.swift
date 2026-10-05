@@ -232,6 +232,7 @@ struct MarkdownEditorView: View {
         )
         .toolbarBackground(.visible, for: .windowToolbar)
         .focusedSceneValue(\.runCritique, startCritique)
+        .focusedSceneValue(\.runQuickCritique, startQuickCritique)
         .onAppear {
             if let fileURL {
                 RecentDocumentsModel.shared.record(fileURL)
@@ -354,6 +355,17 @@ struct MarkdownEditorView: View {
         // otherwise, and nothing at all when nothing has changed. `request`
         // decides, so the three cannot drift apart.
         critique.request(on: document.text, documentURL: fileURL)
+    }
+
+    /// Start a quick pass: typos and serious problems, over the whole draft.
+    ///
+    /// Not routed through the closed-rail rule above. Somebody who asks for a
+    /// quick pass has said which critique they want, and a saved full one is
+    /// not it; `request` still declines one of a draft a critique on file has
+    /// already read as it stands.
+    private func startQuickCritique() {
+        guard !critique.isRunning else { return }
+        critique.request(on: document.text, documentURL: fileURL, depth: .quick)
     }
 
     private func clampedExplorerWidth(
@@ -560,6 +572,11 @@ struct ResizableRichTextPreview: View {
                         },
                         onRerunChanges: {
                             critique.request(on: text, documentURL: documentURL)
+                        },
+                        onQuickPass: {
+                            critique.request(
+                                on: text, documentURL: documentURL, depth: .quick
+                            )
                         },
                         replaceText: { swap in
                             session.replaceSourceText(

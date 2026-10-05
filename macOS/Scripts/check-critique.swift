@@ -735,6 +735,7 @@ struct CheckCritique {
         await checkStopAndFailureKeepTheCritique()
         await checkNotesArriveAsTheyAreWritten()
         await checkTheCLIIsReadAsItWrites()
+        await checkAQuickPass()
         await checkRerunsCarryTheNotes()
         checkApplyingASuggestion()
         await checkTheBriefIsTheReader()
@@ -926,6 +927,8 @@ final class HeldCritique: CritiqueAsking {
     private(set) var lastFocus: String?
     /// Who the last request said the draft was for, if it said.
     private(set) var lastBrief: CritiqueBrief?
+    /// Whether the last request was a full critique or a quick pass.
+    private(set) var lastDepth: CritiqueDepth?
     /// The last run's progress, kept after it is answered so an update can
     /// be sent late on purpose.
     private var reporting: ((CritiqueProgress) -> Void)?
@@ -936,12 +939,14 @@ final class HeldCritique: CritiqueAsking {
         focus: String?,
         previous: [CritiquePreviousNote],
         brief: CritiqueBrief?,
+        depth: CritiqueDepth,
         onProgress: @escaping (CritiqueProgress) -> Void
     ) async throws -> CritiqueAnswer {
         asked += 1
         lastPrevious = previous
         lastFocus = focus
         lastBrief = brief
+        lastDepth = depth
         reporting = onProgress
         return try await withCheckedThrowingContinuation { waiting = $0 }
     }
@@ -1360,6 +1365,29 @@ func checkTheCLIIsReadAsItWrites() async {
         fenced,
         "the arguments were \(passed.filter { $0.hasPrefix("--") })"
     )
+    check(
+        "a full critique leaves the model to think as hard as it would",
+        !passed.contains("--reasoning-effort"),
+        "the arguments were \(passed.filter { $0.hasPrefix("--") })"
+    )
+
+    // Most of what makes a quick pass quick is this flag, and nothing on
+    // the rail shows whether it was sent: a pass that lost it would still
+    // say QUICK PASS, and take as long as the full critique.
+    write(opening + [writing(#"],"keep":[]}"#), #"{"type":"result","exitCode":0,"usage":{}}"#])
+    let quickly = await Task { @MainActor in
+        try? await CritiqueService().critique(document: draft, depth: .quick)
+    }.value
+    let quickArguments = (try? String(contentsOf: arguments, encoding: .utf8))?
+        .split(separator: "\n").map(String.init) ?? []
+    let effort = quickArguments.firstIndex(of: "--reasoning-effort").flatMap { index in
+        index + 1 < quickArguments.count ? quickArguments[index + 1] : nil
+    }
+    check(
+        "a quick pass tells the model to think less",
+        quickly != nil && effort == CritiqueService.quickPassEffort,
+        "effort \(effort ?? "not sent"), answered \(quickly != nil)"
+    )
 
     write(opening + [#"{"type":"result","exitCode":1,"usage":{}}"#, "REFUSE"])
     let refused = await start(CritiqueService(), Seen()).value
@@ -1415,6 +1443,239 @@ func checkTheCLIIsReadAsItWrites() async {
             String(describing: second), Date().timeIntervalSince(pressedAgain)
         )
     )
+}
+
+/// A quick pass: what a reader would trip over, and nothing else.
+///
+/// The full critique is the slow half of the loop — 52 seconds on a 467-word
+/// post, with nothing to read for the first 38 — and most of the times
+/// somebody runs it they want to know whether the rewrite they just made is
+/// clean, not to be marked again. A quick pass reads the whole draft for
+/// typos and serious problems only and does not score it, because it did not
+/// read the draft for what the score measures.
+@MainActor
+func checkAQuickPass() async {
+    print("")
+    print("A quick pass")
+
+    let held = HeldCritique()
+    let model = CritiqueModel(service: held)
+    let storedHand = UserDefaults.standard.string(forKey: CritiqueHand.storageKey)
+    UserDefaults.standard.set(CritiqueHand.sans.rawValue, forKey: CritiqueHand.storageKey)
+    defer {
+        if let storedHand {
+            UserDefaults.standard.set(storedHand, forKey: CritiqueHand.storageKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: CritiqueHand.storageKey)
+        }
+    }
+    /// The rail as drawn, read back from its pixels, in the sans hand
+    /// because the handwritten faces are for people.
+    func drawnRail(_ name: String, isStale: Bool = false) -> String {
+        let host = NSHostingView(rootView: CritiqueSidebar(
+            critique: model, colorTheme: EditorColorTheme(color: .blue, mode: .light),
+            isStale: isStale, onRerun: {}, onRerunChanges: {}, onQuickPass: {}
+        ))
+        host.frame = NSRect(x: 0, y: 0, width: 340, height: 1400)
+        let window = NSWindow(
+            contentRect: host.frame, styleMask: [.borderless],
+            backing: .buffered, defer: false
+        )
+        window.contentView = host
+        window.orderBack(nil)
+        host.layoutSubtreeIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+        host.layoutSubtreeIfNeeded()
+        defer { window.orderOut(nil) }
+        if let path = ProcessInfo.processInfo.environment["MDE_QUICK_PNG"],
+           let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+            host.cacheDisplay(in: host.bounds, to: rep)
+            let file = path.replacingOccurrences(of: ".png", with: "-\(name).png")
+            try? rep.representation(using: .png, properties: [:])?
+                .write(to: URL(fileURLWithPath: file))
+            print("  wrote \(file)")
+        }
+        return readable(recognisedText(in: host).joined(separator: " "))
+    }
+
+    // The CLI, which needs no key, so the rail offers to run rather than to
+    // set up whichever provider this machine happens to have chosen.
+    let storedProvider = UserDefaults.standard.string(forKey: CritiqueProvider.storageKey)
+    CritiqueCredentials.provider = .copilotCLI
+    let untouched = drawnRail("empty")
+    if let storedProvider {
+        UserDefaults.standard.set(storedProvider, forKey: CritiqueProvider.storageKey)
+    } else {
+        UserDefaults.standard.removeObject(forKey: CritiqueProvider.storageKey)
+    }
+    // Not "Run critique" as well: a bordered button's bezel is not drawn
+    // off screen, and its white title on white cannot be read back.
+    check(
+        "an empty rail offers the quick pass beside the full critique",
+        legible("Quick pass", in: untouched) && legible("No score.", in: untouched),
+        "read \"\(untouched.prefix(240))\""
+    )
+
+    let draft = """
+        # Shipping Faster
+
+        Our deploys take forty minutes becuase every test runs on every change.
+
+        Most teams never measure where that time goes, so they guess.
+
+        Caching the dependency install alone saved us twelve minutes a build.
+        """
+    let typo = CritiqueFinding(
+        severity: .low, category: "Grammar and mechanics", location: "paragraph 1",
+        quote: "becuase", why: "Misspelt.", replacement: "because"
+    )
+
+    model.request(on: draft, documentURL: nil, depth: .quick)
+    await settle { held.isWaiting }
+    check(
+        "a quick pass is asked for as one",
+        held.lastDepth == .quick && model.runningDepth == .quick,
+        "asked \(String(describing: held.lastDepth)), running \(model.runningDepth)"
+    )
+    let reading = drawnRail("running")
+    check(
+        "and the rail says which critique is running",
+        legible("Quick pass", in: reading),
+        "read \"\(reading.prefix(200))\""
+    )
+
+    // Everything a full critique would fill in, filled in: a quick pass is
+    // told not to judge the piece as a whole, and one that did anyway would
+    // otherwise be filed as if it had.
+    held.answer(CritiqueReport(
+        jobRead: "A post for developers.", overall: "One misspelling.",
+        whatWorks: ["A clear claim."], whatDoesNotWork: ["Thin evidence."],
+        findings: [typo],
+        repeatedPatterns: [CritiquePattern(pattern: "Vague plurals", locations: ["paragraph 2"])],
+        keep: ["The opening line."]
+    ))
+    await settle { !model.isRunning }
+    check(
+        "it lands as a quick pass",
+        model.isQuick && model.history.latest?.isQuick == true && model.items.count == 1,
+        "quick \(model.isQuick), \(model.items.count) notes"
+    )
+    check(
+        "keeping none of the judgements of the whole draft it was not asked for",
+        model.report?.whatWorks.isEmpty == true
+            && model.report?.whatDoesNotWork.isEmpty == true
+            && model.report?.repeatedPatterns.isEmpty == true
+            && model.report?.keep.isEmpty == true
+            && model.report?.overall == "One misspelling.",
+        "kept \(String(describing: model.report))"
+    )
+    check(
+        "and never calls a draft ready",
+        !model.isConfirmed,
+        "it is confirmed"
+    )
+    let landed = drawnRail("landed")
+    check(
+        "the rail counts what to fix instead of scoring the draft",
+        legible("To fix", in: landed) && legible("Quick pass", in: landed)
+            && landed.contains(readable("scores the draft"))
+            && !landed.contains("/100") && !landed.contains("awesomeness"),
+        "read \"\(landed.prefix(320))\""
+    )
+    check(
+        "and the history names it for what it is",
+        model.history.latest.map(CritiqueRevisionLabel.measure) == "Quick pass",
+        "it says \(String(describing: model.history.latest.map(CritiqueRevisionLabel.measure)))"
+    )
+
+    let asked = held.asked
+    model.request(on: draft, documentURL: nil, depth: .quick)
+    await settle()
+    check(
+        "a second quick pass of the same words is declined",
+        held.asked == asked && model.showsUnchangedNotice,
+        "asked \(held.asked - asked) more times"
+    )
+
+    // A full critique of the same words is not declined: the quick pass
+    // did not ask most of what a full one does.
+    model.request(on: draft, documentURL: nil)
+    await settle { held.isWaiting }
+    check(
+        "a full critique after a quick pass reads the whole draft, and every note",
+        held.asked == asked + 1 && held.lastDepth == .full && held.lastFocus == nil
+            && held.lastPrevious.count == 1,
+        "asked \(held.asked - asked), \(String(describing: held.lastDepth)), "
+            + "focus \(held.lastFocus ?? "none"), \(held.lastPrevious.count) notes"
+    )
+    let structure = CritiqueFinding(
+        severity: .medium, category: "Structure", location: "paragraph 2",
+        quote: "so they guess", why: "Who guesses?"
+    )
+    let pacing = CritiqueFinding(
+        severity: .medium, category: "Pacing", location: "paragraph 3",
+        quote: "saved us twelve minutes a build", why: "Out of how many?"
+    )
+    held.answer(
+        CritiqueReport(
+            jobRead: "A post for developers.", overall: "Close.",
+            whatWorks: ["A clear claim."], findings: [structure, pacing]
+        ),
+        verdicts: ["n1": .stillApplies(quote: nil, location: nil)]
+    )
+    await settle { !model.isRunning }
+    check(
+        "and scores it again",
+        !model.isQuick && model.items.count == 3
+            && model.history.revisions.filter(\.isQuick).isEmpty,
+        "quick \(model.isQuick), \(model.items.count) notes, "
+            + "\(model.history.revisions.count) revisions"
+    )
+
+    // The loop the quick pass is for: one note fixed, checked fast.
+    guard let fixedID = model.items.first(where: { $0.finding.quote == "so they guess" })?.id else {
+        check("the full critique's note is on the rail", false)
+        return
+    }
+    model.setResolution(.completed, for: fixedID)
+    model.request(on: draft, documentURL: nil, depth: .quick)
+    await settle { held.isWaiting }
+    check(
+        "a quick pass after a full critique asks only about the notes marked done",
+        held.lastDepth == .quick && held.lastPrevious.count == 1
+            && held.lastPrevious.first?.quote == "so they guess",
+        "it asked about \(held.lastPrevious.map(\.quote))"
+    )
+    held.answer(CritiqueReport(jobRead: "A post for developers.", overall: "Clean.", findings: []))
+    await settle { !model.isRunning }
+    check(
+        "keeping every other note where it was",
+        model.outstanding.map(\.finding.quote).sorted()
+            == ["becuase", "saved us twelve minutes a build"]
+            && model.item(withID: fixedID)?.isFixed == true,
+        "outstanding \(model.outstanding.map(\.finding.quote))"
+    )
+    check(
+        "and the full critique it followed is still in the history",
+        model.history.latest?.isQuick == true
+            && model.history.revisions.dropFirst().first?.isQuick == false,
+        "\(model.history.revisions.map(CritiqueRevisionLabel.measure))"
+    )
+
+    // After a quick pass, the next full critique reads everything, however
+    // small the change: nobody has read the unchanged paragraphs for anything
+    // but typos since the last full one.
+    let edited = draft.replacingOccurrences(of: "becuase", with: "because")
+    model.noteCurrentText(edited)
+    model.request(on: edited, documentURL: nil)
+    await settle { held.isWaiting }
+    check(
+        "a full critique after a quick pass is never narrowed to the changes",
+        held.lastDepth == .full && held.lastFocus == nil,
+        "focus \(held.lastFocus ?? "none")"
+    )
+    held.refuse(.cancelled)
+    await settle { !model.isRunning }
 }
 
 /// What a re-run that does not finish does to the critique already there.

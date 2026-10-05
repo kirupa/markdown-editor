@@ -10,12 +10,14 @@ import MarkdownEditorCore
 protocol CritiqueAsking: AnyObject {
     /// `previous` is the earlier notes being carried into this run; the answer
     /// says what became of each, alongside whatever is new. `brief` is who the
-    /// draft is for, or nil to let the critic guess.
+    /// draft is for, or nil to let the critic guess. `depth` is a full
+    /// critique or a quick pass; see `CritiqueDepth`.
     func critique(
         document: String,
         focus: String?,
         previous: [CritiquePreviousNote],
         brief: CritiqueBrief?,
+        depth: CritiqueDepth,
         onProgress: @escaping (CritiqueProgress) -> Void
     ) async throws -> CritiqueAnswer
     func cancel()
@@ -188,6 +190,7 @@ final class CritiqueService: CritiqueAsking {
         focus: String? = nil,
         previous: [CritiquePreviousNote] = [],
         brief: CritiqueBrief? = nil,
+        depth: CritiqueDepth = .full,
         onProgress: @escaping (CritiqueProgress) -> Void = { _ in }
     ) async throws -> CritiqueAnswer {
         // The model checks this first so that nothing spins; this is the
@@ -203,7 +206,8 @@ final class CritiqueService: CritiqueAsking {
             focus: focus,
             skill: Self.loadedSkillPass(),
             previous: previous,
-            brief: brief
+            brief: brief,
+            depth: depth
         )
         let provider = CritiqueCredentials.provider
         let reply: String
@@ -220,7 +224,12 @@ final class CritiqueService: CritiqueAsking {
             )
         } else {
             guard let cli = Self.locateCLI() else { throw Failure.cliNotFound }
-            reply = try await run(cli: cli, prompt: prompt, onProgress: onProgress)
+            reply = try await run(
+                cli: cli,
+                prompt: prompt,
+                effort: depth == .quick ? Self.quickPassEffort : nil,
+                onProgress: onProgress
+            )
         }
         do {
             return try CritiqueReportDecoder.decodeAnswer(reply)
@@ -364,9 +373,25 @@ final class CritiqueService: CritiqueAsking {
         }
     }
 
+    /// How hard a quick pass is told to think, where the provider can be told.
+    ///
+    /// A quick pass asks for less and deliberates less, and the second is most
+    /// of the saving. Measured with the CLI's default model on a 467-word
+    /// draft: the full prompt took 52s at the default effort and 24.5s at this
+    /// one, with its first note arriving at 9s rather than 38s. The quick
+    /// prompt at this effort answered in 13.5s and 7.4s over two runs, its
+    /// first note at 10.2s and 3.9s. Only the CLI takes it. The API providers
+    /// are sent the narrowed prompt alone: each spells reasoning effort
+    /// differently, and not every model accepts it.
+    static let quickPassEffort = "low"
+
+    /// `effort` is passed as `--reasoning-effort`, or left to the CLI's own
+    /// default when nil — which is what a full critique and the connection
+    /// test both want.
     private func run(
         cli: URL,
         prompt: String,
+        effort: String? = nil,
         onProgress: @escaping (CritiqueProgress) -> Void
     ) async throws -> String {
         let process = Process()
@@ -397,7 +422,7 @@ final class CritiqueService: CritiqueAsking {
             // is assembled from the same stream, so there is no second source
             // to disagree with it.
             "--output-format", "json",
-        ]
+        ] + (effort.map { ["--reasoning-effort", $0] } ?? [])
 
         let output = Pipe()
         let errors = Pipe()

@@ -261,6 +261,9 @@ struct CritiqueSidebar: View {
     /// that silently does nothing, and a default of "re-read everything" is
     /// the expensive thing this exists to avoid.
     let onRerunChanges: () -> Void
+    /// A quick pass over the whole draft: typos and serious problems only.
+    /// Optional, and not offered without it, like `replaceText`.
+    var onQuickPass: (() -> Void)? = nil
     /// Changes the draft on a note's behalf — its suggestion put in, or the
     /// passage's own words put back — and returns the draft as it then reads,
     /// or nil when the words there were not the ones expected.
@@ -417,7 +420,7 @@ struct CritiqueSidebar: View {
                 } label: {
                     Text(
                         "\(CritiqueRevisionLabel.relative(revision.date))"
-                            + "  ·  \(revision.score)/100"
+                            + "  ·  \(CritiqueRevisionLabel.measure(revision))"
                     )
                 }
             }
@@ -540,6 +543,12 @@ struct CritiqueSidebar: View {
         let progress = critique.progress ?? CritiqueProgress(stage: .starting)
         return VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 3) {
+                if critique.runningDepth == .quick {
+                    Text("QUICK PASS")
+                        .font(CritiqueTypography.chrome(CritiqueTypography.captionSize))
+                        .tracking(0.5)
+                        .foregroundStyle(colorTheme.accent)
+                }
                 Text(progress.stage.headline.uppercased())
                     .font(CritiqueTypography.chrome(18))
                     .tracking(0.5)
@@ -614,7 +623,10 @@ struct CritiqueSidebar: View {
         let count = critique.arriving.count
         return VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(progress.stage.headline.uppercased())
+                Text(
+                    (critique.runningDepth == .quick ? "QUICK PASS · " : "")
+                        + progress.stage.headline.uppercased()
+                )
                     .font(CritiqueTypography.chrome(15))
                     .tracking(0.5)
                     .foregroundStyle(colorTheme.primaryText)
@@ -711,11 +723,36 @@ struct CritiqueSidebar: View {
                 .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
             Button("Run critique") { beginCritique() }
                 .controlSize(.large)
+            // Second, and quieter: the full critique is the one that scores
+            // the draft, and the one to reach for first. This is for the
+            // draft that only wants checking before it goes.
+            if let onQuickPass {
+                VStack(spacing: 4) {
+                    Button("Quick pass") { begin(onQuickPass) }
+                        .buttonStyle(.plain)
+                        .font(CritiqueTypography.chrome(CritiqueTypography.bodySize))
+                        .foregroundStyle(colorTheme.accent)
+                    Text(Self.quickPassCaption)
+                        .font(CritiqueTypography.chrome(CritiqueTypography.captionSize))
+                        .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
             Spacer()
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 16)
     }
+
+    /// What a quick pass is, where it is offered before anything has run.
+    ///
+    /// "Sooner" rather than a figure: the CLI's quick pass is also told to
+    /// think less, and answered a 467-word post in 7 to 14 seconds against 52,
+    /// but an API provider is sent only the narrower question, and nobody has
+    /// timed that.
+    static let quickPassCaption =
+        "Typos and serious problems only, so it comes back sooner. No score."
 
     /// What pressing the rail's button will do.
     ///
@@ -743,8 +780,14 @@ struct CritiqueSidebar: View {
     /// notification to redraw on — so a key entered a second ago would
     /// otherwise still be treated as missing.
     private func beginCritique() {
+        begin(onRerun)
+    }
+
+    /// `run` if a critique can run, and otherwise the window that takes the
+    /// key. See `beginCritique`.
+    private func begin(_ run: () -> Void) {
         switch buttonAction {
-        case .run: onRerun()
+        case .run: run()
         case .askForKey: openSettings()
         }
     }
@@ -759,13 +802,17 @@ struct CritiqueSidebar: View {
                         runningSummary
                     } else if let report {
                         if let failure = critique.failure { failureBanner(failure) }
-                        scoreBanner
+                        if critique.isQuick { quickBanner } else { scoreBanner }
                         if isStale { staleNotice }
                         if critique.showsUnchangedNotice { unchangedNotice }
                         summary(report)
 
                         if critique.standingCount == 0 {
-                            Text("No high or medium problems found.")
+                            Text(
+                                critique.isQuick
+                                    ? "No typos or serious problems found."
+                                    : "No high or medium problems found."
+                            )
                                 .font(CritiqueTypography.chrome(18))
                                 .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
                                 .padding(.horizontal, 12)
@@ -1004,6 +1051,69 @@ struct CritiqueSidebar: View {
         .animation(.easeOut(duration: 0.3), value: score)
     }
 
+    /// What a quick pass shows in place of a score: how much it found to fix.
+    ///
+    /// No number out of a hundred and no verdict. A quick pass did not read
+    /// for structure, pacing or voice, so a score from it would be marking the
+    /// draft on the parts it skipped — and a clean quick pass scored a hundred
+    /// would say "Ready" about a draft nobody had read for anything but typos.
+    private var quickBanner: some View {
+        let open = critique.outstanding.count
+        return VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .lastTextBaseline, spacing: 8) {
+                Text("\(open)")
+                    .font(CritiqueTypography.chrome(48))
+                    .foregroundStyle(colorTheme.primaryText)
+                    .contentTransition(.numericText())
+                Text("TO FIX")
+                    .font(CritiqueTypography.chrome(CritiqueTypography.sectionSize))
+                    .foregroundStyle(colorTheme.primaryText)
+                Spacer(minLength: 0)
+                Text("QUICK PASS")
+                    .font(CritiqueTypography.chrome(CritiqueTypography.captionSize))
+                    .tracking(0.5)
+                    .lineLimit(1)
+                    .foregroundStyle(colorTheme.accent)
+            }
+
+            if let change = critique.lastChange {
+                Text(change.summary)
+                    .font(CritiqueTypography.chrome(CritiqueTypography.captionSize))
+                    .foregroundStyle(colorTheme.primaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Text(Self.quickBannerCaption)
+                .font(CritiqueTypography.chrome(CritiqueTypography.captionSize))
+                .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
+                .fixedSize(horizontal: false, vertical: true)
+            // As for "Critique again" on the score: when the draft has
+            // changed, the notice below offers the same thing.
+            if !isStale {
+                Button("Full critique") { onRerun() }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            ZStack {
+                Rectangle()
+                    .fill(PixelStyle.shadow(colorTheme))
+                    .offset(x: PixelStyle.shadowOffset, y: PixelStyle.shadowOffset)
+                Rectangle().fill(colorTheme.cardBackground)
+                Rectangle().fill(colorTheme.accent.opacity(0.08))
+                Rectangle().strokeBorder(colorTheme.accent, lineWidth: PixelStyle.border)
+            }
+        )
+        .padding(.horizontal, 12)
+        .animation(.easeOut(duration: 0.3), value: open)
+    }
+
+    static let quickBannerCaption =
+        "Typos and serious problems only. A full critique also reads "
+            + "structure and voice, and scores the draft."
+
     /// Why the number is what it is, when that is not obvious from the notes.
     ///
     /// Each line answers a question the old banner left open. "Everything
@@ -1158,6 +1268,15 @@ struct CritiqueSidebar: View {
                         .foregroundStyle(colorTheme.accent)
                 } else {
                     Button("Critique again") { onRerun() }
+                    // The fast loop: rewrite, then check the rewrite for
+                    // slips without waiting on a full read. Only here, where
+                    // there is room for it beside one button.
+                    if let onQuickPass {
+                        Button("Quick pass") { begin(onQuickPass) }
+                            .buttonStyle(.plain)
+                            .font(CritiqueTypography.chrome(16))
+                            .foregroundStyle(colorTheme.accent)
+                    }
                 }
             }
         }

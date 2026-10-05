@@ -124,6 +124,9 @@ final class CritiqueModel: ObservableObject {
     @Published private(set) var report: CritiqueReport?
     @Published private(set) var items: [Item] = []
     @Published private(set) var isRunning = false
+    /// How closely the run in progress is reading, so the rail can say it is
+    /// a quick pass before the notes do.
+    @Published private(set) var runningDepth: CritiqueDepth = .full
     /// What the critique is doing, while it is doing it.
     @Published private(set) var progress: CritiqueProgress?
     /// The notes the run in progress has finished writing, on the rail before
@@ -221,6 +224,12 @@ final class CritiqueModel: ObservableObject {
     /// The revision being shown, when it is not the newest.
     var shownRevision: CritiqueRevision? { history.revision(withID: shownRevisionID) }
 
+    /// The critique on screen is a quick pass: mechanics and serious problems
+    /// only, so it has no score and no word on anything else.
+    var isQuick: Bool {
+        report != nil && (shownRevision ?? history.latest)?.isQuick == true
+    }
+
     /// How many of the shown critique's notes still point at the words they
     /// were written about, in the draft **as it is now**.
     ///
@@ -293,9 +302,36 @@ final class CritiqueModel: ObservableObject {
     /// standing" or "fixed" when the truth is that they were never for this
     /// reader — and a narrowed run would leave most of them on the rail
     /// untouched. The critique for the old reader stays in the history.
-    private func reading(_ scope: CritiqueScope) -> (scope: CritiqueScope, plan: CarryPlan) {
+    ///
+    /// A quick pass reads the whole draft, and is shown only the notes the
+    /// author has cleared — see `quickPlan`.
+    private func reading(
+        _ scope: CritiqueScope,
+        depth: CritiqueDepth = .full
+    ) -> (scope: CritiqueScope, plan: CarryPlan) {
         if readerChanged(since: history.latest) { return (.whole, CarryPlan()) }
+        if depth == .quick { return (.whole, quickPlan()) }
         return (scope, carryPlan(for: scope))
+    }
+
+    /// Which notes a quick pass is shown: the ones marked Done or rewritten,
+    /// which are waiting on a critique to say whether that worked, and which a
+    /// quick pass can answer as well as a full one. The rest are kept as they
+    /// stand rather than judged again by a pass that is not looking for most
+    /// of what they name — and every carried note is a "previous" entry the
+    /// critic has to write before it is finished, which is time a quick pass
+    /// is meant not to spend.
+    func quickPlan() -> CarryPlan {
+        guard report != nil else { return CarryPlan() }
+        var plan = CarryPlan(isCarried: true)
+        for item in items where !item.isFixed {
+            if item.awaitsCheck {
+                plan.asked.append(item)
+            } else {
+                plan.kept.append(item)
+            }
+        }
+        return plan
     }
 
     /// Notes nothing in the draft matches, and never did since they were
@@ -615,8 +651,11 @@ final class CritiqueModel: ObservableObject {
     /// Whether the score is the critic's own rather than the author's: a
     /// critique of the text exactly as it stands, with nothing marked Done or
     /// rewritten since. Only then is a hundred "Ready".
+    ///
+    /// Never after a quick pass, which did not read for most of what the
+    /// score counts. A clean one means no typos and nothing seriously wrong.
     var isConfirmed: Bool {
-        !isStale(against: currentText) && !items.contains(where: \.awaitsCheck)
+        !isQuick && !isStale(against: currentText) && !items.contains(where: \.awaitsCheck)
     }
 
     var verdict: String { CritiqueScore.verdict(score, isConfirmed: isConfirmed) }
@@ -835,9 +874,14 @@ final class CritiqueModel: ObservableObject {
     /// has grown to cover most of the draft, where a partial run would keep
     /// almost nothing and cost the same, and the case where the reader has
     /// changed, which no passage of the old critique was written for.
+    ///
+    /// And everything after a quick pass. It read the whole draft for typos
+    /// and serious problems only, so the paragraphs that did not change have
+    /// never been read for anything else; a full critique of the changes
+    /// alone would score a draft most of which nobody had looked at.
     var defaultScope: CritiqueScope {
         guard report != nil, let criticisedText, criticisedText != currentText,
-              !readerChanged(since: history.latest)
+              !readerChanged(since: history.latest), history.latest?.isQuick != true
         else { return .whole }
         guard
             let changed = CritiqueChangeScope.changedParagraphs(
@@ -888,21 +932,33 @@ final class CritiqueModel: ObservableObject {
     /// its mind. The rail says so instead and offers the run anyway.
     ///
     /// Unless the reader has changed: the same draft held to somebody else is
-    /// a question the critique on screen has not answered.
-    func request(on text: String, documentURL: URL?) {
+    /// a question the critique on screen has not answered. Nor is a full
+    /// critique declined after a quick pass of the same draft, which did not
+    /// ask most of what a full one does. A quick pass is declined after either:
+    /// a full critique has already said everything a quick pass could.
+    func request(on text: String, documentURL: URL?, depth: CritiqueDepth = .full) {
         guard !isRunning else { return }
         attach(to: documentURL, text: text)
         if shownRevisionID != nil { show(revision: nil) }
         if report != nil, failure == nil, !isStale(against: text),
-           !items.contains(where: \.awaitsCheck), !readerChanged(since: history.latest) {
+           !items.contains(where: \.awaitsCheck), !readerChanged(since: history.latest),
+           depth == .quick || !isQuick {
             isDismissed = false
             showsUnchangedNotice = true
             return
         }
-        run(on: text, documentURL: documentURL, scope: defaultScope)
+        run(on: text, documentURL: documentURL, scope: defaultScope, depth: depth)
     }
 
-    func run(on text: String, documentURL: URL?, scope: CritiqueScope = .whole) {
+    /// `depth` is a full critique or a quick pass. A quick pass always reads
+    /// the whole draft, whatever `scope` says: it is fast because of what it
+    /// is asked to report, not because of how much it reads.
+    func run(
+        on text: String,
+        documentURL: URL?,
+        scope: CritiqueScope = .whole,
+        depth: CritiqueDepth = .full
+    ) {
         guard !isRunning else { return }
         // The notes are moved onto the new text *before* the scope is used, so
         // that the ranges being compared against the changed passage address
@@ -923,6 +979,7 @@ final class CritiqueModel: ObservableObject {
         // added since.
         if shownRevisionID != nil { show(revision: nil) }
         isRunning = true
+        runningDepth = depth
         failure = nil
         progress = CritiqueProgress(stage: .starting)
         arriving = []
@@ -930,7 +987,7 @@ final class CritiqueModel: ObservableObject {
         runNumber += 1
         let thisRun = runNumber
 
-        let (scope, plan) = reading(scope)
+        let (scope, plan) = reading(scope, depth: depth)
         let focus: String?
         if case .changes(let range) = scope {
             focus = CritiqueChangeScope.passage(range, in: text)
@@ -953,7 +1010,8 @@ final class CritiqueModel: ObservableObject {
                     document: text,
                     focus: focus,
                     previous: previous,
-                    brief: sent
+                    brief: sent,
+                    depth: depth
                 ) { update in
                     Task { @MainActor [weak self] in
                         // `isRunning` as well as the run number: the last
@@ -966,7 +1024,7 @@ final class CritiqueModel: ObservableObject {
                     }
                 }
                 guard self.runNumber == thisRun else { return }
-                self.land(answer, for: text, plan: plan, brief: sent)
+                self.land(answer, for: text, plan: plan, brief: sent, depth: depth)
             } catch let error as CritiqueService.Failure {
                 guard self.runNumber == thisRun else { return }
                 self.fail(with: error)
@@ -1070,7 +1128,10 @@ final class CritiqueModel: ObservableObject {
     /// Nothing is carried — this is a first critique, or a fresh one.
     func applyForChecking(_ report: CritiqueReport, for text: String) {
         noteCurrentText(text)
-        land(CritiqueAnswer(report: report), for: text, plan: CarryPlan(), brief: briefToSend)
+        land(
+            CritiqueAnswer(report: report), for: text, plan: CarryPlan(),
+            brief: briefToSend, depth: .full
+        )
     }
 
     /// Lands a re-run the way a real one would, so carrying notes through it
@@ -1083,14 +1144,16 @@ final class CritiqueModel: ObservableObject {
         _ report: CritiqueReport,
         for text: String,
         scope: CritiqueScope = .whole,
-        verdicts: [String: CritiqueNoteVerdict] = [:]
+        verdicts: [String: CritiqueNoteVerdict] = [:],
+        depth: CritiqueDepth = .full
     ) {
         noteCurrentText(text)
         land(
             CritiqueAnswer(report: report, verdicts: verdicts),
             for: text,
-            plan: reading(scope).plan,
-            brief: briefToSend
+            plan: reading(scope, depth: depth).plan,
+            brief: briefToSend,
+            depth: depth
         )
     }
 
@@ -1218,7 +1281,8 @@ final class CritiqueModel: ObservableObject {
         _ answer: CritiqueAnswer,
         for text: String,
         plan: CarryPlan,
-        brief sent: CritiqueBrief?
+        brief sent: CritiqueBrief?,
+        depth: CritiqueDepth
     ) {
         // The run was about `text`. The author may have kept typing, and the
         // notes are worked out against what the critic read before they are
@@ -1305,7 +1369,18 @@ final class CritiqueModel: ObservableObject {
         // this run, which was asked to describe the whole draft even when it
         // only criticised part of it.
         let standing = kept + carried + fresh
-        let stored = answer.report.replacingFindings(with: standing.map(\.finding))
+        // A quick pass is told to return what works, what doesn't and the
+        // patterns as empty lists, because it does not read for them. One
+        // that fills them in anyway did so at low effort on a read that was
+        // not looking; filed, they would sit on the rail as a judgement of
+        // the whole draft from the one kind of critique that does not give
+        // one. `overall` stays: it is where the pass says what it found.
+        let summary = depth == .quick
+            ? CritiqueReport(
+                jobRead: answer.report.jobRead, overall: answer.report.overall, findings: []
+            )
+            : answer.report
+        let stored = summary.replacingFindings(with: standing.map(\.finding))
         resolutions.prune(keeping: stored.findings)
         CritiqueResolutionStore.save(resolutions, for: documentURL)
         history.add(
@@ -1313,7 +1388,8 @@ final class CritiqueModel: ObservableObject {
                 report: stored,
                 documentText: text,
                 fixed: fixed.map(\.finding),
-                brief: sent?.text
+                brief: sent?.text,
+                depth: depth
             )
         )
         CritiqueHistoryStore.save(history, for: documentURL)

@@ -27,6 +27,8 @@ struct MarkdownEditorCommands: Commands {
     private var session
     @FocusedValue(\.runCritique)
     private var runCritique: (() -> Void)?
+    @FocusedValue(\.runQuickCritique)
+    private var runQuickCritique: (() -> Void)?
 
     @FocusedValue(\.editorColorThemeSelection)
     private var colorThemeSelection
@@ -155,6 +157,12 @@ struct MarkdownEditorCommands: Commands {
             Button("AI Assisted Critique") { runCritique?() }
                 .keyboardShortcut("c", modifiers: [.control, .command])
                 .disabled(runCritique == nil)
+            // The same chord with Option: the same thing, lighter. Option is
+            // the modifier the Mac already uses for "the other version of
+            // this command", so the pair is learned as one.
+            Button("Quick Critique Pass") { runQuickCritique?() }
+                .keyboardShortcut("c", modifiers: [.option, .control, .command])
+                .disabled(runQuickCritique == nil)
 
             Divider()
 
@@ -261,9 +269,20 @@ struct CritiqueActionKey: FocusedValueKey {
     typealias Value = () -> Void
 }
 
+/// The focused document's quick critique pass, routed the same way as
+/// `CritiqueActionKey` for the same reason.
+struct QuickCritiqueActionKey: FocusedValueKey {
+    typealias Value = () -> Void
+}
+
 extension FocusedValues {
     var runCritique: CritiqueActionKey.Value? {
         get { self[CritiqueActionKey.self] }
         set { self[CritiqueActionKey.self] = newValue }
+    }
+
+    var runQuickCritique: QuickCritiqueActionKey.Value? {
+        get { self[QuickCritiqueActionKey.self] }
+        set { self[QuickCritiqueActionKey.self] = newValue }
     }
 }
