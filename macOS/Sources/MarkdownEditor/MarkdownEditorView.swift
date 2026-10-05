@@ -246,7 +246,9 @@ struct MarkdownEditorView: View {
         }
         .onChange(of: fileURL) { newFileURL in
             autosaveController.cancelPendingSave()
-            critique.attach(to: newFileURL, text: document.text)
+            // Moved rather than attached: this is the same document saved
+            // under a new name, and its critique goes with it.
+            critique.move(to: newFileURL, text: document.text)
             session.fileURL = newFileURL
             if let newFileURL {
                 RecentDocumentsModel.shared.record(newFileURL)
@@ -566,7 +568,8 @@ struct ResizableRichTextPreview: View {
                                 with: swap.replacement,
                                 actionName: swap.name
                             )
-                        }
+                        },
+                        returnToDraft: { session.focusEditor() }
                     )
                     // A fixed width, docked against the document.
                     //

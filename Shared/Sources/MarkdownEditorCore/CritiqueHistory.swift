@@ -23,13 +23,17 @@ public struct CritiqueRevision: Equatable, Sendable, Codable, Identifiable {
     /// it existed still loads and one written after still loads in a build
     /// that does not know it.
     public let fixed: [CritiqueFinding]?
+    /// The reader and goal this critique was told to hold the draft to, or
+    /// nil when it was left to guess. Optional for the same reason as `fixed`.
+    public let brief: String?
 
     public init(
         id: UUID = UUID(),
         date: Date = Date(),
         report: CritiqueReport,
         documentText: String,
-        fixed: [CritiqueFinding] = []
+        fixed: [CritiqueFinding] = [],
+        brief: String? = nil
     ) {
         self.id = id
         // Truncated to the second, which is the precision it is stored and
@@ -40,6 +44,19 @@ public struct CritiqueRevision: Equatable, Sendable, Codable, Identifiable {
         self.report = report
         self.documentText = documentText
         self.fixed = fixed.isEmpty ? nil : fixed
+        let brief = brief.map(CritiqueBrief.normalized)
+        self.brief = brief?.isEmpty == false ? brief : nil
+    }
+
+    /// Who this critique took the draft to be for: the brief it was given,
+    /// and otherwise its own read.
+    ///
+    /// A critique left to guess still held its notes to *somebody*, and that
+    /// guess is the reader its notes are for — so it is what a brief is
+    /// compared with to tell whether these notes were written for the reader
+    /// named now.
+    public var reader: String {
+        brief ?? CritiqueBrief.normalized(report.jobRead)
     }
 
     /// The score this critique arrived with, before anything was answered —
@@ -97,8 +114,13 @@ public struct CritiqueHistory: Equatable, Sendable, Codable {
     /// stacking beside it. Two critiques of the same text are two opinions
     /// about one thing, and a history that fills up with them buries the
     /// revisions that actually differ.
+    ///
+    /// Unless they were written for different readers. Then they are two
+    /// different things, and the one for the reader somebody has just
+    /// corrected away from is exactly what they might want to look back at.
     public mutating func add(_ revision: CritiqueRevision) {
-        if let first = revisions.first, first.documentText == revision.documentText {
+        if let first = revisions.first, first.documentText == revision.documentText,
+           first.reader == revision.reader {
             revisions.removeFirst()
         }
         revisions.insert(revision, at: 0)

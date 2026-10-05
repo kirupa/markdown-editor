@@ -166,6 +166,13 @@ final class CritiqueModel: ObservableObject {
     /// and a request, and comes back with the same notes in other words —
     /// which reads as the critic changing its mind for no reason.
     @Published private(set) var showsUnchangedNotice = false
+    /// Who the author said the draft is for: nil when they have said nothing,
+    /// and empty when they cleared it to have the critic guess again.
+    ///
+    /// Only the author's words. The critic's guess is read off the newest
+    /// critique instead — see `brief` — so that a guess is never filed away
+    /// as something the author said.
+    @Published private(set) var authorBrief: String?
 
     private let service: any CritiqueAsking
     /// Which run is the live one. A run whose number is not this one when it
@@ -222,6 +229,65 @@ final class CritiqueModel: ObservableObject {
     /// Every note still standing: all of them but the ones found fixed.
     var standingCount: Int { items.filter { !$0.isFixed }.count }
 
+    /// Who the next critique will hold the draft to.
+    ///
+    /// The author's words when they have given some. Otherwise the reader the
+    /// newest critique took the draft to be for, sent back as a guess: the
+    /// critic used to guess again on every run, and word it differently every
+    /// time, so two critiques of the same draft could be advice for two
+    /// different people. Empty before the first critique, and once the author
+    /// has cleared it to be guessed afresh.
+    var brief: CritiqueBrief {
+        if let authorBrief { return CritiqueBrief(authorBrief) }
+        return CritiqueBrief(history.latest?.reader ?? "", isGuess: true)
+    }
+
+    /// The critique on screen was written for a reader other than the one
+    /// named now, so its notes are advice for somebody else.
+    var isForAnotherReader: Bool {
+        report != nil && shownRevisionID == nil && readerChanged(since: history.latest)
+    }
+
+    /// The author says who the draft is for.
+    ///
+    /// Kept per document and sent with every critique after it. Words that
+    /// name the reader already in force — the guess accepted as it stands, or
+    /// the same brief retyped — change nothing, so pressing Return on the line
+    /// is never on its own a reason for the next critique to start over.
+    func setBrief(_ text: String) {
+        let text = CritiqueBrief.normalized(text)
+        guard text != brief.text else { return }
+        authorBrief = text
+        CritiqueBriefStore.save(text, for: documentURL)
+        if showsUnchangedNotice { showsUnchangedNotice = false }
+    }
+
+    /// Whether the reader named now is not the one `revision` was written for.
+    private func readerChanged(since revision: CritiqueRevision?) -> Bool {
+        guard let revision else { return false }
+        return brief.text != revision.reader
+    }
+
+    /// The brief a run sends: nothing when there is nothing to say, so the
+    /// critic guesses rather than being told the reader is nobody.
+    private var briefToSend: CritiqueBrief? {
+        let brief = brief
+        return brief.isEmpty ? nil : brief
+    }
+
+    /// What a run of `scope` reads and carries, now that the reader is known.
+    ///
+    /// A different reader is a different critique rather than a revision of
+    /// this one, so it reads the whole draft and carries nothing. Notes
+    /// written for a beginner, re-judged for an expert, come back "still
+    /// standing" or "fixed" when the truth is that they were never for this
+    /// reader — and a narrowed run would leave most of them on the rail
+    /// untouched. The critique for the old reader stays in the history.
+    private func reading(_ scope: CritiqueScope) -> (scope: CritiqueScope, plan: CarryPlan) {
+        if readerChanged(since: history.latest) { return (.whole, CarryPlan()) }
+        return (scope, carryPlan(for: scope))
+    }
+
     /// Notes nothing in the draft matches, and never did since they were
     /// written. A passage the author deleted is an edit, not a failure to
     /// match, and is not counted here.
@@ -254,6 +320,7 @@ final class CritiqueModel: ObservableObject {
         currentText = text
         resolutions = CritiqueResolutionStore.load(for: documentURL)
         history = CritiqueHistoryStore.load(for: documentURL)
+        authorBrief = CritiqueBriefStore.load(for: documentURL)
         report = nil
         items = []
         shownRevisionID = nil
@@ -269,6 +336,33 @@ final class CritiqueModel: ObservableObject {
         // against the draft as it is now, so it is immediately honest about
         // how much of itself still applies.
         if let latest = history.latest { present(latest) }
+    }
+
+    /// The open document was saved somewhere new: its first save, a Save As,
+    /// or a rename while it was open.
+    ///
+    /// It is the same document under a new name, so its critique goes with
+    /// it. This used to go through `attach`, which takes a new address for a
+    /// new document: the first ⌘S of an untitled draft emptied the rail and
+    /// threw away the critique that had just been run on it, and a Save As
+    /// did the same to a document with a history.
+    func move(to newURL: URL?, text: String) {
+        guard documentURL != newURL else {
+            noteCurrentText(text)
+            return
+        }
+        // Nothing to take along, so whatever is kept under the new address is
+        // this window's to show. Saving an empty critique over it would erase
+        // a history for no gain.
+        guard !history.isEmpty || authorBrief != nil || !resolutions.isEmpty else {
+            attach(to: newURL, text: text)
+            return
+        }
+        documentURL = newURL
+        noteCurrentText(text)
+        CritiqueHistoryStore.save(history, for: newURL)
+        CritiqueResolutionStore.save(resolutions, for: newURL)
+        CritiqueBriefStore.save(authorBrief, for: newURL)
     }
 
     /// Brings the rail back after it was closed, without running anything.
@@ -725,9 +819,11 @@ final class CritiqueModel: ObservableObject {
     /// text has moved, and the change is small enough to be worth narrowing.
     /// Otherwise everything — including, deliberately, the case where the edit
     /// has grown to cover most of the draft, where a partial run would keep
-    /// almost nothing and cost the same.
+    /// almost nothing and cost the same, and the case where the reader has
+    /// changed, which no passage of the old critique was written for.
     var defaultScope: CritiqueScope {
-        guard report != nil, let criticisedText, criticisedText != currentText
+        guard report != nil, let criticisedText, criticisedText != currentText,
+              !readerChanged(since: history.latest)
         else { return .whole }
         guard
             let changed = CritiqueChangeScope.changedParagraphs(
@@ -776,12 +872,15 @@ final class CritiqueModel: ObservableObject {
     /// or rewritten since, already says everything a second one would — and a
     /// second one says it in other words, which reads as the critic changing
     /// its mind. The rail says so instead and offers the run anyway.
+    ///
+    /// Unless the reader has changed: the same draft held to somebody else is
+    /// a question the critique on screen has not answered.
     func request(on text: String, documentURL: URL?) {
         guard !isRunning else { return }
         attach(to: documentURL, text: text)
         if shownRevisionID != nil { show(revision: nil) }
         if report != nil, failure == nil, !isStale(against: text),
-           !items.contains(where: \.awaitsCheck) {
+           !items.contains(where: \.awaitsCheck), !readerChanged(since: history.latest) {
             isDismissed = false
             showsUnchangedNotice = true
             return
@@ -815,14 +914,18 @@ final class CritiqueModel: ObservableObject {
         runNumber += 1
         let thisRun = runNumber
 
+        let (scope, plan) = reading(scope)
         let focus: String?
         if case .changes(let range) = scope {
             focus = CritiqueChangeScope.passage(range, in: text)
         } else {
             focus = nil
         }
-        let plan = carryPlan(for: scope)
         let previous = CritiqueCarry.previousNotes(plan.asked.map(\.finding))
+        // Taken now: the author may correct the reader while this run is
+        // out, and the critique has to be filed under the reader it was
+        // actually written for.
+        let sent = briefToSend
 
         Task { [weak self] in
             guard let self else { return }
@@ -830,7 +933,8 @@ final class CritiqueModel: ObservableObject {
                 let answer = try await service.critique(
                     document: text,
                     focus: focus,
-                    previous: previous
+                    previous: previous,
+                    brief: sent
                 ) { update in
                     Task { @MainActor [weak self] in
                         guard let self, self.runNumber == thisRun else { return }
@@ -838,7 +942,7 @@ final class CritiqueModel: ObservableObject {
                     }
                 }
                 guard self.runNumber == thisRun else { return }
-                self.land(answer, for: text, plan: plan)
+                self.land(answer, for: text, plan: plan, brief: sent)
             } catch let error as CritiqueService.Failure {
                 guard self.runNumber == thisRun else { return }
                 self.fail(with: error)
@@ -877,13 +981,13 @@ final class CritiqueModel: ObservableObject {
     /// Nothing is carried — this is a first critique, or a fresh one.
     func applyForChecking(_ report: CritiqueReport, for text: String) {
         noteCurrentText(text)
-        land(CritiqueAnswer(report: report), for: text, plan: CarryPlan())
+        land(CritiqueAnswer(report: report), for: text, plan: CarryPlan(), brief: briefToSend)
     }
 
     /// Lands a re-run the way a real one would, so carrying notes through it
     /// can be checked without spending a request.
     ///
-    /// Deliberately goes through the same `carryPlan` and `land` as `run`
+    /// Deliberately goes through the same `reading` and `land` as `run`
     /// rather than reimplementing them — a check against a parallel copy of
     /// the merge would pass while the real one lost notes.
     func applyRerunForChecking(
@@ -896,7 +1000,8 @@ final class CritiqueModel: ObservableObject {
         land(
             CritiqueAnswer(report: report, verdicts: verdicts),
             for: text,
-            plan: carryPlan(for: scope)
+            plan: reading(scope).plan,
+            brief: briefToSend
         )
     }
 
@@ -1020,7 +1125,12 @@ final class CritiqueModel: ObservableObject {
     /// where they say something no carried note already says: a model asked
     /// not to repeat a note mostly still does, and a note that comes back
     /// reworded beside itself is the re-run starting over by another route.
-    private func land(_ answer: CritiqueAnswer, for text: String, plan: CarryPlan) {
+    private func land(
+        _ answer: CritiqueAnswer,
+        for text: String,
+        plan: CarryPlan,
+        brief sent: CritiqueBrief?
+    ) {
         // The run was about `text`. The author may have kept typing, and the
         // notes are worked out against what the critic read before they are
         // moved on to that.
@@ -1110,9 +1220,20 @@ final class CritiqueModel: ObservableObject {
         resolutions.prune(keeping: stored.findings)
         CritiqueResolutionStore.save(resolutions, for: documentURL)
         history.add(
-            CritiqueRevision(report: stored, documentText: text, fixed: fixed.map(\.finding))
+            CritiqueRevision(
+                report: stored,
+                documentText: text,
+                fixed: fixed.map(\.finding),
+                brief: sent?.text
+            )
         )
         CritiqueHistoryStore.save(history, for: documentURL)
+        // Cleared so the critic would guess again, and now it has: the line
+        // goes back to showing the critic's read, which is this run's.
+        if sent == nil, authorBrief?.isEmpty == true {
+            authorBrief = nil
+            CritiqueBriefStore.save(nil, for: documentURL)
+        }
         shownRevisionID = nil
         report = stored
         items = Self.ordered(standing + fixed)

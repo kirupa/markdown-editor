@@ -9,11 +9,13 @@ import MarkdownEditorCore
 @MainActor
 protocol CritiqueAsking: AnyObject {
     /// `previous` is the earlier notes being carried into this run; the answer
-    /// says what became of each, alongside whatever is new.
+    /// says what became of each, alongside whatever is new. `brief` is who the
+    /// draft is for, or nil to let the critic guess.
     func critique(
         document: String,
         focus: String?,
         previous: [CritiquePreviousNote],
+        brief: CritiqueBrief?,
         onProgress: @escaping (CritiqueProgress) -> Void
     ) async throws -> CritiqueAnswer
     func cancel()
@@ -187,6 +189,7 @@ final class CritiqueService: CritiqueAsking {
         document: String,
         focus: String? = nil,
         previous: [CritiquePreviousNote] = [],
+        brief: CritiqueBrief? = nil,
         onProgress: @escaping (CritiqueProgress) -> Void = { _ in }
     ) async throws -> CritiqueAnswer {
         // The model checks this first so that nothing spins; this is the
@@ -201,7 +204,8 @@ final class CritiqueService: CritiqueAsking {
             forDocument: document,
             focus: focus,
             skill: Self.loadedSkillPass(),
-            previous: previous
+            previous: previous,
+            brief: brief
         )
         let provider = CritiqueCredentials.provider
         let reply: String

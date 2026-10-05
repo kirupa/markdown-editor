@@ -269,11 +269,24 @@ struct CritiqueSidebar: View {
     /// doing nothing: a rail with no document behind it has nothing to put a
     /// suggestion into.
     var replaceText: ((CritiqueModel.Swap) -> String?)? = nil
+    /// Puts the keyboard back in the draft, for a field on the rail that has
+    /// been finished with. Optional for the same reason: a rail drawn on its
+    /// own has no draft to go back to.
+    var returnToDraft: (() -> Void)? = nil
 
     var body: some View {
         VStack(spacing: 0) {
             header
             Divider()
+            // Not until a critique can run: before a key is set the only thing
+            // worth saying is how to get one.
+            if state != .needsSetUp {
+                CritiqueBriefLine(
+                    critique: critique, colorTheme: colorTheme,
+                    onRerun: onRerun, returnToDraft: returnToDraft
+                )
+                Divider()
+            }
             content
         }
         // Docked against the document, not floating beside it.
@@ -1091,13 +1104,10 @@ struct CritiqueSidebar: View {
             tag: nil as AnyView?
         ) {
             VStack(alignment: .leading, spacing: 9) {
-                if !report.jobRead.isEmpty {
-                    Text(report.jobRead)
-                        .font(CritiqueTypography.chrome(15))
-                        .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
+                // No line saying what the critic took the piece to be. That
+                // read is the audience and goal at the top of the rail now,
+                // where it can be corrected; repeating it here, in grey, was
+                // where it used to sit uncorrectable.
                 if !report.whatWorks.isEmpty {
                     noteSection("WHAT WORKS", report.whatWorks, mark: "+", tint: worksTint)
                 }
@@ -1228,6 +1238,178 @@ struct CritiqueSidebar: View {
         UUID(uuidString: "00000000-0000-0000-0000-0000000000A1")!
     private static let keepID =
         UUID(uuidString: "00000000-0000-0000-0000-0000000000A2")!
+}
+
+/// Who the draft is for, at the top of the rail where it governs everything
+/// under it.
+///
+/// It used to be the first line of the summary note: grey, the quietest type
+/// on the rail, written by the critic, worded differently every run, and with
+/// no way to say it was wrong. Yet it was the reader every note was being held
+/// to, so a wrong guess there made the whole rail advice for somebody else.
+/// Up here it is a line the author can type into — the one input that changes
+/// what every note says — and before the first critique as well as after it.
+struct CritiqueBriefLine: View {
+    @ObservedObject var critique: CritiqueModel
+    let colorTheme: EditorColorTheme
+    /// Critique the whole draft again, for when the notes on screen were
+    /// written for a reader the author has since corrected.
+    let onRerun: () -> Void
+    /// Gives the keyboard back to the draft. Return and Esc are how a writer
+    /// finishes with the line, and both mean "back to writing": left on the
+    /// window instead, the next keystroke went nowhere.
+    let returnToDraft: (() -> Void)?
+
+    static let placeholder = "Who is it for, and what should it do for them?"
+
+    @State private var draft: String
+    @FocusState private var isEditing: Bool
+
+    init(
+        critique: CritiqueModel,
+        colorTheme: EditorColorTheme,
+        onRerun: @escaping () -> Void,
+        returnToDraft: (() -> Void)? = nil
+    ) {
+        self.critique = critique
+        self.colorTheme = colorTheme
+        self.onRerun = onRerun
+        self.returnToDraft = returnToDraft
+        // Here rather than in `onAppear`, so the first layout already holds
+        // the brief. Laid out once around the placeholder and again around the
+        // words, the line changes height under the notes as the rail opens.
+        _draft = State(initialValue: critique.brief.text)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 6) {
+                // One word up here rather than a sentence under the brief.
+                // The guess is the line's usual state, so that caption cost
+                // the rail a line of height over every critique, pushing the
+                // first note further down, to say what one word says. One
+                // run of text, so the dot sits evenly between the two.
+                (Text("AUDIENCE AND GOAL") + Text(showsGuess ? " · GUESSED" : ""))
+                    .font(CritiqueTypography.heading(13))
+                    .tracking(0.5)
+                    .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
+                    .help(showsGuess
+                        ? "The critic's guess at who this is for. Correct it if it's wrong."
+                        : "")
+                Spacer()
+                if !isEditing {
+                    Button {
+                        isEditing = true
+                    } label: {
+                        Image(systemName: "pencil")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
+                    .help("Say who this draft is for")
+                }
+            }
+
+            TextField(Self.placeholder, text: $draft, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(CritiqueTypography.chrome(CritiqueTypography.bodySize))
+                .foregroundStyle(colorTheme.primaryText)
+                .lineLimit(1...5)
+                .focused($isEditing)
+                .onSubmit {
+                    isEditing = false
+                    returnToDraft?()
+                }
+                .onExitCommand(perform: putBack)
+                // The box is always there and only drawn while typing, so the
+                // words do not jump sideways when the field takes focus.
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+                .background {
+                    if isEditing {
+                        ZStack {
+                            Rectangle().fill(colorTheme.cardBackground)
+                            Rectangle().strokeBorder(
+                                colorTheme.accent, lineWidth: PixelStyle.border
+                            )
+                        }
+                    }
+                }
+                .padding(.horizontal, -6)
+                .accessibilityLabel("Audience and goal")
+                .accessibilityHint(
+                    critique.brief.isGuess
+                        ? "The critic's guess. Correct it if it's wrong." : ""
+                )
+
+            if let caption {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(caption)
+                        .font(CritiqueTypography.chrome(CritiqueTypography.captionSize))
+                        .foregroundStyle(CritiqueInk.quiet(on: colorTheme.mode))
+                        .fixedSize(horizontal: false, vertical: true)
+                    if offersRerun {
+                        Spacer(minLength: 0)
+                        Button("Critique again", action: onRerun)
+                            .buttonStyle(.plain)
+                            .font(CritiqueTypography.chrome(
+                                CritiqueTypography.captionSize, weight: .semibold
+                            ))
+                            .foregroundStyle(colorTheme.accent)
+                            .fixedSize()
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        // Kept in step with the model whenever the author is not typing in
+        // it: a critique landing can bring a new guess, and another document's
+        // brief arrives when the window opens a file.
+        .onChange(of: critique.brief) { brief in
+            if !isEditing { draft = brief.text }
+        }
+        // Leaving the line keeps what was typed, the way leaving any field
+        // does. Return leaves it too, so this is the one place a brief is
+        // taken from.
+        .onChange(of: isEditing) { editing in
+            guard !editing else { return }
+            critique.setBrief(draft)
+            draft = critique.brief.text
+        }
+    }
+
+    /// Esc: what the line said before, and back to the draft.
+    private func putBack() {
+        draft = critique.brief.text
+        isEditing = false
+        returnToDraft?()
+    }
+
+    /// The other run is the cheap fix for notes written for the wrong reader,
+    /// so it is offered right where the reader was changed.
+    private var offersRerun: Bool {
+        !isEditing && critique.isForAnotherReader && !critique.isRunning
+    }
+
+    /// Not while typing: whatever is in the field by then is the author's.
+    private var showsGuess: Bool {
+        critique.brief.isGuess && !isEditing
+    }
+
+    /// One line under the brief, and only when there is something to do with
+    /// it. A brief in force needs no caption, whoever wrote it; the heading
+    /// says when it is a guess.
+    private var caption: String? {
+        if isEditing { return "Return keeps it. Esc puts it back." }
+        let brief = critique.brief
+        if offersRerun {
+            return brief.isEmpty
+                ? "The next critique will guess the reader again."
+                : "These notes were written for a different reader."
+        }
+        if brief.isEmpty { return "Leave it empty and the critic will guess." }
+        return nil
+    }
 }
 
 

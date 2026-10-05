@@ -242,6 +242,14 @@ final class MarkdownEditorSession: ObservableObject {
         externalChange.resolveByKeepingMine()
     }
 
+    /// Puts the keyboard back in the draft, where it was last.
+    ///
+    /// For the rail's fields: the writer finished with one by pressing Return
+    /// or Esc, and either way the next keystroke belongs to the document.
+    func focusEditor() {
+        currentEditor()?.focus()
+    }
+
     /// Whether saving must wait. While a conflict is unresolved, writing would
     /// destroy the other app's work before anybody had the chance to look at
     /// it, so autosave is held until the question is answered.
