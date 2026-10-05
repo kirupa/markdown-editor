@@ -11,6 +11,8 @@ struct MarkdownEditorView: View {
     @State private var dragStartExplorerWidth: CGFloat?
     @State private var previewWidth = Layout.defaultPreviewWidth
     @StateObject private var critique = CritiqueModel()
+    /// Whether this document's window has closed. See `documentWindowClosed()`.
+    @State private var isClosed = false
     @Binding private var themeColorRawValue: String
     @Binding private var appearanceModeRawValue: String
     @Binding private var typefaceRawValue: String
@@ -65,6 +67,17 @@ struct MarkdownEditorView: View {
     }
 
     var body: some View {
+        if isClosed {
+            // All that is left once the window has closed. SwiftUI keeps the
+            // window, and this view in it, so what it keeps is made nothing:
+            // the text view, its layers and the rail go with the editor.
+            Color.clear
+        } else {
+            editor
+        }
+    }
+
+    private var editor: some View {
         GeometryReader { geometry in
             let visibleExplorerWidth = clampedExplorerWidth(
                 explorerWidth,
@@ -123,7 +136,8 @@ struct MarkdownEditorView: View {
                         railIsOpen: critique.isPresented
                     ),
                     railIsOpen: critique.isPresented,
-                    fileURL: fileURL
+                    fileURL: fileURL,
+                    onClose: documentWindowClosed
                 )
 
                 if session.isExplorerVisible {
@@ -302,6 +316,22 @@ struct MarkdownEditorView: View {
             autosaveController.cancelPendingSave()
             session.stopWatchingFile()
         }
+    }
+
+    /// Stops everything the editor had running, and lets go of it.
+    ///
+    /// Called by the window as it closes, because SwiftUI keeps a closed
+    /// document's window alive and never calls `onDisappear` — see
+    /// `WindowChromeDelegate.watchForClose(of:)`.
+    private func documentWindowClosed() {
+        // By now `NSDocument` has saved — the window closes only after the
+        // document has — so a write still queued here is for a document that
+        // no longer exists, and could only fail out loud.
+        autosaveController.cancelPendingSave()
+        session.stopWatchingFile()
+        // Nobody is left to read it.
+        critique.cancel()
+        isClosed = true
     }
 
     private func resizeGesture(

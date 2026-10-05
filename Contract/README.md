@@ -1044,6 +1044,59 @@ asserted end to end by `macOS/Scripts/check-session.swift`. The web build
 reaches the same outcome from a different direction — it has no file to watch,
 so it re-reads the document whenever the tab comes back to the front.
 
+### Closing a document stops its editor
+
+An editor that saves on a timer, watches its file and runs a critique has three
+things that outlive the document unless something stops them, and on macOS
+27.2 nothing does it for you. A SwiftUI `DocumentGroup` keeps a closed
+document's window alive, and the view in it is never told it has gone:
+`onDisappear` does not run. The closed editor goes on working, and the ways
+that shows are worse than the memory it holds:
+
+- A file another app rewrites after its window has closed is still noticed,
+  taken in and autosaved, to a document that no longer exists. That surfaces
+  as a "couldn't autosave" alert over whatever the writer is doing next.
+- Typing and closing inside the autosave's delay does the same, over a file
+  that had in fact saved: the platform's document saved it as the window
+  closed, and the timer fired afterwards.
+
+So when a document's window closes:
+
+1. **Drop** the pending autosave rather than flushing it. `NSDocument` has
+   saved before its window closes; a second save after the close is the false
+   alarm above. A port whose platform does not save on close must flush here
+   instead, so check which yours is.
+2. Stop watching the file.
+3. Stop a critique that is still running.
+4. Remove whatever was installed app-wide on the window's behalf. On macOS
+   that is two local mouse monitors for the title bar.
+5. Take the editor out of the window **while the window is still on screen**.
+
+Hang this on the window's own close notification (`NSWindow.willCloseNotification`),
+not on the UI framework's disappearance callback and not on the request to
+close. A close the writer cancels from the save sheet must change nothing, and
+the notification is not posted for one. Step 5's timing is measured, not
+taste: taken down once the window had left the screen, the editor's layers
+stayed behind, about 15 MB of footprint on every close of the 21,500-word
+document. Taken down inside the close, then laid out and flushed there, eight
+closes in a row add 0.4 MB of heap in all.
+
+Test it against a document whose saves are counted, not the real one: on macOS
+an autosave aimed at a closed document presents a modal error, which hangs an
+unattended run instead of failing it. Type, let one autosave land as the
+positive control, type again, close at once, and check the count stays put.
+Then close a watched document, rewrite its file from outside, and check again.
+
+Reference: `windowIsClosing(_:)` in `macOS/Sources/MarkdownEditor/WindowChrome.swift`
+and `documentWindowClosed()` in `macOS/Sources/MarkdownEditor/MarkdownEditorView.swift`,
+asserted by the "Closing a document window" checks in
+`macOS/Scripts/check-window.swift`. The macOS README records the requirement
+as D-42. The web build
+has no window to close. A tab holds one document at a time, its watchers
+follow the open document when it becomes a different one
+(`Web/public/app/live.js`), and a hidden tab flushes its autosave rather than
+dropping it, because nothing else will save it.
+
 ### The size a document window opens at
 
 A window that opens too small for what it is already showing is a window whose

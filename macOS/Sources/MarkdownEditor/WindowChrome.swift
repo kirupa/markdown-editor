@@ -37,13 +37,15 @@ struct WindowChrome: ViewModifier {
     let contentWidth: CGFloat
     let railIsOpen: Bool
     let fileURL: URL?
+    let onClose: () -> Void
 
     func body(content: Content) -> some View {
         content.background(
             WindowChromeTarget(
                 contentWidth: contentWidth,
                 railIsOpen: railIsOpen,
-                fileURL: fileURL
+                fileURL: fileURL,
+                onClose: onClose
             )
         )
     }
@@ -53,17 +55,21 @@ extension View {
     /// Give this window a title bar that moves when dragged, fills the screen
     /// when double-clicked and can name the file it is showing, a Zoom that
     /// goes to `contentWidth` points of content — and, while `railIsOpen`, a
-    /// width that holds that content rather than clipping it.
+    /// width that holds that content rather than clipping it. `onClose` runs
+    /// as the window closes, which nothing in SwiftUI reliably says: see
+    /// `WindowChromeDelegate.watchForClose(of:)`.
     func windowChrome(
         contentWidth: CGFloat,
         railIsOpen: Bool,
-        fileURL: URL?
+        fileURL: URL?,
+        onClose: @escaping () -> Void
     ) -> some View {
         modifier(
             WindowChrome(
                 contentWidth: contentWidth,
                 railIsOpen: railIsOpen,
-                fileURL: fileURL
+                fileURL: fileURL,
+                onClose: onClose
             )
         )
     }
@@ -74,6 +80,7 @@ private struct WindowChromeTarget: NSViewRepresentable {
     let contentWidth: CGFloat
     let railIsOpen: Bool
     let fileURL: URL?
+    let onClose: () -> Void
 
     func makeCoordinator() -> WindowChromeDelegate { WindowChromeDelegate() }
 
@@ -83,8 +90,19 @@ private struct WindowChromeTarget: NSViewRepresentable {
         return view
     }
 
+    /// The window's delegate slot is weak, so leaving it holding this
+    /// coordinator once SwiftUI lets go of it would leave the slot empty and
+    /// SwiftUI's own delegate unasked about everything after.
+    static func dismantleNSView(
+        _ nsView: NSView,
+        coordinator: WindowChromeDelegate
+    ) {
+        coordinator.detach()
+    }
+
     func updateNSView(_ nsView: NSView, context: Context) {
         context.coordinator.fileURL = fileURL
+        context.coordinator.onClose = onClose
         // The window may arrive after the first layout pass, so this is also
         // where a late one gets picked up.
         (nsView as? AttachingView)?.attachIfPossible()
@@ -163,12 +181,89 @@ final class WindowChromeDelegate: NSObject, NSWindowDelegate {
         next = window.delegate
         window.delegate = self
         watchForTitleBarClicks()
+        watchForClose(of: window)
         // One turn of the runloop later, because SwiftUI sizes and orders this
         // window *after* the view is in it: measured now, the frame is the one
         // about to be replaced, and widening it would be undone a moment later.
         DispatchQueue.main.async { [weak self] in
             self?.sizeToContentIfNeeded()
         }
+    }
+
+    /// Gives the delegate slot back to whoever had it first.
+    ///
+    /// A turn of the runloop later rather than now. This view comes down as
+    /// the window closes, from inside the notification telling SwiftUI's
+    /// delegate so, and trading delegates halfway through could keep it from
+    /// hearing that. Until then this object stays in the slot and passes it
+    /// all on. (Measured: by then AppKit has usually emptied a closed
+    /// window's slot itself, and there is nothing left to give back.)
+    func detach() {
+        DispatchQueue.main.async { [self] in
+            guard let window, window.delegate === self else { return }
+            window.delegate = next
+        }
+    }
+
+    // MARK: - Closing
+
+    /// What the editor does as this window closes.
+    var onClose: (() -> Void)?
+
+    /// Watches for the window closing, because nothing else says so.
+    ///
+    /// Measured on macOS 27.2: a closed document's window outlives its
+    /// document. `NSApplication` still lists it, invisible, with the whole
+    /// editor inside, and SwiftUI never calls the content's `onDisappear`.
+    /// It is not the editor holding on: a bare `Text` as the scene's content
+    /// stays alive the same way, held from inside SwiftUI and AppKit.
+    ///
+    /// So the editor kept doing everything it had been doing. An edit made by
+    /// another app to a file already closed here was applied to the closed
+    /// editor, which then tried to autosave a document that no longer existed
+    /// and put up "KONVO couldn't autosave". Typing and pressing ⌘W inside the
+    /// autosave delay did the same, over a file that had in fact saved.
+    ///
+    /// Selector-based, under a name of its own: `windowWillClose(_:)` is the
+    /// delegate method this object forwards to SwiftUI's delegate, and
+    /// answering it here would stop that.
+    private func watchForClose(of window: NSWindow) {
+        NotificationCenter.default.removeObserver(
+            self,
+            name: NSWindow.willCloseNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowIsClosing(_:)),
+            name: NSWindow.willCloseNotification,
+            object: window
+        )
+    }
+
+    @objc private func windowIsClosing(_ notification: Notification) {
+        NotificationCenter.default.removeObserver(
+            self,
+            name: NSWindow.willCloseNotification,
+            object: nil
+        )
+        // Each watches every mouse-down in the app, for a title bar that is
+        // no longer on screen. The deinit that would remove them waits on
+        // SwiftUI letting go of the window, which it does not.
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        if let rightMonitor { NSEvent.removeMonitor(rightMonitor) }
+        monitor = nil
+        rightMonitor = nil
+        onClose?()
+        // Have SwiftUI take the editor down now, while the window is still
+        // on screen, rather than on its next pass, after it has gone.
+        // Measured: the layers of a window already ordered out are never
+        // given back. Each close of a 21,500-word document kept another
+        // 15 MB, outside the heap, with no end to it; laid out and committed
+        // here, eight closes in a row level off at 16 MB in all.
+        let window = notification.object as? NSWindow
+        window?.contentView?.layoutSubtreeIfNeeded()
+        CATransaction.flush()
     }
 
     // MARK: - Making room for the comments

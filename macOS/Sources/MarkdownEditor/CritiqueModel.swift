@@ -1198,7 +1198,7 @@ final class CritiqueModel: ObservableObject {
                     previous: previous,
                     brief: sent,
                     depth: depth
-                ) { update in
+                ) { [weak self] update in
                     Task { @MainActor [weak self] in
                         // `isRunning` as well as the run number: the last
                         // update can be queued behind the answer itself, and

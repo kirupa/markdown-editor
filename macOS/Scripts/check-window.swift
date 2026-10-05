@@ -186,6 +186,24 @@ struct EditorWindow {
     }
 }
 
+/// Stands where `NSDocument` stands in the app, and counts the saves it is
+/// asked for instead of writing. The autosave looks its file's document up
+/// before saving, and one it cannot find gets an alert — which here would
+/// stop the checks where they stand rather than fail them.
+final class SaveRecorder: NSDocument {
+    private(set) var saves = 0
+
+    override func save(
+        to url: URL,
+        ofType typeName: String,
+        for saveOperation: NSDocument.SaveOperationType,
+        completionHandler: @escaping (Error?) -> Void
+    ) {
+        saves += 1
+        completionHandler(nil)
+    }
+}
+
 @main
 @MainActor
 enum Harness {
@@ -575,6 +593,100 @@ enum Harness {
             plain.close()
         } else {
             check("there is a screen to widen against", false)
+        }
+
+        print("")
+        print("Closing a document window")
+
+        // macOS 27.2 keeps a closed document's window alive, editor and all,
+        // and never sends the editor `onDisappear`. So it went on autosaving
+        // and watching its file behind a window nobody could see, and twice
+        // that ended in "KONVO couldn't autosave" over the writer's next
+        // document. The windows here are kept alive the same way: by holding
+        // on to them.
+        func recorded(_ name: String) -> (url: URL, document: SaveRecorder)? {
+            let url = directory.appendingPathComponent(name).standardizedFileURL
+            try? text.write(to: url, atomically: true, encoding: .utf8)
+            let document = SaveRecorder()
+            document.fileURL = url
+            NSDocumentController.shared.addDocument(document)
+            guard NSDocumentController.shared.document(for: url) === document
+            else { return nil }
+            return (url, document)
+        }
+
+        if let typed = recorded("typed.md") {
+            let window = EditorWindow(
+                contentWidth: 1_100, documentURL: typed.url, text: text
+            )
+            window.window.isReleasedWhenClosed = false
+            window.settle(for: 1.0)
+            if let textView = window.textView {
+                func type(_ words: String) {
+                    let end = NSMaxRange(
+                        (textView.string as NSString).range(of: "later reads.")
+                    )
+                    textView.insertText(
+                        words, replacementRange: NSRange(location: end, length: 0)
+                    )
+                }
+                // So that nothing saved after the close can be put down to
+                // the recorder not being where the autosave looks.
+                type(" Typed.")
+                window.settle(for: 2.0)
+                check(
+                    "an edit is autosaved while its window is open",
+                    typed.document.saves == 1,
+                    "it was saved \(typed.document.saves) times"
+                )
+
+                // ⌘W a moment after the last word, inside the autosave's
+                // delay: the document has saved itself by the time its
+                // window closes, and the editor's own save is left over.
+                type(" And again.")
+                window.window.close()
+                // At once, while `close()` is still running. Taken down a
+                // moment later instead, once the window had left the screen,
+                // the editor left its layers' surfaces behind: about 15 MB a
+                // close, every close.
+                check(
+                    "closing the window takes the editor out of it at once",
+                    window.textView == nil,
+                    "the closed window still holds a text view"
+                )
+                window.settle(for: 2.0)
+                check(
+                    "and the autosave it had waiting is dropped",
+                    typed.document.saves == 1,
+                    "it was saved \(typed.document.saves) times"
+                )
+            } else {
+                check("the closing editor has a text view", false)
+            }
+        } else {
+            check("the autosave can find the document it saves", false)
+        }
+
+        // Rewritten by another app after its window has closed: the editor
+        // used to take the new version in and autosave it, to a document that
+        // was no longer open.
+        if let watched = recorded("watched.md") {
+            let window = EditorWindow(
+                contentWidth: 1_100, documentURL: watched.url, text: text
+            )
+            window.window.isReleasedWhenClosed = false
+            window.settle(for: 1.0)
+            window.window.close()
+            try? (text + "\nAdded by another app.\n")
+                .write(to: watched.url, atomically: true, encoding: .utf8)
+            window.settle(for: 3.0)
+            check(
+                "a file another app changes after its window closes is left alone",
+                watched.document.saves == 0,
+                "it was saved \(watched.document.saves) times"
+            )
+        } else {
+            check("the autosave can find the document it saves", false)
         }
 
         print("")
