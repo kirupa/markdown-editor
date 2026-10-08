@@ -22,6 +22,7 @@ export const CORE_TEST_MODULES = [
   './image-tag.test.js',
   './contract-render.test.js',
   './contract-move-image.test.js',
+  './contract-edits.test.js',
   './contract-inline.test.js',
   './storage-mode.test.js',
   './keep-focus.test.js',

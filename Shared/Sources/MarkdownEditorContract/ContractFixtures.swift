@@ -425,6 +425,86 @@ public enum ContractFixtures {
         )
     }
 
+    // MARK: - Editing through the rendered view
+
+    public struct EditCase: Codable, Equatable {
+        public var document: String
+        /// `join`, `joinTyping` or `deleteLine` — see `ContractCorpus.lineEdits`.
+        public var kind: String
+        /// What was selected in the rendered text, and what was typed over it.
+        public var rendered: [Int]
+        public var with: String
+        /// The stretch of the Markdown that `with` replaces in its place.
+        public var source: [Int]
+    }
+
+    public struct EditDocument: Codable, Equatable {
+        public var id: String
+        public var text: String
+        /// What the reading view shows for `text`, which the `rendered`
+        /// ranges index. A port whose render differs fails here first.
+        public var rendered: String
+    }
+
+    public struct EditHeader: Codable, Equatable {
+        public var version: Int
+        public var about: String
+        public var offsets: String
+        public var source: String
+        public var caseCount: Int
+        public var documents: [EditDocument]
+    }
+
+    public struct EditFixture: Equatable {
+        public var header: EditHeader
+        public var cases: [EditCase]
+    }
+
+    /// Every edit that takes away a line break the reading view shows, in
+    /// every corpus document, and the Markdown it replaces.
+    ///
+    /// The one place a rendered-view edit is not simply mapped through the
+    /// render model: the markers hidden either side of a line break have to
+    /// go with it, or they surface as text (I-330). Everything else an
+    /// editor does maps through the source ranges `render-model.json`
+    /// already pins.
+    public static func edits() -> EditFixture {
+        var documents: [EditDocument] = []
+        var cases: [EditCase] = []
+
+        for document in ContractCorpus.documents + ContractCorpus.editingDocuments {
+            let renderer = MarkdownIncrementalRenderer(source: document.text)
+            let rendered = renderer.renderedText()
+            documents.append(
+                EditDocument(id: document.id, text: document.text, rendered: rendered)
+            )
+            for edit in ContractCorpus.lineEdits(inRendered: rendered as NSString) {
+                let source = renderer.sourceRange(replacing: edit.range, with: edit.replacement)
+                cases.append(
+                    EditCase(
+                        document: document.id,
+                        kind: edit.kind,
+                        rendered: [edit.range.location, edit.range.length],
+                        with: edit.replacement,
+                        source: [source.location, source.length]
+                    )
+                )
+            }
+        }
+
+        return EditFixture(
+            header: EditHeader(
+                version: version,
+                about: "Every edit that removes a line break the reading view shows, in every corpus document: `join` is ⌫ at the start of a line (or ⌦ at the end of the one above), `joinTyping` is typing over the line break, `deleteLine` is deleting the whole line it ends. Replace the `rendered` range of the document's rendered text with `with`; the Markdown that edit replaces is the `source` range of the document.",
+                offsets: "UTF-16 code units. `rendered` indexes the document's rendered text; `source` indexes the document.",
+                source: "Shared/Sources/MarkdownEditorCore/MarkdownIncrementalRenderer.swift",
+                caseCount: cases.count,
+                documents: documents
+            ),
+            cases: cases
+        )
+    }
+
     // MARK: - Writing
 
     /// Stable output, so a regenerated file with no behaviour change is an
@@ -443,14 +523,24 @@ public enum ContractFixtures {
     /// a time, which a single pretty-printed array would not — and it streams,
     /// so a test runner need never hold the whole corpus in memory.
     public static func formattingLines() throws -> Data {
+        let fixture = formatting()
+        return try lines(header: fixture.header, cases: fixture.cases)
+    }
+
+    /// The edits fixture, in the formatting fixture's one-object-per-line form.
+    public static func editsLines() throws -> Data {
+        let fixture = edits()
+        return try lines(header: fixture.header, cases: fixture.cases)
+    }
+
+    private static func lines(header: some Encodable, cases: [some Encodable]) throws -> Data {
         let compact = JSONEncoder()
         compact.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
 
-        let fixture = formatting()
         var out = Data()
-        out.append(try compact.encode(fixture.header))
+        out.append(try compact.encode(header))
         out.append(0x0A)
-        for testCase in fixture.cases {
+        for testCase in cases {
             out.append(try compact.encode(testCase))
             out.append(0x0A)
         }
@@ -460,6 +550,7 @@ public enum ContractFixtures {
     public static func files() throws -> [String: Data] {
         let encoder = encoder()
         return [
+            "edits.jsonl": try editsLines(),
             "formatting.jsonl": try formattingLines(),
             "render-model.json": try encoder.encode(renderModel()),
             "paths.json": try encoder.encode(paths()),

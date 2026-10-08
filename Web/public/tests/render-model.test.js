@@ -1,6 +1,6 @@
 import { suite, test, expect, expectEqual } from './harness.js';
-import { renderMarkdown } from '../app/core/render-model.js';
-import { makeRange, substringWithRange } from '../app/core/range.js';
+import { renderMarkdown, MarkdownRenderModel } from '../app/core/render-model.js';
+import { makeRange, maxRange, substringWithRange } from '../app/core/range.js';
 
 // Mirrors `(text as NSString).range(of: substring)`.
 function findRange(text, substring) {
@@ -298,5 +298,127 @@ Quote`);
         const model = renderMarkdown(source);
         expectEqual(model.text, 'a*');
         expect(model.spans.some(s => s.style.kind === 'italic'));
+    });
+});
+
+// ─── Editing through the rendered view ────────────────────────────────────────
+// What `contract-edits.test.js` checks against the Swift, stated as behaviour.
+
+/** Makes an edit to the rendered text the way the editor does. */
+function editRendered(source, renderedRange, replacement, model = renderMarkdown(source)) {
+    const range = model.sourceRangeReplacing(renderedRange, replacement);
+    return {
+        source: source.slice(0, range.location) + replacement + source.slice(maxRange(range)),
+        caret: range.location + replacement.length,
+    };
+}
+
+/** Every line break in the rendered text, removed the three ways the contract removes it. */
+function lineBreakEdits(text) {
+    const edits = [];
+    let lineStart = 0;
+    for (let index = 0; index < text.length; index += 1) {
+        if (text[index] !== '\n') continue;
+        edits.push([makeRange(index, 1), '']);
+        edits.push([makeRange(index, 1), 'x']);
+        edits.push([makeRange(lineStart, index + 1 - lineStart), '']);
+        lineStart = index + 1;
+    }
+    return edits;
+}
+
+suite('Editing through the rendered view', () => {
+    // The shape of the bug report: a quote, an empty heading line, a paragraph.
+    const REPORT = '> **Note**\n> A quote.\n## \nLet\'s go.';
+
+    test('⌫ on an empty heading line under a quote leaves no marker behind', () => {
+        const model = renderMarkdown(REPORT);
+        const emptyLine = model.text.indexOf('\n\n') + 1;
+        const { source, caret } = editRendered(REPORT, makeRange(emptyLine - 1, 1), '', model);
+        expectEqual(source, '> **Note**\n> A quote.\nLet\'s go.');
+        const after = renderMarkdown(source);
+        expectEqual(after.text, 'Note\nA quote.\nLet\'s go.');
+        // At the end of the quote, where the line that went used to begin.
+        expectEqual(after.renderedRange(makeRange(caret, 0)).location, emptyLine - 1);
+    });
+
+    test('⌫ at the start of the line below takes the empty heading line whole', () => {
+        const model = renderMarkdown(REPORT);
+        const below = model.text.indexOf('Let');
+        const { source } = editRendered(REPORT, makeRange(below - 1, 1), '', model);
+        expectEqual(source, '> **Note**\n> A quote.\nLet\'s go.');
+        expect(!renderMarkdown(source).spans.some((s) => s.style.kind === 'heading'),
+            'the paragraph that moved up became a heading');
+    });
+
+    test('a heading joined onto the paragraph above carries on as that paragraph', () => {
+        const { source } = editRendered('Intro\n## Heading', makeRange(5, 1), '');
+        expectEqual(source, 'IntroHeading');
+    });
+
+    test('only the line marker goes: the joined line keeps its inline markup', () => {
+        const { source } = editRendered('Intro\n> **Bold** rest', makeRange(5, 1), '');
+        expectEqual(source, 'Intro**Bold** rest');
+    });
+
+    test('a heading marker inside a fence is code, and a join keeps it', () => {
+        const source = '```\nfirst\n## not a heading\n```\n';
+        expectEqual(renderMarkdown(source).text, 'first\n## not a heading\n');
+        expectEqual(editRendered(source, makeRange(5, 1), '').source,
+            '```\nfirst## not a heading\n```\n');
+    });
+
+    test('Return over a line break is never adjusted', () => {
+        const model = renderMarkdown('Intro\n## Heading');
+        expectEqual(model.sourceRangeReplacing(makeRange(5, 1), '\n'),
+            model.sourceRange(makeRange(5, 1)));
+    });
+
+    test('an edit that does not end at the start of a line maps as it always did', () => {
+        const model = renderMarkdown('# Title\n\nSome **bold** text.\n> quote\n');
+        const length = model.text.length;
+        for (let location = 0; location <= length; location += 1) {
+            for (const span of [0, 1, 3]) {
+                const range = makeRange(location, Math.min(span, length - location));
+                if (range.length > 0 && model.text[maxRange(range) - 1] === '\n') continue;
+                for (const replacement of ['', 'x', '\n']) {
+                    expectEqual(model.sourceRangeReplacing(range, replacement),
+                        model.sourceRange(range),
+                        `[${range.location},${range.length}] with ${JSON.stringify(replacement)}`);
+                }
+            }
+        }
+    });
+
+    // The editor asks the model it keeps up to date, never a fresh one.
+    test('a model updated in place answers as one parsed from nothing', () => {
+        let source = 'Intro\n\n> quote\n## \nAfter\n';
+        const model = new MarkdownRenderModel(source);
+        const edits = [
+            { at: 0, insert: '> ' },                    // the first line becomes a quote
+            { at: source.length + 2, insert: '## ' },   // a heading at the end
+            { at: 2, insert: '```\ncode\n```\n' },      // a fence above everything
+            { at: 0, remove: 5 },                       // and part of it gone again
+        ];
+        for (const [step, edit] of edits.entries()) {
+            const next =
+                source.slice(0, edit.at) + (edit.insert ?? '') + source.slice(edit.at + (edit.remove ?? 0));
+            model.update(next, step % 2 === 0
+                ? {
+                    previousSource: source,
+                    range: makeRange(edit.at, edit.remove ?? 0),
+                    replacement: edit.insert ?? '',
+                }
+                : null);
+            source = next;
+            const fresh = renderMarkdown(source);
+            expectEqual(model.text, fresh.text, `text after edit ${step + 1}`);
+            for (const [range, replacement] of lineBreakEdits(fresh.text)) {
+                expectEqual(model.sourceRangeReplacing(range, replacement),
+                    fresh.sourceRangeReplacing(range, replacement),
+                    `edit ${step + 1}, [${range.location},${range.length}] ` +
+                        `with ${JSON.stringify(replacement)} in ${JSON.stringify(source)}`);
+            }
+        }
     });
 });

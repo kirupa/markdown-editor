@@ -148,6 +148,110 @@ public enum ContractCorpus {
         ),
     ]
 
+    /// Documents for editing through the rendered view.
+    ///
+    /// Kept out of `documents` so that the formatting fixture, whose case
+    /// counts the other READMEs cite, stays exactly as it is. Each puts a
+    /// hidden marker beside a line break, which is where an edit made in the
+    /// rendered view has to take away Markdown nobody can see — the first is
+    /// the shape of the document the bug was reported on.
+    public static let editingDocuments: [Document] = [
+        Document(
+            id: "empty-heading-under-quote",
+            text: """
+            > **Note: BFS is the shape of the answer**
+            > If BFS rings a bell, it visits every node one edge away first. \n\
+            ## \n\
+            Let's run that on our 5-by-5 grid.
+            """
+        ),
+        Document(
+            id: "line-markers",
+            text: """
+            Paragraph above.
+            ## Heading
+            #\tTabbed heading
+               ### Three spaces in
+            >quote without a space
+              >  quote with spaces
+            > # a hash inside a quote
+            ## > a quote mark inside a heading
+            ## **bold** heading
+            \\## escaped hashes
+            ##NoSpace
+            ####### seven hashes
+            ##
+            >
+            ## \n\
+            Last paragraph.
+            """
+        ),
+        Document(
+            id: "fence-neighbours",
+            text: """
+            ## Before a fence
+            ```swift
+            ## not a heading
+            > not a quote
+            ```
+            ## After a fence
+            ~~~
+            code
+            ~~~
+            > After a tilde fence
+            """
+        ),
+        Document(
+            id: "crlf-markers",
+            text: "> quoted\r\n## \r\nParagraph\r\n## Heading\r\n> quote\r\n"
+        ),
+        Document(id: "trailing-empty-heading", text: "Paragraph\n## "),
+    ]
+
+    /// One edit that removes a line break the rendered view shows.
+    public struct LineEdit: Equatable, Sendable {
+        public var kind: String
+        public var range: NSRange
+        public var replacement: String
+    }
+
+    /// The edits that take away a line break, at every line break shown.
+    ///
+    /// `join` is ⌫ at the start of the line below it, or ⌦ at the end of the
+    /// line above, `joinTyping` is typing over it, and `deleteLine` is
+    /// deleting the whole line it ends. A CRLF is taken whole, as the text
+    /// system takes it. Offsets are in the rendered text.
+    public static func lineEdits(inRendered rendered: NSString) -> [LineEdit] {
+        var edits: [LineEdit] = []
+        var lineStart = 0
+        var index = 0
+        while index < rendered.length {
+            let character = rendered.character(at: index)
+            guard [0x0A, 0x0D, 0x2028, 0x2029].contains(character) else {
+                index += 1
+                continue
+            }
+            var end = index + 1
+            if character == 0x0D, end < rendered.length,
+               rendered.character(at: end) == 0x0A {
+                end += 1
+            }
+            let lineBreak = NSRange(location: index, length: end - index)
+            edits.append(LineEdit(kind: "join", range: lineBreak, replacement: ""))
+            edits.append(LineEdit(kind: "joinTyping", range: lineBreak, replacement: "x"))
+            edits.append(
+                LineEdit(
+                    kind: "deleteLine",
+                    range: NSRange(location: lineStart, length: end - lineStart),
+                    replacement: ""
+                )
+            )
+            lineStart = end
+            index = end
+        }
+        return edits
+    }
+
     /// Where a caret or selection is placed in each document.
     ///
     /// Line starts and line ends are where off-by-one errors live, so every one

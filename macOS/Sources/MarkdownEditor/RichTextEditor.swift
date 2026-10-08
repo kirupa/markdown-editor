@@ -805,11 +805,14 @@ struct RichTextEditor: NSViewRepresentable {
                 return false
             }
 
+            // Not just the characters selected: a line break taken away
+            // takes the markers hidden beside it, or they surface as text.
             let sourceRange = renderer.sourceRange(
-                for: clamped(
+                replacing: clamped(
                     affectedCharRange,
                     to: textView.textStorage?.length ?? 0
-                )
+                ),
+                with: replacementString
             )
             let replacement = replacementString
             if replacement == "\n" {
@@ -897,7 +900,10 @@ struct RichTextEditor: NSViewRepresentable {
             // arriving — commits the composition first.
             let composedSource = compositionState.sourceText as NSString
             let sourceRange = clamped(
-                renderer.sourceRange(for: difference.range),
+                renderer.sourceRange(
+                    replacing: difference.range,
+                    with: difference.replacement
+                ),
                 to: composedSource.length
             )
             let result = MarkdownEditResult(
@@ -944,12 +950,20 @@ struct RichTextEditor: NSViewRepresentable {
             return source.substring(with: sourceRange)
         }
 
+        /// Cut and Paste. Mapped as typing is, so cutting a whole heading
+        /// line takes its `## ` too rather than handing it to the line below.
         func replaceSelection(
             withMarkdown markdown: String,
             actionName: String
         ) {
+            guard let textView else {
+                return
+            }
             replaceSource(
-                range: selectedSourceRange,
+                range: renderer.sourceRange(
+                    replacing: textView.selectedRange(),
+                    with: markdown
+                ),
                 with: markdown,
                 actionName: actionName
             )

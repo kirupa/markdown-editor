@@ -18,6 +18,7 @@ import { insertNewline } from '../core/formatting.js';
 import {
   blockContaining,
   blockIndexOf,
+  offsetInBlock,
   readPlainText,
   selectionRange,
   setSelectionRange,
@@ -41,6 +42,10 @@ export class EditorSurface {
    * @param {(source: string) => void} projection.render draws `source` into the element
    * @param {(source: string) => string} projection.textFor the plain text `render` produces
    * @param {(source: string, range) => range} projection.toSource maps a surface range to source
+   * @param {(source: string, range, replacement: string) => range} [projection.toSourceEdit]
+   *   the source an edit of a surface range replaces, when that can be more
+   *   than `toSource` says: removing a line break takes the markers hidden
+   *   beside it (I-330)
    * @param {(source: string, range) => range} projection.toSurface maps a source range to the surface
    * @param {MarkdownDocumentModel} model
    */
@@ -121,6 +126,14 @@ export class EditorSurface {
     return this.projection.toSource(this.model.source, surfaceRange);
   }
 
+  /** The source that replacing `range` on the surface with `replacement` replaces. */
+  toSourceEdit(range, replacement) {
+    return (
+      this.projection.toSourceEdit?.(this.model.source, range, replacement) ??
+      this.projection.toSource(this.model.source, range)
+    );
+  }
+
   handleSelectionChange = () => {
     if (this.isApplying || !this.isFocused) return;
     this.noteSelectedBlocks();
@@ -167,7 +180,7 @@ export class EditorSurface {
     const surfaceChange = this.changedRegion() ?? this.changedDocument();
     if (surfaceChange === null) return;
 
-    const sourceRange = this.projection.toSource(this.model.source, surfaceChange.range);
+    const sourceRange = this.toSourceEdit(surfaceChange.range, surfaceChange.replacement);
     const newSource =
       this.model.source.slice(0, sourceRange.location) +
       surfaceChange.replacement +
@@ -248,8 +261,15 @@ export class EditorSurface {
 
     const base = layout.blockRenderedStart(low);
     // Measured rather than guessed: the region is already only what could have
-    // changed, and taking it whole would rewrite the text around the edit.
-    const change = minimalReplacement(before, after);
+    // changed, and taking it whole would rewrite the text around the edit. But
+    // measured from the caret, because a diff alone cannot say which of two
+    // equal characters went: ⌫ on an empty line and ⌫ at the start of the line
+    // below it both turn `a⏎⏎b` into `a⏎b`, and only the caret — at the end of
+    // `a`, or the start of `b` — tells which line break the writer removed.
+    // That decides where the caret lands and which hidden markers go with it.
+    const caret = this.caretOffsetInBlocks(low, domHigh);
+    const change =
+      caret === null ? minimalReplacement(before, after) : changeEndingAt(before, after, caret);
     return {
       range: makeRange(base + change.range.location, change.range.length),
       replacement: change.replacement,
@@ -263,16 +283,43 @@ export class EditorSurface {
     if (currentText === previousText) return null;
 
     const surfaceSelection = selectionRange(this.element) ?? makeRange(currentText.length, 0);
+    return changeEndingAt(previousText, currentText, surfaceSelection.location);
+  }
 
-    // The caret sits after the inserted text, so the edited region is bounded
-    // by the caret and the length change — enough for the diff to confirm or
-    // widen on its own.
-    const lengthDelta = currentText.length - previousText.length;
-    const changeEnd = Math.max(0, surfaceSelection.location);
-    const changeStart = Math.max(0, changeEnd - Math.max(0, lengthDelta));
-    const guess = makeRange(changeStart, Math.max(0, -lengthDelta));
+  /**
+   * Where the caret is in the text of DOM blocks `from` up to `to`, or null
+   * when it is not among them.
+   *
+   * Counted from block `from`, so finding it costs the region an edit
+   * touched rather than the document above it.
+   */
+  caretOffsetInBlocks(from, to) {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return null;
+    const { endContainer, endOffset } = selection.getRangeAt(0);
+    const root = this.element;
 
-    return textReplacement(previousText, currentText, guess);
+    let index;
+    let within;
+    if (endContainer === root) {
+      // Between blocks: the start of the one after, or the end of the last.
+      const count = root.childNodes.length;
+      if (count === 0) return null;
+      index = Math.min(endOffset, count - 1);
+      within = endOffset < count ? 0 : textOfBlock(root.childNodes[index]).length;
+    } else {
+      const block = blockContaining(root, endContainer);
+      if (block === null) return null;
+      index = blockIndexOf(root, block);
+      within = offsetInBlock(block, endContainer, endOffset);
+    }
+    if (index < from || index >= to) return null;
+
+    let offset = within;
+    for (let block = from; block < index; block += 1) {
+      offset += textOfBlock(root.childNodes[block]).length + 1;
+    }
+    return offset;
   }
 
   /** Which block the caret is in now, without counting from the top. */
@@ -332,17 +379,23 @@ export class EditorSurface {
 
   /** E-11: cut copies the Markdown, then removes it as one undoable step. */
   handleCut = (event) => {
-    const selection = this.currentSourceSelection();
-    if (!selection || selection.length === 0) return;
+    const surfaceRange = selectionRange(this.element, this.layout());
+    if (!surfaceRange) return;
+    const selection = this.projection.toSource(this.model.source, surfaceRange);
+    if (selection.length === 0) return;
     event.preventDefault();
     const markdown = this.model.source.slice(selection.location, maxRange(selection));
     event.clipboardData.setData('text/plain', markdown);
     event.clipboardData.setData('text/markdown', markdown);
 
+    // Removed as ⌫ over the same selection would remove it, so cutting whole
+    // lines takes the heading marker the first of them hid rather than
+    // handing it to the line that moves up.
+    const removed = this.toSourceEdit(surfaceRange, '');
     const newSource =
-      this.model.source.slice(0, selection.location) +
-      this.model.source.slice(maxRange(selection));
-    this.model.edit(newSource, makeRange(selection.location, 0));
+      this.model.source.slice(0, removed.location) +
+      this.model.source.slice(maxRange(removed));
+    this.model.edit(newSource, makeRange(removed.location, 0));
   };
 
   handlePaste = (event) => {
@@ -359,7 +412,11 @@ export class EditorSurface {
     if (!markdown) return;
 
     event.preventDefault();
-    const selection = this.currentSourceSelection() ?? this.model.selection;
+    // Mapped as typing is, so a paste over a line break takes the markers
+    // hidden beside it.
+    const surfaceRange = selectionRange(this.element, this.layout());
+    const selection =
+      surfaceRange === null ? this.model.selection : this.toSourceEdit(surfaceRange, markdown);
     const newSource =
       this.model.source.slice(0, selection.location) +
       markdown +
@@ -376,6 +433,22 @@ function joinBlocks(from, to, textAt) {
     text += textAt(index);
   }
   return text;
+}
+
+/**
+ * The replacement turning `before` into `after`, given where the caret ended
+ * up in `after`.
+ *
+ * The browser leaves the caret after whatever it inserted, and where a
+ * deletion closed up, so the edit ends at the caret and spans the change in
+ * length. That guess is taken only if the text either side of it is
+ * untouched; otherwise the diff measures the change on its own.
+ */
+function changeEndingAt(before, after, caret) {
+  const delta = after.length - before.length;
+  const end = Math.min(Math.max(0, caret), after.length);
+  const start = Math.max(0, end - Math.max(0, delta));
+  return textReplacement(before, after, makeRange(start, Math.max(0, -delta)));
 }
 
 let plainTextOnly = null;

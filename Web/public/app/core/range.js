@@ -92,7 +92,11 @@ export function lineBounds(text, location) {
   return { lineStart, lineEnd, contentsEnd };
 }
 
-function isLineTerminator(code) {
+/**
+ * The code units `lineBounds` ends a line at, and so the parser does. Exported
+ * so that anything reasoning about where lines meet agrees with it exactly.
+ */
+export function isLineTerminator(code) {
   return code === 0x0a || code === 0x0d || code === 0x2028 || code === 0x2029;
 }
 

@@ -135,6 +135,19 @@ function textLengthOfChildrenBefore(block, childIndex) {
   return length;
 }
 
+/**
+ * Character offset of a DOM position within the block holding it.
+ *
+ * For a caller that already knows the block and needs only the distance into
+ * it — reading where the caret ended up after an edit, when the DOM no longer
+ * matches any layout and counting from the top would cost the document.
+ */
+export function offsetInBlock(block, node, offset) {
+  return block === node
+    ? textLengthOfChildrenBefore(block, offset)
+    : offsetWithinBlock(block, node, offset);
+}
+
 function textLengthOf(node) {
   if (node.nodeType === Node.TEXT_NODE) return node.nodeValue.length;
   if (node.nodeName === 'BR') return 0;

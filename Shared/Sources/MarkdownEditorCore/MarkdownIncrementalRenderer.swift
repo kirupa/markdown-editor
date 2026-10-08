@@ -345,6 +345,141 @@ public final class MarkdownIncrementalRenderer {
         return low
     }
 
+    // MARK: - Editing through the rendered text
+
+    /// The Markdown an edit to the rendered text replaces.
+    ///
+    /// Usually exactly `sourceRange(for:)`. The exception is an edit that
+    /// removes a line break. The markup either side of a rendered line break
+    /// is hidden, and `sourceRange(for:)` — asked only about the characters
+    /// that were selected — leaves it all where it was. So ⌫ on an empty
+    /// heading line under a quote deleted the one source `\n` and turned
+    /// `> quote⏎## ⏎` into `> quote## ⏎`: a `## ` nobody could see a moment
+    /// earlier appeared as text in the middle of the quote (I-330).
+    ///
+    /// Two adjustments, both to markup no one can see:
+    ///
+    /// - **Joining a line onto the one above** also removes the heading or
+    ///   quote marker the lower line began with, so its text carries on the
+    ///   upper line in the upper line's style — what a word processor does
+    ///   when two paragraphs merge. Only that marker: anything else hidden
+    ///   there, a `**` opening bold say, still means what it meant.
+    /// - **Deleting whole lines** — from the start of one line to the start
+    ///   of another — also removes whatever the first of them hid at its
+    ///   start, so the line that moves up keeps its own style instead of
+    ///   inheriting a heading from a line that is gone.
+    ///
+    /// A replacement that ends in a line break leaves a line boundary where
+    /// the old one was, so it — and Return in particular — is never adjusted.
+    public func sourceRange(
+        replacing renderedRange: NSRange,
+        with replacement: String
+    ) -> NSRange {
+        let base = sourceRange(for: renderedRange)
+        let start = min(max(0, renderedRange.location), totalRenderedLength)
+        let end = start + min(
+            max(0, renderedRange.length),
+            totalRenderedLength - start
+        )
+        // Only an edit that ends at the start of a line can join two lines
+        // or remove whole ones, so a keystroke anywhere else stops here having
+        // looked at a single character.
+        guard end > start, isRenderedLineStart(end) else {
+            return base
+        }
+
+        var sourceStart = base.location
+        var sourceEnd = NSMaxRange(base)
+        let replacementText = replacement as NSString
+
+        if replacementText.length == 0, isRenderedLineStart(start) {
+            sourceStart = min(sourceStart, startOfHiddenLead(beforeRendered: start))
+        }
+
+        let endsWithLineBreak = replacementText.length > 0
+            && Self.isLineBreak(
+                replacementText.character(at: replacementText.length - 1)
+            )
+        // What is left in front of the edit still ends a line, so the line
+        // below moves up intact, marker and all. That includes the `\r` of a
+        // CRLF whose `\n` alone was deleted: it is a line break by itself.
+        let removesWholeLines = replacementText.length == 0
+            && (sourceStart == 0
+                || Self.isLineBreak(source.character(at: sourceStart - 1)))
+        if !endsWithLineBreak, !removesWholeLines {
+            let joinedLine = lowerSourceOffset(at: end)
+            let hiddenEnd = upperSourceOffset(at: end)
+            // The marker has to lie wholly inside what the line hid. A code
+            // line hides nothing, so a `## ` typed in a fence is text and
+            // stays.
+            if hiddenEnd > joinedLine {
+                let marker = MarkdownLinePrefix.hiddenLength(
+                    in: source,
+                    lineStart: joinedLine
+                )
+                if marker > 0, joinedLine + marker <= hiddenEnd {
+                    sourceEnd = max(sourceEnd, joinedLine + marker)
+                }
+            }
+        }
+
+        return NSRange(location: sourceStart, length: sourceEnd - sourceStart)
+    }
+
+    /// Whether a rendered position begins a line: the start of the document,
+    /// or just after a line break — but not between the two halves of a CRLF,
+    /// where an edit that stops leaves the `\n` behind to go on ending the
+    /// line. ← does put the caret there; ⌫ and ⌦ take a CRLF whole.
+    private func isRenderedLineStart(_ index: Int) -> Bool {
+        guard index > 0 else {
+            return true
+        }
+        guard let previous = renderedCharacter(at: index - 1),
+            Self.isLineBreak(previous)
+        else {
+            return false
+        }
+        return !(previous == 0x0D && renderedCharacter(at: index) == 0x0A)
+    }
+
+    /// Where the hidden Markdown in front of rendered line start `index`
+    /// begins on that line.
+    ///
+    /// The hidden stretch can run back over whole lines that render nothing
+    /// — a fence's opening line, or the closing one of the fence above — and
+    /// those are not this line's to remove. So the answer is the last line
+    /// break inside the stretch, not the stretch's start.
+    private func startOfHiddenLead(beforeRendered index: Int) -> Int {
+        let leadStart = lowerSourceOffset(at: index)
+        var cursor = upperSourceOffset(at: index)
+        while cursor > leadStart {
+            if Self.isLineBreak(source.character(at: cursor - 1)) {
+                return cursor
+            }
+            cursor -= 1
+        }
+        return leadStart
+    }
+
+    private func renderedCharacter(at index: Int) -> unichar? {
+        guard let blockIndex = blockIndex(containingRendered: index) else {
+            return nil
+        }
+        let block = blocks[blockIndex]
+        return (block.model.text as NSString)
+            .character(at: index - block.renderedStart)
+    }
+
+    /// The characters `NSString` ends a line at, and so the parser does.
+    private static func isLineBreak(_ character: unichar) -> Bool {
+        switch character {
+        case 0x0A, 0x0D, 0x85, 0x2028, 0x2029:
+            true
+        default:
+            false
+        }
+    }
+
     // MARK: - Editing
 
     /// Replaces a stretch of the Markdown and renders only the blocks that
