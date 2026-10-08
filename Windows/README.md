@@ -94,7 +94,12 @@ suite that runs in a third of a second and one that needs a UI.
    being code, which is the half that is easy to over-apply.
 3. **Render model.** Port `MarkdownRenderModel.swift` against
    `Contract/render-model.json`. Do not skip the `source` ranges — the reading
-   view is not usable without them.
+   view is not usable without them. Then port `sourceRange(replacing:with:)`
+   from `MarkdownIncrementalRenderer.swift` against `Contract/edits.jsonl`, and
+   have the editor control ask it for every edit it maps back to the source.
+   Mapping only the selected characters looks right until somebody removes a
+   line break, when a marker the reading view hid turns up as text — see
+   `Contract/README.md` § "Reading the edits fixture".
 4. **Cloud logic.** Port `CloudWorkspace.swift` and its stores behind an
    interface, with an in-memory double, exactly as the Swift and JS builds do.
    Read `Contract/README.md` § "The Firestore data model" before writing any

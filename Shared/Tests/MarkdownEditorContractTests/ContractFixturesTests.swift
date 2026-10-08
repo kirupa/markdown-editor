@@ -61,6 +61,35 @@ struct ContractFixturesTests {
         }
     }
 
+    @Test("Every edit case is usable, and the editing documents are reachable by id")
+    func editCasesApplyCleanly() throws {
+        let fixture = ContractFixtures.edits()
+        let documents = Dictionary(
+            uniqueKeysWithValues: fixture.header.documents.map { ($0.id, $0) }
+        )
+        // One id space with the formatting corpus, so a case names one
+        // document unambiguously.
+        #expect(documents.count == fixture.header.documents.count)
+        #expect(Set(["join", "joinTyping", "deleteLine"]) == Set(fixture.cases.map(\.kind)))
+
+        for testCase in fixture.cases {
+            let document = try #require(documents[testCase.document])
+            let rendered = document.rendered as NSString
+            let source = document.text as NSString
+            #expect(testCase.rendered[0] >= 0 && testCase.rendered[0] + testCase.rendered[1] <= rendered.length)
+            #expect(testCase.source[0] >= 0 && testCase.source[0] + testCase.source[1] <= source.length)
+            // Every case takes a line break away, which is the only place the
+            // rule does anything.
+            #expect(
+                rendered.substring(
+                    with: NSRange(location: testCase.rendered[0], length: testCase.rendered[1])
+                ).rangeOfCharacter(from: .newlines) != nil
+            )
+        }
+        // The report the rule was written for is in it.
+        #expect(documents["empty-heading-under-quote"]?.text.contains("\n## \n") == true)
+    }
+
     @Test("The minimal edit round-trips, including across a surrogate pair")
     func minimalEditRoundTrips() {
         let pairs = [

@@ -14,9 +14,10 @@ import {
   MarkdownRenderModel,
   rejectedChangeCount,
 } from '../app/core/render-model.js';
+import { makeRange } from '../app/core/range.js';
 import { renderInto, ensureBlockOffsets } from '../app/ui/renderer.js';
 import { EditorSurface } from '../app/ui/editor-surface.js';
-import { readPlainText, textOfBlock } from '../app/dom-text.js';
+import { readPlainText, setSelectionRange, textOfBlock } from '../app/dom-text.js';
 
 function host() {
   const element = document.createElement('div');
@@ -333,6 +334,16 @@ suite('Offsets a redraw leaves behind', () => {
   });
 });
 
+/** Puts the caret at the end of a block, the way a browser would. */
+function caretAtEndOf(block) {
+  const range = document.createRange();
+  range.selectNodeContents(block);
+  range.collapse(false);
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
 suite('Reading an edit out of the surface', () => {
   /**
    * A surface over a render model, with a document stub standing in for the
@@ -362,16 +373,6 @@ suite('Reading an edit out of the surface', () => {
     const surface = new EditorSurface(element, projection, stub);
     surface.sync(source, stub.selection, { force: true });
     return { element, surface, model, edits, stub };
-  }
-
-  /** Puts the caret at the end of a block, the way a browser would. */
-  function caretAtEndOf(block) {
-    const range = document.createRange();
-    range.selectNodeContents(block);
-    range.collapse(false);
-    const selection = window.getSelection();
-    selection.removeAllRanges();
-    selection.addRange(range);
   }
 
   /**
@@ -511,50 +512,51 @@ suite('Reading an edit out of the surface', () => {
   });
 });
 
-suite('The description an edit hands the model', () => {
-  /**
-   * The surface, the document and the model wired the way `main.js` wires
-   * them: an edit carries what it replaced, the document holds it, and the
-   * model is offered it on the next draw.
-   *
-   * What this is really testing is that the description the surface produces
-   * is one the model can actually use. It is only ever a shortcut — a wrong
-   * one still renders correctly — so the only symptom of getting it wrong is
-   * that every keystroke quietly reads the whole document again, which is the
-   * thing this whole change exists to stop.
-   */
-  function editorOver(source) {
-    const element = host();
-    const model = new MarkdownRenderModel(source);
-    const document_ = {
-      source,
-      selection: { location: 0, length: 0 },
-      lastChange: null,
-      edit(next, selection, { change = null } = {}) {
-        this.lastChange = change;
-        this.source = next;
-        this.selection = selection;
-        surface.sync(next, selection, { force: true });
-      },
-      undo() {},
-      redo() {},
-    };
-    const layoutFor = (text) => model.update(text, document_.lastChange);
-    const surface = new EditorSurface(
-      element,
-      {
-        render: (text) => renderInto(element, layoutFor(text), IMAGE),
-        textFor: (text) => layoutFor(text).text,
-        toSource: (text, range) => layoutFor(text).sourceRange(range),
-        toSurface: (text, range) => layoutFor(text).renderedRange(range),
-        layoutFor,
-      },
-      document_
-    );
-    surface.sync(source, document_.selection, { force: true });
-    return { element, surface, model, document: document_ };
-  }
+/**
+ * The surface, the document and the model wired the way `main.js` wires
+ * them: an edit carries what it replaced, the document holds it, and the
+ * model is offered it on the next draw.
+ */
+function editorOver(source) {
+  const element = host();
+  const model = new MarkdownRenderModel(source);
+  const document_ = {
+    source,
+    selection: { location: 0, length: 0 },
+    lastChange: null,
+    edit(next, selection, { change = null } = {}) {
+      this.lastChange = change;
+      this.source = next;
+      this.selection = selection;
+      surface.sync(next, selection, { force: true });
+    },
+    undo() {},
+    redo() {},
+  };
+  const layoutFor = (text) => model.update(text, document_.lastChange);
+  const surface = new EditorSurface(
+    element,
+    {
+      render: (text) => renderInto(element, layoutFor(text), IMAGE),
+      textFor: (text) => layoutFor(text).text,
+      toSource: (text, range) => layoutFor(text).sourceRange(range),
+      toSourceEdit: (text, range, replacement) =>
+        layoutFor(text).sourceRangeReplacing(range, replacement),
+      toSurface: (text, range) => layoutFor(text).renderedRange(range),
+      layoutFor,
+    },
+    document_
+  );
+  surface.sync(source, document_.selection, { force: true });
+  return { element, surface, model, document: document_ };
+}
 
+// What this is really testing is that the description the surface produces
+// is one the model can actually use. It is only ever a shortcut — a wrong
+// one still renders correctly — so the only symptom of getting it wrong is
+// that every keystroke quietly reads the whole document again, which is the
+// thing this whole change exists to stop.
+suite('The description an edit hands the model', () => {
   test('typing hands over a description the model can use', () => {
     const { element, surface, document: document_ } = editorOver(
       '# Title\n\nFirst paragraph.\n\nSecond paragraph.\n'
@@ -603,6 +605,209 @@ suite('The description an edit hands the model', () => {
       });
       expect(document_.source.length > '- item\n'.length, 'Return inserted something');
       expectEqual(rejectedChangeCount(), before, 'and told the model nothing it had to reject');
+    } finally {
+      element.remove();
+    }
+  });
+});
+
+// I-330: what an edit made through the rendered view replaces in the source.
+//
+// Removing a line break the view shows removes the line it starts, and that
+// line's hidden markers have to go with it. ⌫ on the empty line under a quote
+// used to delete only the source line break, leaving the line's `## ` on the
+// end of the quote — where the writer watched it appear. Each edit here runs
+// the way the browser runs it: the selection noted while the DOM still
+// matches, the DOM changed, the caret left where the browser leaves it, and
+// the change read back out of the surface.
+suite('Line breaks removed through the surface', () => {
+  const QUOTE =
+    '> **Note: BFS is the shape of the answer**\n' +
+    '> If BFS rings a bell, it visits every node one edge away first. \n';
+  const BELOW = "Let's run that on our 5-by-5 grid.";
+  // The document the bug was reported against: an empty heading between a
+  // quote and the paragraph after it, which the view draws as a blank line.
+  const REPORTED = `${QUOTE}## \n${BELOW}`;
+  const JOINED = `${QUOTE}${BELOW}`;
+  const END_OF_QUOTE = QUOTE.length - 1;
+  const START_OF_BELOW = QUOTE.length;
+
+  function placeCaret(node, offset) {
+    const range = document.createRange();
+    range.setStart(node, offset);
+    range.collapse(true);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+
+  /**
+   * Makes one edit the way the browser makes it and hands it to the surface,
+   * read one of the surface's two ways.
+   *
+   * 'region' notes the selection before the DOM changes, as `beforeinput`
+   * does, so only the blocks around the edit are read. 'whole' does not — as
+   * when the surface found a block count it did not expect — so the whole
+   * surface is compared instead. The two see different stretches of text;
+   * the caret is what has to tell both of them which line break went.
+   */
+  function editThroughTheView(source, { select, change }, reading) {
+    const editor = editorOver(source);
+    const { element, surface } = editor;
+    element.focus();
+    select(element);
+    if (reading === 'region') surface.noteSelectedBlocks();
+    change(element);
+    expectEqual(
+      surface.changedRegion() !== null,
+      reading === 'region',
+      `the ${reading} reading is the one that read the edit`
+    );
+    surface.handleInput();
+    return editor;
+  }
+
+  /** The source, the caret and the drawn view one edit leaves, both ways. */
+  function expectEdit(source, edit, expected) {
+    for (const reading of ['region', 'whole']) {
+      const { element, surface, document: document_ } = editThroughTheView(
+        source,
+        edit,
+        reading
+      );
+      try {
+        expectEqual(document_.source, expected.source, `${reading}: the source`);
+        expectEqual(document_.selection, expected.selection, `${reading}: the caret`);
+        expectEqual(
+          surface.currentSourceSelection(),
+          expected.selection,
+          `${reading}: the caret is drawn where the model says it is`
+        );
+        const drawn = readPlainText(element);
+        expect(!drawn.includes('#'), `${reading}: no marker surfaced: ${JSON.stringify(drawn)}`);
+      } finally {
+        element.remove();
+      }
+    }
+  }
+
+  /** A clipboard event the surface can read and write, with no real clipboard. */
+  function clipboardEvent(contents = {}) {
+    const data = { ...contents };
+    return {
+      data,
+      clipboardData: {
+        files: [],
+        getData: (type) => data[type] ?? '',
+        setData: (type, value) => {
+          data[type] = value;
+        },
+      },
+      preventDefault() {},
+    };
+  }
+
+  test('⌫ on the empty line puts the caret at the end of the quote, and that is all', () => {
+    expectEdit(
+      REPORTED,
+      {
+        select: (element) => placeCaret(element.childNodes[2], 0),
+        // What the browser leaves: the empty line gone and the caret at the
+        // end of the line above it.
+        change: (element) => {
+          element.childNodes[2].remove();
+          caretAtEndOf(element.childNodes[1]);
+        },
+      },
+      { source: JOINED, selection: makeRange(END_OF_QUOTE, 0) }
+    );
+  });
+
+  test('⌫ at the start of the line below takes the empty line, and the caret stays put', () => {
+    // The same text either way — `a⏎⏎b` becomes `a⏎b` — so only the caret,
+    // left at the start of the paragraph rather than the end of the quote,
+    // says which line break this was.
+    expectEdit(
+      REPORTED,
+      {
+        select: (element) => placeCaret(element.childNodes[3], 0),
+        change: (element) => {
+          element.childNodes[2].remove();
+          placeCaret(element.childNodes[2], 0);
+        },
+      },
+      { source: JOINED, selection: makeRange(START_OF_BELOW, 0) }
+    );
+  });
+
+  test('⌦ at the end of the quote is ⌫ on the empty line', () => {
+    expectEdit(
+      REPORTED,
+      {
+        select: (element) => caretAtEndOf(element.childNodes[1]),
+        change: (element) => {
+          element.childNodes[2].remove();
+          caretAtEndOf(element.childNodes[1]);
+        },
+      },
+      { source: JOINED, selection: makeRange(END_OF_QUOTE, 0) }
+    );
+  });
+
+  test('typing over a line break into a heading takes the heading marker', () => {
+    // Not a pure insertion or deletion, so the caret's guess is not confirmed
+    // and the measured difference decides — and still lands on `o⏎`.
+    expectEdit(
+      'Intro\n## Heading\n',
+      {
+        select: (element) => {
+          const range = document.createRange();
+          range.setStart(element.childNodes[0].firstChild, 4);
+          range.setEnd(element.childNodes[1], 0);
+          const selection = window.getSelection();
+          selection.removeAllRanges();
+          selection.addRange(range);
+        },
+        change: (element) => {
+          element.childNodes[0].firstChild.nodeValue = 'IntrXHeading';
+          element.childNodes[1].remove();
+          placeCaret(element.childNodes[0].firstChild, 5);
+        },
+      },
+      { source: 'IntrXHeading\n', selection: makeRange(5, 0) }
+    );
+  });
+
+  test('pasting over a line break into a heading takes the heading marker', () => {
+    const { element, surface, document: document_ } = editorOver('Intro\n## Heading\n');
+    try {
+      element.focus();
+      setSelectionRange(element, makeRange(4, 2), surface.layout());
+      surface.handlePaste(clipboardEvent({ 'text/plain': 'X' }));
+      expectEqual(document_.source, 'IntrXHeading\n');
+      expectEqual(document_.selection, makeRange(5, 0));
+      expect(!readPlainText(element).includes('#'), 'no marker surfaced');
+    } finally {
+      element.remove();
+    }
+  });
+
+  test('cutting a whole heading line takes its marker, and copies what copy copies', () => {
+    // It used to remove only the text the view showed, which left the
+    // heading's `## ` on the line that moved up: `## Body`.
+    const { element, surface, document: document_ } = editorOver('Intro\n## Heading\nBody\n');
+    try {
+      element.focus();
+      setSelectionRange(element, makeRange(6, 8), surface.layout());
+      const copied = clipboardEvent();
+      surface.handleCopy(copied);
+      const cut = clipboardEvent();
+      surface.handleCut(cut);
+
+      expectEqual(cut.data, copied.data, 'the clipboard holds what copying would put there');
+      expectEqual(document_.source, 'Intro\nBody\n');
+      expectEqual(document_.selection, makeRange(6, 0));
+      expect(!readPlainText(element).includes('#'), 'no marker surfaced');
     } finally {
       element.remove();
     }

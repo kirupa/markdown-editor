@@ -117,6 +117,10 @@ const richProjection = {
   render: (source) => renderInto(element('richSurface'), modelFor(source), resolveImageURL),
   textFor: (source) => modelFor(source).text,
   toSource: (source, range) => modelFor(source).sourceRange(range),
+  // Typing, cut and paste: removing a line break takes the markers hidden
+  // beside it, or they surface as text (I-330).
+  toSourceEdit: (source, range, replacement) =>
+    modelFor(source).sourceRangeReplacing(range, replacement),
   toSurface: (source, range) => modelFor(source).renderedRange(range),
   // Block-level access, so an edit can be read from the blocks it touched
   // instead of from the whole surface.

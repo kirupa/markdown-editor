@@ -4,6 +4,7 @@ import {
     intersectionRange,
     substringWithRange,
     lineBounds,
+    isLineTerminator,
 } from './range.js';
 import { parseImageTag } from './image-tag.js';
 
@@ -442,6 +443,119 @@ export class MarkdownRenderModel {
         }
 
         return makeRange(sourceStart, Math.max(0, sourceEnd - sourceStart));
+    }
+
+    /**
+     * The Markdown an edit to the rendered text replaces.
+     *
+     * Usually exactly `sourceRange`. The exception is an edit that removes a
+     * line break. The markup either side of a rendered line break is hidden,
+     * and `sourceRange` — asked only about the characters that were selected —
+     * leaves it all where it was. So ⌫ on an empty heading line under a quote
+     * deleted the one source `\n` and turned `> quote⏎## ⏎` into
+     * `> quote## ⏎`: a `## ` nobody could see a moment earlier appeared as
+     * text in the middle of the quote (I-330).
+     *
+     * Two adjustments, both to markup no one can see:
+     *
+     * - Joining a line onto the one above also removes the heading or quote
+     *   marker the lower line began with, so its text carries on the upper
+     *   line in the upper line's style. Only that marker: a `**` opening bold
+     *   there still means what it meant.
+     * - Deleting whole lines — from the start of one line to the start of
+     *   another — also removes whatever the first of them hid at its start,
+     *   so the line that moves up keeps its own style.
+     *
+     * A replacement that ends in a line break leaves a line boundary where the
+     * old one was, so it — and Return in particular — is never adjusted.
+     *
+     * A port of `MarkdownIncrementalRenderer.sourceRange(replacing:with:)`;
+     * `Contract/edits.jsonl` holds the two to the same answer for every line
+     * break in the corpus.
+     *
+     * @param {{ location: number, length: number }} renderedRange
+     * @param {string} replacement
+     * @returns {{ location: number, length: number }}
+     */
+    sourceRangeReplacing(renderedRange, replacement) {
+        const base = this.sourceRange(renderedRange);
+        const renderedLength = this.renderedLength;
+        const start = Math.min(Math.max(0, renderedRange.location), renderedLength);
+        const end = start + Math.min(Math.max(0, renderedRange.length), renderedLength - start);
+        // Only an edit that ends at the start of a line can join two lines or
+        // remove whole ones, so a keystroke anywhere else stops here having
+        // looked at a single character.
+        if (end <= start || !this.#isRenderedLineStart(end)) return base;
+
+        let sourceStart = base.location;
+        let sourceEnd   = maxRange(base);
+        const source    = this.source;
+
+        if (replacement.length === 0 && this.#isRenderedLineStart(start)) {
+            sourceStart = Math.min(sourceStart, this.#startOfHiddenLead(start));
+        }
+
+        const endsWithLineBreak = replacement.length > 0 &&
+            isLineTerminator(replacement.charCodeAt(replacement.length - 1));
+        // What is left in front of the edit still ends a line, so the line
+        // below moves up intact, marker and all. That includes the `\r` of a
+        // CRLF whose `\n` alone was deleted: it is a line break by itself.
+        const removesWholeLines = replacement.length === 0 &&
+            (sourceStart === 0 || isLineTerminator(source.charCodeAt(sourceStart - 1)));
+        if (!endsWithLineBreak && !removesWholeLines) {
+            const joinedLine = this.#lowerAt(end);
+            const hiddenEnd  = this.#upperAt(end);
+            // The marker has to lie wholly inside what the line hid. A code
+            // line hides nothing, so a `## ` typed in a fence is text and stays.
+            if (hiddenEnd > joinedLine) {
+                const marker = hiddenLinePrefixLength(source, joinedLine);
+                if (marker > 0 && joinedLine + marker <= hiddenEnd) {
+                    sourceEnd = Math.max(sourceEnd, joinedLine + marker);
+                }
+            }
+        }
+
+        return makeRange(sourceStart, sourceEnd - sourceStart);
+    }
+
+    /**
+     * Whether a rendered position begins a line: the start of the text, or
+     * just after a line break — but not between the two halves of a CRLF,
+     * where an edit that stops leaves the `\n` behind to go on ending the line.
+     */
+    #isRenderedLineStart(position) {
+        if (position <= 0) return true;
+        const previous = this.#renderedCodeAt(position - 1);
+        if (!isLineTerminator(previous)) return false;
+        return !(previous === 0x0d && this.#renderedCodeAt(position) === 0x0a);
+    }
+
+    /**
+     * Where the hidden Markdown in front of rendered line start `position`
+     * begins on that line.
+     *
+     * The hidden stretch can run back over whole lines that render nothing — a
+     * fence's opening line, or the closing one of the fence above — and those
+     * are not this line's to remove. So the answer is the last line break
+     * inside the stretch, not the stretch's start.
+     */
+    #startOfHiddenLead(position) {
+        const leadStart = this.#lowerAt(position);
+        for (let cursor = this.#upperAt(position); cursor > leadStart; cursor -= 1) {
+            if (isLineTerminator(this.source.charCodeAt(cursor - 1))) return cursor;
+        }
+        return leadStart;
+    }
+
+    /** The rendered code unit at `position`, or -1 past either end. */
+    #renderedCodeAt(position) {
+        const count = this.#lines.length;
+        if (count === 0 || position < 0 || position >= this.renderedLength) return -1;
+        // The last line starting at or before `position` is the one holding
+        // it: a fence's marker line renders nothing, so it shares its start
+        // with the line after it and is never the last.
+        const index = lastAtOrBefore(this.#renderedStart, count, position);
+        return this.#lines[index].text.charCodeAt(position - this.#renderedStart[index]);
     }
 
     /**
@@ -959,6 +1073,29 @@ const QUOTE_RE    = /^([ \t]*>[ \t]?)/du;
 const TASK_RE     = /^([ \t]*)([-+*][ \t]+\[([ xX])\])([ \t]+)/du;
 const BULLET_RE   = /^([ \t]*)([-+*])([ \t]+)/du;
 const NUMBERED_RE = /^([ \t]*)(\d+[.)])([ \t]+)/du;
+
+/**
+ * How many characters at the start of the line beginning at `lineStart` are
+ * a heading or quote marker the parser hides. Zero for any other line.
+ *
+ * Matched with the parser's own patterns against the line's contents without
+ * its terminator, as the parser matches them, because joining two lines has
+ * to take away exactly what the parser hid on the second one. A guess that
+ * disagreed by a single space would leave that space behind, or eat one the
+ * writer can see. So `##` alone, with no space after it, is not a heading
+ * here either.
+ */
+function hiddenLinePrefixLength(source, lineStart) {
+    if (lineStart < 0 || lineStart >= source.length) return 0;
+    const { lineStart: start, contentsEnd } = lineBounds(source, lineStart);
+    if (start !== lineStart || contentsEnd <= start) return 0;
+    const contents = makeRange(start, contentsEnd - start);
+    const heading = matchRegex(HEADING_RE, source, contents);
+    if (heading !== null) return heading[0].length;
+    const quoteMarker = matchRegex(QUOTE_RE, source, contents);
+    if (quoteMarker !== null) return quoteMarker[1].length;
+    return 0;
+}
 
 // ─── Parser ───────────────────────────────────────────────────────────────────
 

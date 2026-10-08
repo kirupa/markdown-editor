@@ -17,6 +17,7 @@ So this is not more prose. It is the compiled Swift, dumped as data:
 | --- | --- | --- |
 | `formatting.jsonl` | Every formatting command, at every interesting selection, in every corpus document | 9,471 |
 | `render-model.json` | What the reading view shows, and where each part of it came from in the source | 14 documents, every span |
+| `edits.jsonl` | Which Markdown an edit made in the reading view replaces, wherever it removes a line break | 273 |
 | `paths.json` | Workspace-path arithmetic: naming, descendancy, subtree rewriting, collision numbering | 123 |
 
 Regenerate them after changing `MarkdownEditorCore` or `CloudPath`:
@@ -187,6 +188,67 @@ that renders correctly but maps ranges wrongly looks finished and is not.
 `includesMarkup` says whether the span covers the syntax characters as well as
 the content. `isAtomic` marks a span that behaves as one unit for selection —
 an image, or a horizontal rule.
+
+## Reading the edits fixture
+
+`edits.jsonl` answers the question the render fixture leaves open: when
+somebody edits the reading view, which Markdown does the edit replace? Mapping
+the selected characters back through `source` is the answer almost everywhere,
+and wrong at a line break. The markers a line begins with — a heading's `## `,
+a quote's `> ` — are not on screen, so the characters either side of a rendered
+line break say nothing about them. Delete only the `\n` between a quote and an
+empty heading, which draws as a blank line, and the heading's hidden `## `
+lands at the end of the quote as text. That is the bug this fixture was written
+for, and its document, `empty-heading-under-quote`, follows the formatting
+corpus's fourteen in the header with four more written to find the rule's
+edges.
+
+The first line is a header carrying the documents, each with the text it
+renders to, so a port can check its rendering before its edits. Every line
+after it is one edit: replace `rendered` in the document's rendered text with
+`with`, and the Markdown that edit replaces is `source`. Every edit removes a
+line break the reading view shows, in one of three ways:
+
+| `kind` | The edit |
+| --- | --- |
+| `join` | ⌫ at the start of a line, or ⌦ at the end of the one above |
+| `joinTyping` | Typing a character over the line break |
+| `deleteLine` | Deleting the whole line the break ends |
+
+The rule they pin is `sourceRange(replacing:with:)` in
+`MarkdownIncrementalRenderer.swift`:
+
+- An edit that does not end at the start of a rendered line maps exactly as its
+  characters do. That is every keystroke that is not removing a line break, and
+  it is decided by looking at one character.
+- **Joining** a line onto the one above also removes the heading or quote
+  marker the lower line began with, so its text carries on in the upper line's
+  style. Only that marker, and only if the line hid it whole: `## ` in a fence,
+  `##` with no space after it, and a `**` opening bold on the joined line are
+  all left alone.
+- **Deleting whole lines**, from the start of one to the start of another, also
+  removes what the first of them hid at its start, so the line that moves up
+  keeps its own style rather than inheriting a heading from a line that is
+  gone.
+- A replacement that **ends in a line break** — Return, above all — is never
+  adjusted, because it leaves a line boundary where the old one was.
+- A **CRLF** is one line break. An edit that stops between its `\r` and its
+  `\n` is not at the start of a line, and deleting only the `\n` joins nothing.
+
+The documents are `ContractCorpus.editingDocuments`, kept apart from the
+formatting corpus so that adding them changed none of its 9,471 cases.
+`sourceRangeReplacing` in `Web/public/app/core/render-model.js` is the second
+implementation, and `Web/public/tests/contract-edits.test.js` replays every
+case against it.
+
+A port should ask this one rule from every path that turns an edit in the
+reading view into an edit of the source — typing, delete in both directions,
+the end of an input method's composition, cut, and paste. A path that maps its
+selection any other way brings the bug back for that way of editing alone,
+which is why both builds also check it from the editor's side:
+`make check-line-joins` presses the keys in a real Mac editor, and the web
+build's DOM suite *Line breaks removed through the surface* makes the same
+edits to its surface and reads them back both ways it can.
 
 ## What is not in these files
 
@@ -1567,9 +1629,13 @@ bytes with U+FFFD and then saving overwrites the original with the damage.
    `Shared/Sources/MarkdownEditorCore/MarkdownFormatting.swift` beside it.
 5. `Contract/render-model.json` with
    `Shared/Sources/MarkdownEditorCore/MarkdownRenderModel.swift`.
-6. `Web/README.md` §11 for the cloud model, and `Web/firebase/` for the rules —
+6. `Contract/edits.jsonl` with
+   `Shared/Sources/MarkdownEditorCore/MarkdownIncrementalRenderer.swift`,
+   once the render fixture passes — it is the step from showing a document to
+   editing one.
+7. `Web/README.md` §11 for the cloud model, and `Web/firebase/` for the rules —
    the web build is the one with a working cloud path, so it is the reference.
-7. The README of whichever existing build is closest in shape to the one being
+8. The README of whichever existing build is closest in shape to the one being
    written.
 
 Port the pure logic first, get the fixtures passing, and only then build the

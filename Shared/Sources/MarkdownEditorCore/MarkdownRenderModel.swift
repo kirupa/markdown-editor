@@ -254,13 +254,72 @@ public enum MarkdownRenderer {
     }
 }
 
-private final class Parser {
-    private static let headingExpression = expression(
+/// The markers that make a whole line a heading or a quote, which the parser
+/// hides.
+///
+/// Shared with the edit mapping because joining two lines has to take away
+/// exactly what the parser hid on the second one. A guess that disagreed with
+/// the parser by a single space would leave that space behind, or eat one the
+/// writer can see.
+enum MarkdownLinePrefix {
+    static let headingExpression = expression(
         #"^([ \t]{0,3})(#{1,6})[ \t]+"#
     )
-    private static let quoteExpression = expression(
+    static let quoteExpression = expression(
         #"^([ \t]*>[ \t]?)"#
     )
+
+    /// How many characters at the start of the line beginning at `lineStart`
+    /// are a heading or quote marker. Zero for any other line.
+    ///
+    /// Matched against the line's contents without its terminator, as the
+    /// parser matches them, so `##` alone — no space after it — is not a
+    /// heading here either.
+    static func hiddenLength(in source: NSString, lineStart: Int) -> Int {
+        guard lineStart >= 0, lineStart < source.length else {
+            return 0
+        }
+        var start = 0
+        var end = 0
+        var contentsEnd = 0
+        source.getLineStart(
+            &start,
+            end: &end,
+            contentsEnd: &contentsEnd,
+            for: NSRange(location: lineStart, length: 0)
+        )
+        guard start == lineStart, contentsEnd > start else {
+            return 0
+        }
+        let line = source.substring(
+            with: NSRange(location: start, length: contentsEnd - start)
+        )
+        let range = NSRange(location: 0, length: (line as NSString).length)
+        if let heading = headingExpression.firstMatch(in: line, range: range) {
+            return heading.range.length
+        }
+        if let quote = quoteExpression.firstMatch(in: line, range: range) {
+            return quote.range(at: 1).length
+        }
+        return 0
+    }
+
+    private static func expression(
+        _ pattern: String
+    ) -> NSRegularExpression {
+        do {
+            return try NSRegularExpression(pattern: pattern)
+        } catch {
+            preconditionFailure(
+                "Invalid internal Markdown regular expression: \(pattern)"
+            )
+        }
+    }
+}
+
+private final class Parser {
+    private static let headingExpression = MarkdownLinePrefix.headingExpression
+    private static let quoteExpression = MarkdownLinePrefix.quoteExpression
     private static let taskExpression = expression(
         #"^([ \t]*)([-+*][ \t]+\[([ xX])\])([ \t]+)"#
     )

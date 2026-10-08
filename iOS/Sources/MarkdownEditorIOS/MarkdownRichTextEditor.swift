@@ -494,7 +494,11 @@ struct MarkdownRichTextEditor: UIViewRepresentable {
         ) -> Bool {
             guard !isApplyingProgrammatically else { return true }
 
-            let sourceRange = renderer.sourceRange(for: range)
+            // A line break taken away takes the markers hidden beside it
+            // (I-330), as on the Mac.
+            let sourceRange = renderer.sourceRange(
+                replacing: range, with: replacement
+            )
             let source = parent.text as NSString
             let clamped = NSRange(
                 location: min(sourceRange.location, source.length),
